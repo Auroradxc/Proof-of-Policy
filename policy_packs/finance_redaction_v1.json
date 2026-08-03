@@ -1,0 +1,23 @@
+{
+  "id": "finance-redaction-v1",
+  "version": "0.1.0",
+  "description": "Example pack for a financial-advice channel: no high-leverage solicitation, no credentials, bounded length.",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "keyword_block",
+      "name": "no_high_leverage",
+      "params": { "keywords": ["leverage", "margin call", "100x", "get rich", "guaranteed returns"] }
+    },
+    {
+      "kind": "length_bound",
+      "name": "bounded_response",
+      "params": { "min": 1, "max": 1500 }
+    },
+    {
+      "kind": "pattern_block",
+      "name": "no_credentials",
+      "params": { "patterns": ["sk-[A-Za-z0-9]{20,}", "Bearer [A-Za-z0-9._~+/=-]{20,}"] }
+    }
+  ]
+}

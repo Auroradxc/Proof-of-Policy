@@ -1,0 +1,14 @@
+[package]
+name = "pop-program"
+version = "0.1.0"
+edition = "2021"
+description = "SP1 zkVM program: prove an agent response satisfies a policy (Proof-of-Policy)"
+
+# Skeleton — not buildable until W4. Pin sp1-zkvm to the version matching your
+# installed SP1 CLI (see https://docs.succinct.xyz). The examples below are a
+# starting point; adjust to the crates.io version of your `cargo prove install`.
+[dependencies]
+sp1-zkvm = { version = "3" }
+# serde + bincode are added in W4 when the ProofRequest struct lands.
+
+[workspace]

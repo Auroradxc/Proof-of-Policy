@@ -1,0 +1,23 @@
+{
+  "id": "eu-ai-act-v1",
+  "version": "0.1.0",
+  "description": "Example pack in the spirit of EU AI Act Art.12/13: ban high-risk output, no PII, bounded disclosure.",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "keyword_block",
+      "name": "banned_high_risk_topics",
+      "params": { "keywords": ["exploit", "weaponize", "terrorism", "child abuse", "doxxing"] }
+    },
+    {
+      "kind": "length_bound",
+      "name": "disclosure_length",
+      "params": { "min": 1, "max": 2000 }
+    },
+    {
+      "kind": "pattern_block",
+      "name": "no_pii_email",
+      "params": { "patterns": ["[\\w.+-]+@[\\w-]+\\.[\\w.]+"] }
+    }
+  ]
+}
