@@ -1,0 +1,43 @@
+# 方向二 · Proof-of-Policy（策略/护栏合规证明）
+
+**方向**：zkAgent（零知识 × AI 智能体）下的子方向 —— 为 LLM 智能体响应提供**零知识合规证明**（无 TEE、通用策略 DSL、双隐私模式、可链上验证）。
+**独立定位**：与既有 SP1+ezkl 私有面部认证项目无关（SP1 仅作通用基础设施）。
+**周期**：8 周（0 基础研究生可执行）＋ 可延伸 1-2 年大课题。
+
+---
+
+## 目录索引
+
+| 文件夹 | 内容 | 关键文件 |
+|---|---|---|
+| `01_背景调研/` | 方向定位、问题分析、创新点与落地可行性 | `方向2_Proof-of-Policy_调研与项目计划.md` |
+| `02_项目计划/` | 8 周零基础版计划 + 逐日学习日历 | `方向2_Proof-of-Policy_8周计划_v2_零基础版.md`、`learning-calendar.md` |
+| `03_代码仓库/` | 可运行骨架（Python 参考层 + SP1 证明层） | `zk-policy/`（git 仓库，11 单测全绿） |
+| `04_开题报告/` | 正式开题报告（researchwrite 流水线产出） | `proposal_final.md` / `proposal_final.docx` + foundation/qa |
+| `05_排期看板/` | 8 周甘特图 + 看板 | `8week-gantt.md`（Mermaid + swimlane） |
+
+> 背景材料（zkAgent 整体调研、五个方向筛选）在 **`C:\Users\ly\方向一\01_调研报告\`**。
+
+## 快速入口
+
+- **读这份就知道全貌**：`01_背景调研/方向2_Proof-of-Policy_调研与项目计划.md`
+- **照这个执行**：`02_项目计划/方向2_Proof-of-Policy_8周计划_v2_零基础版.md` + `learning-calendar.md`
+- **代码从这开始**：`03_代码仓库/zk-policy/README.md`（`python -m unittest discover tests -v`）
+- **给导师的版本**：`04_开题报告/proposal_final.docx`
+- **排期用这个**：`05_排期看板/8week-gantt.md`
+
+## 核心信息（一句话版）
+
+PoP 证明「智能体响应 T 满足公开策略 π」——用**确定性规则**（黑名单/长度/正则/PII 校验位）绕开「证明大模型」的性能墙，8 周内落地透明模式 MVP + 论文初稿；现有四派（TEE 执行证明/形式验证/ZK 积木/受限策略收据）均未提供「通用 DSL + 无硬件信任 + 双隐私 + 形式化模型」的组合。
+
+## 8 周里程碑（详见 05）
+
+| W0 | W1-W2 | W3 | **W4★MVP** | W5 | W6 | W7 | W8 |
+|---|---|---|---|---|---|---|---|
+| 环境+概念 | 规则库 | PII 正则 | **透明模式** | 私有模式 | Agent+证书 | 评测+安全模型 | 论文+发布 |
+
+## 文件来源（原始位置，如需编辑请同步）
+
+- 调研/计划：`C:\Users\ly\方向2_*.md`
+- 代码：`C:\Users\ly\zk-policy\`（本文件夹 03 为副本）
+- 开题报告流水线：`C:\Users\ly\outputs\researchwrite\proof-of-policy\`

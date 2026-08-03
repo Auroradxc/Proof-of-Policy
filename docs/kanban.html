@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方向二 · Proof-of-Policy 8 周看板</title>
+<style>
+  :root{
+    --bg:#f4f6fa; --card:#ffffff; --ink:#1c2330; --muted:#6b7280;
+    --line:#e3e8f0; --acc:#2563eb; --todo:#9ca3af; --doing:#2563eb; --done:#16a34a;
+    --warn:#b45309; --danger:#dc2626;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif; background:var(--bg); color:var(--ink); padding-bottom:60px;}
+  header{position:sticky; top:0; z-index:10; background:#fff; border-bottom:1px solid var(--line); padding:14px 22px; display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between;}
+  header h1{font-size:20px; font-weight:700;}
+  header .sub{color:var(--muted); font-size:13px; margin-top:2px;}
+  .hdr-actions{display:flex; gap:8px; align-items:center;}
+  button{cursor:pointer; border:1px solid var(--line); background:#fff; color:var(--ink); padding:7px 14px; border-radius:8px; font-size:13px; font-weight:600;}
+  button:hover{background:#f0f4ff; border-color:var(--acc);}
+  button.primary{background:var(--acc); border-color:var(--acc); color:#fff;}
+  button.primary:hover{background:#1d4ed8;}
+  main{max-width:1240px; margin:0 auto; padding:20px 22px; display:flex; flex-direction:column; gap:22px;}
+  section{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px 20px;}
+  section h2{font-size:15px; font-weight:700; margin-bottom:12px; display:flex; align-items:center; gap:8px;}
+  section h2 .hint{font-weight:400; color:var(--muted); font-size:12px;}
+  /* progress */
+  .overall{display:flex; gap:10px; align-items:center; margin-bottom:14px;}
+  .overall .bar{flex:1; height:12px; background:#eef1f7; border-radius:6px; overflow:hidden;}
+  .overall .fill{height:100%; width:0%; background:linear-gradient(90deg,#2563eb,#16a34a); border-radius:6px; transition:width .3s;}
+  .overall .pct{font-weight:700; font-size:16px; min-width:52px; text-align:right;}
+  .meta{display:flex; flex-wrap:wrap; gap:16px; color:var(--muted); font-size:12.5px;}
+  .meta b{color:var(--ink); font-weight:600;}
+  /* gantt */
+  .gantt{display:grid; grid-template-columns:180px repeat(9,1fr); gap:2px; font-size:12px; min-width:820px;}
+  .gantt .ghead{font-weight:700; background:#f0f3f9; padding:7px 8px; border-radius:6px; text-align:center; color:#374151;}
+  .gantt .glabel{display:flex; flex-direction:column; justify-content:center; padding:6px 10px; background:#f7f9fc; border-radius:6px;}
+  .gantt .glabel small{color:var(--muted);}
+  .gantt .gcell{position:relative; background:#fbfcfe; border-radius:6px; min-height:38px; display:flex; align-items:center; justify-content:center;}
+  .gantt .bar{width:86%; border-radius:6px; padding:4px 6px; color:#fff; font-size:11px; text-align:center; overflow:hidden; white-space:nowrap; cursor:default;}
+  .gantt .bar.todo{background:var(--todo); opacity:.55;}
+  .gantt .bar.doing{background:var(--doing);}
+  .gantt .bar.done{background:var(--done);}
+  .gantt .milestone{width:14px; height:14px; transform:rotate(45deg); border-radius:3px; border:2px solid var(--warn); background:#fff;}
+  .gantt .milestone.reached{background:var(--warn);}
+  .gwrap{overflow-x:auto;}
+  .legend{display:flex; gap:14px; margin-top:10px; font-size:12px; color:var(--muted); align-items:center;}
+  .legend i{display:inline-block; width:12px; height:12px; border-radius:3px; margin-right:4px; vertical-align:-1px;}
+  /* kanban */
+  .board{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
+  .col{background:#f1f4f9; border-radius:12px; padding:10px; min-height:240px;}
+  .col h3{font-size:13px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between;}
+  .col h3 .cnt{background:#fff; border:1px solid var(--line); border-radius:99px; padding:1px 8px; font-size:11px; color:var(--muted);}
+  .col .dropzone{min-height:200px; display:flex; flex-direction:column; gap:8px;}
+  .col.dragover{outline:2px dashed var(--acc); outline-offset:-2px;}
+  .card{background:#fff; border:1px solid var(--line); border-left:4px solid var(--todo); border-radius:9px; padding:9px 11px; cursor:grab; box-shadow:0 1px 2px rgba(0,0,0,.04); transition:transform .08s;}
+  .card:active{cursor:grabbing;}
+  .card .top{display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;}
+  .card .week{font-size:10.5px; font-weight:700; background:#eef2ff; color:var(--acc); padding:2px 7px; border-radius:99px;}
+  .card .del{font-size:11px; border:none; background:none; color:var(--muted); cursor:pointer;}
+  .card .del:hover{color:var(--danger);}
+  .card.doing{border-left-color:var(--doing);}
+  .card.done{border-left-color:var(--done); opacity:.72;}
+  .card.done .txt{text-decoration:line-through;}
+  .card .txt{font-size:13px; line-height:1.45;}
+  .card .repo{display:block; margin-top:6px; font-size:11px; color:var(--muted); font-family:Consolas,monospace;}
+  .col[data-state="todo"] .card{border-left-color:var(--todo);}
+  .col[data-state="doing"] .card{border-left-color:var(--doing);}
+  .col[data-state="done"] .card{border-left-color:var(--done);}
+  /* weeks chips */
+  .week-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:8px;}
+  .wchip{background:#f7f9fc; border:1px solid var(--line); border-radius:10px; padding:10px;}
+  .wchip .wname{font-weight:700; font-size:13px; margin-bottom:4px; display:flex; justify-content:space-between;}
+  .wchip .wbar{height:6px; background:#e5e9f1; border-radius:4px; overflow:hidden;}
+  .wchip .wfill{height:100%; width:0%; background:var(--acc); transition:width .3s;}
+  .wchip .wmeta{font-size:11px; color:var(--muted); margin-top:5px;}
+  /* tables */
+  table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  th,td{border:1px solid var(--line); padding:8px 10px; text-align:left;}
+  th{background:#f0f3f9;}
+  .badge{display:inline-block; padding:2px 8px; border-radius:99px; font-size:11px; font-weight:600;}
+  .badge.b-red{background:#fef2f2; color:#b91c1c;}
+  .badge.b-yellow{background:#fffbeb; color:#b45309;}
+  .badge.b-green{background:#f0fdf4; color:#15803d;}
+  footer{max-width:1240px; margin:0 auto; padding:0 22px; color:var(--muted); font-size:12px; line-height:1.8;}
+  @media print{
+    header, .legend, .meta, button{display:none !important;}
+    body{background:#fff; padding:0;}
+    main{gap:14px; padding:0;}
+    section{break-inside:avoid; border-color:#ccc;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>方向二 · Proof-of-Policy · 8 周看板</h1>
+    <div class="sub">零知识合规证明系统 · 计划起始 2026-08-03（可平移）· 数据本地保存</div>
+  </div>
+  <div class="hdr-actions">
+    <button onclick="resetBoard()">↺ 重置进度</button>
+    <button onclick="window.print()">🖨 打印</button>
+    <button class="primary" onclick="toggleHelp()">?</button>
+  </div>
+</header>
+
+<main>
+  <!-- 总进度 -->
+  <section>
+    <h2>总进度 <span class="hint">= 已完成任务 / 总任务</span></h2>
+    <div class="overall">
+      <span class="pct" id="overallPct">0%</span>
+      <div class="bar"><div class="fill" id="overallFill"></div></div>
+      <span style="font-size:12px;color:var(--muted)" id="overallTxt">0/0 任务</span>
+    </div>
+    <div class="meta" id="metaLine"></div>
+  </section>
+
+  <!-- 甘特图 -->
+  <section>
+    <h2>甘特图 <span class="hint">方块 = 里程碑 · 颜色 = 当前状态（自动随看板更新）</span></h2>
+    <div class="gwrap"><div class="gantt" id="gantt"></div></div>
+    <div class="legend">
+      <span><i style="background:var(--todo)"></i>待办</span>
+      <span><i style="background:var(--doing)"></i>进行中</span>
+      <span><i style="background:var(--done)"></i>已完成</span>
+      <span><i style="background:var(--warn);transform:rotate(45deg)"></i>里程碑</span>
+    </div>
+  </section>
+
+  <!-- 看板 -->
+  <section>
+    <h2>任务看板 <span class="hint">拖拽卡片切换状态 · 每周块可在下方查看</span></h2>
+    <div class="board" id="board"></div>
+  </section>
+
+  <!-- 每周块 -->
+  <section>
+    <h2>每周进度</h2>
+    <div class="week-grid" id="weekGrid"></div>
+  </section>
+
+  <!-- 关键路径与风险 -->
+  <section>
+    <h2>关键路径 & 风险退路</h2>
+    <table>
+      <tr><th style="width:50%">关键路径</th><th>滞后砍单顺序</th></tr>
+      <tr>
+        <td>周0 环境 → W2 规则库 → W3 PII 正则 → <b>W4 透明模式 MVP ★</b> → W6 证书 → W7 评测 → W8 论文</td>
+        <td>W5 私有模式 → W6 agent 深度集成 → W7 消融（保透明模式 + 基础评测）</td>
+      </tr>
+    </table>
+    <table style="margin-top:12px">
+      <tr><th>风险</th><th>退路</th></tr>
+      <tr><td>正则电路成本超预算</td><td>砍 PII 至 2 类；保关键词+长度即可达 W4</td></tr>
+      <tr><td>私有模式拖慢进度</td><td>降级为「承诺 + 违规定位」</td></tr>
+      <tr><td>SP1/Rust 工具链安装受阻</td><td>周0 集中装；Python 参考层先行开发</td></tr>
+      <tr><td>WITNESS 概念冲突</td><td>以「通用 DSL + 开源 + 双隐私 + 形式化模型」定位差异</td></tr>
+    </table>
+  </section>
+</main>
+
+<footer>
+  配套：<code>docs/8week-gantt.md</code>（Mermaid 版）· <code>docs/learning-calendar.md</code>（逐日学习日历）· 完整计划见《方向二》01/02 文件夹。<br>
+  打开方式：直接用浏览器打开本文件即可；进度保存在浏览器 localStorage，换电脑/清缓存会重置（可用「重置进度」重新开始）。
+</footer>
+
+<script>
+/* ========== 数据 ========== */
+const WEEKS = [
+  {id:"w0", name:"周0", start:"2026-08-03", learn:"数学 + ZK 概念自学", dev:"环境跑通 SP1", deliver:"环境 + 三性质口述", ms:"环境+概念"},
+  {id:"w1", name:"W1", start:"2026-08-10", learn:"概念 + zkVM 实操", dev:"SP1 最小证明", deliver:"概念笔记", ms:""},
+  {id:"w2", name:"W2", start:"2026-08-17", learn:"电路思维 + 规则", dev:"规则库 + 单测", deliver:"规则库 v0", ms:"规则库 v0"},
+  {id:"w3", name:"W3", start:"2026-08-24", learn:"正则/NFA + PII", dev:"PII 规则", deliver:"字符串规则模块", ms:""},
+  {id:"w4", name:"W4 ★", start:"2026-08-31", learn:"编译器 + 透明模式", dev:"PoP v0 MVP", deliver:"透明模式 MVP", ms:"★MVP"},
+  {id:"w5", name:"W5", start:"2026-09-07", learn:"私有模式", dev:"PoP v1 私有", deliver:"私有模式简化", ms:""},
+  {id:"w6", name:"W6", start:"2026-09-14", learn:"Agent + 证书", dev:"合规证书", deliver:"证书 + demo", ms:"demo 视频"},
+  {id:"w7", name:"W7", start:"2026-09-21", learn:"评测 + 安全模型", dev:"成本曲线", deliver:"评测 + 模型", ms:""},
+  {id:"w8", name:"W8", start:"2026-09-28", learn:"论文 + 发布", dev:"论文初稿", deliver:"论文 + 仓库", ms:"论文初稿"},
+];
+
+const TASKS = [
+  {id:"w0-1", week:"w0", txt:"安装 Rust + SP1（cargo prove install）", repo:"周0 环境"},
+  {id:"w0-2", week:"w0", txt:"跑通官方 fibonacci 证明/验证", repo:"circuits/README.md"},
+  {id:"w0-3", week:"w0", txt:"口述 ZK 三性质（完备/健全/零知识）", repo:"docs/learning-calendar"},
+
+  {id:"w1-1", week:"w1", txt:"写概念笔记：三性质 / R1CS / 公开-私密", repo:"docs/w1_notes.md"},
+  {id:"w1-2", week:"w1", txt:"SP1 最小证明（改私密输入只承诺输出）", repo:"circuits/program"},
+  {id:"w1-3", week:"w1", txt:"口述「证明者知道 witness，验证者只看到公开输入」", repo:"—"},
+
+  {id:"w2-1", week:"w2", txt:"实现 KeywordBlock / LengthBound + 单测", repo:"policydsl/model.py"},
+  {id:"w2-2", week:"w2", txt:"基准表 v0（规则数 × spec 大小）", repo:"docs/"},
+  {id:"w2-3", week:"w2", txt:"口述「黑名单为什么用 lookup」", repo:"—"},
+
+  {id:"w3-1", week:"w3", txt:"实现 PatternBlock（NFA 路径验证）", repo:"policydsl/evaluate.py"},
+  {id:"w3-2", week:"w3", txt:"≥2 类 PII 规则（email / phone / IBAN）", repo:"policy_packs/"},
+  {id:"w3-3", week:"w3", txt:"口述「正则→NFA→电路路径验证」", repo:"docs/policy-dsl.md"},
+
+  {id:"w4-1", week:"w4", txt:"策略编译器：DSL → ConstraintSpec", repo:"policydsl/compile.py"},
+  {id:"w4-2", week:"w4", txt:"SP1 透明模式端到端：证明 → 验证", repo:"circuits/program + script"},
+  {id:"w4-3", week:"w4", txt:"链上 verify + 示例策略包", repo:"eu_ai_act_v1.json"},
+  {id:"w4-4", week:"w4", txt:"★ 给导师演示 PoP v0 MVP", repo:"demo/"},
+
+  {id:"w5-1", week:"w5", txt:"响应承诺（sha256(response||nonce)）", repo:"policydsl/commit.py"},
+  {id:"w5-2", week:"w5", txt:"违规理由选择性披露（不读全文）", repo:"docs/security-model.md"},
+  {id:"w5-3", week:"w5", txt:"（尽力）redaction-with-proof", repo:"延伸 E1"},
+
+  {id:"w6-1", week:"w6", txt:"LangGraph 最小 agent + MCP 风格工具", repo:"demo/agent/"},
+  {id:"w6-2", week:"w6", txt:"合规证书生成（含 policy_hash/承诺/证明）", repo:"demo/cert/"},
+  {id:"w6-3", week:"w6", txt:"链上锚定脚本 + 30s demo 视频", repo:"demo/scripts/"},
+
+  {id:"w7-1", week:"w7", txt:"成本曲线：时间/大小 vs 长度×规则数×策略", repo:"bench/"},
+  {id:"w7-2", week:"w7", txt:"四象限信任-成本对比表", repo:"docs/"},
+  {id:"w7-3", week:"w7", txt:"形式化安全模型草稿", repo:"docs/security-model.md"},
+
+  {id:"w8-1", week:"w8", txt:"论文初稿（8-10 页）", repo:"drafts/"},
+  {id:"w8-2", week:"w8", txt:"README 复现指南 + demo 视频", repo:"README.md"},
+  {id:"w8-3", week:"w8", txt:"导师按 README 复现通过 + 提交论文", repo:"—"},
+];
+
+/* ========== 状态（localStorage） ========== */
+const KEY = "zk-policy-kanban-v1";
+let state = load();
+function load(){
+  try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.tasks) return s; } catch(e){}
+  const tasks = {}; TASKS.forEach(t => tasks[t.id] = "todo");
+  return { tasks };
+}
+function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+function setState(id, st){
+  state.tasks[id] = st; save(); render();
+}
+
+/* ========== 渲染 ========== */
+function weekState(wid){
+  const ids = TASKS.filter(t=>t.week===wid).map(t=>t.id);
+  const done = ids.filter(i=>state.tasks[i]==="done").length;
+  const doing = ids.filter(i=>state.tasks[i]==="doing").length;
+  return {total:ids.length, done, doing,
+    pct: ids.length ? Math.round(done/ids.length*100) : 0,
+    ganttState: done===ids.length ? "done" : (doing>0 ? "doing" : "todo")};
+}
+
+function renderGantt(){
+  const g = document.getElementById("gantt");
+  let html = `<div class="ghead" style="grid-column:1"></div>`;
+  WEEKS.forEach(w=>{ html += `<div class="ghead">${w.name}<br><small style="font-weight:400;color:var(--muted)">${w.start.slice(5)}</small></div>`; });
+
+  // 学习行
+  html += `<div class="glabel">学习<small>理论补足</small></div>`;
+  WEEKS.forEach(w=>{ const s=weekState(w.id); html += `<div class="gcell"><div class="bar ${s.ganttState}">${w.learn}</div></div>`; });
+  // 开发行
+  html += `<div class="glabel">开发<small>交付物</small></div>`;
+  WEEKS.forEach(w=>{ const s=weekState(w.id); html += `<div class="gcell"><div class="bar ${s.ganttState}">${w.dev}</div></div>`; });
+  // 里程碑行
+  html += `<div class="glabel">里程碑</div>`;
+  WEEKS.forEach(w=>{
+    const s = weekState(w.id);
+    const reached = s.done === s.total && s.total > 0;
+    html += `<div class="gcell">${w.ms ? `<span class="milestone ${reached?'reached':''}" title="${w.ms}"></span>` : ""}</div>`;
+  });
+  g.innerHTML = html;
+}
+
+function renderBoard(){
+  const b = document.getElementById("board");
+  const cols = [
+    {st:"todo", name:"待办", color:"var(--todo)"},
+    {st:"doing", name:"进行中", color:"var(--doing)"},
+    {st:"done", name:"已完成", color:"var(--done)"},
+  ];
+  b.innerHTML = cols.map(c=>`
+    <div class="col" data-state="${c.st}">
+      <h3><span style="color:${c.color}">●</span> ${c.name} <span class="cnt" id="cnt-${c.st}">0</span></h3>
+      <div class="dropzone" ondrop="drop(event,'${c.st}')" ondragover="allowDrop(event)" ondragleave="this.closest('.col').classList.remove('dragover')">
+      </div>
+    </div>`).join("");
+
+  cols.forEach(c=>{
+    const dz = b.querySelector(`.col[data-state="${c.st}"] .dropzone`);
+    const items = TASKS.filter(t=>state.tasks[t.id]===c.st);
+    items.forEach(t=>{
+      const wk = WEEKS.find(w=>w.id===t.week);
+      const el = document.createElement("div");
+      el.className = "card";
+      el.draggable = true;
+      el.dataset.id = t.id;
+      el.innerHTML = `
+        <div class="top"><span class="week">${wk ? wk.name : ""}</span><button class="del" title="重置为待办" onclick="setState('${t.id}','todo')">↺</button></div>
+        <div class="txt">${t.txt}</div>
+        <span class="repo">${t.repo}</span>`;
+      el.addEventListener("dragstart", e=>{ e.dataTransfer.setData("text/plain", t.id); e.dataTransfer.effectAllowed="move"; });
+      dz.appendChild(el);
+    });
+    document.getElementById("cnt-"+c.st).textContent = items.length;
+  });
+}
+
+function renderWeeks(){
+  const grid = document.getElementById("weekGrid");
+  grid.innerHTML = WEEKS.map(w=>{
+    const s = weekState(w.id);
+    return `<div class="wchip">
+      <div class="wname">${w.name} <span style="color:${s.done===s.total&&s.total>0?'var(--done)':'var(--muted)'}">${s.pct}%</span></div>
+      <div class="wbar"><div class="wfill" style="width:${s.pct}%"></div></div>
+      <div class="wmeta">${w.deliver}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderProgress(){
+  const total = TASKS.length;
+  const done = TASKS.filter(t=>state.tasks[t.id]==="done").length;
+  const doing = TASKS.filter(t=>state.tasks[t.id]==="doing").length;
+  const pct = total ? Math.round(done/total*100) : 0;
+  document.getElementById("overallPct").textContent = pct+"%";
+  document.getElementById("overallFill").style.width = pct+"%";
+  document.getElementById("overallTxt").textContent = `${done}/${total} 任务完成（${doing} 进行中）`;
+  const today = new Date();
+  const start = new Date("2026-08-03");
+  const day = Math.floor((today-start)/86400000)+1;
+  const cur = Math.min(9, Math.max(0, Math.floor(day/7)));
+  const curWeek = cur<=8 ? WEEKS[cur].name : "W8 后";
+  document.getElementById("metaLine").innerHTML =
+    `<span>今日 <b>${today.toISOString().slice(0,10)}</b></span>`+
+    `<span>计划第 <b>${day}</b> 天</span>`+
+    `<span>当前应在 <b>${curWeek}</b></span>`+
+    `<span>关键路径 ★W4 MVP（2026-08-31~09-06）</span>`;
+}
+
+function render(){ renderGantt(); renderBoard(); renderWeeks(); renderProgress(); }
+
+/* ========== 交互 ========== */
+function allowDrop(e){ e.preventDefault(); e.currentTarget.closest('.col').classList.add('dragover'); }
+function drop(e, target){
+  e.preventDefault();
+  const id = e.dataTransfer.getData("text/plain");
+  e.currentTarget.closest('.col').classList.remove('dragover');
+  if (id) setState(id, target);
+}
+function resetBoard(){
+  if (!confirm("确定重置全部进度？")) return;
+  state.tasks = {}; TASKS.forEach(t=>state.tasks[t.id]="todo"); save(); render();
+}
+function toggleHelp(){
+  alert("拖拽卡片在「待办 / 进行中 / 已完成」间移动；点卡片右上 ↺ 重置为待办；\n进度自动保存到浏览器 localStorage；打印请用右上角 🖨。");
+}
+
+/* 让看板卡片点击 ↺ 也能触发（已用 onclick），并统一初始化 */
+render();
+</script>
+</body>
+</html>
