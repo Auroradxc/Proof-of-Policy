@@ -30,10 +30,10 @@
 - [x] `circuits/` 重构为 v6 workspace（program/script + vendored tempfile patch + rust-toolchain）
 - [x] 占位 program 出证 + 验证跑通（仓库内）——n=42 Core 证明 ~72s 生成+验证成功
 
-### Phase 1 · 规则原语补全（W2 收尾）
-- [ ] A：`format_check`、`tool_arg_guard`、`budget_bound` 的 model 校验 + 参考判定
-- [ ] C：SP1 program 内 keyword_block / length_bound 判定
-- [ ] Python 与 SP1 首条交叉验证一致；记录证明基线
+### Phase 1 · 规则原语补全（W2 收尾）✅ keyword/length 已闭环
+- [x] C：SP1 program 内 keyword_block / length_bound 判定（新增 `circuits/types` 共享 ProofRequest/ProofOutput）
+- [x] Python 与 SP1 交叉验证一致：`scripts/cross_validate.py`，**5/5 向量匹配**（clean/命中/大小写/超长/超短）
+- [ ] A：`format_check`、`tool_arg_guard`、`budget_bound` 的 Python 校验/判定（随 Phase 2/3 视需补，非本轮）
 
 ### Phase 2 · 字符串/PII + NFA（W3）
 - [ ] B：PII 规则（email/phone/secret 起步，IBAN 视时间）与校验位参考实现

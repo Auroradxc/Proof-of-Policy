@@ -4,5 +4,7 @@ __pycache__/
 venv/
 target/
 proof-request.json
+scripts/vectors.json
+scripts/results.json
 .DS_Store
 *.log

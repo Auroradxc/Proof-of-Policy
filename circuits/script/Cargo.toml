@@ -6,6 +6,9 @@ description = "SP1 driver: generate and verify Proof-of-Policy proofs"
 
 [dependencies]
 sp1-sdk = { version = "6.7.0", features = ["blocking", "native-gnark"] }
+pop-types = { path = "../types" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 tracing = "0.1"
 
 [build-dependencies]

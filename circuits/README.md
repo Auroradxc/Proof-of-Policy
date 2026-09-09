@@ -39,6 +39,7 @@ SP1_PROVER=cpu cargo run --release --bin pop-script -- 42
 
 ## Phase 1-3 路线（对应 docs/dev-plan.md）
 
-1. program：ProofRequest(serde) + 逐约束 kind 判定（keyword/length），与 `policydsl.evaluate()` 交叉验证；
-2. PatternBlock/NFA 路径验证入电路；
-3. 透明模式 MVP：公开响应 → 策略电路 → 证明 → 验证（PoP v0）。
+1. ✅ **Phase 1 已完成**：program 读 `ProofRequest`(serde) 并对 keyword_block/length_bound 判定、commit `ProofOutput`；
+   共享类型在 `circuits/types`；与 Python golden 交叉验证 `scripts/cross_validate.py`（5/5 通过）。
+2. PatternBlock/NFA 路径验证入电路（Phase 2）；
+3. 透明模式 MVP：公开响应 → 策略电路 → 证明 → 验证（PoP v0，Phase 3）。

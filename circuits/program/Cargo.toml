@@ -6,3 +6,4 @@ description = "SP1 zkVM program: prove an agent response satisfies a policy (Pro
 
 [dependencies]
 sp1-zkvm = "6.7.0"
+pop-types = { path = "../types" }

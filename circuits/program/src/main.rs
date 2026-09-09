@@ -1,15 +1,62 @@
-//! SP1 zkVM program (Phase 0 placeholder).
+//! SP1 program: judge whether a response satisfies constraints and commit
+//! `ProofOutput` as public values.
 //!
-//! Reads a `u32` and commits it back. In Phase 1-3 this is replaced by the
-//! real logic: read a serialized ProofRequest (response + ConstraintSpec),
-//! evaluate the compiled constraints inside the zkVM, and commit
-//! `passed` (+ optional violation evidence) as public output.
+//! Phase 1 covers:
+//! - `keyword_block`: response must not contain any listed keyword
+//!   (ASCII case-insensitive substring; semantics mirror `policydsl.evaluate`)
+//! - `length_bound`:   response length in code points within `[min, max]`
+//!
+//! Cross-validated against the Python golden by `scripts/cross_validate.py`.
 
 #![no_main]
 
 sp1_zkvm::entrypoint!(main);
 
+use pop_types::{Constraint, ProofOutput, ProofRequest, Violation};
+use sp1_zkvm::io;
+
+/// ASCII-only lower-casing, to match the reference for ASCII responses.
+/// (Non-ASCII letters are left unchanged — divergence documented for now.)
+fn ascii_lower(s: &str) -> String {
+    s.chars().map(|c| c.to_ascii_lowercase()).collect()
+}
+
+fn evaluate(req: &ProofRequest) -> ProofOutput {
+    let mut violations: Vec<Violation> = Vec::new();
+
+    for c in &req.constraints {
+        match c {
+            Constraint::KeywordBlock { name, keywords } => {
+                let text = ascii_lower(&req.response);
+                if let Some(hit) = keywords.iter().find(|kw| text.contains(kw.as_str())) {
+                    violations.push(Violation {
+                        rule: name.clone(),
+                        kind: "keyword_block".to_string(),
+                        evidence: hit.clone(),
+                    });
+                }
+            }
+            Constraint::LengthBound { name, min, max } => {
+                let n = req.response.chars().count();
+                if n < *min as usize || n > *max as usize {
+                    violations.push(Violation {
+                        rule: name.clone(),
+                        kind: "length_bound".to_string(),
+                        evidence: format!("len={}", n),
+                    });
+                }
+            }
+        }
+    }
+
+    ProofOutput {
+        passed: violations.is_empty(),
+        violations,
+    }
+}
+
 pub fn main() {
-    let n: u32 = sp1_zkvm::io::read();
-    sp1_zkvm::io::commit(&n);
+    let req: ProofRequest = io::read();
+    let out = evaluate(&req);
+    io::commit(&out);
 }

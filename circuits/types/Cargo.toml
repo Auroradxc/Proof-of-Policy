@@ -1,0 +1,8 @@
+[package]
+name = "pop-types"
+version = "0.1.0"
+edition = "2021"
+description = "Shared types for Proof-of-Policy: the ProofRequest consumed by the SP1 program and the ProofOutput it commits"
+
+[dependencies]
+serde = { version = "1", default-features = false, features = ["derive", "alloc"] }
