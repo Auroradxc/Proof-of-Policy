@@ -23,14 +23,15 @@
 | `keyword_block` | 响应不得包含任一关键词/短语（大小写不敏感） | `keywords: [str]` | W2 已实现 |
 | `length_bound` | 响应字符数在 `[min, max]` | `min, max: int` | W2 已实现 |
 | `pattern_block` | 响应不得匹配任一正则（re.search 语义） | `patterns: [str]` | W3 实现（NFA 路径验证） |
-| `format_check` | 响应必须可解析为声明格式 | `format: str` | stub |
-| `tool_arg_guard` | 工具调用参数不得含禁止字段 | `forbidden_fields: [str]` | stub |
-| `budget_bound` | 累计调用/token 预算 | `budget: int` | stub |
+| `format_check` | 响应必须可解析为声明格式（json/int/float） | `format: str` | W1.5 已实现(Python) |
+| `tool_arg_guard` | 工具调用参数不得含禁止字段（可限定 `tools`） | `forbidden_fields: [str]`, `tools?: [str]` | W1.5 已实现(Python) |
+| `budget_bound` | 累计调用次数/token 预算 | `budget: int`, `unit: calls\|tokens` | W1.5 已实现(Python) |
 
 ## 语义
 
 - `semantic="and"`：全部规则通过 → 合规；任一违反 → 违规并记录 `violations[].kind` 与证据。
 - 正则语义采用 Python `re.search`（参考实现）与 SP1 内电路 NFA 路径验证对齐（W3 设计，W4 实现时交叉验证）。
+- 内容规则（keyword/pattern/length/format）判定自由文本 `response`；`tool_arg_guard` / `budget_bound` 判定结构化 `Transcript`（`evaluate.check` 的入参可以是 `str` 或 `policydsl.model.Transcript`：含 `response`、`tool_calls: [ToolCall]`、`token_count`）。
 
 ## 编译输出
 

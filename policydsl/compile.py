@@ -60,6 +60,28 @@ def compile_policy(policy: Policy) -> Dict[str, Any]:
                 "patterns": [str(p) for p in rule.params["patterns"]],
                 "nfa": {"status": "compiled_in_circuit_wo3"},
             })
+        elif rule.kind == "format_check":
+            constraints.append({
+                "kind": "format_check",
+                "name": rule.name,
+                "format": rule.params["format"],
+            })
+        elif rule.kind == "tool_arg_guard":
+            c = {
+                "kind": "tool_arg_guard",
+                "name": rule.name,
+                "forbidden_fields": sorted(set(rule.params["forbidden_fields"])),
+            }
+            if rule.params.get("tools"):
+                c["tools"] = sorted(set(rule.params["tools"]))
+            constraints.append(c)
+        elif rule.kind == "budget_bound":
+            constraints.append({
+                "kind": "budget_bound",
+                "name": rule.name,
+                "budget": int(rule.params["budget"]),
+                "unit": rule.params.get("unit", "calls"),
+            })
         else:
             constraints.append({
                 "kind": rule.kind,

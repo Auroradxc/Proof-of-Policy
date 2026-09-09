@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.evaluate import check  # noqa: E402
-from policydsl.model import Policy, PolicyError, Rule  # noqa: E402
+from policydsl.model import Policy, PolicyError, Rule, ToolCall, Transcript  # noqa: E402
 
 
 class TestKeywordBlock(unittest.TestCase):
@@ -79,6 +79,98 @@ class TestValidation(unittest.TestCase):
     def test_bad_length_range(self):
         with self.assertRaises(PolicyError):
             Policy("p", "1", rules=[Rule("length_bound", "lb", {"min": 5, "max": 1})]).validate()
+
+
+class TestFormatCheck(unittest.TestCase):
+    def test_json_ok(self):
+        p = Policy("t", "1", rules=[Rule("format_check", "fc", {"format": "json"})])
+        self.assertTrue(check(p, '{"ok": true}').passed)
+
+    def test_json_bad(self):
+        p = Policy("t", "1", rules=[Rule("format_check", "fc", {"format": "json"})])
+        r = check(p, "not a json document")
+        self.assertFalse(r.passed)
+        self.assertEqual(r.violations[0].evidence_kind, "format")
+
+    def test_int_ok_and_bad(self):
+        ok = Policy("t", "1", rules=[Rule("format_check", "fc", {"format": "int"})])
+        bad = Policy("t", "1", rules=[Rule("format_check", "fc", {"format": "int"})])
+        self.assertTrue(check(ok, " 42 ").passed)
+        self.assertFalse(check(bad, "forty two").passed)
+
+    def test_unknown_format_rejected(self):
+        with self.assertRaises(PolicyError):
+            Policy("t", "1", rules=[Rule("format_check", "fc", {"format": "yaml"})]).validate()
+
+
+class TestToolArgGuard(unittest.TestCase):
+    def test_forbidden_field_present(self):
+        p = Policy("t", "1", rules=[
+            Rule("tool_arg_guard", "tag", {"forbidden_fields": ["password", "token"]})])
+        tx = Transcript(tool_calls=[ToolCall("search", {"q": "hi", "password": "secret"})])
+        r = check(p, tx)
+        self.assertFalse(r.passed)
+        self.assertEqual(r.violations[0].evidence_kind, "tool_arg")
+        self.assertEqual(r.violations[0].evidence["field"], "password")
+
+    def test_clean_passes(self):
+        p = Policy("t", "1", rules=[
+            Rule("tool_arg_guard", "tag", {"forbidden_fields": ["password", "token"]})])
+        tx = Transcript(tool_calls=[ToolCall("search", {"q": "hi"})])
+        self.assertTrue(check(p, tx).passed)
+
+    def test_tools_restriction(self):
+        # Only inspect calls whose tool name is listed; the offending call is on another tool.
+        p = Policy("t", "1", rules=[
+            Rule("tool_arg_guard", "tag",
+                 {"forbidden_fields": ["token"], "tools": ["search"]})])
+        tx = Transcript(tool_calls=[
+            ToolCall("http_get", {"url": "https://x?a", "token": "t"})])
+        self.assertTrue(check(p, tx).passed)
+
+
+class TestBudgetBound(unittest.TestCase):
+    def test_call_count_over(self):
+        p = Policy("t", "1", rules=[
+            Rule("budget_bound", "bb", {"budget": 2, "unit": "calls"})])
+        tx = Transcript(tool_calls=[ToolCall("a", {}), ToolCall("b", {}), ToolCall("c", {})])
+        r = check(p, tx)
+        self.assertFalse(r.passed)
+        self.assertEqual(r.violations[0].evidence["total"], 3)
+
+    def test_call_count_at_budget_passes(self):
+        p = Policy("t", "1", rules=[
+            Rule("budget_bound", "bb", {"budget": 2, "unit": "calls"})])
+        tx = Transcript(tool_calls=[ToolCall("a", {}), ToolCall("b", {})])
+        self.assertTrue(check(p, tx).passed)
+
+    def test_token_budget(self):
+        p = Policy("t", "1", rules=[
+            Rule("budget_bound", "bb", {"budget": 100, "unit": "tokens"})])
+        self.assertFalse(check(p, Transcript(tool_calls=[], token_count=150)).passed)
+        with self.assertRaises(PolicyError):
+            check(p, Transcript(tool_calls=[], token_count=None))
+
+    def test_bad_budget(self):
+        with self.assertRaises(PolicyError):
+            Policy("t", "1", rules=[
+                Rule("budget_bound", "bb", {"budget": -1, "unit": "calls"})]).validate()
+
+
+class TestCompileExtendedKinds(unittest.TestCase):
+    def test_new_kinds_compile(self):
+        p = Policy(
+            "p", "0.1", rules=[
+                Rule("format_check", "fc", {"format": "json"}),
+                Rule("tool_arg_guard", "tag",
+                     {"forbidden_fields": ["password", "token"], "tools": ["http_get"]}),
+                Rule("budget_bound", "bb", {"budget": 5, "unit": "calls"}),
+            ])
+        s = compile_policy(p)
+        kinds = [c["kind"] for c in s["constraints"]]
+        self.assertEqual(kinds, ["format_check", "tool_arg_guard", "budget_bound"])
+        self.assertEqual(s["constraints"][1]["forbidden_fields"], ["password", "token"])
+        self.assertEqual(s["constraints"][2]["budget"], 5)
 
 
 if __name__ == "__main__":

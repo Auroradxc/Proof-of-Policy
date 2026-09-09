@@ -1,22 +1,26 @@
 """Policy DSL core data model.
 
-Rule kinds (MVP scope, W2-W3; extended later):
+Rule kinds (Phase 1 scope):
   keyword_block : response must not contain any listed keyword/phrase
   length_bound  : response length (characters) within [min, max]
   pattern_block : response must not match any listed regex pattern
-  format_check  : response must parse as the declared format        [stub]
-  tool_arg_guard: tool-call args must not contain forbidden fields  [stub]
-  budget_bound  : cumulative call/token budget must hold            [stub]
+  format_check  : response must parse as the declared format
+  tool_arg_guard: tool-call args must not contain forbidden fields
+  budget_bound  : cumulative call/token budget must hold
 
 The Python layer is the *reference* semantics: it is what tests and the SP1
 program both target. ``compile()`` turns a Policy into the ConstraintSpec
 JSON that is the contract with the in-circuit prover.
-"""
+
+Content rules (keyword/pattern/length/format) judge a free-text ``response``;
+``tool_arg_guard`` / ``budget_bound`` judge a structured ``Transcript``
+(see ``evaluate.check``)."""
+
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 class PolicyError(ValueError):
@@ -44,8 +48,32 @@ class Rule:
             pats = self.params.get("patterns")
             if not isinstance(pats, list) or not pats:
                 raise PolicyError(f"rule '{self.name}': pattern_block needs non-empty 'patterns'")
-        # stubs (format_check / tool_arg_guard / budget_bound): accepted for now,
-        # flagged as not-implemented by the evaluator.
+        elif self.kind == "format_check":
+            fmt = self.params.get("format")
+            if fmt not in ("json", "int", "float"):
+                raise PolicyError(
+                    f"rule '{self.name}': format_check needs format in {{json,int,float}}, got {fmt!r}")
+        elif self.kind == "tool_arg_guard":
+            fields = self.params.get("forbidden_fields")
+            if not isinstance(fields, list) or not fields or not all(
+                isinstance(f, str) for f in fields
+            ):
+                raise PolicyError(
+                    f"rule '{self.name}': tool_arg_guard needs non-empty 'forbidden_fields' strings")
+            tools = self.params.get("tools")
+            if tools is not None and (
+                not isinstance(tools, list) or not all(isinstance(t, str) for t in tools)
+            ):
+                raise PolicyError(f"rule '{self.name}': optional 'tools' must be a list of str")
+        elif self.kind == "budget_bound":
+            budget = self.params.get("budget")
+            unit = self.params.get("unit", "calls")
+            if not isinstance(budget, int) or budget < 0:
+                raise PolicyError(f"rule '{self.name}': budget_bound needs int budget >= 0")
+            if unit not in ("calls", "tokens"):
+                raise PolicyError(f"rule '{self.name}': budget_bound unit must be 'calls' or 'tokens'")
+        else:
+            raise PolicyError(f"rule '{self.name}': unknown kind '{self.kind}'")
 
     def to_dict(self) -> Dict[str, Any]:
         return {"kind": self.kind, "name": self.name, "params": self.params}
@@ -95,3 +123,26 @@ class CheckResult:
             "violations": [v.to_dict() for v in self.violations],
             "notes": self.notes,
         }
+
+
+@dataclass
+class ToolCall:
+    """A single tool invocation inside an agent trace."""
+
+    name: str
+    args: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Transcript:
+    """Structured input for reference evaluation.
+
+    Content rules (keyword/pattern/length/format) judge ``response``;
+    ``tool_arg_guard`` judges ``tool_calls``; ``budget_bound`` judges the
+    cumulative call count (``len(tool_calls)``) or ``token_count`` when
+    ``unit == "tokens"``.
+    """
+
+    response: Optional[str] = None
+    tool_calls: List[ToolCall] = field(default_factory=list)
+    token_count: Optional[int] = None

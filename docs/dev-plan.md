@@ -33,7 +33,7 @@
 ### Phase 1 · 规则原语补全（W2 收尾）✅ keyword/length 已闭环
 - [x] C：SP1 program 内 keyword_block / length_bound 判定（新增 `circuits/types` 共享 ProofRequest/ProofOutput）
 - [x] Python 与 SP1 交叉验证一致：`scripts/cross_validate.py`，**5/5 向量匹配**（clean/命中/大小写/超长/超短）
-- [ ] A：`format_check`、`tool_arg_guard`、`budget_bound` 的 Python 校验/判定（随 Phase 2/3 视需补，非本轮）
+- [x] A：`format_check`/`tool_arg_guard`/`budget_bound` 的 Python 校验+参考判定已实现（新增 `Transcript`/`ToolCall` 结构化输入，23 单测全绿）；**入电路留待 Phase 2/3**
 
 ### Phase 2 · 字符串/PII + NFA（W3）
 - [ ] B：PII 规则（email/phone/secret 起步，IBAN 视时间）与校验位参考实现
