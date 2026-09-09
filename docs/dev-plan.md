@@ -44,11 +44,21 @@
 - 注：MVP 走「zkVM 内跑自实现最小 NFA」保证健全性（计划允许该路线）；zk-regex 式「离线 witness 路径」留作 E4 性能优化。
 - 单测：38 全绿（新增 NFA/PII 用例）
 
-### Phase 3 · 策略编译器 + 透明模式 MVP ★ 必达（W4）
-- [ ] A：DSL→约束编译框架（切片/合并，and，违规定位）
-- [ ] C：ProofRequest serde；SP1 完整判定 + commit；script 出证/宿主验证
-- [ ] `eu-ai-act-v1`、`finance-redaction-v1` 端到端
-- [ ] **PoP v0**：真实响应→证明→独立验证，演示给导师
+### Phase 3 · 策略编译器 + 透明模式 MVP ★ 必达（W4）✅
+- [x] A：DSL→ConstraintSpec→ProofRequest 编译框架（新增 `policydsl/serialize.py`，keyword/length/pattern 单一来源映射，其余 kind fail-fast）
+- [x] C：ProofRequest serde；`types::evaluate` 全约束判定（keyword/length/**pattern(NFA)**）+ commit；script 出证 + 宿主 verify；`--check` 宿主快速路径
+- [x] 端到端 demo：`scripts/prove_policy.py`（pack+response → golden → host check → 真实 SP1 证明 → verify → 比对）
+- [x] `eu-ai-act-v1`(合规 pass) 与 `finance-redaction-v1`(含凭证 violate) 各出证 **PASS**（0 与 1 违规，均与 golden 一致）
+- [x] 单测 40 全绿（含 serialize 映射）
+- ⏳ 链上 verify / REST：按计划归 Phase 5（W6），MVP 以 SP1 宿主验证为验收
+
+**MVP 验收记录（对照 8 周计划 W4★）**
+| 验收标准 | 结果 |
+|---|---|
+| 真实响应 → 生成证明 | ✅ eu-ai-act-v1 / finance-redaction-v1 均生成 Core 证明（~70s） |
+| 独立验证 | ✅ `pop-script` 用 vkey verify；ProofOutput 与 Python golden 一致 |
+| 违规定位 | ✅ 违规证明含 rule+kind+evidence（如 no_credentials/pattern_block） |
+| 交付 PoP v0（透明模式） | ✅（链上/证书属 Phase 5，私有模式属 Phase 4） |
 
 ### Phase 4 · 私有模式 + 选择性披露（W5，尽力项）
 - [ ] `policydsl/commit.py`：承诺 + 证据类型化切片

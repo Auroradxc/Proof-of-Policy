@@ -43,4 +43,5 @@ SP1_PROVER=cpu cargo run --release --bin pop-script -- 42
    共享类型在 `circuits/types`；与 Python golden 交叉验证 `scripts/cross_validate.py`（5/5 通过）。
 2. ✅ **Phase 2 已完成**：`PatternBlock` 入电路——`policydsl.nfa` 编译 pattern→NFA spec，`pop-types::nfa_match`
    (no_std Pike VM) 判定；PII 规则(`policydsl/pii.py`)+`pii_redaction_v1` 包；host 7/7 + 真实证明 7/7。
-3. 透明模式 MVP：公开响应 → 策略电路 → 证明 → 验证（PoP v0，Phase 3）。
+3. ✅ **Phase 3 已完成（透明模式 MVP）**：`policydsl.serialize` 映射 ConstraintSpec→ProofRequest；`scripts/prove_policy.py`
+   对 `eu-ai-act-v1`(pass) / `finance-redaction-v1`(violate) 真实出证并验证，与 golden 一致（MVP 验收见 docs/dev-plan.md）。

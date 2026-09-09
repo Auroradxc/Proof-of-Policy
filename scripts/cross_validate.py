@@ -29,6 +29,7 @@ sys.path.insert(0, str(REPO))
 from policydsl.compile import compile_policy
 from policydsl.evaluate import check
 from policydsl.model import Policy, Rule
+from policydsl.serialize import spec_to_rust_constraints
 from policydsl import pii
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
@@ -65,26 +66,6 @@ def vectors() -> list[tuple]:
         ("secret_hit", pii_secret, "Rotate the key sk-abcdefghijklmnopqrstuvwxyz now."),
         ("secret_clean", pii_secret, "All credentials have been rotated."),
     ]
-
-
-def policy_to_rust_constraints(spec: dict) -> list[dict]:
-    """Map a ConstraintSpec's constraints to Rust serde enum JSON."""
-    out = []
-    for c in spec["constraints"]:
-        kind = c["kind"]
-        if kind == "keyword_block":
-            out.append({"KeywordBlock": {"name": c["name"], "keywords": c["keywords"]}})
-        elif kind == "length_bound":
-            out.append({"LengthBound": {"name": c["name"], "min": c["min"], "max": c["max"]}})
-        elif kind == "pattern_block":
-            out.append({"PatternBlock": {
-                "name": c["name"],
-                "patterns": c["patterns"],
-                "specs": c["nfa"]["compiled"],
-            }})
-        else:
-            raise NotImplementedError(f"Phase 1-2 covers keyword/length/pattern only, got {kind}")
-    return out
 
 
 def golden(policy: Policy, response: str) -> dict:
@@ -130,7 +111,7 @@ def main() -> int:
         payload["vectors"].append({
             "name": name,
             "response": response,
-            "constraints": policy_to_rust_constraints(spec),
+            "constraints": spec_to_rust_constraints(spec),
         })
         expected.append((name, golden(policy, response)))
 

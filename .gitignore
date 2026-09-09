@@ -8,5 +8,6 @@ scripts/vectors.json
 scripts/results.json
 scripts/results_check.json
 scripts/results_prove.json
+scripts/examples/out/
 .DS_Store
 *.log

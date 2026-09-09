@@ -1,0 +1,1 @@
+Attached is the API configuration. The new credential is sk-abcdefghijklmnopqrstuvwxyz; rotate it before Friday.
