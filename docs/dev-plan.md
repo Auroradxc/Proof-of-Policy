@@ -58,6 +58,7 @@
 | 真实响应 → 生成证明 | ✅ eu-ai-act-v1 / finance-redaction-v1 均生成 Core 证明（~70s） |
 | 独立验证 | ✅ `pop-script` 用 vkey verify；ProofOutput 与 Python golden 一致 |
 | 违规定位 | ✅ 违规证明含 rule+kind+evidence（如 no_credentials/pattern_block） |
+| 回归矩阵 | ✅ fast-host 9 组合跨 3 包全部一致（含 keyword+pattern、三路 PII 等**多违规**） |
 | 交付 PoP v0（透明模式） | ✅（链上/证书属 Phase 5，私有模式属 Phase 4） |
 
 ### Phase 4 · 私有模式 + 选择性披露（W5，尽力项）
