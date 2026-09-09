@@ -22,7 +22,7 @@
 |---|---|---|---|
 | `keyword_block` | 响应不得包含任一关键词/短语（大小写不敏感） | `keywords: [str]` | W2 已实现 |
 | `length_bound` | 响应字符数在 `[min, max]` | `min, max: int` | W2 已实现 |
-| `pattern_block` | 响应不得匹配任一正则（re.search 语义） | `patterns: [str]` | W3 实现（NFA 路径验证） |
+| `pattern_block` | 响应不得匹配任一正则（子串；正则须在受支持子集内） | `patterns: [str]` | W3 已实现（NFA 编译进 ConstraintSpec） |
 | `format_check` | 响应必须可解析为声明格式（json/int/float） | `format: str` | W1.5 已实现(Python) |
 | `tool_arg_guard` | 工具调用参数不得含禁止字段（可限定 `tools`） | `forbidden_fields: [str]`, `tools?: [str]` | W1.5 已实现(Python) |
 | `budget_bound` | 累计调用次数/token 预算 | `budget: int`, `unit: calls\|tokens` | W1.5 已实现(Python) |
@@ -30,7 +30,7 @@
 ## 语义
 
 - `semantic="and"`：全部规则通过 → 合规；任一违反 → 违规并记录 `violations[].kind` 与证据。
-- 正则语义采用 Python `re.search`（参考实现）与 SP1 内电路 NFA 路径验证对齐（W3 设计，W4 实现时交叉验证）。
+- `pattern_block` 语义 = **子串存在匹配即违规**（对齐 Python `re.search`）。参考判定用编译进 ConstraintSpec 的 NFA（`policydsl.nfa`），SP1 用同一份 NFA spec（`pop-types::nfa_match`）——保证跨层一致。受支持语法子集（字符类/转义/`.`/量词/分组/或）与 ASCII 语义见 `policydsl/nfa.py`；不支持语法（锚点、反向引用、环视）在编译时 fail-fast。
 - 内容规则（keyword/pattern/length/format）判定自由文本 `response`；`tool_arg_guard` / `budget_bound` 判定结构化 `Transcript`（`evaluate.check` 的入参可以是 `str` 或 `policydsl.model.Transcript`：含 `response`、`tool_calls: [ToolCall]`、`token_count`）。
 
 ## 编译输出

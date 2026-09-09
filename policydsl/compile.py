@@ -25,7 +25,8 @@ import hashlib
 import json
 from typing import Any, Dict
 
-from .model import Policy
+from . import nfa
+from .model import Policy, PolicyError
 
 SPEC_VERSION = "v1"
 
@@ -53,12 +54,22 @@ def compile_policy(policy: Policy) -> Dict[str, Any]:
                 "max": int(rule.params["max"]),
             })
         elif rule.kind == "pattern_block":
-            # NFA compilation lands in W3; carry the raw patterns + a marker.
+            # Compile each pattern to a serializable NFA (the cross-layer
+            # contract). Unsupported regex syntax fails fast at compile time.
+            pats = [str(p) for p in rule.params["patterns"]]
+            specs = []
+            for p in pats:
+                try:
+                    specs.append(nfa.compile_pattern(p))
+                except nfa.RegexSyntaxError as exc:
+                    raise PolicyError(
+                        f"rule '{rule.name}': pattern {p!r} not supported by the "
+                        f"NFA compiler ({exc})") from exc
             constraints.append({
                 "kind": "pattern_block",
                 "name": rule.name,
-                "patterns": [str(p) for p in rule.params["patterns"]],
-                "nfa": {"status": "compiled_in_circuit_wo3"},
+                "patterns": pats,
+                "nfa": {"compiled": specs},
             })
         elif rule.kind == "format_check":
             constraints.append({

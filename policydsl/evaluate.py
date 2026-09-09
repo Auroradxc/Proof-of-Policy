@@ -9,16 +9,17 @@ Inputs (``check`` accepts either):
   ``tool_calls`` (for ``tool_arg_guard``), and optionally ``token_count``
   (for ``budget_bound``/tokens).
 
-NOTE on determinism: proving requires deterministic evaluation. Python ``re``
-and the parsers below are deterministic for fixed inputs.
+NOTE on determinism: proving requires deterministic evaluation. Content rules
+judged here are deterministic for fixed inputs; ``pattern_block`` uses the
+compiled NFA (``policydsl.nfa``), the same contract the SP1 program consumes.
 """
 
 from __future__ import annotations
 
 import json
-import re
 from typing import List, Union
 
+from . import nfa
 from .model import CheckResult, Policy, PolicyError, Transcript, Violation
 
 Target = Union[str, Transcript]
@@ -81,7 +82,11 @@ def check(policy: Policy, target: Target) -> CheckResult:
             if tx.response is None:
                 raise PolicyError(f"rule '{rule.name}' (pattern_block) needs a transcript response")
             for pat in rule.params["patterns"]:
-                if re.search(str(pat), tx.response):
+                try:
+                    matched = nfa.match_search(nfa.compile_pattern(str(pat)), tx.response)
+                except nfa.RegexSyntaxError as exc:
+                    raise PolicyError(f"rule '{rule.name}': {exc}") from exc
+                if matched:
                     violations.append(Violation(rule, "pattern", pat))
                     break
 

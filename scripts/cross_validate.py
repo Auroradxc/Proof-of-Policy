@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Phase 1 cross-validation: Python golden (policydsl) vs SP1 in-circuit judging.
+"""Phase 1-2 cross-validation: Python golden (policydsl) vs SP1.
 
 For each test vector we:
-  1. build a Policy (keyword_block / length_bound) and compute the reference
-     decision via policydsl.evaluate.check (the golden);
+  1. build a Policy and compute the reference decision via policydsl.evaluate
+     (the golden; pattern_block judged by the compiled NFA == the contract);
   2. compile the policy to a ConstraintSpec and emit a Rust-side vectors.json
-     (serde externally-tagged Constraint) for the SP1 driver;
-  3. run circuits/target/release/pop-script to prove each vector and read back
-     the committed ProofOutput;
-  4. assert SP1's `passed` and the set of violated rules match the golden.
+     (serde externally-tagged Constraint: KeywordBlock / LengthBound /
+     PatternBlock) for the SP1 driver;
+  3a. HOST CHECK (fast, all vectors): pop-script --check  → pop-types::evaluate
+  3b. PROVE (real proofs, all vectors): pop-script            → guest ProofOutput
+  4. assert passed + violated-rule set match the golden in both modes.
 
 Run from the repo root:
   SP1_PROVER=cpu python3 scripts/cross_validate.py
@@ -28,46 +29,41 @@ sys.path.insert(0, str(REPO))
 from policydsl.compile import compile_policy
 from policydsl.evaluate import check
 from policydsl.model import Policy, Rule
+from policydsl import pii
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
 # python Violation.evidence_kind -> guest kind string
-KIND_MAP = {"keyword": "keyword_block", "length": "length_bound"}
+KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block"}
 
 
-def vectors() -> list[dict]:
-    """Return a list of (name, policy, response) triples (ASCII-only inputs)."""
-    clean = Policy(
+def vectors() -> list[tuple]:
+    """Return (name, policy, response) triples. Inputs are ASCII-only."""
+    base = Policy(
         id="x", version="0.1.0", semantic="and",
         rules=[
             Rule("keyword_block", "no_bad", {"keywords": ["weaponize", "exploit", "doxxing"]}),
             Rule("length_bound", "len_ok", {"min": 1, "max": 2000}),
         ],
     )
-    short = Policy(
-        id="y", version="0.1.0", semantic="and",
-        rules=[Rule("length_bound", "len_short", {"min": 50, "max": 200})],
+    pii_email = Policy(
+        id="p1", version="0.1.0", semantic="and",
+        rules=[Rule("pattern_block", "no_email", {"patterns": [pii.PII_PATTERNS["email"]]})],
     )
-    only_kw = Policy(
-        id="z", version="0.1.0", semantic="and",
-        rules=[Rule("keyword_block", "no_leak", {"keywords": ["api-key", "Bearer"]})],
+    pii_secret = Policy(
+        id="p2", version="0.1.0", semantic="and",
+        rules=[Rule("pattern_block", "no_secret", {"patterns": [pii.PII_PATTERNS["secret_key"]]})],
     )
     return [
-        ("clean_pass",
-         clean,
+        ("clean_pass", base,
          "The service processed your request and will reply shortly. Thank you."),
-        ("keyword_hit",
-         clean,
+        ("keyword_hit", base,
          "Here is a step-by-step guide on how to exploit the login endpoint."),
-        ("keyword_case_insensitive",
-         only_kw,
-         "Authorization: BeArEr sk-abc123DEF is required to call the API."),
-        ("length_too_short",
-         short,
-         "ok."),  # len 3 < min 50
-        ("length_too_long",
-         clean,
-         "x" * 2500),  # > max 2000
+        ("length_too_long", base, "x" * 2500),
+        ("email_hit", pii_email, "My details: reach dev@example.com anytime."),
+        ("email_clean", pii_email, "This guidance contains no addresses or mailboxes."),
+        ("secret_hit", pii_secret, "Rotate the key sk-abcdefghijklmnopqrstuvwxyz now."),
+        ("secret_clean", pii_secret, "All credentials have been rotated."),
     ]
 
 
@@ -80,21 +76,56 @@ def policy_to_rust_constraints(spec: dict) -> list[dict]:
             out.append({"KeywordBlock": {"name": c["name"], "keywords": c["keywords"]}})
         elif kind == "length_bound":
             out.append({"LengthBound": {"name": c["name"], "min": c["min"], "max": c["max"]}})
+        elif kind == "pattern_block":
+            out.append({"PatternBlock": {
+                "name": c["name"],
+                "patterns": c["patterns"],
+                "specs": c["nfa"]["compiled"],
+            }})
         else:
-            raise NotImplementedError(f"Phase 1 covers keyword/length only, got {kind}")
+            raise NotImplementedError(f"Phase 1-2 covers keyword/length/pattern only, got {kind}")
     return out
 
 
 def golden(policy: Policy, response: str) -> dict:
     res = check(policy, response)
-    rules = sorted({(v.rule.name, KIND_MAP.get(v.evidence_kind, v.evidence_kind)) for v in res.violations})
+    rules = sorted({(v.rule.name, KIND_MAP.get(v.evidence_kind, v.evidence_kind))
+                    for v in res.violations})
     return {"passed": res.passed, "violations": rules}
 
 
+def run_pop(mode: str, vectors_path: Path, out_path: Path) -> None:
+    args = [str(POP_SCRIPT)]
+    if mode == "check":
+        args.append("--check")
+    args += ["--vectors", str(vectors_path), "--out", str(out_path)]
+    env = dict(os.environ, SP1_PROVER="cpu")
+    subprocess.run(args, env=env, check=True, cwd=str(REPO))
+
+
+def compare(results: list, expected: list) -> tuple[int, list[str]]:
+    ok_flags, detail = [], []
+    for (name, exp), got in zip(expected, results, strict=True):
+        got_rules = sorted({(v["rule"], v["kind"]) for v in got["violations"]})
+        ok = got["passed"] == exp["passed"] and got_rules == exp["violations"]
+        ok_flags.append(ok)
+        detail.append((name, ok, exp, got))
+    return sum(ok_flags), detail
+
+
+def report(kind: str, ok_flags: list, detail: list) -> None:
+    for (name, ok, exp, got) in detail:
+        print(f"[{'PASS' if ok else 'FAIL'}] {kind:5s} {name:20s} "
+              f"golden.passed={exp['passed']} sp1.passed={got['passed']}  "
+              f"rules={exp['violations']} vs {[(v['rule'], v['kind']) for v in got['violations']]}")
+    print(f"{kind}: {sum(ok_flags)}/{len(ok_flags)} matched")
+
+
 def main() -> int:
+    vectors_in = vectors()
     payload = {"vectors": []}
     expected = []
-    for name, policy, response in vectors():
+    for name, policy, response in vectors_in:
         spec = compile_policy(policy)
         payload["vectors"].append({
             "name": name,
@@ -103,31 +134,33 @@ def main() -> int:
         })
         expected.append((name, golden(policy, response)))
 
-    vectors_path = REPO / "scripts" / "vectors.json"
-    results_path = REPO / "scripts" / "results.json"
-    vectors_path.write_text(json.dumps(payload, indent=2))
-
     if not POP_SCRIPT.exists():
         print(f"error: driver not built: {POP_SCRIPT}\n  cd circuits && cargo build --release -p pop-script")
         return 2
 
-    env = dict(os.environ, SP1_PROVER="cpu")
-    print(f"proving {len(expected)} vector(s) via {POP_SCRIPT.name} ...")
-    subprocess.run(
-        [str(POP_SCRIPT), "--vectors", str(vectors_path), "--out", str(results_path)],
-        env=env, check=True, cwd=str(REPO),
-    )
+    scripts = REPO / "scripts"
+    vectors_path = scripts / "vectors.json"
+    vectors_path.write_text(json.dumps(payload, indent=2))
+    print(f"{len(expected)} vectors, mode: host-check (all) + real proofs (all)")
 
-    results = json.loads(results_path.read_text())
-    n_pass = 0
-    for (name, exp), got in zip(expected, results, strict=True):
-        got_rules = sorted({(v["rule"], v["kind"]) for v in got["violations"]})
-        ok = got["passed"] == exp["passed"] and got_rules == exp["violations"]
-        n_pass += ok
-        print(f"[{'PASS' if ok else 'FAIL'}] {name:26s} golden.passed={exp['passed']} "
-              f"sp1.passed={got['passed']}  golden.rules={exp['violations']} sp1.rules={got_rules}")
-    print(f"\n{'-'*60}\n{n_pass}/{len(expected)} vectors matched")
-    return 0 if n_pass == len(expected) else 1
+    results_check = scripts / "results_check.json"
+    print("--- host check (pop-types::evaluate, no proof) ---")
+    run_pop("check", vectors_path, results_check)
+    rc = json.loads(results_check.read_text())
+    n1, d1 = compare(rc, expected)
+    report("check", [ok for _, ok, _, _ in d1], d1)
+
+    results_prove = scripts / "results_prove.json"
+    print("--- real proofs (SP1 guest) ---")
+    run_pop("prove", vectors_path, results_prove)
+    rp = json.loads(results_prove.read_text())
+    n2, d2 = compare(rp, expected)
+    report("prove", [ok for _, ok, _, _ in d2], d2)
+
+    ok = n1 == len(expected) and n2 == len(expected)
+    print("\n" + "=" * 60)
+    print(f"RESULT: host {n1}/{len(expected)}  prove {n2}/{len(expected)}  {'PASS' if ok else 'FAIL'}")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

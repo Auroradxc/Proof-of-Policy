@@ -1,0 +1,44 @@
+{
+  "id": "pii-redaction-v1",
+  "version": "0.1.0",
+  "description": "PII redaction example pack: block emails, phone numbers, and secret credentials in agent output.",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "pattern_block",
+      "name": "no_email",
+      "params": {
+        "patterns": [
+          "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+        ]
+      }
+    },
+    {
+      "kind": "pattern_block",
+      "name": "no_phone",
+      "params": {
+        "patterns": [
+          "\\+?[0-9 ()-]{7,}"
+        ]
+      }
+    },
+    {
+      "kind": "pattern_block",
+      "name": "no_secret_key",
+      "params": {
+        "patterns": [
+          "sk-[A-Za-z0-9]{16,}"
+        ]
+      }
+    },
+    {
+      "kind": "pattern_block",
+      "name": "no_bearer_token",
+      "params": {
+        "patterns": [
+          "Bearer [A-Za-z0-9._~+/=-]{16,}"
+        ]
+      }
+    }
+  ]
+}

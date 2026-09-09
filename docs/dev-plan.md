@@ -35,12 +35,14 @@
 - [x] Python 与 SP1 交叉验证一致：`scripts/cross_validate.py`，**5/5 向量匹配**（clean/命中/大小写/超长/超短）
 - [x] A：`format_check`/`tool_arg_guard`/`budget_bound` 的 Python 校验+参考判定已实现（新增 `Transcript`/`ToolCall` 结构化输入，23 单测全绿）；**入电路留待 Phase 2/3**
 
-### Phase 2 · 字符串/PII + NFA（W3）
-- [ ] B：PII 规则（email/phone/secret 起步，IBAN 视时间）与校验位参考实现
-- [ ] A：`compile.py` 填真 NFA（Thompson→transition 表，离线匹配产 witness path）
-- [ ] C：SP1 内 NFA 路径验证
-- [ ] ≥2–3 类 PII 规则双端判定一致
-- ⚠️ 退路：正则过重时保 email/phone/secret，IBAN 后置
+### Phase 2 · 字符串/PII + NFA（W3）✅
+- [x] A：`policydsl/nfa.py` 最小正则→NFA 引擎（子集+ASCII；Thompson→可序列化 spec；Pike VM unanchored search）；不支持语法 fail-fast；NFA vs `re.search` **264 项语料全一致**
+- [x] A：`compile.py` pattern→NFA 写入 ConstraintSpec；`evaluate.py` pattern_block 改用 NFA 判定
+- [x] B：PII 规则（email/phone/secret_key/bearer_token）+ IBAN MOD-97 参考校验 → `policydsl/pii.py`，策略包 `pii_redaction_v1.json`（由 canonical 生成）
+- [x] C：Rust no_std NFA 匹配器（`types::nfa_match`）+ `PatternBlock` 入 `types::evaluate`；guest 只 read→evaluate→commit
+- [x] 交叉验证：host-check **7/7** + 真实证明 **7/7**（含 email/secret 命中/洁净）
+- 注：MVP 走「zkVM 内跑自实现最小 NFA」保证健全性（计划允许该路线）；zk-regex 式「离线 witness 路径」留作 E4 性能优化。
+- 单测：38 全绿（新增 NFA/PII 用例）
 
 ### Phase 3 · 策略编译器 + 透明模式 MVP ★ 必达（W4）
 - [ ] A：DSL→约束编译框架（切片/合并，and，违规定位）
