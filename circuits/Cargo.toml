@@ -1,0 +1,9 @@
+[workspace]
+members = ["program", "script"]
+resolver = "2"
+
+# sp1-prover 6.7.0 calls `TempDir::keep()`, which upstream tempfile 3.x does
+# not provide. We vendor a patched tempfile (see patches/tempfile) until SP1
+# upstream resolves this; without it sp1-sdk / sp1-prover fail to compile.
+[patch.crates-io]
+tempfile = { path = "patches/tempfile" }

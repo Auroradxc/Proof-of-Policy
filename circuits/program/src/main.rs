@@ -1,20 +1,15 @@
-//! SP1 zkVM program (skeleton).
+//! SP1 zkVM program (Phase 0 placeholder).
 //!
-//! W4 replaces this with the real logic: read a serialized ProofRequest
-//! (response bytes + ConstraintSpec JSON), evaluate the compiled constraints
-//! inside the zkVM, and commit `passed` (+ optional violation evidence) as
-//! the public output.
-//!
-//! NOTE: not buildable yet — Rust/SP1 toolchain not installed on this machine.
-//! See ../README.md for install steps and W4 tasks.
+//! Reads a `u32` and commits it back. In Phase 1-3 this is replaced by the
+//! real logic: read a serialized ProofRequest (response + ConstraintSpec),
+//! evaluate the compiled constraints inside the zkVM, and commit
+//! `passed` (+ optional violation evidence) as public output.
 
 #![no_main]
 
 sp1_zkvm::entrypoint!(main);
 
 pub fn main() {
-    // Placeholder: read a boolean and commit it back. In W4 this becomes
-    // `passed: bool` computed by evaluating the ConstraintSpec over `response`.
-    let passed: bool = sp1_zkvm::io::read();
-    sp1_zkvm::io::commit(&passed);
+    let n: u32 = sp1_zkvm::io::read();
+    sp1_zkvm::io::commit(&n);
 }

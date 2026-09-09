@@ -4,10 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "SP1 driver: generate and verify Proof-of-Policy proofs"
 
-# Skeleton — not buildable until W4. Pin sp1-sdk to the version matching your
-# installed SP1 CLI.
 [dependencies]
-sp1-sdk = { version = "3" }
-# serde, bincode, clap are added in W4.
+sp1-sdk = { version = "6.7.0", features = ["blocking", "native-gnark"] }
+tracing = "0.1"
 
-[workspace]
+[build-dependencies]
+sp1-build = "6.7.0"

@@ -1,24 +1,44 @@
 # circuits/ —— SP1 证明层（Rust）
 
-> **当前状态（2026-08-03）：骨架，不可构建**。本机未安装 Rust/SP1。
-> W4 启用本层；在此之前使用 `policydsl/`（Python）完成策略作者与参考评估。
+> 状态（2026-09-10）：**Phase 0 已完成**，本层对齐 SP1 **v6.7.0**，占位 program 可出证+验证。
 
-## 结构
+## 结构（SP1 v6 workspace）
 
-- `program/` — SP1 **zkVM 程序**：读入 ProofRequest（响应 + ConstraintSpec），重放约束判定，`commit(passed, evidence)`。
-- `script/`  — SP1 **驱动**：调用 `sp1-sdk` 生成证明；宿主机验证；可选链上验证（`sp1-contracts`）。
-
-## 安装（W4 前执行）
-
-```bash
-# 见 SP1 官方文档（Windows 用户按官方指引）
-curl -L https://sp1.succinct.xyz | bash
-cargo prove install
+```
+circuits/
+├── Cargo.toml          # workspace(members=program,script) + [patch.crates-io] tempfile
+├── rust-toolchain      # channel = stable（宿主）
+├── patches/tempfile    # vendored tempfile 3.19.1 + TempDir::keep()（见下）
+├── program/            # SP1 zkVM 程序（guest）：读 ProofRequest → 判定约束 → commit
+│   └── src/main.rs     # Phase 0 占位：读 u32 → commit（Phase 1-3 换成真判定）
+└── script/             # SP1 驱动（host）：build.rs 编译 guest → prove → verify
+    ├── build.rs        # sp1_build::build_program_with_args("../program")
+    └── src/main.rs     # 占位驱动：SP1_PROVER=cpu 出证并验证
 ```
 
-## W4 任务（打开本层时）
+## 环境要求
 
-1. 定义 ProofRequest 的 serde 结构（与 `docs/architecture.md` 的 ConstraintSpec 对齐）。
-2. `program/src/main.rs`：实现每个约束 kind 的判定（keyword lookup / length range / NFA 路径验证）。
-3. `script/src/main.rs`：加载 ProofRequest → `prove` → 输出 proof + public output → 宿主机 verify。
-4. 交叉验证：对同一响应，比较 SP1 判定与 `policydsl.evaluate()` 的 golden。
+- Rust stable + SP1 cargo-prove（v6）+ succinct 工具链（`cargo prove install-toolchain`）。
+- **Go ≥1.24**：`sp1-sdk` 的 `native-gnark` 特征用 Go 编译 gnark 库（CPU 出证需要），构建时保证 `GOPROXY` 可用。
+- **内存**：CPU Core 真实证明峰值约 9–10GB，建议 ≥12GB（本项目 WSL 已配 12GB）。
+- **tempfile 补丁**：sp1-prover 6.7.0 调用上游 tempfile 3.x 不存在的 `TempDir::keep()`，故 vendored `patches/tempfile`；勿删 `[patch.crates-io]`。
+
+## 构建与运行（Phase 0 验证）
+
+```bash
+# 1) 编译 guest（riscv64im-succinct-zkvm-elf）
+cd program && cargo prove build
+
+# 2) 出证 + 宿主验证（占位程序，输入 n）
+cd ../script
+SP1_PROVER=cpu cargo run --release --bin pop-script -- 42
+# → Successfully generated proof! / Successfully verified proof!
+```
+
+> `SP1_PROVER=cpu`（v6 合法值 cpu/cuda/mock/light/network）。Windows/WSL 见仓库外备忘 `docs/dev-plan.md` 第 4 节。
+
+## Phase 1-3 路线（对应 docs/dev-plan.md）
+
+1. program：ProofRequest(serde) + 逐约束 kind 判定（keyword/length），与 `policydsl.evaluate()` 交叉验证；
+2. PatternBlock/NFA 路径验证入电路；
+3. 透明模式 MVP：公开响应 → 策略电路 → 证明 → 验证（PoP v0）。
