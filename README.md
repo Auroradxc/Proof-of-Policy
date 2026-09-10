@@ -28,8 +28,8 @@
 ## 快速开始（无需 Rust）
 
 ```bash
-# 1) 参考评估：响应是否满足策略？
-python -m policydsl check policy_packs/eu_ai_act_v1.json example_response.txt
+# 1) 参考评估：响应是否满足策略？（响应在前，--policy 指定策略包）
+python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
 
 # 2) 编译策略包 → ConstraintSpec（W4 之后交给 SP1 prover）
 python -m policydsl compile policy_packs/eu_ai_act_v1.json
@@ -64,6 +64,8 @@ SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附真实 Core 证明（~6
 #   → [PASS] chain_anchored 12/12 digests on chain … (12 cross-checked) + 反例对照 anchoredAt=0
 ```
 
+- 📚 **分板块模块文档（按功能读代码的入口）**：**`docs/modules/`** —— 总览 [`README.md`](docs/modules/README.md)，
+  以及 01 策略 DSL / 02 隐私与承诺 / 03 合规证书 / 04 锚定与审计 / 05 ZK 电路 / 06 框架集成 / 07 CLI 与脚本 / 08 测试与评测
 - 📄 端到端复现指南（环境 → 一次合规证明 → 验证）：**`docs/reproduce.md`**
 - 🖼 演示报告（截图）：`docs/demo/session_report.html`、`docs/demo/session_summary.png`、`docs/demo/verify_result.png`
 - 📘 分阶段代码计划：`docs/dev-plan.md` · P7 收尾计划：`docs/plan-p7.md` · 安全模型：`docs/security-model.md` · 信任-成本四象限：`docs/quadrant.md`
@@ -79,10 +81,13 @@ SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附真实 Core 证明（~6
 zk-policy/
 ├── policydsl/            # Python DSL + 参考评估 + 私密/证书/锚定 + 框架适配（langchain/langgraph/mcp）
 ├── policy_packs/         # 示例策略包（JSON）
-├── circuits/             # SP1 程序与驱动（Rust，v6 workspace）
-├── scripts/              # 交叉验证 / demo / 证书签发与验证 / 安装脚本
+├── circuits/             # SP1 程序与驱动（Rust，v6 workspace：types/program/script/verifier）
+├── contracts/            # Anchor.sol + 入库 artifact（Anchor.json，部署无需 solc）
+├── scripts/              # 交叉验证 / demo / 证书签发与验证 / 链上锚定 / 安装脚本
 ├── tests/                # 单测与集成测试（unittest，stdlib + 可选框架）
-├── docs/                 # 架构 / DSL / 开发计划 / EU AI Act 映射
+├── bench/                # 评测（周期数 / 证明成本 / 验证成本；结果在 bench/results/）
+├── paper/                # 论文初稿
+├── docs/                 # 架构 / DSL / 复现指南 / 安全模型 / **modules/（分板块模块文档）**
 └── roadmap.md            # 8 周开发映射
 ```
 

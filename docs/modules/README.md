@@ -1,0 +1,151 @@
+# 模块文档总览
+
+> 本目录按**功能板块**拆解 zk-policy 的实现：每个板块一份文档，包含
+> 「职责 / 文件清单 / 关键数据结构 / 函数级 API / 不变量与边界 / 测试对应 / 扩展指引」。
+> 与既有文档的分工：`docs/architecture.md` 讲**分层与契约**（一页纸），
+> 本目录讲**代码怎么落地**；`docs/security-model.md` 讲**安全论证**；
+> `docs/reproduce.md` 讲**怎么跑起来**。
+
+---
+
+## 1. 一句话理解这个项目
+
+zk-policy（Proof-of-Policy，PoP）证明的是：
+**「某条 agent 响应 `T` 满足某个公开策略 `π`」**，且不需要 TEE/硬件信任。
+为此它把「策略」编译成**可序列化的约束契约**，让 **Python 参考层**与 **SP1 zkVM 内的 Rust 程序**
+消费同一份契约、得出同一个判定，再把这个判定包成**可签名、可锚定、可第三方核验的证书**。
+
+三个关键设计决定了全仓库的形状：
+
+1. **唯一跨层契约 `ConstraintSpec`** —— 编译产物是 JSON，两侧都解释它（见 `02`）。
+2. **参考实现 (golden) 与电路实现成对存在** —— 每个规则类型都有 Python 版与 Rust 版，
+   并由 `scripts/cross_validate.py` 交叉验证逐向量一致（见 `01`/`05`）。
+3. **证书只绑定「哈希」** —— 策略哈希、vkey 哈希、证明哈希、证书摘要；验证方全部**重算**（见 `03`/`04`）。
+
+---
+
+## 2. 仓库布局
+
+```
+zk-policy/
+├── policydsl/                # Python 参考层（仅标准库；框架适配除外）
+│   ├── model.py              #   领域模型：Rule / Policy / Violation / CheckResult / Transcript
+│   ├── compile.py            #   Policy → ConstraintSpec（含 sha256 绑定哈希）
+│   ├── evaluate.py           #   「golden」参考判定器（对应电路内 pop-types::evaluate）
+│   ├── serialize.py          #   ConstraintSpec → serde 外部标签枚举 JSON
+│   ├── nfa.py                #   正则子集 → 可序列化 NFA + Pike VM（唯一的正则编译器）
+│   ├── pii.py                #   规范 PII 模式 + IBAN MOD-97 校验位
+│   ├── commit.py             #   私有模式原语（承诺 / 选择性披露 / 可证明脱敏 / 证据开示）
+│   ├── cert.py               #   合规证书（DSSE 风格信封 + HMAC 演示签名器）
+│   ├── anchor.py             #   锚定后端：文件哈希链账本 / 链上 Anchor 合约
+│   ├── agent.py              #   框架无关钩子 AgentMonitor（生成路径 + 工具路径）
+│   ├── verifier.py           #   verifier-only 快路径判定（core 不能走快路径）
+│   ├── langchain_adapter.py  #   LangChain/LangGraph 回调（含流式证书与早停）
+│   ├── langgraph_adapter.py  #   LangGraph 节点包装 / astream_events 事件认证
+│   ├── mcp_adapter.py        #   MCP 工具守护（参数侧 + 结果侧，可飞行前拦截）
+│   └── __main__.py           #   CLI：compile / check
+├── circuits/                 # Rust + SP1 证明层（workspace）
+│   ├── types/                #   共享判定逻辑（no_std）：evaluate / evaluate_private / NFA
+│   ├── program/              #   zkVM guest：读 Job → run_job → commit(Outcome)
+│   ├── script/               #   宿主驱动 pop-script：--check / --execute / 出证 / --verify
+│   ├── verifier/             #   pop-verify：仅验证器二进制（无证明器状态）
+│   └── patches/              #   tempfile 补丁（sp1-prover 6.7.0 依赖 TempDir::keep）
+├── contracts/                # Anchor.sol + 已编译 artifact（Anchor.json，免 solc 部署）
+├── scripts/                  # 端到端脚本（demo / 交叉验证 / 出证 / 验证 / 安装）
+├── bench/                    # 评测（cycl数矩阵 / 证明成本 / 验证成本 / 对标）
+├── tests/                    # 单测与集成测试（143 passed / 3 skip）
+├── policy_packs/             # 示例策略包（EU AI Act / PII / 金融 / agent 内容与工具）
+└── docs/                     # 文档（本目录为分板块模块文档）
+```
+
+---
+
+## 3. 端到端数据流（带函数名）
+
+```
+① 策略编写        policy_packs/*.json
+                       │  model.Policy / model.Rule.validate
+                       ▼
+② 编译            compile.compile_policy(policy)
+                       │    ├─ nfa.compile_pattern()      正则→NFA
+                       │    └─ _canonical_hash(stable)    policy_hash
+                       ▼
+③ 契约            ConstraintSpec(JSON)  ←──── 唯一跨层契约
+                       │
+       ┌───────────────┴────────────────────────────┐
+       ▼（链下 golden）                              ▼（链上证明）
+④a  evaluate.check()                          ④b serialize.spec_to_rust_constraints()
+       │                                             │  → vectors.json
+       │                                             ▼
+       │                                       circuits/script (pop-script)
+       │                                             │  → pop-types::run_job
+       │                                             ▼
+       │                                       guest: commit(Outcome) + proof
+       │                                             │
+       └────────── cross_validate.py 交叉验证 ────────┘
+                       │
+                       ▼
+⑤ 证书            cert.build_payload(...) → cert.sign_payload(payload, key)
+                       │  policy_hash / vkey_hash / proof_sha256 / outcome
+                       ▼
+⑥ 锚定            anchor.backend_from_env(ledger, rpc, contract)
+                       │    ├─ FileLedgerBackend   哈希链账本（离线可验）
+                       │    └─ RpcAnchorBackend    contracts/Anchor.sol（公共时间戳）
+                       ▼
+⑦ 第三方核验      verify_cert.py / verify_session.py   ← 只持公开产物
+```
+
+---
+
+## 4. 板块索引
+
+| # | 文档 | 覆盖文件 | 一句话 |
+|---|---|---|---|
+| 01 | [策略 DSL 与编译](01-policy-dsl.md) | `model.py` `compile.py` `evaluate.py` `serialize.py` `pii.py` `nfa.py` `__init__.py` `__main__.py` | 把 JSON 策略变成可跨层消费的约束契约，并给出参考判定 |
+| 02 | [隐私与承诺](02-privacy-commitment.md) | `commit.py`（+ `nfa.py` 的区间计算） | 私有模式：承诺、选择性披露、可证明脱敏、证据开示 |
+| 03 | [合规证书](03-certificate.md) | `cert.py` `agent.py` | 把一次判定包成可签名、可重算哈希的 DSSE 信封 |
+| 04 | [锚定与审计](04-anchoring-audit.md) | `anchor.py` `contracts/` `verifier.py` | 防篡改记录：本地哈希链账本 + 链上存在性证明 |
+| 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/types` `program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证 |
+| 06 | [框架集成](06-frameworks.md) | `langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` | 把两个钩子接到真实 agent 框架上（含流式与飞行前拦截） |
+| 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/*` | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
+| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 143 个测试覆盖什么、评测数字怎么来的 |
+
+推荐阅读路径：
+
+- **想改策略/加规则**：01 → 05（两侧都要改）→ 08（补交叉验证用例）
+- **想接自己的 agent**：06 → 03 → 04
+- **想接自己的链/审计流程**：04 → 07（`anchor_e2e.sh` 是最小完整例子）
+- **只想复现数字**：`docs/reproduce.md` 与 08
+
+---
+
+## 5. 全局不变量
+
+贯穿全部模块、改代码时必须保持的五条：
+
+| # | 不变量 | 由什么保证 |
+|---|---|---|
+| I1 | **跨层判定一致**：同一 `ConstraintSpec` + 同一输入，Python golden 与 `pop-types` 结果逐字段相同 | `scripts/cross_validate.py`（host 14/14 + prove 14/14）、`tests/test_rules_incircuit.py` |
+| I2 | **契约哈希稳定**：语义相同 ⇒ `spec["sha256"]` 相同（键排序、紧凑分隔符、字符串排序去重小写化） | `compile._canonical_hash`、`cert.canonical` |
+| I3 | **ASCII 语义**：关键词大小写折叠、NFA 的 `\w\d\s` 都只在 ASCII 上定义，避免 Python `str.lower()` 与 Rust 的差异 | `commit._ascii_lower`、`types::ascii_lower`、`nfa.py` 模块注释 |
+| I4 | **不出电路就无法证明**：一个规则类型要么两侧都实现，要么 `serialize.spec_to_rust_constraints` 显式 `NotImplementedError`，绝不静默跳过 | `serialize.py` 的 `else: raise`；证书用 `zk: false` 标注链下规则 |
+| I5 | **先有事实再有记录**：链上交易成功之后才写本地账本 `meta.on_chain`，哈希链因此始终自洽 | `RpcAnchorBackend.anchor` |
+
+---
+
+## 6. 命令速查
+
+```bash
+# 只跑参考层（秒级，无需 Rust）
+python3 -m unittest discover tests -v            # 143 passed / 3 skip
+python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
+python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
+
+# 交叉验证（需要先构建 circuits，见 docs/reproduce.md §2）
+SP1_PROVER=cpu python3 scripts/cross_validate.py          # host / prove 各 14/14
+
+# 一条命令跑通端到端（含链上锚定）
+bash scripts/anchor_e2e.sh                                # 秒级，--prove 加真实证明
+```
+
+完整的复现步骤、环境要求与故障排查见 [`../reproduce.md`](../reproduce.md)。

@@ -1,5 +1,9 @@
 # 架构文档
 
+> 本文只讲**分层与契约**（一页纸）。按板块深入代码请读 [`modules/`](modules/README.md)：
+> 01 策略 DSL 与编译 · 02 隐私与承诺 · 03 合规证书 · 04 锚定与审计 ·
+> 05 ZK 电路层 · 06 框架集成 · 07 CLI 与脚本 · 08 测试与评测。
+
 ## 双层架构
 
 - **Python 层（链下）**：策略作者写 JSON 策略包 → `policydsl.compile()` 产出 **ConstraintSpec**（唯一的链上/链下契约）；`policydsl.evaluate()` 提供**参考判定**（golden），供单测与交叉验证使用。
@@ -39,12 +43,16 @@ response.txt ──────────────────────�
                                      host/链上 verify(passed, proof) ◄── 合规证书
 ```
 
-## 安全模型（W7 填充）
+## 安全模型
 
-- **合规健全性**：不满足 π 的响应无法产出被接受的证明（证明者不能伪造通过）。
-- **内容隐私**（W5 私有模式）：验证者看不到响应全文，只看到承诺与违规定位。
-- **不可伪造**：无原响应的攻击者不能伪造「通过」证明。
-- 形式化定义将在 W7 写入 `docs/security-model.md`（扩展 VDR 的 Leak/Unforgeability 实验到多规则策略）。
+- **合规健全性**：不满足 π 的响应无法产出被接受的证明（证明者不能伪造通过）——**六类规则均已入电路**。
+- **内容隐私**（私有模式）：验证者看不到响应全文，只看到承诺与违规定位（+ 可证明的脱敏）。
+- **不可伪造**：无原响应的攻击者不能伪造「通过」证明；证据开示需 `SHA256(片段)=承诺`。
+- **记录完整性**：哈希链账本 + 链上锚定（`cert_digest` 登记进 `contracts/Anchor.sol`）。
+
+完整定义、归约论证与对应实验见 [`security-model.md`](security-model.md)；
+实现层面的落点见 [`modules/03-certificate.md`](modules/03-certificate.md) 与
+[`modules/04-anchoring-audit.md`](modules/04-anchoring-audit.md)。
 
 ## 与既有项目的关系
 
