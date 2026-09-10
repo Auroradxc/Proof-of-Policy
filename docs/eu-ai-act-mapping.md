@@ -31,12 +31,13 @@ payload = {
   ai_act{art12_record_keeping, art13_transparency}
 }
 envelope = DSSE-like { payloadType, payload(b64), signatures }   # 完整性/来源
-anchor   = { seq, prev, digest, ts, hash }                       # 防篡改记录链
+anchor   = { seq, prev, digest, ts, hash }                       # 防篡改记录链（文件后端）
+anchor   = Anchor.anchor(digest) { ts, by, seq } + Anchored 事件 # 链上登记（RPC 后端）
 ```
 
 ## 尚未覆盖（后续）
 
-- 真实链上锚定（`anchor_on_chain` RPC 后端）与智能合约事件；
+- ~~真实链上锚定（`anchor_on_chain` RPC 后端）与智能合约事件~~ → **已实现**（`contracts/Anchor.sol` + `RpcAnchorBackend`，本地 Anvil 端到端 PASS，见 `docs/reproduce.md` §10；公共测试网/生产部署与密钥托管仍待补）；
 - Ed25519/HSM 签名替换 demo HMAC；
 - 工具调用路径的**电路内**证明（当前为 Python 参考层，证书标 `zk:false`）；
 - 训练数据/模型卡（Art.11 等）超出本系统范围。

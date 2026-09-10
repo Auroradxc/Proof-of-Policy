@@ -1,21 +1,25 @@
 #!/usr/bin/env python3
-"""Proof-of-Policy end-to-end demo (one command).
+"""Proof-of-Policy 端到端 demo（一条命令跑通）。
 
-Real agent session -> certificates -> anchor ledger -> (optional) real SP1 proof.
+真实 agent 会话 → 证书 → 锚定账本 →（可选）真实 SP1 证明。
 
-What it exercises:
-  1. LLM generation path (LangChain stream) with **streaming certificates** forming
-     a hash chain and **early stop** on the first violation;
-  2. tool path against a **real MCP server** (stdio): arguments certified (with
-     pre-flight blocking), and the tool's **result** certified too (result side);
-  3. the zk layer: a real SP1 proof for one response (unless --no-prove), bound
-     into a certificate via vkey hash + proof hash;
-  4. every certificate is anchored into an append-only tamper-evident ledger.
+它演练的是：
+  1. LLM 生成路径（LangChain 流式），带**流式证书**（形成哈希链）与**早停**
+     （首个违规即停）；
+  2. 工具路径，针对**真实 MCP 服务器**（stdio）：参数被认证（含飞行前拦截），
+     工具的**结果**也被认证（结果侧）；
+  3. zk 层：为一条响应生成真实 SP1 证明（除非 --no-prove），通过 vkey 哈希 +
+     证明哈希绑定进证书；
+  4. 每张证书都锚定进一个仅追加、防篡改的账本；给了 `--rpc/--contract` 时
+     **同时登记到 Anchor 合约**（链上存在性 + 时间戳，链上成功后回写本地 meta）。
 
-Then verify it all independently with:  python3 scripts/verify_session.py ...
+之后用 `python3 scripts/verify_session.py ...` 独立验证这一切。
 
-Usage:
+用法：
   SP1_PROVER=cpu python3 scripts/demo_e2e.py [--out-dir DIR] [--no-prove]
+  # 链上锚定（另开终端跑 `anvil`，先部署合约：python3 scripts/deploy_anchor.py）
+  SP1_PROVER=cpu python3 scripts/demo_e2e.py --no-prove \
+      --rpc http://127.0.0.1:8545 --contract 0x5FbDB2315678afecb367f032d93F642f64180aa3
 """
 
 from __future__ import annotations
@@ -36,8 +40,9 @@ from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.langchain_adapter import PoPCallbackHandler  # noqa: E402
 from policydsl.mcp_adapter import MCPBlocked, MCPGuard  # noqa: E402
 from policydsl.serialize import spec_to_rust_constraints  # noqa: E402
-import issue_cert as ic  # noqa: E402  (reuses load_policy/run_pop/POP_SCRIPT)
+import issue_cert as ic  # noqa: E402  （复用 load_policy/run_pop/POP_SCRIPT）
 
+# 内容策略包 / 工具策略包 / MCP 服务器脚本
 CONTENT_PACK = "policy_packs/agent_content_v1.json"
 TOOL_PACK = "policy_packs/agent_tool_v1.json"
 SERVER = REPO / "tests" / "mcp_echo_server.py"
@@ -46,20 +51,22 @@ BAD_REPLY = "Leak sk-abcdefghijklmnopqrstuvwxyz now"
 
 
 def llm_stream_path(monitor: AgentMonitor, handler: PoPCallbackHandler) -> None:
-    """Two streamed runs: one clean, one violating (early stop + chain)."""
+    """两次流式运行：一次干净、一次违规（触发早停 + 链式证书）。"""
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain_core.messages import AIMessage
 
+    # 干净响应：不违规，正常流式完成
     clean = GenericFakeChatModel(messages=iter([AIMessage(content=CLEAN_REPLY)]))
     for _ in clean.stream("hi", config={"callbacks": [handler]}):
         pass
+    # 违规响应：流式中途泄露 secret_key，触发早停
     bad = GenericFakeChatModel(messages=iter([AIMessage(content=BAD_REPLY)]))
     for _ in bad.stream("hi", config={"callbacks": [handler]}):
         pass
 
 
 async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str) -> list:
-    """Call the real MCP server through the guard (args + result certification)."""
+    """通过守护调用真实 MCP 服务器（参数 + 结果认证）。"""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
@@ -70,9 +77,10 @@ async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str) -> lis
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            await guard.call_tool(session, "search_kb", {"query": "refund"})   # clean
-            await guard.call_tool(session, "dump_config", {})                  # secret result
+            await guard.call_tool(session, "search_kb", {"query": "refund"})   # 干净
+            await guard.call_tool(session, "dump_config", {})                  # 秘密结果
             try:
+                # 带 secret token 的调用 → 飞行前拦截
                 await guard.call_tool(session, "search_kb", {"query": "x", "token": "s"})
             except MCPBlocked as exc:
                 blocked.append(exc.phase)
@@ -82,7 +90,7 @@ async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str) -> lis
 
 def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
             proof_mode: str = "core"):
-    """Produce a real SP1 proof (or host check) and a certificate bound to it."""
+    """为一条响应生成真实 SP1 证明（或宿主校验），并签发绑定它的证书。"""
     policy = ic.load_policy(REPO / CONTENT_PACK)
     spec = compile_policy(policy)
     zk_dir = out_dir / "zk"
@@ -94,9 +102,11 @@ def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
     results = zk_dir / "results.json"
     proof = zk_dir / "proof.bin"
     if no_prove:
+        # 仅宿主校验，不生成证明
         ic.run_pop(["--check", "--vectors", str(vectors), "--out", str(results)])
         vkey_hash, proof_sha, proof_rel, pv_sha = "unproven", None, None, None
     else:
+        # 真实证明 + 元信息（vkey_hash）+ 证明哈希绑定
         cmd = ["--vectors", str(vectors), "--out", str(results), "--proof-out", str(proof)]
         if proof_mode != "core":
             cmd += ["--proof-mode", proof_mode]
@@ -120,6 +130,9 @@ def main() -> int:
     ap.add_argument("--no-prove", action="store_true", help="skip the real SP1 proof")
     ap.add_argument("--proof-mode", choices=["core", "compressed", "groth16", "plonk"],
                     default="core", help="core (default) or compressed for verifier-only audit")
+    ap.add_argument("--rpc", default=None, help="EVM RPC：把每张证书摘要同时登记上链")
+    ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
+    ap.add_argument("--private-key", default=None, help="上链提交私钥（默认 Anvil #0）")
     args = ap.parse_args()
 
     out_dir: Path = args.out_dir
@@ -128,7 +141,7 @@ def main() -> int:
     vkey = "demo"
     session_entries = []
 
-    # ---- 1) LLM streaming path (chain + early stop) ----
+    # ---- 1) LLM 流式路径（哈希链 + 早停） ----
     content = AgentMonitor(ic.load_policy(REPO / CONTENT_PACK))
     handler = PoPCallbackHandler(content, vkey_hash=vkey, stop_on_violation=True)
     llm_stream_path(content, handler)
@@ -137,7 +150,7 @@ def main() -> int:
     for env in handler.certificates:
         session_entries.append({"kind": "llm", "policy_pack": CONTENT_PACK, "envelope": env})
 
-    # ---- 2) MCP tool path (args + result) ----
+    # ---- 2) MCP 工具路径（参数 + 结果） ----
     tools = AgentMonitor(ic.load_policy(REPO / TOOL_PACK))
     guard = asyncio.run(mcp_path(tools, content, vkey))
     for env in guard.certificates:
@@ -145,7 +158,7 @@ def main() -> int:
     for env in guard.result_certificates:
         session_entries.append({"kind": "tool-result", "policy_pack": CONTENT_PACK, "envelope": env})
 
-    # ---- 3) zk path (real SP1 proof) ----
+    # ---- 3) zk 路径（真实 SP1 证明） ----
     zk_env, zk_policy, proof_rel, zk_passed = zk_path(out_dir, CLEAN_REPLY, vkey,
                                                       args.no_prove, args.proof_mode)
     entry = {"kind": "zk", "policy_pack": CONTENT_PACK, "envelope": zk_env}
@@ -153,13 +166,22 @@ def main() -> int:
         entry["proof"] = proof_rel
     session_entries.append(entry)
 
-    # ---- 4) anchor every certificate ----
+    # ---- 4) 把每张证书锚定进账本（可选：同时上链） ----
+    backend = anchor.backend_from_env(ledger, rpc_url=args.rpc, contract=args.contract,
+                                      private_key=args.private_key)
+    on_chain = {"status": "anchored", "n": 0}
     for e in session_entries:
-        digest = cert.cert_digest(cert.envelope_payload(e["envelope"]))
-        anchor.append_anchor(ledger, digest,
-                             {"kind": e["kind"], "policy": cert.envelope_payload(e["envelope"])["policy"]["id"]})
+        payload = cert.envelope_payload(e["envelope"])
+        rec = backend.anchor(cert.cert_digest(payload),
+                             {"kind": e["kind"], "policy": payload["policy"]["id"]})
+        if rec.get("backend") == "rpc":
+            on_chain["n"] += rec["status"] in ("anchored", "already_anchored")
+            on_chain["status"] = rec["status"]
+            on_chain["contract"] = rec["contract"]
+            on_chain["tx_hash"] = rec.get("tx_hash")
     ok_chain, reason = anchor.verify_ledger(ledger)
 
+    # 汇总会话，写入 session.json
     session = {
         "session_id": out_dir.name,
         "ledger": ledger.name,
@@ -171,8 +193,14 @@ def main() -> int:
             "blocked_tool_calls": getattr(guard, "_blocked", []),
             "zk_passed": zk_passed,
             "ledger_ok": ok_chain,
+            "on_chain": on_chain["n"],
         },
     }
+    if on_chain["n"]:
+        # 第三方验证只需公开坐标：把 RPC + 合约地址写进 session
+        session["chain"] = {"rpc_url": backend.rpc_url, "contract": on_chain["contract"],
+                            "chain_id": backend.client.chain_id(),
+                            "anchored": on_chain["n"], "last_tx": on_chain.get("tx_hash")}
     (out_dir / "session.json").write_text(json.dumps(session, indent=2))
 
     print(f"session     : {out_dir / 'session.json'}")
@@ -181,6 +209,11 @@ def main() -> int:
     print(f"blocked tool calls: {session['summary']['blocked_tool_calls']}")
     print(f"zk proof    : {proof_rel or '(skipped: --no-prove)'}  passed={zk_passed}")
     print(f"ledger      : {ledger} chain={reason}")
+    if on_chain["n"]:
+        print(f"on-chain    : {on_chain['n']}/{len(session_entries)} anchored on "
+              f"{on_chain['contract']} (tx={str(on_chain.get('tx_hash'))[:18]}…)")
+    else:
+        print("on-chain    : skipped (no --rpc/--contract; pass them to anchor on a real chain)")
     print("\nverify with: python3 scripts/verify_session.py --session " + str(out_dir / "session.json"))
     return 0 if ok_chain else 1
 

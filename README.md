@@ -55,10 +55,20 @@ python3 scripts/make_shots.py --run-demo
 #   → docs/demo/session_report.html · session_report.svg · session_summary.png · verify_result.png
 ```
 
+### 链上锚定（可选，真跑本地 Anvil，一键）
+
+```bash
+bash scripts/retry_install_foundry.sh   # 装 foundry（anvil/cast）；已装则秒退
+bash scripts/anchor_e2e.sh              # 起 anvil → 部署 Anchor.sol → 12 张证书摘要上链 → 第三方 --rpc 核对
+SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附真实 Core 证明（~66s / ~10GB）
+#   → [PASS] chain_anchored 12/12 digests on chain … (12 cross-checked) + 反例对照 anchoredAt=0
+```
+
 - 📄 端到端复现指南（环境 → 一次合规证明 → 验证）：**`docs/reproduce.md`**
 - 🖼 演示报告（截图）：`docs/demo/session_report.html`、`docs/demo/session_summary.png`、`docs/demo/verify_result.png`
 - 📘 分阶段代码计划：`docs/dev-plan.md` · P7 收尾计划：`docs/plan-p7.md` · 安全模型：`docs/security-model.md` · 信任-成本四象限：`docs/quadrant.md`
 - 🔎 审计路径（verifier-only，免构造证明器）：`circuits/verifier`（bin `pop-verify`）+ `pop-script --proof-mode compressed`；见 `docs/reproduce.md` §9
+- ⛓ 链上锚定（真跑本地 Anvil）：`contracts/Anchor.sol` + `bash scripts/anchor_e2e.sh`（部署 → 每张证书摘要上链 → 第三方 `verify_session --rpc` 核对 + 反例对照）；见 `docs/reproduce.md` §10
 - 📝 论文初稿：`paper/proof-of-policy.md` · 评测脚本与结果：`bench/`（`bench/results/*.md`）· EU AI Act 映射：`docs/eu-ai-act-mapping.md`
 
 依赖（可选，安装后真实框架测试自动启用）：`pip install -r requirements-frameworks.txt`（或 `bash scripts/install_frameworks.sh`）。

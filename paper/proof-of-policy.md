@@ -104,6 +104,12 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 以 **DSSE 信封**签名（当前为 HMAC demo signer，可替换 Ed25519），`cert_digest` 写入**哈希链锚定账本**；
 流式证书额外构成**流式链**（`streaming.chain={index,prev}`）并支持**早停**。
 
+锚定支持两种后端（`policydsl/anchor.py`，上层接口一致）：**文件账本**（默认，离线可验，
+条目哈希链 `{seq,prev,digest,ts,meta,hash}`）与**链上登记**（`RpcAnchorBackend` 调用
+`contracts/Anchor.sol` 的 `anchor(bytes32)`——首次即最终、事件 `Anchored(digest,ts,by,seq)`、
+链上只存 32 字节摘要）。链上成功后把 `tx_hash`/区块/链上时间戳回写本地条目 `meta.on_chain`，
+使「离线可验的哈希链」与「公共时间戳」彼此可交叉核对，任一被篡改都能被发现。
+
 ### 4.5 框架集成
 
 `AgentMonitor`（框架无关钩子）产证书；**LangChain 回调**（`on_llm_end`/`on_tool_start`/`on_tool_end`/`on_llm_new_token`）；
@@ -187,9 +193,13 @@ zkAgent 证明「provider 执行了声明的模型与工具轨迹」（推理完
 `scripts/demo_e2e.py` 产生 12 张证书（流式链+早停、MCP 参数+响应、zk 证明）并锚定；
 `scripts/verify_session.py` 第三方仅凭公开产物验证：`ledger_chain / signature / policy_hash / anchored / stream_chains / zk_proof` 全 PASS。
 
+链上变体（`bash scripts/anchor_e2e.sh`：本地 Anvil → 部署 `Anchor.sol` → 12 张证书摘要上链）：
+第三方 `verify_session --rpc` 逐证书 `anchoredAt` 读回并交叉核对本地账本，`chain_anchored 12/12` PASS；
+反例对照（未登记摘要读回 0）确认该检查非恒真。`--prove` 变体在真实 Core 证明（2.78 MB）下同样通过。
+
 ## 8. Limitations & Future Work
 
-链下规则入电路（format/budget/tool）；生产签名（Ed25519/HSM）与链上锚定（RPC/合约）；语义级规则（嵌入/学习型护栏，ezkl）；
+生产签名（Ed25519/HSM）与密钥托管（当前上链用明文私钥参数，demo 为 Anvil 公开测试键）、公共测试网/主网部署（当前为本地 Anvil）；语义级规则（嵌入/学习型护栏，ezkl）；
 正则子集与 ASCII 语义扩展；证明开销优化（lookup/并行/预计算）；与 zkAgent 轨迹证明、可验证 DP 的组合。
 
 ## 9. Conclusion

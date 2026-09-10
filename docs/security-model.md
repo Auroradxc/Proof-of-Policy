@@ -42,6 +42,13 @@
 任一条目增/删/改导致链校验失败（`policydsl.anchor.verify_ledger`，`TestAnchorLedger::test_tamper_detected`）。
 流式证书额外成链（`streaming.chain={index,prev}`，`verify_chain` 检出重排/插入/篡改）。
 
+**链上锚定（可选，`RpcAnchorBackend`）.** `cert_digest` 作为 `bytes32` 登记进 `contracts/Anchor.sol`
+（`anchor(bytes32)`，**首次即最终**：重复登记 revert，链上时间戳不可被后来者覆盖）。链上**只存摘要**，
+不泄露响应/策略内容。安全性来自链的不可篡改性与时间戳：验证方 `verify_session --rpc` 逐证书
+`anchoredAt(digest)` 读回，并交叉核对本地账本记录的区块/时间戳与链上一致（`TestAnvilEndToEnd`）。
+*边界*：链上 `anchoredAt=0` 表示未登记（区块时间戳不为 0）；锚定只证明「该摘要在某时刻已存在」，
+不证明「证书内容为真」——后者由签名 + policy_hash + 证明承担。
+
 **流式早停健全性.** 部分证书为**前缀判定**（`streaming.partial=true`），仅用于早告警；**权威结论**是 `on_llm_end` 的完整证书。
 早停（`stop_on_violation`）在首次违规即产出 `streaming.stop` 并停止后续出证——不改变最终判定的健全性。
 

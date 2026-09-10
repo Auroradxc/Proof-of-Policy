@@ -3,7 +3,8 @@
 > 决策（用户 2026-09-10）：**保留 Core 为默认证明模式**；另设 `--proof-mode compressed` 供审计（verifier-only）路径。
 > **真跑本地 Anvil**（不满足于假 RPC）。
 > 网络现状（2026-09-10 实测）：`rsproxy` / `pypi.tuna` / `github` / `gh-proxy` **全部超时** → 外部下载暂不可用；
-> 但 A 所需 Rust crate（`sp1-verifier` / `bincode` …）**已在本地 cargo 缓存**，可离线构建。Anvil/foundry 与 solc **当前无法下载**。
+> 但 A 所需 Rust crate（`sp1-verifier` / `bincode` …）**已在本地 cargo 缓存**，可离线构建。
+> **2026-09-10 更新**：网络恢复，foundry **1.8.1 已装**（anvil/forge/cast，见 `scripts/retry_install_foundry.sh`）→ C 的端到端已真跑通过。
 
 ---
 
@@ -43,25 +44,42 @@ Core 证明路径不受影响（~10 GB，回归 PASS）。
 **验收**：host 交叉验证 **14/14 PASS**；**真实证明交叉验证 14/14 PASS**（含 format/tool/budget/token 全部四类新向量）。
 **边界（保留）**：`token_count` 为声明值（非电路内分词）；`int/float` 仅规范子集（超集输入按子集规则拒绝，已文档化）。
 
-## C. 链上锚定 RPC 后端（真跑本地 Anvil）
+## C. 链上锚定 RPC 后端（真跑本地 Anvil）—— 已实现并端到端 PASS
 
 **问题**：`anchor_on_chain` 仅为桩；账本只有本地文件。
 
-**方案（三层）**
-1. **合约**：`contracts/Anchor.sol`（`anchor(bytes32)` → event `Anchored(digest,ts)` + `mapping anchoredAt`）；
-   另附 `contracts/Anchor.json`（abi+bytecode）**入库**，使运行期**不需 solc/forge**。
-2. **后端抽象**（`policydsl/anchor.py`）：`FileLedgerBackend`（现有，默认）/ `RpcAnchorBackend(rpc_url, contract, key)`
-   （`web3.py`：`anchor()` 发交易并回写 `tx_hash` 到本地条目；`get()` 用 `eth_call` 读回时间戳）；`verify_session --rpc` 可选核对。
-3. **真链**：本地 **Anvil**：
-   - 首选 foundry（`foundryup` / 发行包）——**当前 github/gh-proxy 不可达，暂不可装**；
-   - 备选：Windows 侧 Docker Desktop 起 `foundry` 容器（需 Docker 拉镜像，同样依赖网络）；
-   - 退路（无网也可跑）：用 `web3.py` + **已入库 bytecode** 部署到任何本地 EVM（如用户自备节点/测试网）。
+**已交付**
+1. **合约** `contracts/Anchor.sol`：`anchor(bytes32)`（**首次即最终**，重复登记 revert）
+   → `anchoredAt/anchoredBy/isAnchored/count` + `Anchored(digest, ts, by, seq)` 事件；
+   链上**只存 32 字节摘要**。`contracts/Anchor.json`（abi+bytecode）**入库**，
+   运行期部署/锚定**不需要 solc/forge**（只需 `cast` + RPC）；`contracts/README.md` 记录重新生成方式。
+2. **后端抽象** `policydsl/anchor.py`：`AnchorBackend` 接口 + `FileLedgerBackend`（默认，离线可验）
+   / `RpcAnchorBackend(rpc_url, contract, key, ledger_path)`；`backend_from_env()` 统一选择；
+   `anchor_on_chain()` 由桩变可用（只读工具 `verify_digest_on_chain()` 供验证方使用）。
+   - 底层 RPC 客户端 = **foundry `cast`**（`CastRpc`，可注入以便离线单测），**不引入 web3.py/eth-account 依赖**
+     （偏离原计划的自研方向；理由：Anvil 端到端本就需要 foundry，`cast` 已是既有依赖，少一层 Python 依赖）。
+   - `anchor()` **幂等**：先 `anchoredAt` 查询；并发下遇到 `already anchored` revert 也按幂等处理。
+   - 链上成功后才把 `tx_hash`/区块/链上时间戳写进本地账本 `meta.on_chain`（哈希链保持自洽）。
+3. **工具链**：`scripts/deploy_anchor.py`（部署，打印 `POP_ANCHOR_RPC/CONTRACT`）；
+   `issue_cert.py` / `demo_e2e.py` 支持 `--rpc/--contract`；
+   `verify_session.py` / `verify_cert.py` 支持 `--rpc/--contract` 链上核对；
+   `scripts/anchor_e2e.sh` 一键：起 anvil → 部署 → 会话 demo（12 张证书全部上链）→ 第三方核对 → **反例对照**。
 
-**实施顺序**：先落地「合约源码 + 入库 bytecode + RPC 后端 + 假 RPC 单测」，等网络恢复后再补 **Anvil 端到端**
-（`deploy → anchor → eth_call 读回 → verify_session --rpc` PASS）。可加**定时重试**（网络恢复自动安装并跑通）。
+**顺带修掉的真 bug**：`pop-script --proof-out` 会给**所有**模式（含 core）写 `<proof>.verify.json` 边车，
+而「走 verifier-only 快路径」的判定原先只看边车是否存在 → **core 证明被误判为快路径**，`pop-verify` 以 exit 3 拒绝
+（真跑带证明的链上 e2e 才暴露）。已抽出 `policydsl/verifier.py::prefer_verifier_only`（二进制 + 边车 + 模式 ∈
+{compressed,groth16,plonk}），`verify_session`/`verify_cert` 共用，并补单测（core 边车必须回落 `pop-script --verify`）。
 
-**验收**：Anvil 上端到端 PASS；无 RPC 时默认文件后端不受影响；`--rpc` 缺失时给出明确提示。
-**工作量**：2–3 天（含环境）；离线部分 1 天。
+**实测（2026-09-10，本机 WSL 12 GB，foundry 1.8.1）**
+- `bash scripts/anchor_e2e.sh`（无证明，冷启动自建 anvil）→ **ALL PASS**：
+  `chain_anchored 12/12 digests on chain … (12 cross-checked)` + 反例 `unknown digest anchoredAt = 0`。
+- `SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove` → 真实 Core 证明（2.78 MB）生成并**上链锚定 12/12**；
+  第三方验证走 `pop-script --verify` 回落路径 PASS。
+- `tests/test_anchor_chain.py` **22 例全绿**（含真链 `deploy→anchor→读回→幂等→账本回写`，无 anvil 时自动 skip）。
+
+**验收**：Anvil 上端到端 PASS ✅；无 RPC 时默认文件后端不受影响 ✅；`--rpc` 缺失时给出明确提示 ✅。
+**边界（保留）**：仍在本地 Anvil / 自备 RPC；未接公共测试网；上链交易用明文私钥参数（demo 用 Anvil 公开测试键，
+生产应换 keystore/HSM）。
 
 ---
 

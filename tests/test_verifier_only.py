@@ -78,14 +78,36 @@ class TestVerifierOnlySelection(unittest.TestCase):
             proof = tmp / "proof.bin"
             proof.write_bytes(b"x")
             binary = tmp / "pop-verify"
+            sidecar = Path(str(proof) + ".verify.json")
             # neither binary nor sidecar → no
             self.assertFalse(prefer_verifier_only(proof, binary))
             # sidecar only → still no (binary missing)
-            Path(str(proof) + ".verify.json").write_text("{}")
+            sidecar.write_text(json.dumps({"proof_mode": "compressed"}))
             self.assertFalse(prefer_verifier_only(proof, binary))
             # both → yes
             binary.write_text("#!/bin/sh\n")
             self.assertTrue(prefer_verifier_only(proof, binary))
+
+    def test_core_sidecar_does_not_take_the_fast_path(self):
+        """core 证明也会写边车，但 core 不能被 pop-verify 验证 → 必须回落到 pop-script。"""
+        sys.path.insert(0, str(REPO / "scripts"))
+        from verify_session import prefer_verifier_only
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            proof = tmp / "proof.bin"
+            proof.write_bytes(b"x")
+            binary = tmp / "pop-verify"
+            binary.write_text("#!/bin/sh\n")
+            sidecar = Path(str(proof) + ".verify.json")
+            sidecar.write_text(json.dumps({"proof_mode": "core"}))
+            self.assertFalse(prefer_verifier_only(proof, binary))
+            for mode in ("compressed", "groth16", "plonk"):
+                sidecar.write_text(json.dumps({"proof_mode": mode}))
+                self.assertTrue(prefer_verifier_only(proof, binary))
+            # 边车损坏/无 proof_mode → 不冒险走快路径
+            sidecar.write_text("{}")
+            self.assertFalse(prefer_verifier_only(proof, binary))
 
 
 if __name__ == "__main__":

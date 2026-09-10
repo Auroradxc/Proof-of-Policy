@@ -1,0 +1,122 @@
+{
+  "_comment": "\u7531 `forge build` \u751f\u6210\u5e76\u5165\u5e93\uff1a\u8fd0\u884c\u671f\u90e8\u7f72/\u951a\u5b9a\u4e0d\u9700\u8981 solc/forge\uff0c\u53ea\u9700\u8981\u672c\u6587\u4ef6\uff08abi+bytecode\uff09\u3002\u91cd\u65b0\u751f\u6210\uff1acd contracts && forge build && python3 -c \"...\"\uff08\u89c1 contracts/README.md\uff09",
+  "contractName": "Anchor",
+  "solc": "0.8.24+commit.e11b9ed9",
+  "abi": [
+    {
+      "type": "function",
+      "name": "anchor",
+      "inputs": [
+        {
+          "name": "digest",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "outputs": [],
+      "stateMutability": "nonpayable"
+    },
+    {
+      "type": "function",
+      "name": "anchoredAt",
+      "inputs": [
+        {
+          "name": "digest",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "anchoredBy",
+      "inputs": [
+        {
+          "name": "digest",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "address",
+          "internalType": "address"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "count",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "",
+          "type": "uint256",
+          "internalType": "uint256"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "function",
+      "name": "isAnchored",
+      "inputs": [
+        {
+          "name": "digest",
+          "type": "bytes32",
+          "internalType": "bytes32"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "",
+          "type": "bool",
+          "internalType": "bool"
+        }
+      ],
+      "stateMutability": "view"
+    },
+    {
+      "type": "event",
+      "name": "Anchored",
+      "inputs": [
+        {
+          "name": "digest",
+          "type": "bytes32",
+          "indexed": true,
+          "internalType": "bytes32"
+        },
+        {
+          "name": "ts",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        },
+        {
+          "name": "by",
+          "type": "address",
+          "indexed": true,
+          "internalType": "address"
+        },
+        {
+          "name": "seq",
+          "type": "uint256",
+          "indexed": false,
+          "internalType": "uint256"
+        }
+      ],
+      "anonymous": false
+    }
+  ],
+  "bytecode": "0x608060405234801561000f575f80fd5b506102708061001d5f395ff3fe608060405234801561000f575f80fd5b5060043610610055575f3560e01c806306661abd146100595780634f0b5801146100755780639591a610146100a657806395b29602146100c5578063eecdf92714610105575b5f80fd5b61006260025481565b6040519081526020015b60405180910390f35b6100966100833660046101fe565b5f90815260208190526040902054151590565b604051901515815260200161006c565b6100626100b43660046101fe565b5f9081526020819052604090205490565b6100ed6100d33660046101fe565b5f908152600160205260409020546001600160a01b031690565b6040516001600160a01b03909116815260200161006c565b6101186101133660046101fe565b61011a565b005b5f81815260208190526040902054156101795760405162461bcd60e51b815260206004820152601860248201527f416e63686f723a20616c726561647920616e63686f7265640000000000000000604482015260640160405180910390fd5b5f81815260208181526040808320429055600191829052822080546001600160a01b0319163317905560028054919290916101b5908490610215565b9091555050600254604080514281526020810192909252339183917ffc828637231400c2a0c76b2434820d61d84685d53a690a7cd6d96ad798116b57910160405180910390a350565b5f6020828403121561020e575f80fd5b5035919050565b8082018082111561023457634e487b7160e01b5f52601160045260245ffd5b9291505056fea2646970667358221220a6a1bb590231aad20958628a357a06f4c2ca0b774f761ae1b187e9e2715ce04464736f6c63430008180033"
+}

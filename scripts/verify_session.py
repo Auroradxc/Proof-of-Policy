@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Independently verify a Proof-of-Policy end-to-end session bundle.
+"""独立验证一个 Proof-of-Policy 端到端会话包（session bundle）。
 
-Given only public artefacts (session.json + ledger + optional proof), checks:
-  1. the anchor ledger chain is intact (tamper-evident record-keeping);
-  2. every certificate: DSSE signature valid + policy_hash recomputable from its
-     policy pack + the certificate digest present in the ledger;
-  3. streaming certificates form valid hash chains (per run);
-  4. the zk-backed certificate's SP1 proof verifies cryptographically and its
-     committed outcome / vkey hash / proof hash match the certificate.
+仅凭公开工件（session.json + ledger + 可选 proof），检查：
+  1. 锚定账本链完整（防篡改的记录留存）；
+  2. 每张证书：DSSE 签名有效 + policy_hash 能由其策略包重算 + 证书摘要存在于账本中；
+  3. 流式证书形成有效的哈希链（按 run）；
+  4. zk 证书的 SP1 证明做密码学验证，其承诺的 outcome / vkey 哈希 / 证明哈希与证书一致；
+  5. （可选）链上锚定核对：每个证书摘要都能在 Anchor 合约上读回，且链上记录与本地
+     账本 meta 里的 tx/区块/时间戳一致（**需要 RPC**，见下）。
 
-Usage:
+用法：
   python3 scripts/verify_session.py --session scripts/examples/out/e2e/session.json
+  # 链上核对：--rpc/--contract 显式给出，或用 session 里记录的 chain 字段
+  python3 scripts/verify_session.py --session ... --rpc http://127.0.0.1:8545 \
+      --contract 0x5FbDB2315678afecb367f032d93F642f64180aa3
+  python3 scripts/verify_session.py --session ... --no-chain   # 强制只做链下核对
 """
 
 from __future__ import annotations
@@ -26,15 +30,18 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert  # noqa: E402
+from policydsl import anchor, cert, verifier  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.langchain_adapter import verify_chain  # noqa: E402
 from policydsl.model import Policy, Rule  # noqa: E402
+# 快路径判定（二进制 + 边车 + 非 core 模式）在 policydsl.verifier；此处再导出以兼容旧导入
+from policydsl.verifier import prefer_verifier_only  # noqa: E402,F401
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
 
 def load_policy(path: Path) -> Policy:
+    """从 JSON 文件加载策略包。"""
     d = json.loads(path.read_text(encoding="utf-8"))
     rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
              for i, r in enumerate(d["rules"])]
@@ -42,21 +49,17 @@ def load_policy(path: Path) -> Policy:
 
 
 def sha256_file(path: Path) -> str:
+    """对文件字节求 SHA-256。"""
     return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def prefer_verifier_only(proof: Path, pop_verify: Path) -> bool:
-    """Use `pop-verify` (no prover) when the binary and the sidecar both exist.
-
-    Compressed/groth16/plonk proofs carry a `<proof>.verify.json` sidecar;
-    Core proofs do not, and are verified via `pop-script --verify` instead.
-    """
-    return pop_verify.exists() and Path(str(proof) + ".verify.json").exists()
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--session", type=Path, required=True)
+    ap.add_argument("--rpc", default=None, help="EVM RPC 端点（链上锚定核对）")
+    ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
+    ap.add_argument("--no-chain", action="store_true", help="即使 session 记录了 chain 也跳过链上核对")
+    ap.add_argument("--private-key", default=None, help=argparse.SUPPRESS)  # 只读核对用不到，保留兼容
     args = ap.parse_args()
 
     base = args.session.parent
@@ -65,18 +68,18 @@ def main() -> int:
     entries = session["certificates"]
     results = []
 
-    # 0) ledger chain
+    # 0) 账本链
     ok_chain, reason = anchor.verify_ledger(ledger)
     results.append(("ledger_chain", ok_chain, reason))
 
-    # policy hash cache
+    # policy hash 缓存（同一策略包只编译一次）
     spec_cache = {}
     def spec_for(pack: str):
         if pack not in spec_cache:
             spec_cache[pack] = compile_policy(load_policy(REPO / pack))
         return spec_cache[pack]
 
-    # 1) per-certificate checks
+    # 1) 逐证书检查：签名 / policy_hash / 锚定
     sig_ok = pol_ok = anch_ok = True
     kinds = {}
     for e in entries:
@@ -93,7 +96,7 @@ def main() -> int:
     results.append(("certificates_policy_hash", pol_ok, f"{len(spec_cache)} pack(s)"))
     results.append(("certificates_anchored", anch_ok, "digest present in ledger"))
 
-    # 2) streaming chains: split into runs at chain.index == 0
+    # 2) 流式链：在 chain.index == 0 处拆成多个 run
     groups, current = [], []
     for e in entries:
         if e["kind"] != "stream":
@@ -108,7 +111,7 @@ def main() -> int:
     chain_ok = all(verify_chain(g) for g in groups) if groups else True
     results.append(("stream_chains", chain_ok, f"{len(groups)} run(s)"))
 
-    # 3) zk proof — prefer the verifier-only binary when a sidecar exists
+    # 3) zk 证明 —— 存在边车时优先走 verifier-only 二进制
     POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
     zk_entries = [e for e in entries if e["kind"] == "zk"]
     zk_ok = True
@@ -117,12 +120,14 @@ def main() -> int:
         payload = cert.envelope_payload(e["envelope"])
         proof_rel = e.get("proof")
         if not proof_rel:
+            # 未证明（host-check only）：要求证书也没有声称有证明
             zk_ok &= payload["binding"]["proof_sha256"] is None
             detail = "unproven (host-check only)"
             continue
         proof = base / proof_rel
-        sidecar = Path(str(proof) + ".verify.json")
+        sidecar = verifier.sidecar_path(proof)
         if prefer_verifier_only(proof, POP_VERIFY):
+            # 免证明器快路径
             out = base / "verify_only.json"
             subprocess.run([str(POP_VERIFY), "--meta", str(sidecar), "--out", str(out)],
                            check=True, cwd=str(REPO))
@@ -134,6 +139,7 @@ def main() -> int:
             zk_ok &= sha256_file(proof) == payload["binding"]["proof_sha256"]
             detail = f"pop-verify ({v.get('proof_mode')}, no prover)"
         else:
+            # Core 证明：用 pop-script --verify 重新验证
             out = base / "verify_out.json"
             subprocess.run([str(POP_SCRIPT), "--verify", "--proof", str(proof), "--out", str(out)],
                            env=dict(os.environ, SP1_PROVER="cpu"), check=True, cwd=str(REPO))
@@ -146,6 +152,45 @@ def main() -> int:
             zk_ok &= sha256_file(proof) == payload["binding"]["proof_sha256"]
             detail = "SP1 proof verified (pop-script)"
     results.append(("zk_proof", zk_ok, detail))
+
+    # 4) 链上锚定核对（可选）：每个证书摘要都能从 Anchor 合约读回，且链上时间戳
+    #    与本地账本 meta 记录的区块一致（用了 --rpc 或 session 里记录了 chain）
+    chain_cfg = session.get("chain") or {}
+    rpc = args.rpc or chain_cfg.get("rpc_url")
+    contract = args.contract or chain_cfg.get("contract")
+    if args.no_chain:
+        results.append(("chain_anchored", True, "skipped (--no-chain)"))
+    elif not (rpc and contract):
+        results.append(("chain_anchored", True, "not anchored on chain (file ledger only)"))
+    else:
+        try:
+            cli = anchor.CastRpc(rpc)
+            on_chain, mismatch, checked = 0, [], 0
+            for e in entries:
+                digest = cert.cert_digest(cert.envelope_payload(e["envelope"]))
+                rec = anchor.verify_digest_on_chain(digest, rpc, contract, client=cli)
+                if rec is None:
+                    continue
+                on_chain += 1
+                # 强核对：本地账本 meta 里记的区块时间戳 == 链上登记时间戳
+                local = anchor.find_anchor(ledger, digest) or {}
+                oc = (local.get("meta") or {}).get("on_chain") or {}
+                if oc:
+                    checked += 1
+                    if oc.get("chain_ts") != rec["chain_ts"]:
+                        mismatch.append(f"{digest[:10]}… ts {oc.get('chain_ts')}≠{rec['chain_ts']}")
+                    elif oc.get("block") is not None:
+                        bts = cli.timestamp_of_block(int(oc["block"]))
+                        if bts != rec["chain_ts"]:
+                            mismatch.append(f"{digest[:10]}… block {oc['block']} ts {bts}≠{rec['chain_ts']}")
+            ok = on_chain == len(entries) and not mismatch
+            det = (f"{on_chain}/{len(entries)} digests on chain {contract[:10]}… "
+                   f"({checked} cross-checked)")
+            if mismatch:
+                det += " MISMATCH: " + "; ".join(mismatch[:3])
+            results.append(("chain_anchored", ok, det))
+        except anchor.AnchorError as exc:
+            results.append(("chain_anchored", False, f"rpc error: {exc}"))
 
     ok_all = all(r[1] for r in results)
     print(f"session: {args.session}")

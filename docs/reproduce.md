@@ -28,7 +28,7 @@
 
 ```bash
 cd Proof-of-Policy/03_代码仓库/zk-policy     # 仓库根（目录曾名为“方向二”，已重命名）
-python3 -m unittest discover tests -v          # 期望 101 passed（1 skip=设计内）
+python3 -m unittest discover tests -v          # 期望 143 passed（3 skip：2 个 compressed fixture + 1 设计内）
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json | head    # 编译出 ConstraintSpec
 ```
 
@@ -117,13 +117,59 @@ python3 scripts/verify_cert.py --cert .../cert.json --pack policy_packs/eu_ai_ac
 > ⚠️ **内存**：`compressed` 证明需 **≥16 GB**（本机 12 GB 实测 OOM，峰值 anon-RSS 11.0 GB；Core 仍需 ~10 GB）。
 > 需要 fixture 时运行 `SP1_PROVER=cpu bash scripts/make_audit_proof.sh`（生成后 `tests/test_verifier_only.py` 的用例自动启用）。
 
+## 10.（可选）链上锚定：真跑本地 Anvil
+
+把每张**证书摘要**（`cert_digest` = 证书载荷的 SHA-256）登记进 `contracts/Anchor.sol`，
+得到一条公共、带时间戳、与本地账本无关的存在性证明。链上只存 32 字节摘要，不存响应内容。
+
+```bash
+# 前置：foundry（anvil/cast）
+bash scripts/retry_install_foundry.sh          # 网络可用时安装；成功后 anvil/forge/cast 1.8.1
+
+# 一键端到端：起 anvil → 部署合约 → 会话 demo（每张证书上链）→ 第三方 --rpc 核对（含反例对照）
+bash scripts/anchor_e2e.sh                     # 默认不生成 SP1 证明（秒级）
+SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附带真实 Core 证明（~66s / ~10 GB）
+```
+
+期望输出（末段）：
+
+```
+[PASS] ledger_chain / certificates_signature / certificates_policy_hash / certificates_anchored
+[PASS] stream_chains 2 run(s)
+[PASS] zk_proof      SP1 proof verified (pop-script)      # --no-prove 时为 unproven (host-check only)
+[PASS] chain_anchored 12/12 digests on chain 0x5fbdb231… (12 cross-checked)
+negative control: unknown digest anchoredAt = 0 (expected 0)
+ALL PASS ✅
+```
+
+手动分步（等价，便于接到自备节点/测试网）：
+
+```bash
+anvil &                                             # 或任意 EVM RPC 端点
+python3 scripts/deploy_anchor.py --rpc http://127.0.0.1:8545 \
+        --out .anchor_deploy.json                   # 打印 POP_ANCHOR_RPC / POP_ANCHOR_CONTRACT
+python3 scripts/demo_e2e.py --no-prove \
+        --rpc http://127.0.0.1:8545 --contract 0x5FbDB2315678afecb367f032d93F642f64180aa3
+python3 scripts/verify_session.py --session .../session.json \
+        --rpc http://127.0.0.1:8545 --contract 0x5FbDB2315678afecb367f032d93F642f64180aa3
+```
+
+要点：
+
+- **部署不需要 solc/forge**：字节码来自入库的 `contracts/Anchor.json`（abi + bytecode），运行期只需要 `cast` + RPC。
+- 锚定**幂等**：同一摘要重复登记不再发交易（合约对重复登记 revert，后端先查询/兜底为 `already_anchored`）。
+- 链上成功后，`tx_hash`/区块号/链上时间戳会写进本地账本条目的 `meta.on_chain`（哈希链仍自洽）。
+- `verify_session` 的 `chain_anchored` 会做**交叉核对**：本地记录的区块时间戳 == 链上 `anchoredAt`，并且该区块的时间戳与登记时间戳一致。
+- 反例对照确保该检查不是恒真：未登记的摘要读回 `0`。
+
 ---
 
 ## 验收判据（复现成功）
 
-- `python3 -m unittest discover tests` → **101 passed（1 skip）**；
-- `scripts/prove_policy.py` / `cross_validate.py` → **RESULT: PASS**；
-- `verify_cert.py` / `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证）。
+- `python3 -m unittest discover tests` → **143 passed（3 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，1 = 设计内「依赖已装」用例）；
+- `scripts/prove_policy.py` / `cross_validate.py` → **RESULT: PASS**（host 14/14；`--no-prove` 时跳过真实证明）；
+- `verify_cert.py` / `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证）；
+- `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 12/12 + 反例对照，见 §10）。
 
 ## 故障排查
 
@@ -137,4 +183,6 @@ python3 scripts/verify_cert.py --cert .../cert.json --pack policy_packs/eu_ai_ac
 | `protoc` 找不到 | 缺 protobuf-compiler | `sudo apt-get install -y protobuf-compiler` |
 | 缺少 `libsp1gnark.a` 构建失败 | 无 Go | 安装 Go ≥1.24 且设置 `GOPROXY` |
 
-> 安全/边界说明：证书签名当前为 **HMAC-SHA256 demo signer**（`policydsl/cert.py`），生产应换 Ed25519/HSM；链上锚定当前为**文件账本**（离线可验），RPC 后端见 `anchor_on_chain` 钩子。
+> 安全/边界说明：证书签名当前为 **HMAC-SHA256 demo signer**（`policydsl/cert.py`），生产应换 Ed25519/HSM；
+> 锚定默认走**文件账本**（离线可验），也可 `--rpc/--contract` 真上链（见 §10，本地 Anvil 端到端 PASS）；
+> 上链交易用明文私钥参数（demo 用 Anvil 公开测试键），生产应换 keystore/HSM。
