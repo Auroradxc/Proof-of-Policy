@@ -27,12 +27,15 @@ if command -v anvil >/dev/null 2>&1 && command -v forge >/dev/null 2>&1; then
   exit 0
 fi
 
-# ---- network probe (cheap; mirrors truncate when blocked) ----
+# ---- network probe: must actually FETCH content (a bare 200/redirect on the
+#      host root is a false positive when the network is flaky) ----
 probe() {
-  for u in "https://github.com" "https://gh-proxy.com" \
+  # smallest reliable checks first: API metadata, then the install script itself
+  for u in "https://api.github.com/repos/foundry-rs/foundry/releases/latest" \
+           "https://raw.githubusercontent.com/foundry-rs/foundry/master/foundryup/install" \
            "https://foundry.paradigm.xyz"; do
-    code=$(curl -s -o /dev/null --max-time 8 -w "%{http_code}" "$u" 2>/dev/null || echo 000)
-    [ "$code" != "000" ] && { echo "$u"; return 0; }
+    sz=$(curl -sL --max-time 12 -o /dev/null -w "%{size_download}" "$u" 2>/dev/null || echo 0)
+    if [ "${sz:-0}" -gt 200 ]; then echo "$u"; return 0; fi
   done
   return 1
 }
