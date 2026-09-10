@@ -49,7 +49,15 @@ SP1_PROVER=cpu python3 scripts/demo_e2e.py [--no-prove]
 # 2) 第三方独立验证（只用公开产物：session.json + ledger + proof）
 python3 scripts/verify_session.py --session scripts/examples/out/e2e/session.json
 #   → ledger_chain / certificates_signature / policy_hash / anchored / stream_chains / zk_proof 全 PASS
+
+# 3) 生成演示报告与截图（HTML/SVG/PNG）
+python3 scripts/make_shots.py --run-demo
+#   → docs/demo/session_report.html · session_report.svg · session_summary.png · verify_result.png
 ```
+
+- 📄 端到端复现指南（环境 → 一次合规证明 → 验证）：**`docs/reproduce.md`**
+- 🖼 演示报告（截图）：`docs/demo/session_report.html`、`docs/demo/session_summary.png`、`docs/demo/verify_result.png`
+- 📘 分阶段代码计划：`docs/dev-plan.md` · EU AI Act 映射：`docs/eu-ai-act-mapping.md`
 
 依赖（可选，安装后真实框架测试自动启用）：`pip install -r requirements-frameworks.txt`（或 `bash scripts/install_frameworks.sh`）。
 

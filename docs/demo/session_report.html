@@ -1,0 +1,31 @@
+<!doctype html><html lang="zh"><meta charset="utf-8">
+<title>Proof-of-Policy demo report</title>
+<style>
+ body{background:#12141c;color:#e8ecf4;font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,'Noto Sans CJK SC',sans-serif;margin:0;padding:32px}
+ h1{font-size:26px;margin:0 0 4px} .sub{color:#96a0b2;margin-bottom:20px}
+ .card{background:#1c2029;border:1px solid #262c38;border-radius:12px;padding:18px 20px;margin:14px 0}
+ .pill{display:inline-block;background:#232a36;border-radius:999px;padding:4px 10px;margin:3px 6px 3px 0;color:#cfe0ff}
+ .big{font-size:34px;font-weight:700;color:#6ea8fe}
+ ul{list-style:none;padding:0;margin:0} li{display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed #262c38}
+ li span{width:52px;font-weight:700} li.ok span{color:#34c77b} li.bad span{color:#e85a5a}
+ li code{color:#cfe0ff} li em{color:#96a0b2;font-style:normal;margin-left:auto}
+ .result{font-size:20px;font-weight:700;color:#34c77b}
+ .muted{color:#96a0b2} code.k{background:#232a36;padding:2px 6px;border-radius:6px}
+</style>
+<h1>Proof-of-Policy — 端到端 demo 报告</h1>
+<div class="sub">agent 会话 → 证书（流式链 / MCP 参数+结果 / zk 证明）→ 锚定账本 → 第三方独立验证</div>
+<div class="card">
+  <div class="big">12 张证书</div>
+  <div class="muted">stream=4 · blocked tool calls=['args']
+   · zk passed=True · ledger chain=ok</div>
+  <div style="margin-top:10px"><span class='pill'>llm <b>2</b></span><span class='pill'>stream <b>4</b></span><span class='pill'>tool-args <b>3</b></span><span class='pill'>tool-result <b>2</b></span><span class='pill'>zk <b>1</b></span></div>
+</div>
+<div class="card">
+  <h2 style="margin:0 0 8px;font-size:18px">第三方验证（scripts/verify_session.py）</h2>
+  <ul><li class='ok'><span>PASS</span><code>ledger_chain</code><em>ok</em></li><li class='ok'><span>PASS</span><code>certificates_signature</code><em>12 certs</em></li><li class='ok'><span>PASS</span><code>certificates_policy_hash</code><em>2 pack(s)</em></li><li class='ok'><span>PASS</span><code>certificates_anchored</code><em>digest present in ledger</em></li><li class='ok'><span>PASS</span><code>stream_chains</code><em>2 run(s)</em></li><li class='ok'><span>PASS</span><code>zk_proof</code><em>unproven (host-check only)</em></li></ul>
+  <div class="result">RESULT: PASS</div>
+</div>
+<div class="card muted">复现：<code class="k">SP1_PROVER=cpu python3 scripts/demo_e2e.py</code> →
+<code class="k">python3 scripts/verify_session.py --session scripts/examples/out/e2e/session.json</code>
+· 详见 <code class="k">docs/reproduce.md</code></div>
+</html>

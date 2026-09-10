@@ -49,6 +49,23 @@ class TestEndToEndDemo(unittest.TestCase):
             self.assertIn("tool-result", verify.stdout)
             self.assertIn("zk_proof", verify.stdout)
 
+    def test_make_shots_renders_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "e2e"
+            subprocess.run(
+                [sys.executable, str(REPO / "scripts" / "demo_e2e.py"),
+                 "--no-prove", "--out-dir", str(out)],
+                cwd=str(REPO), check=True, capture_output=True, text=True)
+            shots_dir = Path(tmp) / "shots"
+            shots = subprocess.run(
+                [sys.executable, str(REPO / "scripts" / "make_shots.py"),
+                 "--session", str(out / "session.json"), "--out-dir", str(shots_dir)],
+                cwd=str(REPO), capture_output=True, text=True)
+            self.assertEqual(shots.returncode, 0, shots.stdout + shots.stderr)
+            for name in ("session_report.html", "session_report.svg",
+                         "session_summary.png", "verify_result.png"):
+                self.assertTrue((shots_dir / name).exists(), f"missing {name}")
+
 
 if __name__ == "__main__":
     unittest.main()
