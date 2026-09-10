@@ -38,16 +38,31 @@ python -m policydsl compile policy_packs/eu_ai_act_v1.json
 python -m unittest discover tests -v
 ```
 
+## 端到端 demo（一键跑）
+
+真实 agent 会话（LangChain 流式 + 真实 MCP 工具）→ 证书（含流式证书链/早停、工具参数与响应侧）→ 锚定账本 →（可选）真实 SP1 证明 → **第三方独立验证**。
+
+```bash
+# 1) 跑一次会话（含真实 SP1 证明；加 --no-prove 可只做 host 校验，秒级）
+SP1_PROVER=cpu python3 scripts/demo_e2e.py [--no-prove]
+
+# 2) 第三方独立验证（只用公开产物：session.json + ledger + proof）
+python3 scripts/verify_session.py --session scripts/examples/out/e2e/session.json
+#   → ledger_chain / certificates_signature / policy_hash / anchored / stream_chains / zk_proof 全 PASS
+```
+
+依赖（可选，安装后真实框架测试自动启用）：`pip install -r requirements-frameworks.txt`（或 `bash scripts/install_frameworks.sh`）。
+
 ## 目录结构
 
 ```
 zk-policy/
-├── policydsl/            # Python DSL：模型 / 编译 / 参考评估 / CLI（stdlib-only）
+├── policydsl/            # Python DSL + 参考评估 + 私密/证书/锚定 + 框架适配（langchain/langgraph/mcp）
 ├── policy_packs/         # 示例策略包（JSON）
-├── circuits/             # SP1 程序 + 驱动（Rust，W4 启用）
-├── tests/                # 单测（unittest，stdlib）
-├── demo/                 # LangGraph/MCP agent 集成（W6）
-├── docs/                 # 架构 / DSL 规范
+├── circuits/             # SP1 程序与驱动（Rust，v6 workspace）
+├── scripts/              # 交叉验证 / demo / 证书签发与验证 / 安装脚本
+├── tests/                # 单测与集成测试（unittest，stdlib + 可选框架）
+├── docs/                 # 架构 / DSL / 开发计划 / EU AI Act 映射
 └── roadmap.md            # 8 周开发映射
 ```
 
@@ -68,4 +83,5 @@ curl -L https://sp1.succinct.xyz | bash      # Windows: 见 SP1 官方文档安�
 cargo prove install                          # 安装 SP1 工具链与 crates
 ```
 
-> 当前机器（2026-08-03）未安装 Rust/SP1，`circuits/` 内为骨架，`policydsl/` 已可运行。
+> 环境状态（2026-09-10）：Rust + SP1 **v6.7.0 已安装**，`circuits/` 可构建并出证；
+> `policydsl/` 与 demo 可直接运行。工具链与网络对策见 `docs/dev-plan.md`。
