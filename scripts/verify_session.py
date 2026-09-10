@@ -45,6 +45,15 @@ def sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def prefer_verifier_only(proof: Path, pop_verify: Path) -> bool:
+    """Use `pop-verify` (no prover) when the binary and the sidecar both exist.
+
+    Compressed/groth16/plonk proofs carry a `<proof>.verify.json` sidecar;
+    Core proofs do not, and are verified via `pop-script --verify` instead.
+    """
+    return pop_verify.exists() and Path(str(proof) + ".verify.json").exists()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--session", type=Path, required=True)
@@ -99,15 +108,32 @@ def main() -> int:
     chain_ok = all(verify_chain(g) for g in groups) if groups else True
     results.append(("stream_chains", chain_ok, f"{len(groups)} run(s)"))
 
-    # 3) zk proof
+    # 3) zk proof — prefer the verifier-only binary when a sidecar exists
+    POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
     zk_entries = [e for e in entries if e["kind"] == "zk"]
     zk_ok = True
     detail = "n/a"
     for e in zk_entries:
         payload = cert.envelope_payload(e["envelope"])
         proof_rel = e.get("proof")
-        if proof_rel:
-            proof = base / proof_rel
+        if not proof_rel:
+            zk_ok &= payload["binding"]["proof_sha256"] is None
+            detail = "unproven (host-check only)"
+            continue
+        proof = base / proof_rel
+        sidecar = Path(str(proof) + ".verify.json")
+        if prefer_verifier_only(proof, POP_VERIFY):
+            out = base / "verify_only.json"
+            subprocess.run([str(POP_VERIFY), "--meta", str(sidecar), "--out", str(out)],
+                           check=True, cwd=str(REPO))
+            v = json.loads(out.read_text())
+            b = payload["binding"]
+            zk_ok &= bool(v.get("verified"))
+            zk_ok &= v.get("public_values_sha256") == b.get("public_values_sha256")
+            zk_ok &= v.get("vkey_hash") == b.get("vkey_hash")
+            zk_ok &= sha256_file(proof) == payload["binding"]["proof_sha256"]
+            detail = f"pop-verify ({v.get('proof_mode')}, no prover)"
+        else:
             out = base / "verify_out.json"
             subprocess.run([str(POP_SCRIPT), "--verify", "--proof", str(proof), "--out", str(out)],
                            env=dict(os.environ, SP1_PROVER="cpu"), check=True, cwd=str(REPO))
@@ -118,10 +144,7 @@ def main() -> int:
             zk_ok &= outcome == payload["outcome"]
             zk_ok &= v.get("vkey_hash") == payload["binding"]["vkey_hash"]
             zk_ok &= sha256_file(proof) == payload["binding"]["proof_sha256"]
-            detail = "SP1 proof verified (outcome/vkey/hash)"
-        else:
-            zk_ok &= payload["binding"]["proof_sha256"] is None
-            detail = "unproven (host-check only)"
+            detail = "SP1 proof verified (pop-script)"
     results.append(("zk_proof", zk_ok, detail))
 
     ok_all = all(r[1] for r in results)

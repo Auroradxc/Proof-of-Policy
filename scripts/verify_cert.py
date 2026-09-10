@@ -78,8 +78,22 @@ def main() -> int:
     ok_anchor = ok_chain and entry is not None
     results.append(("anchor", ok_anchor, f"chain={reason} entry={'found' if entry else 'MISSING'}"))
 
-    # 4) proof (optional, cryptographic)
-    if args.proof is not None and args.proof.exists():
+    # 4) proof (optional, cryptographic) — prefer the verifier-only binary
+    POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
+    sidecar = Path(str(args.proof) + ".verify.json") if args.proof else None
+    if (args.proof is not None and args.proof.exists() and sidecar is not None
+            and sidecar.exists() and POP_VERIFY.exists()):
+        out = args.proof.parent / "verify_only.json"
+        subprocess.run([str(POP_VERIFY), "--meta", str(sidecar), "--out", str(out)],
+                       check=True, cwd=str(REPO))
+        v = json.loads(out.read_text())
+        b = payload["binding"]
+        results.append(("verify_only", bool(v.get("verified")),
+                        f"pop-verify ({v.get('proof_mode')}, no prover)"))
+        results.append(("public_values", v.get("public_values_sha256") == b.get("public_values_sha256"),
+                        "committed public values match"))
+        results.append(("vkey_hash", v.get("vkey_hash") == b.get("vkey_hash"), "vkey matches"))
+    elif args.proof is not None and args.proof.exists():
         out = args.proof.parent / "verify_out.json"
         subprocess.run([str(POP_SCRIPT), "--verify", "--proof", str(args.proof), "--out", str(out)],
                        env=dict(os.environ, SP1_PROVER="cpu"), check=True, cwd=str(REPO))
@@ -91,7 +105,7 @@ def main() -> int:
         ok_outcome = outcome == payload["outcome"]
         ok_vkey = v.get("vkey_hash") == payload["binding"]["vkey_hash"]
         ok_sha = sha256_file(args.proof) == payload["binding"]["proof_sha256"]
-        results.append(("proof_verify", ok_verified, "SP1 proof verified"))
+        results.append(("proof_verify", ok_verified, "SP1 proof verified (pop-script)"))
         results.append(("proof_outcome", ok_outcome, "committed outcome == certificate"))
         results.append(("proof_vkey", ok_vkey, "vkey hash matches"))
         results.append(("proof_sha256", ok_sha, "proof artifact hash matches"))

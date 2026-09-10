@@ -116,6 +116,11 @@
 | Agent 生成路径 + 工具调用出证 | ✅ `AgentMonitor` 两条路径均产证书（工具路径标注 `zk:false`） |
 | EU AI Act Art.12/13 | ✅ 证书携带 `ai_act.art12_record_keeping/art13_transparency`，映射见 `docs/eu-ai-act-mapping.md` |
 
+### P7 · 收尾增强（进行中）
+- [x] **P7-a verifier-only 审计路径**：`pop-verify`（仅 `sp1-verifier`，免构造证明器）+ `--proof-mode compressed`（默认仍 core）+ 验证边车 + 证书 `public_values_sha256`；快路径选择已单测。**compressed 证明在本机 12 GB 下 OOM（峰值 11 GB）→ 需 ≥16 GB 生成 fixture**（`scripts/make_audit_proof.sh`）
+- [ ] P7-b format/budget/tool 规则入电路（计划见 `docs/plan-p7.md`）
+- [ ] P7-c 链上锚定 RPC 后端（合约+后端抽象+假 RPC 单测可离线；**真跑 Anvil 待网络**——当前 github/gh-proxy 不可达）
+
 ### Phase 6 · 评测 + 安全模型 + 论文（W7–W8）✅
 - [x] **评测基础设施**：`pop-script --execute`（zkVM 执行、报周期数，不出证）；`PatternBlock.mode ∈ {pike,naive}` 消融开关（跨层一致，`tests/test_ablation.py`）
 - [x] **成本曲线**：`bench/bench_cycles.py`（20k 字符 × 6 规则 ≈ 1.12e8 周期；字符串规则 ≈ 4.2k 周期/字符）、`bench/bench_proofs.py`（真实证明：**98–141 s / 2.7 MiB / 峰值 ~10 GB**）、`bench/bench_verify.py`（**纯验证 89.8 ms**，vkey setup 1.6 s）

@@ -70,11 +70,14 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
                   outcome: Dict, vkey_hash: str,
                   proof_sha256: Optional[str] = None,
                   ts: Optional[str] = None,
-                  extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                  extra: Optional[Dict[str, Any]] = None,
+                  public_values_sha256: Optional[str] = None) -> Dict[str, Any]:
     """Assemble the certificate payload (deterministic given inputs + ts).
 
     ``extra`` carries optional annotations, e.g. ``{"streaming": {"partial": true,
     "tokens": N}}`` for prefix (incremental) certificates issued mid-stream.
+    ``public_values_sha256`` binds the committed public values for verifier-only
+    (``pop-verify``) checks.
     """
     payload = {
         "cert_version": CERT_VERSION,
@@ -82,7 +85,8 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
         "policy_hash": spec["sha256"],
         "mode": mode,
         "outcome": outcome,
-        "binding": {"vkey_hash": vkey_hash, "proof_sha256": proof_sha256},
+        "binding": {"vkey_hash": vkey_hash, "proof_sha256": proof_sha256,
+                    "public_values_sha256": public_values_sha256},
         "ai_act": ai_act_claims(mode),
         "ts": ts or utc_now(),
     }

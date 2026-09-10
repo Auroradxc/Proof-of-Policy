@@ -80,7 +80,8 @@ async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str) -> lis
     return guard
 
 
-def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool):
+def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
+            proof_mode: str = "core"):
     """Produce a real SP1 proof (or host check) and a certificate bound to it."""
     policy = ic.load_policy(REPO / CONTENT_PACK)
     spec = compile_policy(policy)
@@ -94,17 +95,22 @@ def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool):
     proof = zk_dir / "proof.bin"
     if no_prove:
         ic.run_pop(["--check", "--vectors", str(vectors), "--out", str(results)])
-        vkey_hash, proof_sha, proof_rel = "unproven", None, None
+        vkey_hash, proof_sha, proof_rel, pv_sha = "unproven", None, None, None
     else:
-        ic.run_pop(["--vectors", str(vectors), "--out", str(results), "--proof-out", str(proof)])
+        cmd = ["--vectors", str(vectors), "--out", str(results), "--proof-out", str(proof)]
+        if proof_mode != "core":
+            cmd += ["--proof-mode", proof_mode]
+        ic.run_pop(cmd)
         meta = json.loads(Path(f"{proof}.meta.json").read_text())
         vkey_hash = meta["vkey_hash"]
         proof_sha = ic.sha256_file(proof)
         proof_rel = str(proof.relative_to(out_dir))
+        pv_file = Path(f"{proof}.pv")
+        pv_sha = ic.sha256_file(pv_file) if pv_file.exists() else None
     got = json.loads(results.read_text())[0]
     outcome = {k: v for k, v in got.items() if k not in ("name", "mode")}
     payload = cert.build_payload(policy.id, policy.version, spec, "public", outcome,
-                                 vkey_hash, proof_sha)
+                                 vkey_hash, proof_sha, public_values_sha256=pv_sha)
     return cert.sign_payload(payload, cert.DEMO_KEY), policy.id, proof_rel, outcome["passed"]
 
 
@@ -112,6 +118,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", type=Path, default=REPO / "scripts" / "examples" / "out" / "e2e")
     ap.add_argument("--no-prove", action="store_true", help="skip the real SP1 proof")
+    ap.add_argument("--proof-mode", choices=["core", "compressed", "groth16", "plonk"],
+                    default="core", help="core (default) or compressed for verifier-only audit")
     args = ap.parse_args()
 
     out_dir: Path = args.out_dir
@@ -138,7 +146,8 @@ def main() -> int:
         session_entries.append({"kind": "tool-result", "policy_pack": CONTENT_PACK, "envelope": env})
 
     # ---- 3) zk path (real SP1 proof) ----
-    zk_env, zk_policy, proof_rel, zk_passed = zk_path(out_dir, CLEAN_REPLY, vkey, args.no_prove)
+    zk_env, zk_policy, proof_rel, zk_passed = zk_path(out_dir, CLEAN_REPLY, vkey,
+                                                      args.no_prove, args.proof_mode)
     entry = {"kind": "zk", "policy_pack": CONTENT_PACK, "envelope": zk_env}
     if proof_rel:
         entry["proof"] = proof_rel

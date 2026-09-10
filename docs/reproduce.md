@@ -97,6 +97,26 @@ python3 scripts/make_shots.py --run-demo                   # 生成 docs/demo/*.
 bash scripts/install_frameworks.sh     # langchain / langgraph / mcp；装好后真实框架测试自动启用
 ```
 
+## 9.（可选）审计路径：verifier-only（免构造证明器）
+
+```bash
+# a) 生成 compressed 证明（默认 core 不变；此命令额外产出验证边车 .bytes/.pv/.vkh/.verify.json）
+SP1_PROVER=cpu python3 scripts/issue_cert.py \
+  --pack policy_packs/eu_ai_act_v1.json --response scripts/examples/eu_agent_reply.txt \
+  --out-dir scripts/examples/out/cert_audit --proof-mode compressed
+
+# b) 仅验证器（不构造证明器，无 ~10 GB 证明器状态）
+./circuits/target/release/pop-verify \
+  --meta scripts/examples/out/cert_audit/proof.bin.verify.json
+
+# c) 第三方验证会自动走快路径（存在边车 + pop-verify 已构建时）
+python3 scripts/verify_cert.py --cert .../cert.json --pack policy_packs/eu_ai_act_v1.json \
+  --ledger .../ledger.jsonl --proof .../proof.bin
+```
+
+> ⚠️ **内存**：`compressed` 证明需 **≥16 GB**（本机 12 GB 实测 OOM，峰值 anon-RSS 11.0 GB；Core 仍需 ~10 GB）。
+> 需要 fixture 时运行 `SP1_PROVER=cpu bash scripts/make_audit_proof.sh`（生成后 `tests/test_verifier_only.py` 的用例自动启用）。
+
 ---
 
 ## 验收判据（复现成功）

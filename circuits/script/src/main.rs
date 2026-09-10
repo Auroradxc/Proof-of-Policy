@@ -83,6 +83,40 @@ fn write_json(path: &str, value: &serde_json::Value) {
         .unwrap_or_else(|e| panic!("write {path}: {e}"));
 }
 
+/// Write the files a verifier-only binary (`pop-verify`) needs, next to the proof:
+///   <proof>.bytes  bincode(SP1Proof)  (compressed) | on-chain bytes (groth16/plonk)
+///   <proof>.pv     raw public values
+///   <proof>.vkh    bincode(vk.hash_koalabear())   (compressed)
+///   <proof>.verify.json  sidecar describing the above
+fn write_verifier_sidecar(path: &str, proof: &SP1ProofWithPublicValues,
+                          vk: &sp1_sdk::SP1VerifyingKey, mode: &str) {
+    use sp1_sdk::SP1Proof;
+    let proof_bytes = match mode {
+        "compressed" => bincode::serialize(&proof.proof).expect("bincode(SP1Proof)"),
+        "groth16" | "plonk" => match &proof.proof {
+            SP1Proof::Groth16(_) | SP1Proof::Plonk(_) => proof.bytes(),
+            _ => panic!("proof mode {mode} but proof is not groth16/plonk"),
+        },
+        _ => bincode::serialize(&proof.proof).expect("bincode(SP1Proof)"),
+    };
+    let pv = proof.public_values.as_slice().to_vec();
+    let vkh = bincode::serialize(&vk.hash_koalabear()).expect("bincode(vkey hash)");
+    let bytes_file = format!("{path}.bytes");
+    let pv_file = format!("{path}.pv");
+    let vkh_file = format!("{path}.vkh");
+    std::fs::write(&bytes_file, &proof_bytes).expect("write proof bytes");
+    std::fs::write(&pv_file, &pv).expect("write public values");
+    std::fs::write(&vkh_file, &vkh).expect("write vkey hash");
+    let sidecar = json!({
+        "proof_mode": mode,
+        "proof_bytes_file": bytes_file,
+        "public_values_file": pv_file,
+        "vkey_hash_file": vkh_file,
+        "vkey_hash_str": vk.bytes32(),
+    });
+    write_json(&format!("{path}.verify.json"), &sidecar);
+}
+
 fn main() {
     sp1_sdk::utils::setup_logger();
 
@@ -94,6 +128,7 @@ fn main() {
     let mut execute_mode = false;
     let mut verify_mode = false;
     let mut verify_reps: u32 = 1;
+    let mut proof_mode = "core".to_string();
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -114,6 +149,10 @@ fn main() {
             "--proof" => {
                 i += 1;
                 proof_path = args.get(i).cloned();
+            }
+            "--proof-mode" => {
+                i += 1;
+                proof_mode = args.get(i).cloned().unwrap_or_else(|| "core".to_string());
             }
             "--verify-reps" => {
                 i += 1;
@@ -217,8 +256,15 @@ fn main() {
         let mut stdin = SP1Stdin::new();
         stdin.write(&v.to_job());
 
-        eprintln!("[{label}] generating proof ...");
-        let mut proof = client.prove(&pk, stdin).run().expect("generate proof");
+        eprintln!("[{label}] generating proof (mode={proof_mode}) ...");
+        let req = client.prove(&pk, stdin);
+        let req = match proof_mode.as_str() {
+            "compressed" => req.compressed(),
+            "groth16" => req.groth16(),
+            "plonk" => req.plonk(),
+            _ => req.core(),
+        };
+        let mut proof = req.run().expect("generate proof");
         let out: Outcome = proof.public_values.read::<Outcome>();
         client
             .verify(&proof, pk.verifying_key(), None)
@@ -226,10 +272,12 @@ fn main() {
 
         if let Some(path) = &proof_out {
             proof.save(path).unwrap_or_else(|e| panic!("save proof {path}: {e}"));
-            let meta = json!({ "vkey_hash": pk.verifying_key().bytes32(), "proof_file": path });
+            write_verifier_sidecar(path, &proof, pk.verifying_key(), &proof_mode);
+            let meta = json!({ "vkey_hash": pk.verifying_key().bytes32(), "proof_file": path,
+                               "proof_mode": proof_mode });
             let meta_path = format!("{path}.meta.json");
             write_json(&meta_path, &meta);
-            eprintln!("saved proof to {path} (+ {meta_path})");
+            eprintln!("saved proof to {path} (+ {meta_path}, verifier sidecar)");
         }
         results.push(outcome_json(&v.name, &out));
         eprintln!("[{label}] proved");

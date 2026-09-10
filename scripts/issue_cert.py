@@ -56,6 +56,8 @@ def main() -> int:
     ap.add_argument("--response", type=Path, required=True)
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--mode", choices=["public", "private"], default="public")
+    ap.add_argument("--proof-mode", choices=["core", "compressed", "groth16", "plonk"],
+                    default="core", help="core (fast, default) or compressed for verifier-only audit")
     ap.add_argument("--ledger", type=Path, default=REPO / "scripts" / "examples" / "out" / "ledger.jsonl")
     ap.add_argument("--no-prove", action="store_true", help="host-check only (no SP1 proof)")
     args = ap.parse_args()
@@ -85,16 +87,22 @@ def main() -> int:
         run_pop(["--check", "--vectors", str(vectors), "--out", str(results)])
         vkey_hash = "unproven"
         proof_sha = None
+        pv_sha = None
     else:
-        run_pop(["--vectors", str(vectors), "--out", str(results), "--proof-out", str(proof)])
+        cmd = ["--vectors", str(vectors), "--out", str(results), "--proof-out", str(proof)]
+        if args.proof_mode != "core":
+            cmd += ["--proof-mode", args.proof_mode]
+        run_pop(cmd)
         meta = json.loads(Path(f"{proof}.meta.json").read_text())
         vkey_hash = meta["vkey_hash"]
         proof_sha = sha256_file(proof)
+        pv_file = Path(f"{proof}.pv")
+        pv_sha = sha256_file(pv_file) if pv_file.exists() else None
 
     got = json.loads(results.read_text())[0]
     outcome = {k: v for k, v in got.items() if k not in ("name", "mode")}
     payload = cert.build_payload(policy.id, policy.version, spec, args.mode, outcome,
-                                 vkey_hash, proof_sha)
+                                 vkey_hash, proof_sha, public_values_sha256=pv_sha)
     env = cert.sign_payload(payload, cert.DEMO_KEY)
     (out_dir / "cert.json").write_text(json.dumps(env, indent=2))
     (out_dir / "payload.json").write_text(json.dumps(payload, indent=2))
