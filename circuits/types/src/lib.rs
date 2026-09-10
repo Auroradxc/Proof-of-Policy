@@ -241,10 +241,14 @@ pub struct RedactionProof {
     pub redacted_commitment: String,
     pub mask_count: u32,
     pub redaction_ok: bool,
+    /// Every masked position lies inside a *genuine* pattern match (witness
+    /// spans validated in-circuit) — mask ⊆ matches.
+    pub mask_covered: bool,
 }
 
 /// Private-mode input. `mask` are the char indices allowed to differ (hold
-/// `*`); `redacted` is the candidate redaction to verify (optional).
+/// `*`); `redacted` is the candidate redaction to verify (optional); `spans`
+/// are witness char ranges proving those positions are genuine matches.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PrivateRequest {
     pub response: String,
@@ -253,6 +257,8 @@ pub struct PrivateRequest {
     pub mask: Vec<u32>,
     #[serde(default)]
     pub redacted: Option<String>,
+    #[serde(default)]
+    pub spans: Vec<(u32, u32)>,
 }
 
 /// Private-mode public output: no response text, only its commitment and
@@ -306,6 +312,62 @@ pub fn redaction_ok(response: &str, redacted: &str, mask: &[u32]) -> bool {
     true
 }
 
+/// True iff `chars[start..end]` fully matches `spec` (both ends anchored),
+/// consuming at least one char. Used to validate redaction witness spans.
+fn anchored_full_match(spec: &NfaSpec, chars: &[char], start: usize, end: usize) -> bool {
+    if end > chars.len() || start >= end {
+        return false;
+    }
+    let mut cur = eps_closure(spec, core::slice::from_ref(&spec.start));
+    if reached_accept(spec, &cur) {
+        return false;
+    }
+    for i in start..end {
+        let cp = chars[i] as u32;
+        let mut nxt = vec![false; spec.states.len()];
+        for (s, present) in cur.iter().enumerate() {
+            if !present {
+                continue;
+            }
+            for e in &spec.states[s].edges {
+                if in_ranges(cp, &e.ranges) {
+                    let cl = eps_closure(spec, core::slice::from_ref(&e.to));
+                    for (k, v) in cl.into_iter().enumerate() {
+                        if v {
+                            nxt[k] = true;
+                        }
+                    }
+                }
+            }
+        }
+        cur = nxt;
+        if !cur.iter().any(|&x| x) {
+            return false;
+        }
+    }
+    reached_accept(spec, &cur)
+}
+
+/// Every span must be a genuine full match of some pattern_block pattern.
+fn spans_valid(constraints: &[Constraint], chars: &[char], spans: &[(u32, u32)]) -> bool {
+    let specs: Vec<&NfaSpec> = constraints
+        .iter()
+        .filter_map(|c| match c {
+            Constraint::PatternBlock { specs, .. } => Some(specs.iter()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    spans
+        .iter()
+        .all(|&(s, e)| specs.iter().any(|sp| anchored_full_match(sp, chars, s as usize, e as usize)))
+}
+
+/// Every masked index lies inside some span (mask ⊆ spans).
+fn mask_within_spans(mask: &[u32], spans: &[(u32, u32)]) -> bool {
+    mask.iter().all(|&m| spans.iter().any(|&(s, e)| m >= s && m < e))
+}
+
 /// Judge a private request: compute the (shared) evaluation, but disclose only
 /// rule/kind + evidence commitments, plus the response commitment and an
 /// optional redaction proof.
@@ -323,10 +385,16 @@ pub fn evaluate_private(req: &PrivateRequest) -> PrivateOutput {
             evidence_commitment: sha256_hex(&v.evidence),
         })
         .collect();
-    let redaction = req.redacted.as_ref().map(|red| RedactionProof {
-        redacted_commitment: sha256_hex(red),
-        mask_count: req.mask.len() as u32,
-        redaction_ok: redaction_ok(&req.response, red, &req.mask),
+    let redaction = req.redacted.as_ref().map(|red| {
+        let chars: Vec<char> = req.response.chars().collect();
+        let covered = spans_valid(&req.constraints, &chars, &req.spans)
+            && mask_within_spans(&req.mask, &req.spans);
+        RedactionProof {
+            redacted_commitment: sha256_hex(red),
+            mask_count: req.mask.len() as u32,
+            redaction_ok: redaction_ok(&req.response, red, &req.mask),
+            mask_covered: covered,
+        }
     });
     PrivateOutput {
         response_commitment: sha256_hex(&req.response),

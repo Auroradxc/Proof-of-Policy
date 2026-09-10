@@ -490,3 +490,39 @@ def mask_indices(specs: List[dict], text: str) -> List[int]:
         for lo, hi in find_spans(spec, text):
             covered.update(range(lo, hi))
     return sorted(covered)
+
+
+def anchored_full_match(spec: dict, text: str, start: int, end: int) -> bool:
+    """True iff ``text[start:end]`` *fully* matches the pattern (both ends
+    anchored) and consumes at least one char. Used to validate redaction spans
+    in-circuit: a masked region must be a genuine match, not arbitrary text."""
+    if start < 0 or end > len(text) or start >= end:
+        return False
+    closure = _closure_table(spec)
+    states = spec["states"]
+    accept = frozenset(spec["accept"])
+    cur = set(closure[spec["start"]])
+    if cur & accept:
+        return False  # would be an empty match; spans must consume >= 1 char
+    for i in range(start, end):
+        cp = ord(text[i])
+        nxt = set()
+        for s in cur:
+            for e in states[s]["edges"]:
+                if _point_in_ranges(cp, e["ranges"]):
+                    nxt.update(closure[e["to"]])
+        cur = nxt
+        if not cur:
+            return False
+    return bool(cur & accept)
+
+
+def merge_spans(spans: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    """Sort and merge overlapping/adjacent spans."""
+    merged: List[Tuple[int, int]] = []
+    for lo, hi in sorted(spans):
+        if merged and lo <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], hi))
+        else:
+            merged.append((lo, hi))
+    return merged

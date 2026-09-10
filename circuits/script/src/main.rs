@@ -38,6 +38,8 @@ struct VectorIn {
     mask: Vec<u32>,
     #[serde(default)]
     redacted: Option<String>,
+    #[serde(default)]
+    spans: Vec<(u32, u32)>,
 }
 
 #[derive(Deserialize)]
@@ -54,6 +56,7 @@ impl VectorIn {
                 constraints: self.constraints.clone(),
                 mask: self.mask.clone(),
                 redacted: self.redacted.clone(),
+                spans: self.spans.clone(),
             })
         } else {
             Job::Public(ProofRequest {

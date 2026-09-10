@@ -78,6 +78,31 @@ def mask_from_patterns(patterns: List[str], text: str) -> List[int]:
     return nfa.mask_indices(specs, text)
 
 
+def spec_spans(spec: Dict, text: str) -> List[Tuple[int, int]]:
+    """Merged match spans across every pattern_block constraint in the spec."""
+    spans: List[Tuple[int, int]] = []
+    for c in spec["constraints"]:
+        if c["kind"] == "pattern_block":
+            for s in c["nfa"]["compiled"]:
+                spans.extend(nfa.find_spans(s, text))
+    return nfa.merge_spans(spans)
+
+
+def spans_valid(spec: Dict, text: str, spans: List[Tuple[int, int]]) -> bool:
+    """Every span must be a genuine full match of some pattern_block pattern."""
+    comps = [s for c in spec["constraints"] if c["kind"] == "pattern_block"
+             for s in c["nfa"]["compiled"]]
+    for (lo, hi) in spans:
+        if not any(nfa.anchored_full_match(s, text, lo, hi) for s in comps):
+            return False
+    return True
+
+
+def mask_covered(mask: List[int], spans: List[Tuple[int, int]]) -> bool:
+    """Every masked index lies inside some span (mask ⊆ spans)."""
+    return all(any(lo <= m < hi for lo, hi in spans) for m in mask)
+
+
 def redact(text: str, mask: List[int], char: str = MASK_CHAR) -> str:
     """Return ``text`` with the given indices replaced by ``char``."""
     ms = set(mask)
@@ -105,18 +130,27 @@ def redaction_ok(response: str, redacted: str, mask: List[int],
 
 def private_output(spec: Dict, response: str,
                    mask: Optional[List[int]] = None,
-                   redacted: Optional[str] = None) -> Dict:
-    """Build the dict matching ``pop-types::PrivateOutput`` (golden)."""
+                   redacted: Optional[str] = None,
+                   spans: Optional[List[Tuple[int, int]]] = None) -> Dict:
+    """Build the dict matching ``pop-types::PrivateOutput`` (golden).
+
+    ``spans`` are witness match spans (char ranges) proving that masked
+    positions are inside genuine pattern matches: ``mask_covered`` is true iff
+    every span is a real match and every masked index lies in a span.
+    """
     vs = canonical_violations(spec, response)
     violations = [{"rule": v["rule"], "kind": v["kind"],
                    "evidence_commitment": evidence_commitment(v["evidence"])} for v in vs]
     redaction = None
     if redacted is not None:
         m = sorted(mask or [])
+        sp = [tuple(s) for s in (spans or [])]
+        covered = spans_valid(spec, response, sp) and mask_covered(m, sp)
         redaction = {
             "redacted_commitment": commitment(redacted),
             "mask_count": len(m),
             "redaction_ok": redaction_ok(response, redacted, m),
+            "mask_covered": covered,
         }
     return {
         "response_commitment": commitment(response),
@@ -124,3 +158,30 @@ def private_output(spec: Dict, response: str,
         "violations": violations,
         "redaction": redaction,
     }
+
+
+# --------------------------------------------------------------------------- #
+# Evidence opening (selective disclosure to an auditor)
+# --------------------------------------------------------------------------- #
+
+def open_evidence(commitment_hex: str, fragment: str) -> bool:
+    """Verify that ``fragment`` opens ``commitment_hex`` (sha256 match)."""
+    return evidence_commitment(fragment) == commitment_hex
+
+
+def evidence_bundle(spec: Dict, response: str) -> List[Dict]:
+    """Authorized full disclosure: each violation with its plaintext evidence and
+    the matching commitment (so an auditor can check against the proof)."""
+    out = []
+    for v in canonical_violations(spec, response):
+        out.append({
+            "rule": v["rule"], "kind": v["kind"],
+            "evidence": v["evidence"],
+            "evidence_commitment": evidence_commitment(v["evidence"]),
+        })
+    return out
+
+
+def verify_bundle(bundle: List[Dict]) -> bool:
+    """Every entry's commitment must equal sha256(evidence)."""
+    return all(open_evidence(e["evidence_commitment"], e["evidence"]) for e in bundle)

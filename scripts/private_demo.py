@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""Phase 4 private-mode demo / verification.
+"""Phase 4 private-mode demo / verification (+ boundary hardening).
 
 Checks the private pipeline end-to-end:
   - HOST CHECK: pop-script --check (pop-types::evaluate_private) vs the Python
     golden (policydsl.commit.private_output) — field-for-field, including the
-    response commitment, per-violation evidence commitments, and redaction proof.
-  - LEAK experiment: the public output the verifier sees must not contain the
-    response text or the evidence fragments (only commitments).
-  - UNFORGEABILITY/binding: commitments are deterministic and distinct across
-    inputs; a redaction that differs outside the mask is rejected.
-  - PROOF: the same private job is proven in SP1 and the committed outcome is
-    re-checked (skip with --no-prove).
+    response commitment, evidence commitments, redaction proof, and the
+    boundary property ``mask_covered`` (mask ⊆ genuine matches, enforced in-circuit).
+  - NEGATIVE: a fabricated witness span (mask outside any real match) yields
+    mask_covered=false.
+  - LEAK: the verifier-visible output has no response/evidence text.
+  - BINDING: commitments deterministic, distinct; forged redaction rejected.
+  - EVIDENCE OPENING: a disclosed fragment verifies against its commitment.
+  - PROOF: the same private job is proven in SP1 and re-checked (skip: --no-prove).
 
-Usage:
-  SP1_PROVER=cpu python3 scripts/private_demo.py [--no-prove]
+Usage: SP1_PROVER=cpu python3 scripts/private_demo.py [--no-prove]
 """
 
 from __future__ import annotations
@@ -46,7 +46,8 @@ def build_case() -> dict:
     spec = compile_policy(policy)
     mask = commit.mask_from_patterns([pii.PII_PATTERNS["email"]], response)
     redacted = commit.redact(response, mask)
-    golden = commit.private_output(spec, response, mask, redacted)
+    spans = commit.spec_spans(spec, response)
+    golden = commit.private_output(spec, response, mask, redacted, spans)
     vector = {
         "name": policy.id,
         "response": response,
@@ -54,9 +55,10 @@ def build_case() -> dict:
         "private": True,
         "mask": mask,
         "redacted": redacted,
+        "spans": [list(s) for s in spans],
     }
     return {"policy": policy, "spec": spec, "response": response, "redacted": redacted,
-            "mask": mask, "golden": golden, "vector": vector}
+            "mask": mask, "spans": spans, "golden": golden, "vector": vector}
 
 
 def run_pop(check_mode: bool, vectors: Path, out: Path) -> None:
@@ -67,7 +69,7 @@ def run_pop(check_mode: bool, vectors: Path, out: Path) -> None:
     subprocess.run(args, env=dict(os.environ, SP1_PROVER="cpu"), check=True, cwd=str(REPO))
 
 
-def compare_private(mode: str, golden: dict, got: dict) -> bool:
+def compare_private(mode: str, name: str, golden: dict, got: dict) -> bool:
     g_rules = sorted((v["rule"], v["kind"], v["evidence_commitment"]) for v in golden["violations"])
     s_rules = sorted((v["rule"], v["kind"], v["evidence_commitment"]) for v in got["violations"])
     checks = {
@@ -77,45 +79,51 @@ def compare_private(mode: str, golden: dict, got: dict) -> bool:
         "redaction": (got["redaction"] or {}) == (golden["redaction"] or {}),
     }
     ok = all(checks.values())
-    print(f"[{'PASS' if ok else 'FAIL'}] {mode:5s} "
-          f"passed={got['passed']} commit={got['response_commitment'][:12]}… "
+    print(f"[{'PASS' if ok else 'FAIL'}] {mode:5s} {name} passed={got['passed']} "
           f"rules={[(r, k) for r, k, _ in s_rules]} redaction={got['redaction']}")
     if not ok:
         for k, v in checks.items():
             if not v:
-                print(f"   mismatch: {k} golden={golden.get(k)} got={got.get(k)}")
+                print(f"   mismatch {k}: golden={golden.get(k)} got={got.get(k)}")
     return ok
 
 
 def leak_experiment(case: dict, public_out: dict) -> bool:
-    """The verifier-visible output must not contain response/evidence text."""
     blob = json.dumps(public_out)
-    response = case["response"]
-    leaks = [w for w in set(response.split()) if len(w) >= 4 and w in blob]
-    # commitments are 64-hex and differ from the plaintext
+    leaks = [w for w in set(case["response"].split()) if len(w) >= 4 and w in blob]
     commit_ok = len(public_out["response_commitment"]) == 64
     commit_ok &= all(len(v["evidence_commitment"]) == 64 for v in public_out["violations"])
-    not_plain = public_out["response_commitment"] != response
-    ok = not leaks and commit_ok and not_plain
-    print(f"[{'PASS' if ok else 'FAIL'}] leak      no response tokens in output={not leaks} "
-          f"commitments_64hex={commit_ok} not_plaintext={not_plain}")
+    ok = (not leaks) and commit_ok and public_out["response_commitment"] != case["response"]
+    print(f"[{'PASS' if ok else 'FAIL'}] leak      no_tokens={not leaks} "
+          f"commitments_64hex={commit_ok}")
     return ok
 
 
-def binding_experiment(case: dict, spec: dict) -> bool:
-    """Commitments are deterministic and distinct across inputs; a redaction
-    altering a non-masked position is rejected."""
+def binding_experiment(case: dict) -> bool:
     a = commit.commitment(case["response"])
-    b = commit.commitment(case["response"] + "x")
     deterministic = a == commit.commitment(case["response"])
-    distinct = a != b
-    # tamper outside the mask -> redaction_ok False
-    tampered = "Q" + case["redacted"][1:]
-    forged_ok = commit.redaction_ok(case["response"], tampered, case["mask"])
-    # a wrong mask (drop a position) must fail too
-    ok = deterministic and distinct and (not forged_ok)
+    distinct = a != commit.commitment(case["response"] + "x")
+    forged_ok = commit.redaction_ok(case["response"], "Q" + case["redacted"][1:], case["mask"])
+    ok = deterministic and distinct and not forged_ok
     print(f"[{'PASS' if ok else 'FAIL'}] binding   deterministic={deterministic} "
-          f"distinct={distinct} forged_redaction_rejected={not forged_ok}")
+          f"distinct={distinct} forged_rejected={not forged_ok}")
+    return ok
+
+
+def evidence_experiment(case: dict) -> bool:
+    bundle = commit.evidence_bundle(case["spec"], case["response"])
+    ok_open = commit.verify_bundle(bundle) and len(bundle) == len(case["golden"]["violations"])
+    # the disclosed commitment must equal the one in the proof output
+    proof_comms = {v["evidence_commitment"] for v in case["golden"]["violations"]}
+    bundled = {e["evidence_commitment"] for e in bundle}
+    ok_bind = proof_comms == bundled
+    # tampering breaks it
+    bad = [dict(e) for e in bundle]
+    bad[0]["evidence"] = "tampered"
+    ok_reject = not commit.verify_bundle(bad)
+    ok = ok_open and ok_bind and ok_reject
+    print(f"[{'PASS' if ok else 'FAIL'}] opening   verified={ok_open} bound_to_proof={ok_bind} "
+          f"tamper_rejected={ok_reject}")
     return ok
 
 
@@ -125,27 +133,41 @@ def main() -> int:
     args = ap.parse_args()
 
     case = build_case()
+    # negative case: fabricated witness span that does not cover the mask
+    bad_vector = {**case["vector"], "name": "private-demo-badspan", "spans": [[0, 1]]}
+    bad_golden = commit.private_output(case["spec"], case["response"], case["mask"],
+                                       case["redacted"], [(0, 1)])
+
     out_dir = REPO / "scripts" / "examples" / "out" / "private"
     out_dir.mkdir(parents=True, exist_ok=True)
-    vectors = out_dir / "vectors.json"
-    vectors.write_text(json.dumps({"vectors": [case["vector"]]}, indent=2))
-    print("private vectors:", json.dumps(case["vector"])[:120], "...")
+
+    check_vec = out_dir / "vectors_check.json"
+    check_vec.write_text(json.dumps({"vectors": [case["vector"], bad_vector]}, indent=2))
 
     ok = True
-
     hout = out_dir / "host.json"
-    run_pop(True, vectors, hout)
-    got = json.loads(hout.read_text())[0]
-    ok &= compare_private("check", case["golden"], got)
-    ok &= leak_experiment(case, got)
-    ok &= binding_experiment(case, case["spec"])
+    run_pop(True, check_vec, hout)
+    got = json.loads(hout.read_text())
+    ok &= compare_private("check", "good", case["golden"], got[0])
+    ok &= compare_private("check", "badspan", bad_golden, got[1])
+    # the negative case must report mask_covered=false
+    neg_ok = got[1]["redaction"]["mask_covered"] is False
+    print(f"[{'PASS' if neg_ok else 'FAIL'}] negative  bad-span mask_covered=false (got "
+          f"{got[1]['redaction']['mask_covered']})")
+    ok &= neg_ok
+
+    ok &= leak_experiment(case, got[0])
+    ok &= binding_experiment(case)
+    ok &= evidence_experiment(case)
 
     if not args.no_prove:
         pout = out_dir / "proof.json"
+        prove_vec = out_dir / "vectors_prove.json"
+        prove_vec.write_text(json.dumps({"vectors": [case["vector"]]}, indent=2))
         print("--- proving private job (SP1, ~1 min) ---")
-        run_pop(False, vectors, pout)
+        run_pop(False, prove_vec, pout)
         got_p = json.loads(pout.read_text())[0]
-        ok &= compare_private("prove", case["golden"], got_p)
+        ok &= compare_private("prove", "good", case["golden"], got_p)
         ok &= leak_experiment(case, got_p)
     else:
         print("(--no-prove: skipped SP1 proof)")

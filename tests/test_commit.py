@@ -98,10 +98,70 @@ class TestPrivateOutput(unittest.TestCase):
         resp = "Contact a@b.com for details"
         mask = commit.mask_from_patterns([pii.PII_PATTERNS["email"]], resp)
         red = commit.redact(resp, mask)
-        out = commit.private_output(spec, resp, mask, red)
+        spans = commit.spec_spans(spec, resp)
+        out = commit.private_output(spec, resp, mask, red, spans)
         self.assertEqual(out["redaction"]["mask_count"], len(mask))
         self.assertTrue(out["redaction"]["redaction_ok"])
+        self.assertTrue(out["redaction"]["mask_covered"])
         self.assertEqual(out["redaction"]["redacted_commitment"], commit.commitment(red))
+
+
+class TestMaskCoverage(unittest.TestCase):
+    def _case(self):
+        p = Policy("t", "1", rules=[Rule("pattern_block", "no_email",
+                                         {"patterns": [pii.PII_PATTERNS["email"]]})])
+        spec = compile_policy(p)
+        resp = "Contact a@b.com for details"
+        return spec, resp
+
+    def test_real_span_valid_and_covers(self):
+        spec, resp = self._case()
+        spans = commit.spec_spans(spec, resp)
+        self.assertTrue(commit.spans_valid(spec, resp, spans))
+        mask = commit.mask_from_patterns([pii.PII_PATTERNS["email"]], resp)
+        self.assertTrue(commit.mask_covered(mask, spans))
+
+    def test_fabricated_span_invalid(self):
+        spec, resp = self._case()
+        # "Contact" (0..7) is not an email match -> span must be rejected
+        bad = [(0, 7)]
+        self.assertFalse(commit.spans_valid(spec, resp, bad))
+        # an empty witness cannot cover any masked position
+        self.assertFalse(commit.mask_covered([0, 1], []))
+
+    def test_private_output_rejects_mask_outside_spans(self):
+        spec, resp = self._case()
+        mask = commit.mask_from_patterns([pii.PII_PATTERNS["email"]], resp)
+        spans = commit.spec_spans(spec, resp)
+        red = commit.redact(resp, mask)
+        # claim a span that does NOT cover the mask (fabricated short span)
+        out = commit.private_output(spec, resp, mask, red, [(0, 1)])
+        self.assertFalse(out["redaction"]["mask_covered"])
+        # and an empty witness cannot cover a non-empty mask
+        out2 = commit.private_output(spec, resp, mask, red, [])
+        self.assertFalse(out2["redaction"]["mask_covered"])
+
+
+class TestEvidenceOpening(unittest.TestCase):
+    def test_open_matches_and_rejects(self):
+        frag = "dev@example.com"
+        c = commit.evidence_commitment(frag)
+        self.assertTrue(commit.open_evidence(c, frag))
+        self.assertFalse(commit.open_evidence(c, "other@example.com"))
+        self.assertFalse(commit.open_evidence(c, ""))
+
+    def test_bundle_roundtrip(self):
+        p = Policy("t", "1", rules=[
+            Rule("keyword_block", "kb", {"keywords": ["exploit"]}),
+            Rule("pattern_block", "pb", {"patterns": [pii.PII_PATTERNS["email"]]}),
+        ])
+        spec = compile_policy(p)
+        bundle = commit.evidence_bundle(spec, "exploit a@b.com")
+        self.assertEqual(len(bundle), 2)
+        self.assertTrue(commit.verify_bundle(bundle))
+        # tampering the disclosed evidence breaks verification
+        bundle[0]["evidence"] = "tampered"
+        self.assertFalse(commit.verify_bundle(bundle))
 
 
 if __name__ == "__main__":

@@ -78,7 +78,12 @@
 | 不可伪造/绑定 | ✅ 承诺确定性且随输入变化；篡改脱敏被拒 |
 | redaction-with-proof | ✅ 简化版：仅掩码位不同（`mask_count`/`redaction_ok`/`redacted_commitment`） |
 
-**边界**：掩码「⊆ PII 命中」未在电路内强制（掩码由调用方给出）；证据片段的开示流程、链上锚定 → Phase 5 / E1。
+**边界增强（P4E）**
+- [x] 掩码 ⊆ 命中：`mask_covered` —— 见证 spans 在电路内逐一验证为**真实匹配**，再验 `mask ⊆ spans`（越界掩码被拒；负例已验证）
+- [x] 证据开示：`open_evidence`/`evidence_bundle`/`verify_bundle` —— 授权方向审计者开示证据片段并核对其承诺（篡改被拒）
+- [x] 单测 52 全绿；host 与真实证明均含 `mask_covered` 字段并与 golden 一致
+
+**边界**：掩码「⊇ 命中」未强制（允许只遮蔽部分命中）；证据片段的链上开示流程 → Phase 5。
 
 ### Phase 5 · Agent 集成 + 合规证书（W6）
 - [ ] demo/ LangGraph agent + hooks
