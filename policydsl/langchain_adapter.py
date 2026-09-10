@@ -90,10 +90,20 @@ def _parse_args(input_str: Any) -> Dict[str, Any]:
 
 
 class PoPCallbackHandler(BaseCallbackHandler):
-    """Issue certificates on LLM end and tool end events."""
+    """Issue certificates on LLM end and tool end events.
+
+    Streaming ("incremental") certificates: with ``stream_check=True`` (default),
+    ``on_llm_new_token`` accumulates the response prefix and, whenever the
+    compliance verdict *changes* (e.g. a secret pattern completes mid-stream),
+    emits a **partial** certificate (``streaming.partial = true``) so a monitor
+    can flag/stop early. The certificate emitted at ``on_llm_end`` remains the
+    authoritative one.
+    """
 
     def __init__(self, monitor: AgentMonitor, vkey_hash: str = "unproven",
-                 proof_sha256: Optional[str] = None, on_cert=None):
+                 proof_sha256: Optional[str] = None, on_cert=None,
+                 stream_check: bool = True, stream_every: int = 1,
+                 on_stream_cert=None):
         super().__init__()
         self.monitor = monitor
         self.vkey_hash = vkey_hash
@@ -101,6 +111,14 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self.on_cert = on_cert
         self.certificates: List[Dict[str, Any]] = []
         self._tool_starts: Dict[str, Dict[str, Any]] = {}
+        # streaming state
+        self.stream_check = stream_check
+        self.stream_every = max(1, stream_every)
+        self.on_stream_cert = on_stream_cert
+        self.stream_certificates: List[Dict[str, Any]] = []
+        self._sbuf: Dict[str, str] = {}
+        self._scount: Dict[str, int] = {}
+        self._sverdict: Dict[str, bool] = {}
 
     # -- helpers --
     def _emit(self, envelope: Dict[str, Any]) -> Dict[str, Any]:
@@ -110,8 +128,33 @@ class PoPCallbackHandler(BaseCallbackHandler):
         return envelope
 
     # -- LLM (generation path) --
+    def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
+        """Accumulate the streaming prefix; emit a partial cert on verdict change."""
+        run_id = str(kwargs.get("run_id") or "")
+        self._sbuf[run_id] = self._sbuf.get(run_id, "") + (token or "")
+        self._scount[run_id] = self._scount.get(run_id, 0) + 1
+        if not self.stream_check or self._scount[run_id] % self.stream_every != 0:
+            return
+        outcome = self.monitor.generate_outcome(self._sbuf[run_id])
+        verdict = bool(outcome["passed"])
+        prev = self._sverdict.get(run_id)
+        if prev is None or prev != verdict:
+            env = self.monitor.on_generate(
+                self._sbuf[run_id], vkey_hash=self.vkey_hash,
+                proof_sha256=self.proof_sha256,
+                extra={"streaming": {"partial": True, "tokens": self._scount[run_id]}})
+            self.stream_certificates.append(env)
+            if self.on_stream_cert is not None:
+                self.on_stream_cert(env)
+            self._sverdict[run_id] = verdict
+
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
-        text = _extract_text(response)
+        run_id = str(kwargs.get("run_id") or "")
+        # prefer the streamed buffer (exact tokens seen); fall back to extraction
+        text = self._sbuf.get(run_id) or _extract_text(response)
+        self._sbuf.pop(run_id, None)
+        self._scount.pop(run_id, None)
+        self._sverdict.pop(run_id, None)
         if text:
             self._emit(self.monitor.on_generate(text, vkey_hash=self.vkey_hash,
                                                 proof_sha256=self.proof_sha256))

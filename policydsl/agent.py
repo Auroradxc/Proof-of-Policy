@@ -50,10 +50,12 @@ class AgentMonitor:
     def on_generate(self, response: str, ts: Optional[str] = None,
                     vkey_hash: str = "unproven", proof_sha256: Optional[str] = None,
                     mask: Optional[List[int]] = None, redacted: Optional[str] = None,
-                    spans: Optional[List[Tuple[int, int]]] = None) -> Dict[str, Any]:
+                    spans: Optional[List[Tuple[int, int]]] = None,
+                    extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         outcome = self.generate_outcome(response, mask, redacted, spans)
         payload = cert.build_payload(self.policy.id, self.policy.version, self.spec,
-                                     self.mode, outcome, vkey_hash, proof_sha256, ts)
+                                     self.mode, outcome, vkey_hash, proof_sha256, ts,
+                                     extra=extra)
         return cert.sign_payload(payload, self.key, self.keyid)
 
     # -- tool-call path (Python reference kinds) --

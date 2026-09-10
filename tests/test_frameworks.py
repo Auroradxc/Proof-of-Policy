@@ -187,6 +187,72 @@ class TestRealLangChain(unittest.TestCase):
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret_args")
 
 
+class TestStreamingOffline(unittest.TestCase):
+    def setUp(self):
+        self.monitor = AgentMonitor(load_pack("agent_content_v1.json"))
+
+    def _feed(self, handler, text, run_id="s1"):
+        for ch in text:
+            handler.on_llm_new_token(ch, run_id=run_id)
+
+    def test_clean_prefix_emits_single_partial_cert(self):
+        h = PoPCallbackHandler(self.monitor)
+        self._feed(h, "A safe reply")
+        # verdict stays True -> exactly one partial cert (None -> True), no spam
+        self.assertEqual(len(h.stream_certificates), 1)
+        ok, payload = cert.verify_envelope(h.stream_certificates[0], cert.DEMO_KEY)
+        self.assertTrue(ok)
+        self.assertTrue(payload["streaming"]["partial"])
+        self.assertTrue(payload["outcome"]["passed"])
+
+    def test_stream_detects_violation_midstream(self):
+        h = PoPCallbackHandler(self.monitor)
+        self._feed(h, "x sk-abcdefghijklmnopqrstuvwxyz")
+        # None->True, then True->False when the secret pattern completes
+        self.assertGreaterEqual(len(h.stream_certificates), 2)
+        _, last = cert.verify_envelope(h.stream_certificates[-1], cert.DEMO_KEY)
+        self.assertFalse(last["outcome"]["passed"])
+        self.assertEqual(last["outcome"]["violations"][0]["rule"], "no_secret")
+        self.assertTrue(last["streaming"]["partial"])
+
+    def test_stream_check_disabled(self):
+        h = PoPCallbackHandler(self.monitor, stream_check=False)
+        self._feed(h, "x sk-abcdefghijklmnopqrstuvwxyz")
+        self.assertEqual(h.stream_certificates, [])
+
+    def test_on_llm_end_clears_stream_state(self):
+        h = PoPCallbackHandler(self.monitor)
+        self._feed(h, "A safe reply")
+        h.on_llm_end(types.SimpleNamespace(generations=[]), run_id="s1")
+        self.assertEqual(len(h.certificates), 1)          # final (authoritative) cert
+        self.assertEqual(h._sbuf, {})                     # state cleared
+
+
+@unittest.skipUnless(langchain_available(), "langchain not installed")
+class TestRealStreaming(unittest.TestCase):
+    def test_generic_fake_model_streams_and_certifies(self):
+        try:
+            from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+            from langchain_core.messages import AIMessage
+        except Exception as exc:  # pragma: no cover
+            self.skipTest(f"GenericFakeChatModel unavailable: {exc}")
+
+        monitor = AgentMonitor(load_pack("agent_content_v1.json"))
+        h = PoPCallbackHandler(monitor, vkey_hash="vk-stream")
+        llm = GenericFakeChatModel(messages=iter(
+            [AIMessage(content="Leak sk-abcdefghijklmnopqrstuvwxyz")]))
+        for _ in llm.stream("hi", config={"callbacks": [h]}):
+            pass
+        # incremental certs were emitted during streaming
+        self.assertGreaterEqual(len(h.stream_certificates), 1)
+        for env in h.stream_certificates + h.certificates:
+            ok, _ = cert.verify_envelope(env, cert.DEMO_KEY)
+            self.assertTrue(ok)
+        # final (authoritative) certificate flags the violation
+        _, final = cert.verify_envelope(h.certificates[-1], cert.DEMO_KEY)
+        self.assertFalse(final["outcome"]["passed"])
+
+
 @unittest.skipUnless(lg.langgraph_available(), "langgraph not installed")
 class TestRealLangGraph(unittest.TestCase):
     def test_state_graph_with_guard(self):
