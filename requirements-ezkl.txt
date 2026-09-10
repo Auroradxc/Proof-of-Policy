@@ -33,5 +33,7 @@ networkx==3.4.2
 #   2. `torch.onnx.export` 在 torch ≥2.9 默认走 dynamo 导出器；本栈用
 #      `dynamo=False`（legacy TorchScript 路径）验证通过。
 #
-# 另：`ezkl.create_evm_verifier(...)` 生成 Solidity 验证器需要环境里有 `solc`。
-# 本机当前未装 —— 那是 P2-9 链上验证部分的前置，不属于本文件。
+# 另：`ezkl.create_evm_verifier(...)` 生成 Solidity 验证器需要环境里有 `solc`
+# （本机已放 ~/.local/bin/solc 0.8.24，但该目录不在 PATH 上，调用时需显式加前缀）。
+# 而且 ezkl 23.0.5 的这个函数**本身**在本机会抛 `RuntimeError: no running event
+# loop`（pyo3 绑定问题，与本文件无关）—— 详见 docs/plan-p0p1p2.md §8.1 的坑 2。

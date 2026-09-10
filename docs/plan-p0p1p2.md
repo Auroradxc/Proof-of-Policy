@@ -582,10 +582,12 @@ sudo apt install -y python3-pip python3-venv
 **进度（2026-09-10）**：第 5 项 ✅ 已完成并冒烟验证；第 1/3/4 项待办。
 
 ```bash
-# 1) 签名库（cryptography 3.4.8 已可用；建议升到 ≥41）
-#    ⏳ 待办（P0-3 Ed25519 的前置）。注意当前 3.4.8 装在 **系统** dist-packages
-#    (/usr/lib/python3/dist-packages)，--user 升级后会有两份，需先确认 import 优先级。
-python3 -m pip install --user -U cryptography
+# 1) 签名库 —— ✅ 已完成
+#    实测：Ed25519 在原来的 3.4.8 上**本来就可用**（`Ed25519PrivateKey.generate()`
+#    签名/验证通过），所以它从来不是 P0-3 的阻塞项。仍按建议升到了 50.0.1
+#    （`--user`，在 ~/.local/lib/python3.10/site-packages，import 优先级高于系统的
+#    /usr/lib/python3/dist-packages，已验证生效）。166 项单测不受影响。
+python3 -m pip install --user -U "cryptography>=41"
 
 # 2) Rust 侧新增依赖（pop-types 需解析规范 JSON 字节）
 #    ✅ 已满足：circuits/types/Cargo.toml 里
@@ -619,12 +621,26 @@ python3 -m pip install --user -r requirements-ezkl.txt
 verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 ```
 
-> **P2-9 必须避开两个坑**（实测踩到）：
+> **P2-9 必须避开三个坑**（实测踩到）：
 > 1. 导出 ONNX **不能带 `dynamic_axes`** —— 符号维度会让 tract 前端报
 >    `Undetermined symbol in expression: <Sym0>`。所有维度必须常量。
 >    这与 P2-9「特征在图中派生」的设计恰好一致（输入形状固定）。
-> 2. `ezkl.create_evm_verifier(...)` 生成 Solidity 验证器**需要 `solc`**，
->    本机当前没有 —— 属 P2-9 链上部分的前置。
+> 2. **`ezkl 23.0.5` 的 `create_evm_verifier()` 在本机直接抛
+>    `RuntimeError: no running event loop`**（pyo3 绑定的问题，Python 侧调用边界
+>    就炸，没有 Rust 栈帧；塞进 asyncio 事件循环也一样）。注意 Pipeline 的其余
+>    8 步（settings → 编译 → SRS → setup → witness → prove → verify）**全部正常**，
+>    所以这不影响 P2-9 的电路/证明部分，只影响**链上验证器生成**。
+>    待办：换 `ezkl 12.x`（PyPI `info.version` 认的那个版本）或直接调 Rust 库试试。
+>    ezkl **没有装 CLI**（`~/.local/bin` 下没有 `ezkl` 可执行文件），所以没有
+>    "改用命令行" 这条退路。
+> 3. `solc` 需要手工装：`~/.local/bin/solc` 已放好 0.8.24
+>    （`https://binaries.soliditylang.org/linux-amd64/solc-linux-amd64-v0.8.24+commit.e11b9ed9`，
+>    实测可达 200；forge 自带的 `solar` 不顶用，`~/.svm` 是空的）。
+>    ⚠️ **`~/.local/bin` 不在 PATH 上**，调用时要显式加前缀：
+>    `PATH="$HOME/.local/bin:$PATH" python3 ...`
+>    （长期办法是把 `~/.local/bin` 加进 PATH —— 那能顺带消掉 pip 反复报的
+>    "scripts installed in ~/.local/bin which is not on PATH" 警告；但这属于改
+>    你的 shell 配置，留给你决定。）
 
 ```bash
 # 6) git 镜像配置保持仓库局部（勿设 --global）—— 已确认本机 local/global 均无 insteadOf
