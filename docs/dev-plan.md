@@ -117,7 +117,7 @@
 | EU AI Act Art.12/13 | ✅ 证书携带 `ai_act.art12_record_keeping/art13_transparency`，映射见 `docs/eu-ai-act-mapping.md` |
 
 ### P7 · 收尾增强（进行中）
-- [x] **P7-a verifier-only 审计路径**：`pop-verify`（仅 `sp1-verifier`，免构造证明器）+ `--proof-mode compressed`（默认仍 core）+ 验证边车 + 证书 `public_values_sha256`；快路径选择已单测。**compressed 证明在本机 12 GB 下 OOM（峰值 11 GB）→ 需 ≥16 GB 生成 fixture**（`scripts/make_audit_proof.sh`）
+- [x] **P7-a verifier-only 审计路径**：`pop-verify`（仅 `sp1-verifier`，免构造证明器）+ `--proof-mode compressed`（默认仍 core）+ 验证边车 + 证书 `public_values_sha256`；快路径选择已单测。**内存结论：compressed 与 groth16 均 OOM（峰值 11.0 / 11.07 GB，本机 12 GB）→ 采用选项 B**：fixture 交 ≥16 GB 机器/CI（`scripts/make_audit_proof.sh`），用例自动跳过；已加 `.github/workflows/ci.yml`（跑快测）
 - [x] **P7-b format/budget/tool 规则入电路**：请求扩展「响应+工具轨迹」；`FormatCheck`（json/int/float 规范子集）/`ToolArgGuard`（含 tools 限定）/`BudgetBound`（calls/tokens）在 `pop-types::evaluate` 判定；跨层证据串逐字一致；`AgentMonitor` 工具路径 `zk:true`；`tests/test_rules_incircuit.py`(8) + cross_validate **14 向量（host 14/14 + 真实证明 14/14 PASS）**
 - [ ] P7-c 链上锚定 RPC 后端（合约+后端抽象+假 RPC 单测可离线；**真跑 Anvil 待网络**——当前 github/gh-proxy 不可达；已挂每 19 分钟重试任务）
 

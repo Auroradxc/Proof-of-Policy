@@ -19,14 +19,13 @@
    证书 `binding` 新增 **`public_values_sha256`**（`issue_cert.py`/`demo_e2e.py` 写入，二者绑定公开值）。
 4. 测试 `tests/test_verifier_only.py`（4 例：模式校验/选择逻辑/无需 SP1 环境；fixture 用例在缺 fixture 时跳过）。
 
-**实测阻塞（重要）**：本机 12 GB WSL 下 **compressed 证明 OOM**（1:51 时被 OOM killer 终止，峰值 anon-RSS **11.0 GB**；
-`SHARD_SIZE`/`MEMORY_LIMIT` 调参对**固定递归开销**无效）。Core 证明仍正常（~10 GB，回归 PASS）。
-→ **审计路径产物需 ≥16 GB 内存**（或换机/Windows 侧）生成；已提供 `scripts/make_audit_proof.sh` 一键生成 fixture
-（生成后 `tests/test_verifier_only.py` 的 fixture 用例自动启用）。
+**实测阻塞（已按选项 C→B 处理）**：本机 12 GB WSL 下 **compressed 证明 OOM**（1:51 被 OOM killer 终止，峰值 **11.0 GB**）；
+随后按**选项 C** 实测 **groth16** —— 同样 **OOM**（exit 137，1:36，峰值 **11.07 GB**，**内存占用与 compressed 相同**，无改善）；
+`SHARD_SIZE`/`MEMORY_LIMIT` 对**固定递归开销**无效（`drop_ldes` 未在 sdk 暴露）。
+→ **采用选项 B**：审计 fixture 交**≥16 GB** 机器/CI 生成；本仓库保留 `scripts/make_audit_proof.sh` 与自动跳过的 fixture 用例；
+Core 证明路径不受影响（~10 GB，回归 PASS）。
 
-**验收（部分达成）**：`pop-verify` 构建/模式处理/快路径选择已测；**端到端（真实 compressed 证明 + pop-verify 验证）待 ≥16 GB 环境**。
-
-**跟进选项**：把 WSL 上调到 15–16 GB 重试（宿主 15.7 GB，需权衡）；或在更大内存机器/CI 上跑 `make_audit_proof.sh`。
+**验收（当前状态）**：`pop-verify` 构建/模式处理/快路径选择已测；**端到端（真实 compressed 证明 + pop-verify 验证）待 ≥16 GB 环境**。
 
 ## B. format / budget / tool 规则入电路 —— 已实现
 
