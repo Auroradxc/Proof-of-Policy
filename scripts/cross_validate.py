@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Phase 1-2 cross-validation: Python golden (policydsl) vs SP1.
+"""阶段一至二交叉验证：Python golden（policydsl）vs SP1。
 
-For each test vector we:
-  1. build a Policy and compute the reference decision via policydsl.evaluate
-     (the golden; pattern_block judged by the compiled NFA == the contract);
-  2. compile the policy to a ConstraintSpec and emit a Rust-side vectors.json
-     (serde externally-tagged Constraint: KeywordBlock / LengthBound /
-     PatternBlock) for the SP1 driver;
-  3a. HOST CHECK (fast, all vectors): pop-script --check  → pop-types::evaluate
-  3b. PROVE (real proofs, all vectors): pop-script            → guest ProofOutput
-  4. assert passed + violated-rule set match the golden in both modes.
+对每条测试向量我们：
+  1. 构造一个 Policy，用 policydsl.evaluate 算出参考判定（即 golden；
+     pattern_block 由编译后的 NFA == 契约来判定）；
+  2. 把策略编译成 ConstraintSpec，并产出一个 Rust 侧 vectors.json
+     （serde 外部标签枚举 Constraint：KeywordBlock / LengthBound / PatternBlock）
+     供 SP1 驱动消费；
+  3a. 宿主校验（快，全部向量）：pop-script --check  → pop-types::evaluate
+  3b. 证明（真实证明，全部向量）：pop-script          → guest ProofOutput
+  4. 断言两种模式下 passed + 违规规则集合都与 golden 一致。
 
-Run from the repo root:
+从仓库根运行：
   SP1_PROVER=cpu python3 scripts/cross_validate.py
 """
 
@@ -34,16 +34,16 @@ from policydsl import pii
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
-# python Violation.evidence_kind -> guest kind string
+# Python Violation.evidence_kind -> guest 规则类型字符串
 KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block",
             "format": "format_check", "tool_arg": "tool_arg_guard", "budget": "budget_bound"}
 
 
 def vectors() -> list[tuple]:
-    """Return (name, policy, response, extras) tuples. Inputs are ASCII-only.
+    """返回 (name, policy, response, extras) 元组列表。输入均为纯 ASCII。
 
-    ``extras`` may carry ``tool_calls`` / ``token_count`` for the trace rules
-    (tool_arg_guard / budget_bound).
+    ``extras`` 可携带 ``tool_calls`` / ``token_count``，用于轨迹类规则
+    （tool_arg_guard / budget_bound）。
     """
     base = Policy(
         id="x", version="0.1.0", semantic="and",
@@ -102,6 +102,7 @@ def vectors() -> list[tuple]:
 
 
 def golden(policy: Policy, response: str, extras: dict | None = None) -> dict:
+    """用参考评估器（走结构化 Transcript）算出 golden 结果。"""
     extras = extras or {}
     tx = Transcript(
         response=response,
@@ -115,6 +116,7 @@ def golden(policy: Policy, response: str, extras: dict | None = None) -> dict:
 
 
 def run_pop(mode: str, vectors_path: Path, out_path: Path) -> None:
+    """调用 pop-script；mode=="check" 时走宿主校验路径。"""
     args = [str(POP_SCRIPT)]
     if mode == "check":
         args.append("--check")
@@ -124,6 +126,7 @@ def run_pop(mode: str, vectors_path: Path, out_path: Path) -> None:
 
 
 def compare(results: list, expected: list) -> tuple[int, list[str]]:
+    """逐向量比对 SP1 结果与 golden，返回 (匹配数, 明细)。"""
     ok_flags, detail = [], []
     for (name, exp), got in zip(expected, results, strict=True):
         got_rules = sorted({(v["rule"], v["kind"]) for v in got["violations"]})
@@ -134,6 +137,7 @@ def compare(results: list, expected: list) -> tuple[int, list[str]]:
 
 
 def report(kind: str, ok_flags: list, detail: list) -> None:
+    """打印逐向量的比对结果。"""
     for (name, ok, exp, got) in detail:
         print(f"[{'PASS' if ok else 'FAIL'}] {kind:5s} {name:20s} "
               f"golden.passed={exp['passed']} sp1.passed={got['passed']}  "
@@ -162,6 +166,7 @@ def main() -> int:
     vectors_path.write_text(json.dumps(payload, indent=2))
     print(f"{len(expected)} vectors, mode: host-check (all) + real proofs (all)")
 
+    # 宿主校验（全部向量，不生成证明）
     results_check = scripts / "results_check.json"
     print("--- host check (pop-types::evaluate, no proof) ---")
     run_pop("check", vectors_path, results_check)
@@ -169,6 +174,7 @@ def main() -> int:
     n1, d1 = compare(rc, expected)
     report("check", [ok for _, ok, _, _ in d1], d1)
 
+    # 真实证明（全部向量）
     results_prove = scripts / "results_prove.json"
     if "--no-prove" in sys.argv:
         print("--- real proofs: skipped (--no-prove) ---")

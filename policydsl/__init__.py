@@ -1,12 +1,12 @@
-"""zk-policy · Proof-of-Policy DSL toolchain.
+"""zk-policy · Proof-of-Policy 的 DSL 工具链。
 
-Off-circuit (Python, stdlib-only) layer: author policies, compile them to a
-ConstraintSpec JSON, and reference-evaluate responses. The Rust/SP1 layer in
-``circuits/`` proves the compiled constraints inside a zkVM.
+链外（Python，仅标准库）层：编写策略、把策略编译成 ConstraintSpec JSON、
+对响应做参考评估。``circuits/`` 里的 Rust/SP1 层在 zkVM 内证明编译后的约束。
 """
 
 __version__ = "0.1.0"
 
+# 从各子模块 re-export 常用符号，方便 `from policydsl import Policy` 等用法
 from .model import (  # noqa: F401
     Policy, Rule, ToolCall, Transcript, Violation, CheckResult, PolicyError,
 )

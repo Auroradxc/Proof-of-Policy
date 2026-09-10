@@ -1,26 +1,28 @@
-//! `pop-verify` — verifier-only binary for Proof-of-Policy.
+//! `pop-verify` —— Proof-of-Policy 的 verifier-only（仅验证器）二进制。
 //!
-//! Verifies a saved proof using `sp1-verifier` **without constructing any prover**
-//! (no sp1-sdk, no ~10 GB prover state, no Gnark). Supports the proof modes that
-//! `sp1-verifier` exposes:
-//!   - `compressed` (STARK, verifier-only; produced by `pop-script --proof-mode compressed`)
-//!   - `groth16` / `plonk` (on-chain-friendly)
+//! 用 `sp1-verifier` 验证一份已保存的证明，**不构造任何证明器**
+//! （无 sp1-sdk、无 ~10 GB 证明器状态、无 Gnark）。支持 `sp1-verifier` 暴露的
+//! 证明模式：
+//!   - `compressed`（STARK，仅验证器可验证；由 `pop-script --proof-mode compressed` 产出）
+//!   - `groth16` / `plonk`（链上友好）
 //!
-//! Core proofs are **not** verifier-only verifiable; use `pop-script --verify`.
+//! Core 证明**不能**仅验证器验证；请用 `pop-script --verify`。
 //!
-//! Usage:
+//! 用法：
 //!   pop-verify --meta <proof>.verify.json [--out result.json]
 
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::process::exit;
 
+/// 对字节求 SHA-256，返回小写十六进制。
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// 极简命令行解析：返回指定 flag 后面的值。
 fn arg_value(args: &[String], flag: &str) -> Option<String> {
     let mut i = 0;
     while i < args.len() {
@@ -40,12 +42,13 @@ fn main() {
     });
     let out_path = arg_value(&args, "--out");
 
+    // 读取边车（sidecar）元信息：含证明字节/公开值/vkey 哈希的文件路径
     let meta: serde_json::Value = serde_json::from_str(
         &std::fs::read_to_string(&meta_path).expect("read meta"),
     )
     .expect("parse meta json");
     let mode = meta["proof_mode"].as_str().unwrap_or("core").to_string();
-    // validate the mode BEFORE touching the (possibly absent) artifact files
+    // 在触碰（可能缺失的）工件文件之前先校验模式，避免报出误导性错误
     if !matches!(mode.as_str(), "compressed" | "groth16" | "plonk") {
         eprintln!(
             "proof mode '{mode}' is not verifier-only verifiable \
@@ -53,6 +56,7 @@ fn main() {
         );
         exit(3);
     }
+    // 闭包：按 key 从边车读文件字节
     let read = |key: &str| -> Vec<u8> {
         let p = meta[key].as_str().unwrap_or_else(|| panic!("meta missing {key}"));
         std::fs::read(Path::new(p)).unwrap_or_else(|e| panic!("read {p}: {e}"))
@@ -60,6 +64,7 @@ fn main() {
     let proof = read("proof_bytes_file");
     let public_values = read("public_values_file");
 
+    // 按模式选择对应的 sp1-verifier 校验器
     let verified = match mode.as_str() {
         "compressed" => {
             let vkey_hash = read("vkey_hash_file");
@@ -103,6 +108,7 @@ fn main() {
         }
     };
 
+    // 汇总验证结果，供第三方核验
     let result = serde_json::json!({
         "verified": verified,
         "proof_mode": mode,

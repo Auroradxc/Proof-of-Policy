@@ -1,11 +1,10 @@
-//! Shared (de)serializable types for Proof-of-Policy.
+//! Proof-of-Policy 的共享（反）序列化类型。
 //!
-//! `ProofRequest` is what the SP1 program consumes (response + compiled
-//! constraints); `ProofOutput` is what it commits as public values. These
-//! types are `no_std` + `alloc` so they compile for the RISC-V guest and for
-//! the host driver alike. JSON representation mirrors the Rust enum layout
-//! (serde externally-tagged) so the Python reference layer can emit/consume
-//! the same schema.
+//! `ProofRequest` 是 SP1 程序消费的输入（响应 + 编译后的约束）；
+//! `ProofOutput` 是它作为公开值（public values）承诺的输出。这些类型是
+//! `no_std` + `alloc`，因此既能编译进 RISC-V guest，也能编译进宿主驱动。
+//! JSON 表示镜像了 Rust 枚举布局（serde 外部标签），使 Python 参考层能
+//! 产出/消费同一份 schema。
 
 #![no_std]
 
@@ -15,7 +14,7 @@ use alloc::{collections::{BTreeMap, BTreeSet}, format, string::String, vec, vec:
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-/// A tool invocation in an agent trace (used by tool/budget rules).
+/// agent 轨迹里的一次工具调用（用于 tool/budget 规则）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ToolCall {
     pub name: String,
@@ -23,7 +22,7 @@ pub struct ToolCall {
     pub args: BTreeMap<String, String>,
 }
 
-/// Declared response format for `format_check`.
+/// `format_check` 声明的响应格式。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FormatKind {
@@ -33,7 +32,7 @@ pub enum FormatKind {
     Float,
 }
 
-/// Unit for `budget_bound`.
+/// `budget_bound` 的计量单位。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BudgetUnit {
@@ -42,8 +41,8 @@ pub enum BudgetUnit {
     Tokens,
 }
 
-/// Compiled NFA (Thompson), produced by `policydsl.nfa` and serialized into
-/// the ConstraintSpec. This is the cross-layer contract for pattern_block.
+/// 编译后的 NFA（Thompson 构造），由 `policydsl.nfa` 产出并序列化进
+/// ConstraintSpec。这是 pattern_block 的跨层契约。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct NfaSpec {
     pub start: u32,
@@ -60,33 +59,33 @@ pub struct NfaState {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct NfaEdge {
     pub to: u32,
-    /// Inclusive [lo, hi] code-point ranges; merged + sorted (see policydsl.nfa).
+    /// 闭区间 [lo, hi] 码点范围；已合并 + 排序（见 policydsl.nfa）。
     pub ranges: Vec<(u32, u32)>,
 }
 
-/// How pattern_block matching is performed in-circuit (ablation switch).
+/// pattern_block 在电路内的匹配方式（消融开关）。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PatternMode {
-    /// Pike VM: single pass over the text, all NFA states tracked together.
+    /// Pike VM：对文本做单遍扫描，同时追踪全部 NFA 状态。
     #[default]
     Pike,
-    /// Naive: re-run the matcher anchored at every start position (O(n^2)).
+    /// 朴素：在每个起点重新跑一次匹配器（O(n^2)）。
     Naive,
 }
 
-/// A compiled constraint from the ConstraintSpec.
+/// 来自 ConstraintSpec 的一条编译后约束。
 ///
-/// Phase 1-2 covers `KeywordBlock`, `LengthBound` and `PatternBlock`; more
-/// variants land in later phases. Field values follow `policydsl/compile.py`.
+/// 阶段一至二覆盖 `KeywordBlock`、`LengthBound` 与 `PatternBlock`；更多变体
+/// 在后续阶段落地。字段值遵循 `policydsl/compile.py`。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Constraint {
-    /// Response must not contain any of `keywords` (case-insensitive, ASCII).
+    /// 响应不得包含 `keywords` 中任意关键词（不区分大小写，ASCII）。
     KeywordBlock { name: String, keywords: Vec<String> },
-    /// Response length (code points) must satisfy `min <= len <= max`.
+    /// 响应长度（码点数）必须满足 `min <= len <= max`。
     LengthBound { name: String, min: u32, max: u32 },
-    /// Response must not match any of the compiled patterns (substring, the
-    /// `patterns[i]` regex compiled to `specs[i]`).
+    /// 响应不得匹配任意编译后的模式（子串匹配，`patterns[i]` 的正则
+    /// 编译为 `specs[i]`）。
     PatternBlock {
         name: String,
         patterns: Vec<String>,
@@ -94,21 +93,21 @@ pub enum Constraint {
         #[serde(default)]
         mode: PatternMode,
     },
-    /// Response must parse as the declared format (canonical subset).
+    /// 响应必须能按声明格式解析（规范子集）。
     FormatCheck { name: String, format: FormatKind },
-    /// Forbidden keys in tool-call arguments (optionally restricted to `tools`).
+    /// 工具调用参数里的被禁键（可选用 `tools` 限定范围）。
     ToolArgGuard {
         name: String,
         #[serde(default)]
         tools: Vec<String>,
         forbidden_fields: Vec<String>,
     },
-    /// Cumulative budget: number of tool calls, or declared `token_count`.
+    /// 累计预算：工具调用次数，或声明的 `token_count`。
     BudgetBound { name: String, budget: u32, unit: BudgetUnit },
 }
 
-/// Input to the prover: the agent response, the constraints to check, and the
-/// tool-call trace (used by tool_arg_guard / budget_bound).
+/// prover 的输入：agent 响应、要检查的约束、以及工具调用轨迹
+/// （供 tool_arg_guard / budget_bound 使用）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProofRequest {
     pub response: String,
@@ -119,18 +118,18 @@ pub struct ProofRequest {
     pub token_count: Option<u32>,
 }
 
-/// A single violated rule (only populated when not passed).
+/// 一条被违反的规则（仅在未通过时非空）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Violation {
-    /// Rule name as given in the policy pack.
+    /// 规则名（与策略包里一致）。
     pub rule: String,
-    /// Constraint kind, e.g. "keyword_block" | "length_bound".
+    /// 约束类型，如 "keyword_block" | "length_bound"。
     pub kind: String,
-    /// Short human-readable evidence, e.g. the matched keyword or the length.
+    /// 简短可读证据，如命中的关键词或长度。
     pub evidence: String,
 }
 
-/// Public output committed by the program.
+/// 程序承诺的公开输出。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProofOutput {
     pub passed: bool,
@@ -138,11 +137,12 @@ pub struct ProofOutput {
 }
 
 // --------------------------------------------------------------------------- //
-// NFA matching (mirrors policydsl.nfa.match_search: Pike VM, unanchored
-// existence over code points). Kept here so the guest and any future host
-// utility share one implementation; spec ranges are merged + sorted.
+// NFA 匹配（镜像 policydsl.nfa.match_search：Pike VM，基于码点的无锚点
+// 存在性搜索）。放在这里使 guest 与未来任何宿主工具共享同一实现；
+// spec 区间已合并 + 排序。
 // --------------------------------------------------------------------------- //
 
+/// 计算给定种子状态的 ε-闭包（含自身），返回布尔向量。
 fn eps_closure(spec: &NfaSpec, seeds: &[u32]) -> Vec<bool> {
     let n = spec.states.len();
     let mut seen = vec![false; n];
@@ -162,23 +162,24 @@ fn eps_closure(spec: &NfaSpec, seeds: &[u32]) -> Vec<bool> {
     seen
 }
 
+/// 判断码点 cp 是否落在某条（已按 lo 升序排序的）区间内。
 fn in_ranges(cp: u32, ranges: &[(u32, u32)]) -> bool {
     for &(lo, hi) in ranges {
         if cp > hi {
             continue;
         }
-        return cp >= lo; // ranges sorted ascending by lo
+        return cp >= lo; // 区间按 lo 升序排序
     }
     false
 }
 
+/// 当前状态集是否命中任意接受状态。
 fn reached_accept(spec: &NfaSpec, cur: &[bool]) -> bool {
     spec.accept.iter().any(|&a| cur[a as usize])
 }
 
-/// Naive matcher (ablation): re-run the NFA anchored at each start position and
-/// stop as soon as any start accepts. Semantically identical to `nfa_match`
-/// (existence of a match) but O(n^2) — used to quantify the Pike VM's advantage.
+/// 朴素匹配器（消融实验用）：在每个起点重新锚定跑一次 NFA，任一起点接受即停。
+/// 语义与 `nfa_match`（匹配存在性）一致，但 O(n^2) —— 用于量化 Pike VM 的优势。
 pub fn nfa_match_naive(spec: &NfaSpec, text: &str) -> bool {
     let chars: Vec<char> = text.chars().collect();
     for start in 0..chars.len() {
@@ -216,16 +217,17 @@ pub fn nfa_match_naive(spec: &NfaSpec, text: &str) -> bool {
     false
 }
 
-/// True iff `text` contains a substring matching `spec` (re.search semantics
-/// over the supported regex subset). ASCII/Unicode: operates on code points.
+/// `text` 是否含有匹配 `spec` 的子串（在受支持正则子集上的 re.search 语义）。
+/// ASCII/Unicode：按码点操作。
 pub fn nfa_match(spec: &NfaSpec, text: &str) -> bool {
     let mut cur = eps_closure(spec, core::slice::from_ref(&spec.start));
     if reached_accept(spec, &cur) {
-        return true; // matches empty prefix
+        return true; // 匹配空前缀
     }
     for ch in text.chars() {
         let cp = ch as u32;
-        let mut nxt = eps_closure(spec, core::slice::from_ref(&spec.start)); // fresh start here
+        // 每个字符位置都允许「重新从 start 出发」，覆盖「匹配不从头开始」的情况
+        let mut nxt = eps_closure(spec, core::slice::from_ref(&spec.start));
         for (s, present) in cur.iter().enumerate() {
             if !present {
                 continue;
@@ -250,13 +252,16 @@ pub fn nfa_match(spec: &NfaSpec, text: &str) -> bool {
 }
 
 // --------------------------------------------------------------------------- //
-// Constraint evaluation (shared by the SP1 guest and host-side checks).
-// Mirrors policydsl.evaluate.check for the in-circuit rule kinds.
+// 约束评估（SP1 guest 与宿主侧检查共用）。
+// 对电路内规则类型镜像 policydsl.evaluate.check。
 // --------------------------------------------------------------------------- //
+
+/// 仅对 ASCII 做小写化（与链下 `_ascii_lower` 保持字节级一致）。
 fn ascii_lower(s: &str) -> String {
     s.chars().map(|c| c.to_ascii_lowercase()).collect()
 }
 
+/// FormatKind → 字符串名。
 fn format_name(f: FormatKind) -> &'static str {
     match f {
         FormatKind::Json => "json",
@@ -265,6 +270,7 @@ fn format_name(f: FormatKind) -> &'static str {
     }
 }
 
+/// BudgetUnit → 字符串名。
 fn budget_unit_name(u: BudgetUnit) -> &'static str {
     match u {
         BudgetUnit::Calls => "calls",
@@ -272,11 +278,11 @@ fn budget_unit_name(u: BudgetUnit) -> &'static str {
     }
 }
 
-/// Canonical `format_check` parsers — the accepted subset is deliberately narrow
-/// so the Python golden and the zkVM agree exactly:
-///   int:   optional sign + 1..=19 ASCII digits (no underscores, no unicode digits)
-///   float: Rust `f64` parse, rejecting underscores / nan / inf spellings
-///   json:  `serde_json` (which rejects NaN/Infinity, like the golden is forced to)
+/// 规范的 `format_check` 解析器 —— 接受的子集被刻意收紧，使 Python golden 与
+/// zkVM 完全一致：
+///   int:   可选符号 + 1..=19 位 ASCII 数字（无下划线、无 unicode 数字）
+///   float: Rust `f64` 解析，拒绝下划线 / nan / inf 写法
+///   json:  `serde_json`（拒绝 NaN/Infinity，正如 golden 被强制的那样）
 pub fn parse_int_ok(s: &str) -> bool {
     let t = s.trim();
     let digits = t.strip_prefix(['+', '-']).unwrap_or(t);
@@ -299,15 +305,16 @@ pub fn parse_json_ok(s: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(s).is_ok()
 }
 
-/// Judge a ProofRequest against its constraints. Phase 1-2 rule kinds:
-/// keyword_block (ASCII case-insensitive substring), length_bound (code-point
-/// length), pattern_block (substring regex via compiled NFA).
+/// 依据约束判定一个 ProofRequest。阶段一至二规则类型：
+/// keyword_block（ASCII 不区分大小写子串）、length_bound（码点长度）、
+/// pattern_block（通过编译后 NFA 的子串正则）。
 pub fn evaluate(req: &ProofRequest) -> ProofOutput {
     let mut violations: Vec<Violation> = Vec::new();
 
     for c in &req.constraints {
         match c {
             Constraint::KeywordBlock { name, keywords } => {
+                // 关键词阻断：小写化后检查是否包含任意禁用词
                 let text = ascii_lower(&req.response);
                 if let Some(hit) = keywords.iter().find(|kw| text.contains(kw.as_str())) {
                     violations.push(Violation {
@@ -318,6 +325,7 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                 }
             }
             Constraint::LengthBound { name, min, max } => {
+                // 长度边界：按码点数计长
                 let n = req.response.chars().count() as u32;
                 if n < *min || n > *max {
                     violations.push(Violation {
@@ -328,6 +336,7 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                 }
             }
             Constraint::PatternBlock { name, patterns, specs, mode } => {
+                // 正则阻断：按编译顺序逐条匹配，命中即记证据并跳出
                 for (i, spec) in specs.iter().enumerate() {
                     let hit = match mode {
                         PatternMode::Pike => nfa_match(spec, &req.response),
@@ -344,6 +353,7 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                 }
             }
             Constraint::FormatCheck { name, format } => {
+                // 格式校验：按声明格式解析
                 let ok = match format {
                     FormatKind::Json => parse_json_ok(&req.response),
                     FormatKind::Int => parse_int_ok(&req.response),
@@ -358,6 +368,7 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                 }
             }
             Constraint::ToolArgGuard { name, tools, forbidden_fields } => {
+                // 工具参数防护：检查（可选白名单限定后的）调用参数是否含被禁字段
                 for call in &req.tool_calls {
                     if !tools.is_empty() && !tools.contains(&call.name) {
                         continue;
@@ -368,11 +379,12 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                             kind: "tool_arg_guard".into(),
                             evidence: format!("{}:{}", call.name, f),
                         });
-                        break; // at most one violation per tool call
+                        break; // 每个工具调用至多记一条违规
                     }
                 }
             }
             Constraint::BudgetBound { name, budget, unit } => {
+                // 预算边界：按 calls 计调用次数，按 tokens 计 token_count
                 let total: u32 = match unit {
                     BudgetUnit::Calls => req.tool_calls.len() as u32,
                     BudgetUnit::Tokens => req.token_count.unwrap_or(0),
@@ -395,13 +407,14 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
 }
 
 // --------------------------------------------------------------------------- //
-// Private mode: response commitment + selective disclosure + redaction proof.
-// Mirrors policydsl.commit.
+// 私有模式：响应承诺 + 选择性披露 + 脱敏证明。
+// 镜像 policydsl.commit。
 // --------------------------------------------------------------------------- //
 
+/// 十六进制字母表。
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
-/// SHA-256 of the UTF-8 bytes, lowercase hex (matches hashlib.sha256().hexdigest()).
+/// 对 UTF-8 字节求 SHA-256，返回小写十六进制（匹配 hashlib.sha256().hexdigest()）。
 pub fn sha256_hex(text: &str) -> String {
     let digest = Sha256::digest(text.as_bytes());
     let mut out = String::with_capacity(64);
@@ -412,8 +425,8 @@ pub fn sha256_hex(text: &str) -> String {
     out
 }
 
-/// A violation disclosed in private mode: rule + kind + a *commitment* to the
-/// evidence fragment (the fragment itself is not revealed).
+/// 私有模式下披露的一条违规：rule + kind + 对证据片段的*承诺*
+/// （片段本身不泄露）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PrivateViolation {
     pub rule: String,
@@ -421,21 +434,18 @@ pub struct PrivateViolation {
     pub evidence_commitment: String,
 }
 
-/// Proof that a redacted string differs from the original only at masked
-/// positions (VDR-style selective disclosure).
+/// 证明脱敏串与原串「仅在掩码位置不同」（VDR 风格选择性披露）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RedactionProof {
     pub redacted_commitment: String,
     pub mask_count: u32,
     pub redaction_ok: bool,
-    /// Every masked position lies inside a *genuine* pattern match (witness
-    /// spans validated in-circuit) — mask ⊆ matches.
+    /// 每个掩码位置都落在*真实*模式匹配内（见证区间在电路内验证）—— mask ⊆ matches。
     pub mask_covered: bool,
 }
 
-/// Private-mode input. `mask` are the char indices allowed to differ (hold
-/// `*`); `redacted` is the candidate redaction to verify (optional); `spans`
-/// are witness char ranges proving those positions are genuine matches.
+/// 私有模式输入。`mask` 是允许不同（置为 `*`）的字符下标；`redacted` 是要
+/// 验证的候选脱敏串（可选）；`spans` 是证明这些位置为真实匹配的见证字符区间。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PrivateRequest {
     pub response: String,
@@ -452,8 +462,8 @@ pub struct PrivateRequest {
     pub token_count: Option<u32>,
 }
 
-/// Private-mode public output: no response text, only its commitment and
-/// per-violation evidence commitments (+ optional redaction proof).
+/// 私有模式公开输出：不含响应明文，只有其承诺与逐违规的证据承诺
+/// （+ 可选的脱敏证明）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PrivateOutput {
     pub response_commitment: String,
@@ -462,22 +472,22 @@ pub struct PrivateOutput {
     pub redaction: Option<RedactionProof>,
 }
 
-/// Top-level job dispatched by the program (one ELF serves both modes).
+/// 程序调度的顶层任务（一个 ELF 服务两种模式）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Job {
     Public(ProofRequest),
     Private(PrivateRequest),
 }
 
-/// Top-level committed outcome.
+/// 顶层承诺的结果。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Outcome {
     Public(ProofOutput),
     Private(PrivateOutput),
 }
 
-/// VDR-style redaction check: equal code-point length, masked positions hold
-/// `*`, every other position unchanged. Mirrors `policydsl.commit.redaction_ok`.
+/// VDR 风格脱敏检查：码点等长、掩码位置为 `*`、其余位置不变。
+/// 镜像 `policydsl.commit.redaction_ok`。
 pub fn redaction_ok(response: &str, redacted: &str, mask: &[u32]) -> bool {
     let r: Vec<char> = response.chars().collect();
     let d: Vec<char> = redacted.chars().collect();
@@ -503,15 +513,15 @@ pub fn redaction_ok(response: &str, redacted: &str, mask: &[u32]) -> bool {
     true
 }
 
-/// True iff `chars[start..end]` fully matches `spec` (both ends anchored),
-/// consuming at least one char. Used to validate redaction witness spans.
+/// `chars[start..end]` 是否「完整」匹配 `spec`（两端锚定），至少消耗 1 个字符。
+/// 用于验证脱敏见证区间。
 fn anchored_full_match(spec: &NfaSpec, chars: &[char], start: usize, end: usize) -> bool {
     if end > chars.len() || start >= end {
         return false;
     }
     let mut cur = eps_closure(spec, core::slice::from_ref(&spec.start));
     if reached_accept(spec, &cur) {
-        return false;
+        return false; // 空匹配；区间必须消耗 >= 1 个字符
     }
     for i in start..end {
         let cp = chars[i] as u32;
@@ -539,7 +549,7 @@ fn anchored_full_match(spec: &NfaSpec, chars: &[char], start: usize, end: usize)
     reached_accept(spec, &cur)
 }
 
-/// Every span must be a genuine full match of some pattern_block pattern.
+/// 每个区间都必须是某条 pattern_block 模式的真实完整匹配。
 fn spans_valid(constraints: &[Constraint], chars: &[char], spans: &[(u32, u32)]) -> bool {
     let specs: Vec<&NfaSpec> = constraints
         .iter()
@@ -554,14 +564,13 @@ fn spans_valid(constraints: &[Constraint], chars: &[char], spans: &[(u32, u32)])
         .all(|&(s, e)| specs.iter().any(|sp| anchored_full_match(sp, chars, s as usize, e as usize)))
 }
 
-/// Every masked index lies inside some span (mask ⊆ spans).
+/// 每个掩码下标都落在某区间内（mask ⊆ spans）。
 fn mask_within_spans(mask: &[u32], spans: &[(u32, u32)]) -> bool {
     mask.iter().all(|&m| spans.iter().any(|&(s, e)| m >= s && m < e))
 }
 
-/// Judge a private request: compute the (shared) evaluation, but disclose only
-/// rule/kind + evidence commitments, plus the response commitment and an
-/// optional redaction proof.
+/// 判定私有请求：做（共享的）评估，但只披露 rule/kind + 证据承诺，加上
+/// 响应承诺与可选的脱敏证明。
 pub fn evaluate_private(req: &PrivateRequest) -> PrivateOutput {
     let public = evaluate(&ProofRequest {
         response: req.response.clone(),
@@ -597,7 +606,7 @@ pub fn evaluate_private(req: &PrivateRequest) -> PrivateOutput {
     }
 }
 
-/// Dispatch a job to its outcome (used by the guest and host checks).
+/// 把一个任务分派到其结果（guest 与宿主检查共用）。
 pub fn run_job(job: &Job) -> Outcome {
     match job {
         Job::Public(r) => Outcome::Public(evaluate(r)),

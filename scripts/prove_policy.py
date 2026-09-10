@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-"""Phase 3 transparent-mode demo / MVP gate.
+"""阶段三：透明模式 demo / MVP 门槛（gate）。
 
-Given a policy pack and a real agent response, prove the response satisfies the
-policy inside SP1 and verify independently. Pipeline:
-  pack.json --compile--> ConstraintSpec --serialize--> ProofRequest
-  response.txt ------------------------------> pop-script (SP1 prove+verify)
-and cross-check the committed ProofOutput against the Python golden
-(policydsl.evaluate). Exit 0 iff the response is proven and the golden agrees.
+给定一个策略包与一条真实 agent 响应，在 SP1 内证明响应满足该策略，并独立验证。
+流水线：
+  策略包.json --compile--> ConstraintSpec --serialize--> ProofRequest
+  响应.txt ------------------------------> pop-script（SP1 证明+验证）
+并把承诺的 ProofOutput 与 Python golden（policydsl.evaluate）交叉比对。
+当响应被证明且 golden 一致时以退出码 0 结束。
 
-Usage:
+用法：
   SP1_PROVER=cpu python3 scripts/prove_policy.py \
       --pack policy_packs/eu_ai_act_v1.json \
       --response scripts/examples/eu_agent_reply.txt \
       [--out-dir scripts/examples/out] [--no-prove] [--expect pass|violate]
 
---expect: assert which outcome the golden should report (sanity guard).
+--expect：断言 golden 应报告哪种结果（健全性护栏）。
 """
 
 from __future__ import annotations
@@ -36,10 +36,12 @@ from policydsl.model import Policy, PolicyError, Rule
 from policydsl.serialize import spec_to_rust_constraints
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+# Python Violation.evidence_kind → guest 规则类型字符串
 KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block"}
 
 
 def load_policy(path: Path) -> Policy:
+    """从 JSON 文件加载策略包。"""
     data = json.loads(path.read_text(encoding="utf-8"))
     rules = [
         Rule(kind=r["kind"], name=r.get("name", f"rule-{i}"), params=r.get("params", {}))
@@ -51,6 +53,7 @@ def load_policy(path: Path) -> Policy:
 
 
 def golden(policy: Policy, response: str) -> dict:
+    """用参考评估器算出「golden」结果：passed + 违规规则集合（排序后）。"""
     res = check(policy, response)
     rules = sorted({(v.rule.name, KIND_MAP.get(v.evidence_kind, v.evidence_kind))
                     for v in res.violations})
@@ -58,6 +61,7 @@ def golden(policy: Policy, response: str) -> dict:
 
 
 def run_pop(check_mode: bool, vectors: Path, out: Path) -> None:
+    """调用 pop-script；check_mode=True 时只做宿主校验（--check）。"""
     args = [str(POP_SCRIPT)]
     if check_mode:
         args.append("--check")
@@ -66,6 +70,7 @@ def run_pop(check_mode: bool, vectors: Path, out: Path) -> None:
 
 
 def summarize(mode: str, exp: dict, got: dict) -> bool:
+    """比对 golden 与 SP1 结果（passed + 违规规则集合），并打印。"""
     got_rules = sorted({(v["rule"], v["kind"]) for v in got["violations"]})
     ok = got["passed"] == exp["passed"] and got_rules == exp["violations"]
     print(f"[{'PASS' if ok else 'FAIL'}] {mode:5s} passed golden={exp['passed']} "
@@ -85,6 +90,7 @@ def main() -> int:
     policy = load_policy(args.pack)
     response = args.response.read_text(encoding="utf-8")
     exp = golden(policy, response)
+    # --expect 健全性护栏：提前校验 golden 结论是否符合预期
     if args.expect == "pass" and not exp["passed"]:
         print(f"golden did NOT pass but --expect pass; violations={exp['violations']}")
         return 2
@@ -104,12 +110,12 @@ def main() -> int:
     vpath.write_text(json.dumps(vectors, indent=2))
 
     ok = True
-    # 1) host check (fast, pop-types::evaluate)
+    # 1) 宿主校验（快，走 pop-types::evaluate，不生成证明）
     hout = args.out_dir / "host.json"
     run_pop(True, vpath, hout)
     ok &= summarize("check", exp, json.loads(hout.read_text())[0])
 
-    # 2) real proof + independent verify
+    # 2) 真实证明 + 独立验证
     if not args.no_prove:
         pout = args.out_dir / "proof.json"
         print(f"--- proving {policy.id} (SP1, ~1 min) ---")

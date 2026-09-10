@@ -1,22 +1,21 @@
-"""LangGraph integration for Proof-of-Policy.
+"""Proof-of-Policy 的 LangGraph 集成。
 
-Two supported wiring styles (both exercise the same ``AgentMonitor``):
+支持两种接线方式（都驱动同一个 ``AgentMonitor``）：
 
-1. **Callbacks** (no graph edits): LangGraph routes LangChain callbacks, so:
+1. **回调**（不改图）：LangGraph 会路由 LangChain 回调，因此：
 
-       handler = attach(monitor)                       # PoPCallbackHandler
+       handler = attach(monitor)                       # 得到 PoPCallbackHandler
        graph.invoke(state, config={"callbacks": [handler]})
-       # handler.certificates now holds one cert per LLM/tool event
+       # handler.certificates 现在每个 LLM/工具事件一张证书
 
-2. **Node wrapping** (explicit, framework-native): wrap a generation or tool
-   node so its output is judged and the certificate is added to the state:
+2. **节点包装**（显式、框架原生）：包装一个生成或工具节点，使其输出被判定，
+   证书被写入状态：
 
        generate = guard_node(monitor, my_generate_node, kind="generate", key="output")
        tool     = guard_node(monitor, my_tool_node, kind="tool")
 
-LangGraph itself is optional; ``require_langgraph()`` raises a clear error when
-it is needed but absent, and the helpers below work on plain callables so they
-can be unit-tested without LangGraph.
+LangGraph 本身是可选的；``require_langgraph()`` 在需要却缺失时抛出明确错误，
+下面的辅助函数作用于普通可调用对象，因此可在无 LangGraph 时单测。
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ from .langchain_adapter import (  # noqa: F401
 
 
 def _content_text(obj: Any) -> str:
-    """Text from a message-like output (``.content`` str or content parts)."""
+    """从类消息输出里取文本（``.content`` 字符串或 content parts）。"""
     content = getattr(obj, "content", None)
     if isinstance(content, str):
         return content
@@ -46,12 +45,12 @@ def _content_text(obj: Any) -> str:
 
 
 def require_langgraph() -> Any:
-    """Import langgraph or fail with an actionable message."""
+    """导入 langgraph，失败则给出可操作的错误信息。"""
     try:
         import langgraph  # noqa: F401
 
         return langgraph
-    except ImportError as exc:  # pragma: no cover - depends on env
+    except ImportError as exc:  # pragma: no cover - 取决于环境
         raise RuntimeError(
             "LangGraph is not installed. Install with `pip install langgraph langchain` "
             "(see requirements-frameworks.txt); the AgentMonitor hooks and the "
@@ -60,10 +59,10 @@ def require_langgraph() -> Any:
 
 
 def attach(monitor: AgentMonitor, graph: Any = None, **handler_kwargs: Any) -> PoPCallbackHandler:
-    """Return a callback handler for ``graph.invoke(..., config={"callbacks":[h]})``.
+    """返回一个回调 handler，用于 ``graph.invoke(..., config={"callbacks":[h]})``。
 
-    ``graph`` is accepted for readability but not mutated (compiled LangGraph
-    graphs are immutable); callers pass the handler in the invoke config.
+    ``graph`` 参数仅为可读性而接受，并不修改它（编译后的 LangGraph 图不可变）；
+    调用方把 handler 放进 invoke 配置即可。
     """
     return PoPCallbackHandler(monitor, **handler_kwargs)
 
@@ -72,11 +71,11 @@ def guard_node(monitor: AgentMonitor, node: Callable[..., Any], kind: str = "gen
                key: str = "output", certs_key: str = "certificates",
                vkey_hash: str = "unproven", proof_sha256: Optional[str] = None,
                tool_name_key: str = "name", tool_args_key: str = "args") -> Callable[..., Dict[str, Any]]:
-    """Wrap a LangGraph node so its result is judged and certified.
+    """包装一个 LangGraph 节点，使其结果被判定并签发证书。
 
-    kind="generate": reads ``result[key]`` as the response text.
-    kind="tool":     reads ``result[tool_name_key]`` / ``result[tool_args_key]``.
-    The returned dict is the original node result plus ``certs_key`` (list).
+    kind="generate"：读取 ``result[key]`` 作为响应文本。
+    kind="tool"：    读取 ``result[tool_name_key]`` / ``result[tool_args_key]``。
+    返回的字典 = 原节点结果 + ``certs_key``（证书列表）。
     """
 
     def wrapped(state: Any, *args: Any, **kwargs: Any) -> Dict[str, Any]:
@@ -103,7 +102,7 @@ def guard_node(monitor: AgentMonitor, node: Callable[..., Any], kind: str = "gen
 
 
 class LangGraphGuard:
-    """Convenience wrapper binding one monitor to node factories."""
+    """便捷包装器：把一个 monitor 绑定到节点工厂。"""
 
     def __init__(self, monitor: AgentMonitor, **handler_kwargs: Any):
         self.monitor = monitor
@@ -120,12 +119,11 @@ class LangGraphGuard:
 
 
 class LangGraphEventCertifier:
-    """Certify an entire LangGraph run by consuming ``astream_events``.
+    """通过消费 ``astream_events`` 为整次 LangGraph 运行签发证书。
 
-    Emits a certificate for every chat-model completion (generation path) and
-    every finished tool call (tool path); optionally feeds token chunks to a
-    ``PoPCallbackHandler`` so streaming (incremental) certificates are produced
-    as well. Records the event names seen for observability.
+    为每次聊天模型完成（生成路径）与每次结束的工具调用（工具路径）签发证书；
+    可选地把 token 分片喂给 ``PoPCallbackHandler``，从而同时产出流式（增量）
+    证书。记录所见事件名用于可观测性。
     """
 
     def __init__(self, monitor: AgentMonitor, tool_monitor: Optional[AgentMonitor] = None,
@@ -139,35 +137,41 @@ class LangGraphEventCertifier:
         self.events: List[str] = []
 
     async def run(self, graph: Any, inputs: Any, config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """异步运行图并消费事件流，返回证书列表。"""
         cfg = dict(config or {})
         try:
             agen = graph.astream_events(inputs, config=cfg)
-        except TypeError:  # older/newer signature requiring a version arg
+        except TypeError:  # 旧/新签名需要 version 参数
             agen = graph.astream_events(inputs, config=cfg, version="v2")
         async for event in agen:
             self._handle(event)
         return self.certificates
 
     def run_sync(self, graph: Any, inputs: Any, config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """同步便捷封装（内部 asyncio.run）。"""
         import asyncio
 
         return asyncio.run(self.run(graph, inputs, config))
 
     def _handle(self, event: Dict[str, Any]) -> None:
+        """处理单个事件：按事件类型路由到生成路径 / 工具路径。"""
         name = event.get("event", "")
         self.events.append(name)
         data = event.get("data") or {}
         run_id = str(event.get("run_id") or "")
         if name in ("on_chat_model_stream", "on_llm_stream"):
+            # 流式分片：喂给流式 handler（若配置）以产出增量证书
             chunk = data.get("chunk")
             text = getattr(chunk, "content", None)
             if self.stream_handler is not None and isinstance(text, str) and text:
                 self.stream_handler.on_llm_new_token(text, run_id=run_id)
         elif name in ("on_chat_model_end", "on_llm_end"):
+            # 模型完成：签发生成证书
             text = _extract_text(data.get("output")) or _content_text(data.get("output"))
             if text:
                 self.certificates.append(self.monitor.on_generate(text, vkey_hash=self.vkey_hash))
         elif name == "on_tool_end":
+            # 工具结束：签发工具证书
             tool = str(event.get("name") or "tool")
             args = data.get("input") or {}
             if not isinstance(args, dict):

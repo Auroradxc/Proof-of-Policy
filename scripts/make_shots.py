@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Render the end-to-end demo as shareable artefacts (no browser needed).
+"""把端到端 demo 渲染成可分享的产物（无需浏览器）。
 
-Produces, from a demo session bundle:
-  docs/demo/session_report.html   — styled, self-contained report (open/print)
-  docs/demo/session_report.svg    — vector card (viewers/converters)
-  docs/demo/session_summary.png   — summary card (Pillow)
-  docs/demo/verify_result.png     — third-party verification checklist (Pillow)
+从一个 demo 会话包产出：
+  docs/demo/session_report.html   — 带样式的自包含报告（可打开/打印）
+  docs/demo/session_report.svg    — 矢量卡片（供查看器/转换器）
+  docs/demo/session_summary.png   — 摘要卡片（Pillow）
+  docs/demo/verify_result.png     — 第三方验证清单（Pillow）
 
-Usage:
+用法：
   python3 scripts/make_shots.py [--session PATH] [--out-dir docs/demo] [--run-demo]
 
-If the session is missing (or --run-demo), the demo is run in host-check mode
-(fast) first. PNG text is ASCII so no CJK font is required.
+若会话缺失（或给了 --run-demo），则先以宿主校验模式（快）跑一遍 demo。
+PNG 文本用纯 ASCII，因此无需 CJK 字体。
 """
 
 from __future__ import annotations
@@ -27,10 +27,12 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 DEFAULT_SESSION = REPO / "scripts" / "examples" / "out" / "e2e" / "session.json"
 
+# 本机 DejaVu 字体路径（PNG 渲染用，ASCII 即可）
 FONT_REG = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_MONO = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
+# 配色（深色主题）
 BG = (18, 20, 28)
 CARD = (28, 32, 44)
 FG = (232, 236, 244)
@@ -41,10 +43,12 @@ ACCENT = (110, 168, 254)
 
 
 def run(cmd: list[str]) -> str:
+    """在仓库根执行命令并返回 stdout。"""
     return subprocess.run(cmd, cwd=str(REPO), capture_output=True, text=True).stdout
 
 
 def ensure_session(session: Path, run_demo: bool) -> None:
+    """若会话缺失或要求重跑，则以宿主校验模式跑一遍 demo 生成会话。"""
     if run_demo or not session.exists():
         print("running demo (host-check mode) ...")
         subprocess.run([sys.executable, str(REPO / "scripts" / "demo_e2e.py"), "--no-prove",
@@ -52,10 +56,12 @@ def ensure_session(session: Path, run_demo: bool) -> None:
 
 
 def collect(session_path: Path) -> dict:
+    """读取会话、统计证书类型、运行独立验证，返回结构化数据。"""
     session = json.loads(session_path.read_text(encoding="utf-8"))
     kinds: dict = {}
     for e in session["certificates"]:
         kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
+    # 跑独立验证，并解析 [PASS/FAIL] 行
     verify_out = run([sys.executable, str(REPO / "scripts" / "verify_session.py"),
                       "--session", str(session_path)])
     checks = [{"name": m.group(2), "detail": m.group(3).strip(), "ok": m.group(1) == "PASS"}
@@ -72,6 +78,7 @@ def _font(bold: bool = False, mono: bool = False, size: int = 20):
 
 
 def _card(size, lines, title, subtitle):
+    """画一张通用卡片：顶部标题栏 + 逐行文本。"""
     from PIL import Image, ImageDraw
 
     w, h = size
@@ -92,6 +99,7 @@ def _card(size, lines, title, subtitle):
 
 
 def render_pngs(data: dict, out: Path) -> list:
+    """渲染两张 PNG：摘要卡片 + 验证清单。"""
     written = []
     s = data["session"]
     summ = s.get("summary", {})
@@ -124,6 +132,7 @@ def render_pngs(data: dict, out: Path) -> list:
 
 
 def render_svg(data: dict, out: Path) -> Path:
+    """渲染 SVG 矢量报告（手工拼 SVG 文本）。"""
     s = data["session"]
     summ = s.get("summary", {})
     lines = [
@@ -151,14 +160,17 @@ def render_svg(data: dict, out: Path) -> Path:
     return p
 
 
+# SVG 用到的颜色常量（十六进制字符串）
 FG_S, MUTED_S, GREEN_S, RED_S = "#e8ecf4", "#96a0b2", "#34c77b", "#e85a5a"
 
 
 def _esc(t: str) -> str:
+    """转义 HTML/XML 特殊字符，防止注入破坏标记。"""
     return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def render_html(data: dict, out: Path) -> Path:
+    """渲染自包含 HTML 报告。"""
     s = data["session"]
     summ = s.get("summary", {})
     kinds = "".join(f"<span class='pill'>{_esc(k)} <b>{v}</b></span>" for k, v in sorted(data["kinds"].items()))

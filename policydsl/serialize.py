@@ -1,12 +1,12 @@
-"""Serialize a ConstraintSpec into the Rust-side ProofRequest constraint list.
+"""把 ConstraintSpec 序列化为 Rust 侧 ProofRequest 的约束列表。
 
-The ConstraintSpec (produced by ``compile_policy``) is the cross-layer
-contract. This module maps its constraints to the serde externally-tagged
-``pop_types::Constraint`` JSON consumed by the SP1 driver and program.
+ConstraintSpec（由 ``compile_policy`` 产出）是跨层契约。本模块把其中的约束
+映射为 serde 的「外部标签枚举」（externally-tagged）``pop_types::Constraint``
+JSON，供 SP1 驱动与程序消费。
 
-In-circuit rule kinds (Phase 1-3 MVP): keyword_block, length_bound,
-pattern_block. Anything else raises ``NotImplementedError`` (it exists only in
-the Python reference layer for now and is not provable in-circuit yet).
+电路内规则类型（阶段一至三 MVP）：keyword_block、length_bound、pattern_block。
+其它类型会抛 ``NotImplementedError`` —— 它们目前只存在于 Python 参考层，
+尚未能在电路内证明。
 """
 
 from __future__ import annotations
@@ -15,7 +15,11 @@ from typing import Dict, List
 
 
 def spec_to_rust_constraints(spec: Dict) -> List[Dict]:
-    """Map spec constraints to ``pop_types::Constraint`` serde enum JSON."""
+    """把 spec 的约束映射为 ``pop_types::Constraint`` serde 枚举 JSON。
+
+    外部标签枚举：每个约束用一个 `{ "VariantName": {字段...} }` 的单键字典表示，
+    键名（如 "KeywordBlock"）对应 Rust 端枚举变体，值即该变体的字段。
+    """
     out: List[Dict] = []
     for c in spec["constraints"]:
         kind = c["kind"]
@@ -25,6 +29,7 @@ def spec_to_rust_constraints(spec: Dict) -> List[Dict]:
         elif kind == "length_bound":
             out.append({"LengthBound": {"name": name, "min": c["min"], "max": c["max"]}})
         elif kind == "pattern_block":
+            # 正则约束：附带编译好的 NFA 规格（specs）与匹配模式
             out.append({"PatternBlock": {
                 "name": name,
                 "patterns": c["patterns"],
@@ -42,6 +47,7 @@ def spec_to_rust_constraints(spec: Dict) -> List[Dict]:
             out.append({"BudgetBound": {"name": name, "budget": c["budget"],
                                         "unit": c.get("unit", "calls")}})
         else:
+            # 未知/未实现类型：明确报错，不让其静默进入电路
             raise NotImplementedError(
                 f"kind '{kind}' (rule '{name}') is not yet provable in-circuit "
                 "(Phase 1-3 supports keyword_block/length_bound/pattern_block)")
@@ -49,5 +55,5 @@ def spec_to_rust_constraints(spec: Dict) -> List[Dict]:
 
 
 def build_vectors(entries: List[Dict]) -> Dict:
-    """Wrap list of {name, response, constraints[]} into a vectors file dict."""
+    """把 [{name, response, constraints[]}] 列表包装成 vectors 文件字典。"""
     return {"vectors": entries}

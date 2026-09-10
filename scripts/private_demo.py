@@ -1,19 +1,17 @@
 #!/usr/bin/env python3
-"""Phase 4 private-mode demo / verification (+ boundary hardening).
+"""阶段四：私有模式 demo / 验证（+ 边界加固）。
 
-Checks the private pipeline end-to-end:
-  - HOST CHECK: pop-script --check (pop-types::evaluate_private) vs the Python
-    golden (policydsl.commit.private_output) — field-for-field, including the
-    response commitment, evidence commitments, redaction proof, and the
-    boundary property ``mask_covered`` (mask ⊆ genuine matches, enforced in-circuit).
-  - NEGATIVE: a fabricated witness span (mask outside any real match) yields
-    mask_covered=false.
-  - LEAK: the verifier-visible output has no response/evidence text.
-  - BINDING: commitments deterministic, distinct; forged redaction rejected.
-  - EVIDENCE OPENING: a disclosed fragment verifies against its commitment.
-  - PROOF: the same private job is proven in SP1 and re-checked (skip: --no-prove).
+端到端检查私有流水线：
+  - 宿主校验（HOST CHECK）：pop-script --check（pop-types::evaluate_private）
+    对比 Python golden（policydsl.commit.private_output）—— 逐字段，包括响应承诺、
+    证据承诺、脱敏证明，以及边界性质 ``mask_covered``（掩码 ⊆ 真实匹配，电路内强制）。
+  - 负例（NEGATIVE）：伪造的见证区间（掩码落在任何真实匹配之外）应得 mask_covered=false。
+  - 泄露（LEAK）：验证器可见输出里没有响应/证据明文。
+  - 绑定（BINDING）：承诺确定性、互不相同；伪造脱敏被拒绝。
+  - 证据开示（EVIDENCE OPENING）：披露的片段能对照其承诺验证通过。
+  - 证明（PROOF）：同一个私有任务在 SP1 内证明并复查（--no-prove 可跳过）。
 
-Usage: SP1_PROVER=cpu python3 scripts/private_demo.py [--no-prove]
+用法：SP1_PROVER=cpu python3 scripts/private_demo.py [--no-prove]
 """
 
 from __future__ import annotations
@@ -37,6 +35,8 @@ POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
 
 def build_case() -> dict:
+    """构造一个私有模式用例：含关键词、长度、邮箱正则三条规则，
+    并预计算掩码/脱敏/见证区间/golden。"""
     policy = Policy("private-demo", "0.1", rules=[
         Rule("keyword_block", "no_bad", {"keywords": ["exploit", "doxxing"]}),
         Rule("length_bound", "len_ok", {"min": 1, "max": 2000}),
@@ -62,6 +62,7 @@ def build_case() -> dict:
 
 
 def run_pop(check_mode: bool, vectors: Path, out: Path) -> None:
+    """调用 pop-script；check_mode=True 时走宿主校验路径。"""
     args = [str(POP_SCRIPT)]
     if check_mode:
         args.append("--check")
@@ -70,6 +71,7 @@ def run_pop(check_mode: bool, vectors: Path, out: Path) -> None:
 
 
 def compare_private(mode: str, name: str, golden: dict, got: dict) -> bool:
+    """逐字段比对 golden 与 SP1 私有输出。"""
     g_rules = sorted((v["rule"], v["kind"], v["evidence_commitment"]) for v in golden["violations"])
     s_rules = sorted((v["rule"], v["kind"], v["evidence_commitment"]) for v in got["violations"])
     checks = {
@@ -89,6 +91,8 @@ def compare_private(mode: str, name: str, golden: dict, got: dict) -> bool:
 
 
 def leak_experiment(case: dict, public_out: dict) -> bool:
+    """泄露实验：验证器可见输出里不应含响应/证据明文，
+    且承诺是 64 位十六进制、不等于原始响应。"""
     blob = json.dumps(public_out)
     leaks = [w for w in set(case["response"].split()) if len(w) >= 4 and w in blob]
     commit_ok = len(public_out["response_commitment"]) == 64
@@ -100,6 +104,7 @@ def leak_experiment(case: dict, public_out: dict) -> bool:
 
 
 def binding_experiment(case: dict) -> bool:
+    """绑定实验：承诺确定性、不同输入不同承诺、伪造脱敏被拒。"""
     a = commit.commitment(case["response"])
     deterministic = a == commit.commitment(case["response"])
     distinct = a != commit.commitment(case["response"] + "x")
@@ -111,13 +116,14 @@ def binding_experiment(case: dict) -> bool:
 
 
 def evidence_experiment(case: dict) -> bool:
+    """证据开示实验：bundle 自洽、与证明中的承诺一致、篡改被拒。"""
     bundle = commit.evidence_bundle(case["spec"], case["response"])
     ok_open = commit.verify_bundle(bundle) and len(bundle) == len(case["golden"]["violations"])
-    # the disclosed commitment must equal the one in the proof output
+    # 披露的承诺必须等于证明输出里的承诺
     proof_comms = {v["evidence_commitment"] for v in case["golden"]["violations"]}
     bundled = {e["evidence_commitment"] for e in bundle}
     ok_bind = proof_comms == bundled
-    # tampering breaks it
+    # 篡改会破坏校验
     bad = [dict(e) for e in bundle]
     bad[0]["evidence"] = "tampered"
     ok_reject = not commit.verify_bundle(bad)
@@ -133,7 +139,7 @@ def main() -> int:
     args = ap.parse_args()
 
     case = build_case()
-    # negative case: fabricated witness span that does not cover the mask
+    # 负例：伪造见证区间（未覆盖掩码）
     bad_vector = {**case["vector"], "name": "private-demo-badspan", "spans": [[0, 1]]}
     bad_golden = commit.private_output(case["spec"], case["response"], case["mask"],
                                        case["redacted"], [(0, 1)])
@@ -150,7 +156,7 @@ def main() -> int:
     got = json.loads(hout.read_text())
     ok &= compare_private("check", "good", case["golden"], got[0])
     ok &= compare_private("check", "badspan", bad_golden, got[1])
-    # the negative case must report mask_covered=false
+    # 负例必须报告 mask_covered=false（电路内强制边界性质）
     neg_ok = got[1]["redaction"]["mask_covered"] is False
     print(f"[{'PASS' if neg_ok else 'FAIL'}] negative  bad-span mask_covered=false (got "
           f"{got[1]['redaction']['mask_covered']})")
@@ -161,6 +167,7 @@ def main() -> int:
     ok &= evidence_experiment(case)
 
     if not args.no_prove:
+        # 真实证明：单独证明「好」用例
         pout = out_dir / "proof.json"
         prove_vec = out_dir / "vectors_prove.json"
         prove_vec.write_text(json.dumps({"vectors": [case["vector"]]}, indent=2))

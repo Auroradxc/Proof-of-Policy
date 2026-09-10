@@ -1,6 +1,6 @@
-"""CLI entry point for the Proof-of-Policy DSL toolchain.
+"""Proof-of-Policy DSL 工具链的 CLI 入口。
 
-Usage:
+用法：
     python -m policydsl compile <policy.json>
     python -m policydsl check  <response.txt> --policy <policy.json> [--emit-proof-request]
 """
@@ -18,6 +18,7 @@ from .model import Policy, PolicyError, Rule
 
 
 def _load_policy(path: Path) -> Policy:
+    """从 JSON 文件加载策略包，并做基础容错（文件缺失/JSON 非法）。"""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -41,9 +42,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="policydsl", description="Proof-of-Policy DSL toolchain")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
+    # 子命令 compile：策略包 → ConstraintSpec JSON
     pc = sub.add_parser("compile", help="compile a policy pack to ConstraintSpec JSON")
     pc.add_argument("policy", type=Path)
 
+    # 子命令 check：对响应做参考评估
     cc = sub.add_parser("check", help="reference-evaluate a response against a policy")
     cc.add_argument("response", type=Path)
     cc.add_argument("--policy", type=Path, required=True)
@@ -62,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             result = check(policy, response)
             print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
             if args.emit_proof_request:
+                # 生成可喂给 SP1 prover 的 proof-request.json（含 spec、响应、期望判定）
                 req = {
                     "spec": compile_policy(policy),
                     "response": response,

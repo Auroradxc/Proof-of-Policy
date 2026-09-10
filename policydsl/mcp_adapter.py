@@ -1,17 +1,16 @@
-"""MCP (Model Context Protocol) guard for Proof-of-Policy.
+"""Proof-of-Policy 的 MCP（Model Context Protocol）守护。
 
-Wraps a real MCP client session so that every tool invocation is judged by the
-policy **before** it runs and certified:
+包装一个真实 MCP 客户端会话，使每次工具调用在**执行前**就被策略判定并签发证书：
 
     guard = MCPGuard(monitor, block_on_violation=True)
     result, cert = await guard.call_tool(session, "search_kb", {"query": "x"})
 
-- arguments are checked via ``AgentMonitor.on_tool_call`` (tool_arg_guard /
-  budget_bound) and a certificate is produced for each call;
-- with ``block_on_violation=True`` a violating call is rejected *before* it
-  reaches the server (pre-flight guard), raising ``MCPBlocked``;
-- the same class works with any object exposing ``async call_tool(name, args)``
-  (the real ``mcp.ClientSession`` or a fake in tests).
+- 参数经由 ``AgentMonitor.on_tool_call`` 检查（tool_arg_guard / budget_bound），
+  每次调用产出一张证书；
+- 当 ``block_on_violation=True`` 时，违规调用会在到达服务器**之前**被拒绝
+  （飞行前守护），并抛出 ``MCPBlocked``；
+- 该类对任何暴露 ``async call_tool(name, args)`` 的对象都适用
+  （真实的 ``mcp.ClientSession`` 或测试里的 fake）。
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from .agent import AgentMonitor
 
 
 class MCPBlocked(Exception):
-    """Raised when a tool call/result violates policy and blocking is enabled."""
+    """当工具调用/结果违反策略且启用拦截时抛出。"""
 
     def __init__(self, tool: str, violations: List[Dict[str, Any]], phase: str = "args"):
         super().__init__(f"tool '{tool}' blocked by policy at {phase}: {violations}")
@@ -34,7 +33,7 @@ class MCPBlocked(Exception):
 
 
 def extract_result_text(result: Any) -> str:
-    """Best-effort text from an MCP CallToolResult / content list / plain value."""
+    """从 MCP CallToolResult / content 列表 / 普通值里尽力提取文本。"""
     content = getattr(result, "content", None)
     if content is None and isinstance(result, dict):
         content = result.get("content")
@@ -59,12 +58,11 @@ def extract_result_text(result: Any) -> str:
 
 
 class MCPGuard:
-    """Certify MCP tool calls (arguments) and, optionally, their results.
+    """为 MCP 工具调用（参数）及（可选的）其结果签发证书。
 
-    ``result_monitor`` (a content-policy ``AgentMonitor``) judges the tool's
-    *returned text* and issues a ``tool-result`` certificate; with
-    ``block_on_result_violation=True`` a violating result is rejected after the
-    call (raising ``MCPBlocked`` with ``phase="result"``).
+    ``result_monitor``（一个内容策略 ``AgentMonitor``）判定工具的*返回文本*，
+    并签发 ``tool-result`` 证书；当 ``block_on_result_violation=True`` 时，
+    违规结果在调用后被拒绝（抛 ``MCPBlocked``，``phase="result"``）。
     """
 
     def __init__(self, monitor: AgentMonitor, vkey_hash: str = "unproven",
@@ -82,7 +80,7 @@ class MCPGuard:
         self.result_certificates: List[Dict[str, Any]] = []
 
     def check(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Judge arguments and return the certificate envelope (no tool call)."""
+        """判定参数并返回证书信封（不真正调用工具）。"""
         env = self.monitor.on_tool_call(name, arguments or {}, vkey_hash=self.vkey_hash)
         self.certificates.append(env)
         if self.on_cert is not None:
@@ -90,7 +88,7 @@ class MCPGuard:
         return env
 
     def judge_result(self, name: str, result: Any) -> Optional[Dict[str, Any]]:
-        """Judge the tool's returned text (if a result monitor is configured)."""
+        """判定工具返回文本（仅在配置了 result_monitor 时）。"""
         if self.result_monitor is None:
             return None
         text = extract_result_text(result)
@@ -104,16 +102,17 @@ class MCPGuard:
 
     @staticmethod
     def _violations(env: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """从证书信封里取出违规列表。"""
         from .cert import envelope_payload
 
         return envelope_payload(env)["outcome"]["violations"]
 
     async def call_tool(self, session: Any, name: str,
                         arguments: Optional[Dict[str, Any]] = None) -> Tuple[Any, Dict[str, Any]]:
-        """Certify args, run the tool, then certify the result text.
+        """签参数证书 → 真正调用工具 → 签结果证书。
 
-        Returns ``(result, args_cert)``; the result certificate (if any) is in
-        ``self.result_certificates``.
+        返回 ``(result, args_cert)``；结果证书（若有）在
+        ``self.result_certificates`` 里。
         """
         env = self.check(name, arguments)
         if self.block_on_violation:
@@ -130,5 +129,5 @@ class MCPGuard:
 
     def call_tool_sync(self, session: Any, name: str,
                        arguments: Optional[Dict[str, Any]] = None) -> Tuple[Any, Dict[str, Any]]:
-        """Sync convenience wrapper (no running event loop required)."""
+        """同步便捷封装（无需运行中的事件循环）。"""
         return asyncio.run(self.call_tool(session, name, arguments))

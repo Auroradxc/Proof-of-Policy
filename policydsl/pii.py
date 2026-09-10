@@ -1,21 +1,19 @@
-"""PII patterns and check-digit validators (reference layer).
+"""PII（个人隐私信息）模式与校验位验证器（参考层）。
 
-Patterns are expressed in the Proof-of-Policy NFA subset (ASCII semantics,
-see ``policydsl.nfa``). The values here are the canonical source; a policy
-pack can be generated from them (see ``scripts/`` / the ``pii_redaction_v1``
-pack) so the strings never drift.
+模式采用 Proof-of-Policy 的 NFA 子集表达（ASCII 语义，见 ``policydsl.nfa``）。
+这里的值是「规范来源」（canonical source）；可以从它们生成策略包
+（见 ``scripts/`` 或 ``pii_redaction_v1`` 包），保证字符串永不漂移。
 
-Check-digit validators (IBAN MOD-97) are pure algorithmic helpers: regex can
-only capture *shape*, the checksum is a separate reference function. Wiring
-checksum verification into a dedicated constraint kind is future work (not in
-the Phase 1-3 MVP constraint set).
+校验位验证器（IBAN MOD-97）是纯算法辅助函数：正则只能刻画「外形」，校验和
+需要单独一个参考函数。把校验和验证接入专用约束类型是未来工作（不在阶段一至三
+的 MVP 约束集合内）。
 """
 
 from __future__ import annotations
 
 from . import nfa
 
-# Canonical PII patterns (all within the supported NFA subset).
+# 规范 PII 模式（全部落在受支持的 NFA 子集内）。
 PII_PATTERNS = {
     "email": r"[\w.+-]+@[\w-]+\.[\w.]+",
     "phone": r"\+?[0-9 ()-]{7,}",
@@ -23,32 +21,38 @@ PII_PATTERNS = {
     "bearer_token": r"Bearer [A-Za-z0-9._~+/=-]{16,}",
 }
 
-# Eager compile-check: raise at import time if a pattern is not supported.
+# 提前编译检查：导入时即编译，若有模式不受支持则在 import 阶段就报错，
+# 避免运行到一半才暴露不兼容的正则。
 _NFA_CACHE = {name: nfa.compile_pattern(pat) for name, pat in PII_PATTERNS.items()}
 
 
 def compiled_pattern(name: str) -> dict:
-    """Return the cached compiled NFA spec for a named PII pattern."""
+    """返回指定名字 PII 模式对应的缓存 NFA 规格。"""
     if name not in _NFA_CACHE:
         raise KeyError(f"unknown PII pattern '{name}' (have {sorted(_NFA_CACHE)})")
     return _NFA_CACHE[name]
 
 
 def contains(name: str, text: str) -> bool:
-    """True if ``text`` contains a match of the named PII pattern."""
+    """若 ``text`` 中含有指定名字 PII 模式的匹配则返回 True。"""
     return nfa.match_search(compiled_pattern(name), text)
 
 
 def pattern_names() -> list[str]:
+    """返回全部 PII 模式名（排序）。"""
     return sorted(PII_PATTERNS)
 
 
 # --------------------------------------------------------------------------- #
-# Check-digit validators
+# 校验位验证器（check-digit validators）
 # --------------------------------------------------------------------------- #
 
 def iban_mod97(iban: str) -> int:
-    """ISO 7064 MOD-97-10 of an IBAN; returns the remainder (0..96)."""
+    """计算 IBAN 的 ISO 7064 MOD-97-10 校验，返回余数（0..96）。
+
+    算法：去掉空格并大写 → 把前 4 个字符（国家码+校验位）移到末尾 →
+    字母按 A=10..Z=35 转成数字串 → 整个数字串对 97 取模。
+    """
     s = iban.replace(" ", "").upper()
     if len(s) < 5:
         raise ValueError("IBAN too short")
@@ -60,7 +64,7 @@ def iban_mod97(iban: str) -> int:
 
 
 def is_valid_iban(iban: str) -> bool:
-    """A valid IBAN has MOD-97 remainder 1."""
+    """有效的 IBAN 其 MOD-97 余数应为 1。"""
     try:
         return iban_mod97(iban) == 1
     except ValueError:

@@ -1,15 +1,13 @@
-//! SP1 driver: prove jobs (public/private), host-check, or independently verify
-//! a saved proof.
+//! SP1 驱动：证明任务（公开/私有）、宿主校验，或独立验证已保存的证明。
 //!
-//! Modes:
+//! 模式：
 //!   pop-script --check  --vectors v.json --out r.json
 //!   pop-script          --vectors v.json --out r.json [--proof-out proof.bin]
 //!   pop-script --verify --proof proof.bin [--out r.json]
 //!
-//! `--proof-out` (single-vector prove) saves the proof and a sidecar
-//! `<proof-out>.meta.json` carrying the program vkey hash (for certificates).
-//! `--verify` loads a proof, re-derives the verifying key from the ELF, verifies
-//! cryptographically, and prints the committed Outcome JSON (no secrets needed).
+//! `--proof-out`（单向量证明）保存证明与一个边车 `<proof-out>.meta.json`，
+//! 携带程序 vkey 哈希（供证书使用）。`--verify` 加载证明、从 ELF 重新推导
+//! 验证密钥、做密码学验证，并打印承诺的 Outcome JSON（无需任何秘密）。
 
 use pop_types::{run_job, Constraint, Job, Outcome, PrivateRequest, ProofRequest};
 use serde::Deserialize;
@@ -19,8 +17,10 @@ use sp1_sdk::{
     include_elf, Elf, HashableKey, ProvingKey, SP1ProofWithPublicValues, SP1Stdin,
 };
 
+// 内嵌 guest 程序 ELF（由 build.rs 编译生成）
 const POP_ELF: Elf = include_elf!("pop-program");
 
+/// 从 vectors.json 反序列化的单个输入向量。
 #[derive(Deserialize)]
 struct VectorIn {
     #[serde(default)]
@@ -48,6 +48,7 @@ struct VectorsFile {
 }
 
 impl VectorIn {
+    /// 根据 private 标志转成对应的 Job（公开/私有）。
     fn to_job(&self) -> Job {
         if self.private {
             Job::Private(PrivateRequest {
@@ -70,6 +71,7 @@ impl VectorIn {
     }
 }
 
+/// 把 Outcome 序列化为带 name/mode 的结果 JSON（公开/私有两种形态）。
 fn outcome_json(name: &Option<String>, out: &Outcome) -> serde_json::Value {
     match out {
         Outcome::Public(o) => json!({
@@ -86,16 +88,17 @@ fn outcome_json(name: &Option<String>, out: &Outcome) -> serde_json::Value {
     }
 }
 
+/// 把 JSON 值美化写入文件。
 fn write_json(path: &str, value: &serde_json::Value) {
     std::fs::write(path, serde_json::to_string_pretty(value).unwrap())
         .unwrap_or_else(|e| panic!("write {path}: {e}"));
 }
 
-/// Write the files a verifier-only binary (`pop-verify`) needs, next to the proof:
-///   <proof>.bytes  bincode(SP1Proof)  (compressed) | on-chain bytes (groth16/plonk)
-///   <proof>.pv     raw public values
+/// 在证明旁写出 verifier-only 二进制（`pop-verify`）所需的文件：
+///   <proof>.bytes  bincode(SP1Proof)  (compressed) | 链上字节 (groth16/plonk)
+///   <proof>.pv     原始公开值
 ///   <proof>.vkh    bincode(vk.hash_koalabear())   (compressed)
-///   <proof>.verify.json  sidecar describing the above
+///   <proof>.verify.json  描述上述文件的边车
 fn write_verifier_sidecar(path: &str, proof: &SP1ProofWithPublicValues,
                           vk: &sp1_sdk::SP1VerifyingKey, mode: &str) {
     use sp1_sdk::SP1Proof;
@@ -128,6 +131,7 @@ fn write_verifier_sidecar(path: &str, proof: &SP1ProofWithPublicValues,
 fn main() {
     sp1_sdk::utils::setup_logger();
 
+    // 默认参数
     let mut vectors_path = "vectors.json".to_string();
     let mut out_path = "results.json".to_string();
     let mut proof_out: Option<String> = None;
@@ -138,6 +142,7 @@ fn main() {
     let mut verify_reps: u32 = 1;
     let mut proof_mode = "core".to_string();
 
+    // 极简命令行解析
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
     while i < args.len() {
@@ -174,17 +179,18 @@ fn main() {
         i += 1;
     }
 
-    // ---- independent verification mode ----
+    // ---- 独立验证模式 ----
     if verify_mode {
         let path = proof_path.expect("--verify requires --proof <file>");
         let mut proof = SP1ProofWithPublicValues::load(&path)
             .unwrap_or_else(|e| panic!("load proof {path}: {e}"));
         let client = ProverClient::from_env();
+        // 从 ELF 重新 setup 以推导验证密钥（vkey）
         let t_setup = std::time::Instant::now();
         let pk = client.setup(POP_ELF).expect("setup elf");
         let setup_secs = t_setup.elapsed().as_secs_f64();
         let vk = pk.verifying_key();
-        // repeat verification to separate vkey derivation (setup) from verify
+        // 重复验证以把 vkey 推导（setup）与 verify 分开计时
         let mut times: Vec<f64> = Vec::new();
         for _ in 0..verify_reps.max(1) {
             let t = std::time::Instant::now();
@@ -200,6 +206,7 @@ fn main() {
         return;
     }
 
+    // 读取 vectors 文件（支持 {"vectors":[...]} 或裸 [...] 两种形态）
     let text = std::fs::read_to_string(&vectors_path)
         .unwrap_or_else(|e| panic!("read {vectors_path}: {e}"));
     let data: VectorsFile = match serde_json::from_str(&text) {
@@ -217,6 +224,7 @@ fn main() {
 
     let mut results: Vec<serde_json::Value> = Vec::new();
 
+    // ---- 宿主校验模式：直接跑共享逻辑，不生成证明 ----
     if check_mode {
         for (idx, v) in data.vectors.iter().enumerate() {
             let label = v.name.clone().unwrap_or_else(|| format!("#{idx}"));
@@ -230,7 +238,7 @@ fn main() {
         return;
     }
 
-    // ---- execute-only mode: run in the zkVM, report cycles (no proof) ----
+    // ---- 仅执行模式：在 zkVM 内跑并报告 cycle 数（不生成证明） ----
     if execute_mode {
         let client = ProverClient::from_env();
         for (idx, v) in data.vectors.iter().enumerate() {
@@ -253,7 +261,7 @@ fn main() {
         return;
     }
 
-    // ---- prove mode ----
+    // ---- 证明模式 ----
     let client = ProverClient::from_env();
     let pk = client.setup(POP_ELF).expect("setup elf");
     if proof_out.is_some() && data.vectors.len() != 1 {
@@ -265,6 +273,7 @@ fn main() {
         stdin.write(&v.to_job());
 
         eprintln!("[{label}] generating proof (mode={proof_mode}) ...");
+        // 按 --proof-mode 选择 core/compressed/groth16/plonk
         let req = client.prove(&pk, stdin);
         let req = match proof_mode.as_str() {
             "compressed" => req.compressed(),
@@ -274,10 +283,12 @@ fn main() {
         };
         let mut proof = req.run().expect("generate proof");
         let out: Outcome = proof.public_values.read::<Outcome>();
+        // 生成后立即做一次本地验证，确保证明有效
         client
             .verify(&proof, pk.verifying_key(), None)
             .expect("verify proof");
 
+        // 若指定 --proof-out：保存证明 + 边车 + 元信息
         if let Some(path) = &proof_out {
             proof.save(path).unwrap_or_else(|e| panic!("save proof {path}: {e}"));
             write_verifier_sidecar(path, &proof, pk.verifying_key(), &proof_mode);
