@@ -526,3 +526,15 @@ def merge_spans(spans: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
         else:
             merged.append((lo, hi))
     return merged
+
+
+def match_search_naive(spec: dict, text: str) -> bool:
+    """Naive reference matcher (ablation): anchored attempt at every start.
+    Semantically identical to ``match_search`` (existence) but O(n^2)."""
+    closure = _closure_table(spec)
+    if set(closure[spec["start"]]) & set(spec["accept"]):
+        return True
+    for start in range(len(text)):
+        if _anchored_end(spec, closure, text, start) is not None:
+            return True
+    return False

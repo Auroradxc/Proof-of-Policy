@@ -37,6 +37,17 @@ pub struct NfaEdge {
     pub ranges: Vec<(u32, u32)>,
 }
 
+/// How pattern_block matching is performed in-circuit (ablation switch).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PatternMode {
+    /// Pike VM: single pass over the text, all NFA states tracked together.
+    #[default]
+    Pike,
+    /// Naive: re-run the matcher anchored at every start position (O(n^2)).
+    Naive,
+}
+
 /// A compiled constraint from the ConstraintSpec.
 ///
 /// Phase 1-2 covers `KeywordBlock`, `LengthBound` and `PatternBlock`; more
@@ -49,7 +60,13 @@ pub enum Constraint {
     LengthBound { name: String, min: u32, max: u32 },
     /// Response must not match any of the compiled patterns (substring, the
     /// `patterns[i]` regex compiled to `specs[i]`).
-    PatternBlock { name: String, patterns: Vec<String>, specs: Vec<NfaSpec> },
+    PatternBlock {
+        name: String,
+        patterns: Vec<String>,
+        specs: Vec<NfaSpec>,
+        #[serde(default)]
+        mode: PatternMode,
+    },
 }
 
 /// Input to the prover: the agent response plus the constraints to check.
@@ -116,6 +133,46 @@ fn reached_accept(spec: &NfaSpec, cur: &[bool]) -> bool {
     spec.accept.iter().any(|&a| cur[a as usize])
 }
 
+/// Naive matcher (ablation): re-run the NFA anchored at each start position and
+/// stop as soon as any start accepts. Semantically identical to `nfa_match`
+/// (existence of a match) but O(n^2) — used to quantify the Pike VM's advantage.
+pub fn nfa_match_naive(spec: &NfaSpec, text: &str) -> bool {
+    let chars: Vec<char> = text.chars().collect();
+    for start in 0..chars.len() {
+        let mut cur = eps_closure(spec, core::slice::from_ref(&spec.start));
+        if reached_accept(spec, &cur) {
+            return true;
+        }
+        for i in start..chars.len() {
+            let cp = chars[i] as u32;
+            let mut nxt = vec![false; spec.states.len()];
+            for (s, present) in cur.iter().enumerate() {
+                if !present {
+                    continue;
+                }
+                for e in &spec.states[s].edges {
+                    if in_ranges(cp, &e.ranges) {
+                        let cl = eps_closure(spec, core::slice::from_ref(&e.to));
+                        for (k, v) in cl.into_iter().enumerate() {
+                            if v {
+                                nxt[k] = true;
+                            }
+                        }
+                    }
+                }
+            }
+            cur = nxt;
+            if !cur.iter().any(|&x| x) {
+                break;
+            }
+            if reached_accept(spec, &cur) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// True iff `text` contains a substring matching `spec` (re.search semantics
 /// over the supported regex subset). ASCII/Unicode: operates on code points.
 pub fn nfa_match(spec: &NfaSpec, text: &str) -> bool {
@@ -153,7 +210,6 @@ pub fn nfa_match(spec: &NfaSpec, text: &str) -> bool {
 // Constraint evaluation (shared by the SP1 guest and host-side checks).
 // Mirrors policydsl.evaluate.check for the in-circuit rule kinds.
 // --------------------------------------------------------------------------- //
-
 fn ascii_lower(s: &str) -> String {
     s.chars().map(|c| c.to_ascii_lowercase()).collect()
 }
@@ -186,9 +242,13 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                     });
                 }
             }
-            Constraint::PatternBlock { name, patterns, specs } => {
+            Constraint::PatternBlock { name, patterns, specs, mode } => {
                 for (i, spec) in specs.iter().enumerate() {
-                    if nfa_match(spec, &req.response) {
+                    let hit = match mode {
+                        PatternMode::Pike => nfa_match(spec, &req.response),
+                        PatternMode::Naive => nfa_match_naive(spec, &req.response),
+                    };
+                    if hit {
                         violations.push(Violation {
                             rule: name.clone(),
                             kind: "pattern_block".into(),

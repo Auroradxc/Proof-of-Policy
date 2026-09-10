@@ -48,6 +48,10 @@ class Rule:
             pats = self.params.get("patterns")
             if not isinstance(pats, list) or not pats:
                 raise PolicyError(f"rule '{self.name}': pattern_block needs non-empty 'patterns'")
+            mm = self.params.get("match_mode")
+            if mm is not None and mm not in ("pike", "naive"):
+                raise PolicyError(
+                    f"rule '{self.name}': match_mode must be 'pike' or 'naive', got {mm!r}")
         elif self.kind == "format_check":
             fmt = self.params.get("format")
             if fmt not in ("json", "int", "float"):

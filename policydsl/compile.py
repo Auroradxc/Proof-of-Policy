@@ -65,12 +65,15 @@ def compile_policy(policy: Policy) -> Dict[str, Any]:
                     raise PolicyError(
                         f"rule '{rule.name}': pattern {p!r} not supported by the "
                         f"NFA compiler ({exc})") from exc
-            constraints.append({
+            c = {
                 "kind": "pattern_block",
                 "name": rule.name,
                 "patterns": pats,
                 "nfa": {"compiled": specs},
-            })
+            }
+            if rule.params.get("match_mode") == "naive":
+                c["mode"] = "naive"
+            constraints.append(c)
         elif rule.kind == "format_check":
             constraints.append({
                 "kind": "format_check",

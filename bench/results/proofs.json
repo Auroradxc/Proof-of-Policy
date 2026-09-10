@@ -1,0 +1,26 @@
+[
+  {
+    "length": 200,
+    "rules": 3,
+    "seconds": 127.44,
+    "proof_bytes": 2788540,
+    "peak_rss_mb": 10764.8,
+    "verified": true
+  },
+  {
+    "length": 200,
+    "rules": 6,
+    "seconds": 140.47,
+    "proof_bytes": 2792124,
+    "peak_rss_mb": 10862.4,
+    "verified": true
+  },
+  {
+    "length": 1000,
+    "rules": 1,
+    "seconds": 98.5,
+    "proof_bytes": 2778460,
+    "peak_rss_mb": 9826.3,
+    "verified": true
+  }
+]

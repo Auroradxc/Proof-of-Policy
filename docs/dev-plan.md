@@ -116,10 +116,16 @@
 | Agent 生成路径 + 工具调用出证 | ✅ `AgentMonitor` 两条路径均产证书（工具路径标注 `zk:false`） |
 | EU AI Act Art.12/13 | ✅ 证书携带 `ai_act.art12_record_keeping/art13_transparency`，映射见 `docs/eu-ai-act-mapping.md` |
 
-### Phase 6 · 评测 + 安全模型 + 发布（W7–W8）
-- [ ] bench/：成本曲线 + NFA/DFA 消融 + 四象限表
-- [ ] docs/security-model.md（健全性/隐私/不可伪造）
-- [ ] 论文初稿 + README 复现指南
+### Phase 6 · 评测 + 安全模型 + 论文（W7–W8）✅
+- [x] **评测基础设施**：`pop-script --execute`（zkVM 执行、报周期数，不出证）；`PatternBlock.mode ∈ {pike,naive}` 消融开关（跨层一致，`tests/test_ablation.py`）
+- [x] **成本曲线**：`bench/bench_cycles.py`（20k 字符 × 6 规则 ≈ 1.12e8 周期；字符串规则 ≈ 4.2k 周期/字符）、`bench/bench_proofs.py`（真实证明：**98–141 s / 2.7 MiB / 峰值 ~10 GB**）、`bench/bench_verify.py`（**纯验证 89.8 ms**，vkey setup 1.6 s）
+- [x] **NFA 消融**：自然文本 pike ≈ 1.8× naive；**对抗输入**（a×n vs `a+b`）比值 24.5×→49.4×→99.1×（二次退化证据）
+- [x] **信任-成本四象限**：`docs/quadrant.md`（ZK/TEE/形式验证/hash-chain）
+- [x] **对标 zkAgent（ePrint 2026/199）**：`bench/comparison_zkagent.md` —— 二者**正交可组合**；PoP 在**低一个数量级硬件**（24 核/12 GB vs 32 核/512 GB）下：证明时间同量级（98–141 s vs 99–194 s）、证明大小相当（2.7 MiB vs LogUp 3.1 MiB）、纯验证 ~90 ms（vs 38 ms–0.42 s），并额外提供内容隐私
+- [x] **安全模型**：`docs/security-model.md`（完备性/健全性/内容隐私/脱敏健全性/证据不可伪造/绑定/记录完整性 + 对应实验 + “为何违规轨迹无法通过验证”）
+- [x] **论文初稿**：`paper/proof-of-policy.md`（威胁模型/系统/安全模型/实验含对标/相关工作四派定位/局限）
+- [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；测试 **102+ 全绿（1 skip=设计内）**
+- ⏳ 待办（延伸）：verifier-only 二进制（免构造证明器，降低验证冷启动）；链上锚定 RPC 后端；format/budget/tool 规则入电路
 
 ---
 

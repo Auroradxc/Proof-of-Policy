@@ -91,7 +91,9 @@ fn main() {
     let mut proof_out: Option<String> = None;
     let mut proof_path: Option<String> = None;
     let mut check_mode = false;
+    let mut execute_mode = false;
     let mut verify_mode = false;
+    let mut verify_reps: u32 = 1;
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -113,7 +115,12 @@ fn main() {
                 i += 1;
                 proof_path = args.get(i).cloned();
             }
+            "--verify-reps" => {
+                i += 1;
+                verify_reps = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(1);
+            }
             "--check" => check_mode = true,
+            "--execute" => execute_mode = true,
             "--verify" => verify_mode = true,
             other => eprintln!("unknown arg: {other}"),
         }
@@ -126,12 +133,20 @@ fn main() {
         let mut proof = SP1ProofWithPublicValues::load(&path)
             .unwrap_or_else(|e| panic!("load proof {path}: {e}"));
         let client = ProverClient::from_env();
+        let t_setup = std::time::Instant::now();
         let pk = client.setup(POP_ELF).expect("setup elf");
-        client
-            .verify(&proof, pk.verifying_key(), None)
-            .expect("verify proof");
+        let setup_secs = t_setup.elapsed().as_secs_f64();
+        let vk = pk.verifying_key();
+        // repeat verification to separate vkey derivation (setup) from verify
+        let mut times: Vec<f64> = Vec::new();
+        for _ in 0..verify_reps.max(1) {
+            let t = std::time::Instant::now();
+            client.verify(&proof, vk, None).expect("verify proof");
+            times.push(t.elapsed().as_secs_f64());
+        }
         let out: Outcome = proof.public_values.read::<Outcome>();
-        let value = json!({ "verified": true, "vkey_hash": pk.verifying_key().bytes32(),
+        let value = json!({ "verified": true, "vkey_hash": vk.bytes32(),
+                            "setup_seconds": setup_secs, "verify_times_seconds": times,
                             "outcome": outcome_json(&None, &out) });
         println!("{}", serde_json::to_string_pretty(&value).unwrap());
         write_json(&out_path, &value);
@@ -164,6 +179,29 @@ fn main() {
         }
         write_json(&out_path, &serde_json::Value::Array(results));
         eprintln!("wrote results to {out_path}");
+        println!("done");
+        return;
+    }
+
+    // ---- execute-only mode: run in the zkVM, report cycles (no proof) ----
+    if execute_mode {
+        let client = ProverClient::from_env();
+        for (idx, v) in data.vectors.iter().enumerate() {
+            let label = v.name.clone().unwrap_or_else(|| format!("#{idx}"));
+            let mut stdin = SP1Stdin::new();
+            stdin.write(&v.to_job());
+            let (pv, report) = client.execute(POP_ELF, stdin).run().expect("execute");
+            let mut pv = pv;
+            let out: Outcome = pv.read::<Outcome>();
+            let mut entry = outcome_json(&v.name, &out);
+            if let Some(obj) = entry.as_object_mut() {
+                obj.insert("cycles".to_string(), json!(report.total_instruction_count()));
+            }
+            eprintln!("[{label}] cycles={}", report.total_instruction_count());
+            results.push(entry);
+        }
+        write_json(&out_path, &serde_json::Value::Array(results));
+        eprintln!("wrote {} execute result(s) to {out_path}", data.vectors.len());
         println!("done");
         return;
     }

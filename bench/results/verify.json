@@ -1,0 +1,9 @@
+[
+  {
+    "proof": "bench/work/proof.bin",
+    "cold_cli_median_s": 22.799,
+    "setup_s": 1.616,
+    "verify_median_ms": 89.84,
+    "verify_reps": 5
+  }
+]

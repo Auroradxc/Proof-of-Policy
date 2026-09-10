@@ -29,6 +29,7 @@ def spec_to_rust_constraints(spec: Dict) -> List[Dict]:
                 "name": name,
                 "patterns": c["patterns"],
                 "specs": c["nfa"]["compiled"],
+                "mode": c.get("mode", "pike"),
             }})
         else:
             raise NotImplementedError(
