@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from policydsl import cert  # noqa: E402
 from policydsl.agent import AgentMonitor  # noqa: E402
 from policydsl.langchain_adapter import (  # noqa: E402
-    PoPCallbackHandler, langchain_available, verify_certificates,
+    PoPCallbackHandler, langchain_available, verify_certificates, verify_chain,
 )
 from policydsl import langgraph_adapter as lg  # noqa: E402
 from policydsl.model import Policy, Rule  # noqa: E402
@@ -228,6 +228,50 @@ class TestStreamingOffline(unittest.TestCase):
         self.assertEqual(h._sbuf, {})                     # state cleared
 
 
+class TestStreamingChain(unittest.TestCase):
+    def setUp(self):
+        self.monitor = AgentMonitor(load_pack("agent_content_v1.json"))
+
+    def _feed(self, handler, text, run_id="s1"):
+        for ch in text:
+            handler.on_llm_new_token(ch, run_id=run_id)
+
+    def test_chain_links_and_verifies(self):
+        h = PoPCallbackHandler(self.monitor)
+        self._feed(h, "x sk-abcdefghijklmnopqrstuvwxyz")
+        self.assertTrue(verify_chain(h.stream_certificates))
+        self.assertEqual(len(h.stream_chain("s1")), len(h.stream_certificates))
+
+    def test_tamper_breaks_chain(self):
+        h = PoPCallbackHandler(self.monitor)
+        self._feed(h, "x sk-abcdefghijklmnopqrstuvwxyz")
+        certs = list(h.stream_certificates)
+        # replace the middle certificate with a re-signed but reordered one
+        certs[1] = certs[2] if len(certs) > 2 else certs[0]
+        self.assertFalse(verify_chain(certs))
+
+    def test_early_stop_on_violation(self):
+        seen = []
+        h = PoPCallbackHandler(self.monitor, stop_on_violation=True,
+                               on_early_stop=seen.append)
+        self._feed(h, "x sk-abcdefghijklmnopqrstuvwxyz MORE TOKENS IGNORED")
+        # a stop certificate was emitted and streaming halted
+        self.assertEqual(len(seen), 1)
+        _, stop = cert.verify_envelope(h.stream_certificates[-1], cert.DEMO_KEY)
+        self.assertFalse(stop["streaming"]["partial"])
+        self.assertEqual(stop["streaming"]["stop"]["reason"], "violation")
+        self.assertFalse(stop["outcome"]["passed"])
+        self.assertTrue(verify_chain(h.stream_certificates))
+        # tokens after the stop did not extend the chain
+        self.assertLess(len(h.stream_certificates), len("x sk-abcdefghijklmnopqrstuvwxyz MORE TOKENS IGNORED"))
+
+    def test_clean_chain_single_link(self):
+        h = PoPCallbackHandler(self.monitor)
+        self._feed(h, "A safe reply")
+        self.assertEqual(len(h.stream_certificates), 1)
+        self.assertTrue(verify_chain(h.stream_certificates))
+
+
 @unittest.skipUnless(langchain_available(), "langchain not installed")
 class TestRealStreaming(unittest.TestCase):
     def test_generic_fake_model_streams_and_certifies(self):
@@ -255,6 +299,40 @@ class TestRealStreaming(unittest.TestCase):
 
 @unittest.skipUnless(lg.langgraph_available(), "langgraph not installed")
 class TestRealLangGraph(unittest.TestCase):
+    def _graph_app(self):
+        from typing import TypedDict
+        from langgraph.graph import StateGraph, END
+        from langchain_core.language_models.fake_chat_models import FakeListChatModel
+        from langchain_core.tools import tool
+
+        llm = FakeListChatModel(responses=["A safe reply."])
+
+        @tool
+        def search_kb(query: str, token: str = "") -> str:
+            """Search the knowledge base."""
+            return "ok"
+
+        class S(TypedDict):
+            output: str
+            tool_out: str
+            certificates: list
+
+        def gen_node(state, config=None):
+            msg = llm.invoke("hi", config=config)
+            return {"output": msg.content}
+
+        def tool_node(state, config=None):
+            res = search_kb.invoke({"query": "refund", "token": "secret"}, config=config)
+            return {"tool_out": str(res)}
+
+        g = StateGraph(S)
+        g.add_node("gen", gen_node)
+        g.add_node("tool", tool_node)
+        g.set_entry_point("gen")
+        g.add_edge("gen", "tool")
+        g.add_edge("tool", END)
+        return g.compile()
+
     def test_state_graph_with_guard(self):
         from typing import TypedDict
         from langgraph.graph import StateGraph, END
@@ -275,6 +353,26 @@ class TestRealLangGraph(unittest.TestCase):
         self.assertEqual(len(out["certificates"]), 1)
         ok, _ = cert.verify_envelope(out["certificates"][0], cert.DEMO_KEY)
         self.assertTrue(ok)
+
+    def test_astream_events_full_certification(self):
+        content = AgentMonitor(load_pack("agent_content_v1.json"))
+        tools = AgentMonitor(load_pack("agent_tool_v1.json"))
+        stream_h = PoPCallbackHandler(content, vkey_hash="vk-ev")
+        certifier = lg.LangGraphEventCertifier(content, tool_monitor=tools, vkey_hash="vk-ev",
+                                               stream_handler=stream_h)
+        certs = certifier.run_sync(self._graph_app(), {"output": "", "tool_out": "", "certificates": []})
+        self.assertTrue(certs, "no certificates from astream_events")
+        modes = set()
+        for env in certs:
+            ok, payload = cert.verify_envelope(env, cert.DEMO_KEY)
+            self.assertTrue(ok)
+            modes.add(payload["mode"])
+        self.assertIn("public", modes)      # chat model completion
+        self.assertIn("tool-call", modes)   # tool call (violating: forbidden 'token')
+        # tool certificate flags the forbidden field
+        tool_cert = [c for c in certs if cert.envelope_payload(c)["mode"] == "tool-call"][0]
+        self.assertFalse(cert.envelope_payload(tool_cert)["outcome"]["passed"])
+        self.assertTrue(any("chat_model" in e or "tool" in e for e in certifier.events))
 
 
 if __name__ == "__main__":

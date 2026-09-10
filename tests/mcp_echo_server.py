@@ -15,5 +15,11 @@ def search_kb(query: str, token: str = "") -> str:
     return f"ok:{query}"
 
 
+@server.tool()
+def dump_config() -> str:
+    """Return the service configuration (contains a credential)."""
+    return "service=kb api_key=sk-abcdefghijklmnopqrstuvwxyz"
+
+
 if __name__ == "__main__":
     server.run("stdio")

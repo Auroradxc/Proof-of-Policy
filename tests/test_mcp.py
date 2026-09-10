@@ -37,12 +37,14 @@ def mcp_available() -> bool:
 
 
 class FakeSession:
-    def __init__(self):
+    def __init__(self, result_text: str = None):
         self.calls = []
+        self.result_text = result_text
 
     async def call_tool(self, name, arguments=None):
         self.calls.append((name, arguments))
-        return {"content": [{"type": "text", "text": f"ok:{name}"}]}
+        text = self.result_text if self.result_text is not None else f"ok:{name}"
+        return {"content": [{"type": "text", "text": text}]}
 
 
 class TestMCPGuardOffline(unittest.TestCase):
@@ -78,6 +80,48 @@ class TestMCPGuardOffline(unittest.TestCase):
         self.assertFalse(payload["outcome"]["passed"])
 
 
+class TestMCPResultOffline(unittest.TestCase):
+    """Result-side judging: certify the tool's returned text (content policy)."""
+
+    def setUp(self):
+        self.args_monitor = AgentMonitor(load_pack("agent_tool_v1.json"))
+        self.result_monitor = AgentMonitor(load_pack("agent_content_v1.json"))
+
+    def test_result_certificate_flags_secret(self):
+        guard = MCPGuard(self.args_monitor, result_monitor=self.result_monitor, vkey_hash="vk")
+        session = FakeSession(result_text="config api_key=sk-abcdefghijklmnopqrstuvwxyz")
+        result, env = asyncio.run(guard.call_tool(session, "dump_config", {}))
+        self.assertEqual(len(session.calls), 1)
+        self.assertEqual(len(guard.result_certificates), 1)
+        _, payload = cert.verify_envelope(guard.result_certificates[0], cert.DEMO_KEY)
+        self.assertFalse(payload["outcome"]["passed"])
+        self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret")
+        self.assertEqual(payload["tool"], {"name": "dump_config", "phase": "result"})
+
+    def test_clean_result_passes(self):
+        guard = MCPGuard(self.args_monitor, result_monitor=self.result_monitor)
+        session = FakeSession(result_text="ok:refund policy summary")
+        asyncio.run(guard.call_tool(session, "search_kb", {"query": "refund"}))
+        _, payload = cert.verify_envelope(guard.result_certificates[0], cert.DEMO_KEY)
+        self.assertTrue(payload["outcome"]["passed"])
+
+    def test_block_on_result_violation(self):
+        guard = MCPGuard(self.args_monitor, result_monitor=self.result_monitor,
+                         block_on_result_violation=True)
+        session = FakeSession(result_text="token sk-abcdefghijklmnopqrstuvwxyz")
+        with self.assertRaises(MCPBlocked) as ctx:
+            asyncio.run(guard.call_tool(session, "dump_config", {}))
+        self.assertEqual(ctx.exception.phase, "result")
+        self.assertEqual(ctx.exception.violations[0]["rule"], "no_secret")
+        self.assertEqual(len(session.calls), 1)  # the call happened; the result is rejected
+
+    def test_no_result_monitor_skips(self):
+        guard = MCPGuard(self.args_monitor)
+        session = FakeSession(result_text="sk-abcdefghijklmnopqrstuvwxyz")
+        asyncio.run(guard.call_tool(session, "dump_config", {}))
+        self.assertEqual(guard.result_certificates, [])
+
+
 @unittest.skipUnless(mcp_available(), "mcp SDK not installed")
 class TestRealMCP(unittest.TestCase):
     def test_real_stdio_tool_call_is_certified(self):
@@ -106,6 +150,28 @@ class TestRealMCP(unittest.TestCase):
         self.assertFalse(payload["outcome"]["passed"])  # 'token' is forbidden
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret_args")
         self.assertIsNotNone(result)
+
+    def test_real_result_side_certificate(self):
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        args_monitor = AgentMonitor(load_pack("agent_tool_v1.json"))
+        result_monitor = AgentMonitor(load_pack("agent_content_v1.json"))
+        guard = MCPGuard(args_monitor, result_monitor=result_monitor, vkey_hash="vk-real")
+
+        async def run():
+            params = StdioServerParameters(command=sys.executable, args=[str(SERVER)])
+            async with stdio_client(params) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    return await guard.call_tool(session, "dump_config", {})
+
+        result, env = asyncio.run(run())
+        self.assertEqual(len(guard.result_certificates), 1)
+        ok, payload = cert.verify_envelope(guard.result_certificates[0], cert.DEMO_KEY)
+        self.assertTrue(ok)
+        self.assertFalse(payload["outcome"]["passed"])  # server returns sk-… secret
+        self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret")
 
 
 if __name__ == "__main__":

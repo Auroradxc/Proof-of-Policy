@@ -24,7 +24,25 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Optional
 
 from .agent import AgentMonitor
-from .langchain_adapter import PoPCallbackHandler, langgraph_available  # noqa: F401
+from .langchain_adapter import (  # noqa: F401
+    PoPCallbackHandler, _extract_text, langgraph_available,
+)
+
+
+def _content_text(obj: Any) -> str:
+    """Text from a message-like output (``.content`` str or content parts)."""
+    content = getattr(obj, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for p in content:
+            if isinstance(p, dict):
+                parts.append(str(p.get("text", "")))
+            else:
+                parts.append(str(p))
+        return "".join(parts)
+    return ""
 
 
 def require_langgraph() -> Any:
@@ -99,3 +117,60 @@ class LangGraphGuard:
 
     def tool_node(self, node: Callable[..., Any], **kw: Any) -> Callable[..., Dict[str, Any]]:
         return guard_node(self.monitor, node, kind="tool", **kw)
+
+
+class LangGraphEventCertifier:
+    """Certify an entire LangGraph run by consuming ``astream_events``.
+
+    Emits a certificate for every chat-model completion (generation path) and
+    every finished tool call (tool path); optionally feeds token chunks to a
+    ``PoPCallbackHandler`` so streaming (incremental) certificates are produced
+    as well. Records the event names seen for observability.
+    """
+
+    def __init__(self, monitor: AgentMonitor, tool_monitor: Optional[AgentMonitor] = None,
+                 vkey_hash: str = "unproven",
+                 stream_handler: Optional[PoPCallbackHandler] = None):
+        self.monitor = monitor
+        self.tool_monitor = tool_monitor or monitor
+        self.vkey_hash = vkey_hash
+        self.stream_handler = stream_handler
+        self.certificates: List[Dict[str, Any]] = []
+        self.events: List[str] = []
+
+    async def run(self, graph: Any, inputs: Any, config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        cfg = dict(config or {})
+        try:
+            agen = graph.astream_events(inputs, config=cfg)
+        except TypeError:  # older/newer signature requiring a version arg
+            agen = graph.astream_events(inputs, config=cfg, version="v2")
+        async for event in agen:
+            self._handle(event)
+        return self.certificates
+
+    def run_sync(self, graph: Any, inputs: Any, config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        import asyncio
+
+        return asyncio.run(self.run(graph, inputs, config))
+
+    def _handle(self, event: Dict[str, Any]) -> None:
+        name = event.get("event", "")
+        self.events.append(name)
+        data = event.get("data") or {}
+        run_id = str(event.get("run_id") or "")
+        if name in ("on_chat_model_stream", "on_llm_stream"):
+            chunk = data.get("chunk")
+            text = getattr(chunk, "content", None)
+            if self.stream_handler is not None and isinstance(text, str) and text:
+                self.stream_handler.on_llm_new_token(text, run_id=run_id)
+        elif name in ("on_chat_model_end", "on_llm_end"):
+            text = _extract_text(data.get("output")) or _content_text(data.get("output"))
+            if text:
+                self.certificates.append(self.monitor.on_generate(text, vkey_hash=self.vkey_hash))
+        elif name == "on_tool_end":
+            tool = str(event.get("name") or "tool")
+            args = data.get("input") or {}
+            if not isinstance(args, dict):
+                args = {"input": args}
+            self.certificates.append(
+                self.tool_monitor.on_tool_call(tool, args, vkey_hash=self.vkey_hash))

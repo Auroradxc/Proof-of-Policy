@@ -103,7 +103,8 @@ class PoPCallbackHandler(BaseCallbackHandler):
     def __init__(self, monitor: AgentMonitor, vkey_hash: str = "unproven",
                  proof_sha256: Optional[str] = None, on_cert=None,
                  stream_check: bool = True, stream_every: int = 1,
-                 on_stream_cert=None):
+                 on_stream_cert=None, stop_on_violation: bool = False,
+                 on_early_stop=None):
         super().__init__()
         self.monitor = monitor
         self.vkey_hash = vkey_hash
@@ -115,10 +116,14 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self.stream_check = stream_check
         self.stream_every = max(1, stream_every)
         self.on_stream_cert = on_stream_cert
+        self.stop_on_violation = stop_on_violation
+        self.on_early_stop = on_early_stop
         self.stream_certificates: List[Dict[str, Any]] = []
+        self.stream_chains: Dict[str, List[str]] = {}   # run_id -> [payload digests]
         self._sbuf: Dict[str, str] = {}
         self._scount: Dict[str, int] = {}
         self._sverdict: Dict[str, bool] = {}
+        self._sstopped: Dict[str, bool] = {}
 
     # -- helpers --
     def _emit(self, envelope: Dict[str, Any]) -> Dict[str, Any]:
@@ -127,10 +132,31 @@ class PoPCallbackHandler(BaseCallbackHandler):
             self.on_cert(envelope)
         return envelope
 
+    def stream_chain(self, run_id: str) -> List[str]:
+        """Payload digests of the run's streaming certificate chain."""
+        return list(self.stream_chains.get(run_id, []))
+
+    def _stream_cert(self, run_id: str, text: str, partial: bool, extra_stream: Dict[str, Any]):
+        """Emit a streaming cert linking to the previous one (chain)."""
+        chain = self.stream_chains.setdefault(run_id, [])
+        index = len(chain)
+        prev = chain[-1] if chain else "genesis"
+        stream = {"partial": partial, "tokens": self._scount.get(run_id, 0),
+                  "chain": {"index": index, "prev": prev}}
+        stream.update(extra_stream)
+        env = self.monitor.on_generate(text, vkey_hash=self.vkey_hash,
+                                       proof_sha256=self.proof_sha256,
+                                       extra={"streaming": stream})
+        chain.append(_cert_digest(env))
+        return env
+
     # -- LLM (generation path) --
     def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
-        """Accumulate the streaming prefix; emit a partial cert on verdict change."""
+        """Accumulate the streaming prefix; emit chained partial certs on verdict
+        change, and (optionally) an early-stop cert on the first violation."""
         run_id = str(kwargs.get("run_id") or "")
+        if self._sstopped.get(run_id):
+            return  # early-stopped: ignore further tokens
         self._sbuf[run_id] = self._sbuf.get(run_id, "") + (token or "")
         self._scount[run_id] = self._scount.get(run_id, 0) + 1
         if not self.stream_check or self._scount[run_id] % self.stream_every != 0:
@@ -139,14 +165,22 @@ class PoPCallbackHandler(BaseCallbackHandler):
         verdict = bool(outcome["passed"])
         prev = self._sverdict.get(run_id)
         if prev is None or prev != verdict:
-            env = self.monitor.on_generate(
-                self._sbuf[run_id], vkey_hash=self.vkey_hash,
-                proof_sha256=self.proof_sha256,
-                extra={"streaming": {"partial": True, "tokens": self._scount[run_id]}})
+            env = self._stream_cert(run_id, self._sbuf[run_id], partial=True, extra_stream={})
             self.stream_certificates.append(env)
             if self.on_stream_cert is not None:
                 self.on_stream_cert(env)
             self._sverdict[run_id] = verdict
+            if verdict is False and self.stop_on_violation:
+                idx = len(self.stream_chains[run_id]) - 1
+                stop_env = self._stream_cert(
+                    run_id, self._sbuf[run_id], partial=False,
+                    extra_stream={"stop": {"reason": "violation",
+                                           "at_index": idx,
+                                           "chain_head": self.stream_chains[run_id][idx]}})
+                self.stream_certificates.append(stop_env)
+                if self.on_early_stop is not None:
+                    self.on_early_stop(stop_env)
+                self._sstopped[run_id] = True
 
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
         run_id = str(kwargs.get("run_id") or "")
@@ -155,6 +189,7 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self._sbuf.pop(run_id, None)
         self._scount.pop(run_id, None)
         self._sverdict.pop(run_id, None)
+        self._sstopped.pop(run_id, None)
         if text:
             self._emit(self.monitor.on_generate(text, vkey_hash=self.vkey_hash,
                                                 proof_sha256=self.proof_sha256))
@@ -175,3 +210,24 @@ class PoPCallbackHandler(BaseCallbackHandler):
 def verify_certificates(handler: "PoPCallbackHandler", key: bytes = _cert.DEMO_KEY) -> bool:
     """All certificates emitted so far verify against ``key``."""
     return all(_cert.verify_envelope(env, key)[0] for env in handler.certificates)
+
+
+def _cert_digest(env: Dict[str, Any]) -> str:
+    return _cert.cert_digest(_cert.envelope_payload(env))
+
+
+def verify_chain(certs: List[Dict[str, Any]]) -> bool:
+    """Verify a streaming certificate chain (index sequence + prev linkage).
+
+    Each certificate must carry ``streaming.chain = {index, prev}`` where index
+    is its position and prev is the digest of the previous certificate
+    (``"genesis"`` for the first). Detects reordering, insertion and tampering.
+    """
+    prev = "genesis"
+    for i, env in enumerate(certs):
+        payload = _cert.envelope_payload(env)
+        chain = (payload.get("streaming") or {}).get("chain")
+        if not chain or chain.get("index") != i or chain.get("prev") != prev:
+            return False
+        prev = _cert.cert_digest(payload)
+    return True
