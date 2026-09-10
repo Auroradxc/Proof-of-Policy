@@ -1,22 +1,23 @@
-//! SP1 program: read a ProofRequest, judge constraints (shared logic in
-//! `pop-types::evaluate`), and commit the `ProofOutput` as public values.
+//! SP1 program: read a Job (public or private mode), judge constraints via the
+//! shared `pop-types` logic, and commit the Outcome as public values.
 //!
-//! Rule kinds implemented in-circuit (Phase 1-2):
-//!   - keyword_block : ASCII case-insensitive substring
-//!   - length_bound  : code-point length within [min, max]
-//!   - pattern_block : substring regex via the compiled NFA
-//! Semantics mirror `policydsl.evaluate`; cross-validated by
-//! `scripts/cross_validate.py`.
+//! Public mode  → `Outcome::Public(ProofOutput)`  (response is part of the request)
+//! Private mode → `Outcome::Private(PrivateOutput)` (only the response commitment,
+//!                per-violation evidence commitments, and an optional redaction
+//!                proof are committed)
+//!
+//! Rule kinds implemented in-circuit (Phase 1-2): keyword_block, length_bound,
+//! pattern_block. Semantics mirror `policydsl.evaluate`.
 
 #![no_main]
 
 sp1_zkvm::entrypoint!(main);
 
-use pop_types::{evaluate, ProofOutput, ProofRequest};
+use pop_types::{run_job, Job, Outcome};
 use sp1_zkvm::io;
 
 pub fn main() {
-    let req: ProofRequest = io::read();
-    let out: ProofOutput = evaluate(&req);
+    let job: Job = io::read();
+    let out: Outcome = run_job(&job);
     io::commit(&out);
 }

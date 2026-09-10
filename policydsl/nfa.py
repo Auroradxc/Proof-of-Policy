@@ -429,3 +429,64 @@ def format_spec(spec: dict) -> str:
         lines.append(f"  {i}: eps={st['eps']} "
                      f"edges={[{'to': e['to'], 'n': len(e['ranges'])} for e in st['edges']]}")
     return "\n".join(lines)
+
+
+# --------------------------------------------------------------------------- #
+# Match spans (host-side; used to build redaction masks / selective disclosure)
+# --------------------------------------------------------------------------- #
+
+def _anchored_end(spec: dict, closure: List[frozenset], text: str, start: int) -> Optional[int]:
+    """If a match can start exactly at ``start``, return the *longest* end index
+    (exclusive); otherwise None. Anchored at ``start`` (no fresh starts).
+
+    Longest (greedy-like) end matches Python's ``re.search`` for the supported
+    subset and yields the full masked span for redaction.
+    """
+    states = spec["states"]
+    accept = frozenset(spec["accept"])
+    cur = set(closure[spec["start"]])
+    last_accept: Optional[int] = start if (cur & accept) else None
+    for i in range(start, len(text)):
+        cp = ord(text[i])
+        nxt = set()
+        for s in cur:
+            for e in states[s]["edges"]:
+                if _point_in_ranges(cp, e["ranges"]):
+                    nxt.update(closure[e["to"]])
+        cur = nxt
+        if not cur:
+            break
+        if cur & accept:
+            last_accept = i + 1
+    return last_accept
+
+
+def find_spans(spec: dict, text: str) -> List[Tuple[int, int]]:
+    """Leftmost-per-start match spans, merged (overlapping/adjacent joined).
+
+    Deterministic; used by the reference layer to build redaction masks.
+    O(n^2 * states) — acceptable off-circuit for short responses.
+    """
+    closure = _closure_table(spec)
+    spans: List[Tuple[int, int]] = []
+    for start in range(len(text)):
+        end = _anchored_end(spec, closure, text, start)
+        if end is not None and end > start:
+            spans.append((start, end))
+    spans.sort()
+    merged: List[Tuple[int, int]] = []
+    for lo, hi in spans:
+        if merged and lo <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], hi))
+        else:
+            merged.append((lo, hi))
+    return merged
+
+
+def mask_indices(specs: List[dict], text: str) -> List[int]:
+    """Sorted char indices covered by any match of the given compiled specs."""
+    covered: set = set()
+    for spec in specs:
+        for lo, hi in find_spans(spec, text):
+            covered.update(range(lo, hi))
+    return sorted(covered)

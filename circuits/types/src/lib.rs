@@ -11,8 +11,9 @@
 
 extern crate alloc;
 
-use alloc::{format, string::String, vec, vec::Vec};
+use alloc::{collections::BTreeSet, format, string::String, vec, vec::Vec};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 /// Compiled NFA (Thompson), produced by `policydsl.nfa` and serialized into
 /// the ConstraintSpec. This is the cross-layer contract for pattern_block.
@@ -203,5 +204,142 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
     ProofOutput {
         passed: violations.is_empty(),
         violations,
+    }
+}
+
+// --------------------------------------------------------------------------- //
+// Private mode: response commitment + selective disclosure + redaction proof.
+// Mirrors policydsl.commit.
+// --------------------------------------------------------------------------- //
+
+const HEX: &[u8; 16] = b"0123456789abcdef";
+
+/// SHA-256 of the UTF-8 bytes, lowercase hex (matches hashlib.sha256().hexdigest()).
+pub fn sha256_hex(text: &str) -> String {
+    let digest = Sha256::digest(text.as_bytes());
+    let mut out = String::with_capacity(64);
+    for b in digest {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
+}
+
+/// A violation disclosed in private mode: rule + kind + a *commitment* to the
+/// evidence fragment (the fragment itself is not revealed).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PrivateViolation {
+    pub rule: String,
+    pub kind: String,
+    pub evidence_commitment: String,
+}
+
+/// Proof that a redacted string differs from the original only at masked
+/// positions (VDR-style selective disclosure).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RedactionProof {
+    pub redacted_commitment: String,
+    pub mask_count: u32,
+    pub redaction_ok: bool,
+}
+
+/// Private-mode input. `mask` are the char indices allowed to differ (hold
+/// `*`); `redacted` is the candidate redaction to verify (optional).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PrivateRequest {
+    pub response: String,
+    pub constraints: Vec<Constraint>,
+    #[serde(default)]
+    pub mask: Vec<u32>,
+    #[serde(default)]
+    pub redacted: Option<String>,
+}
+
+/// Private-mode public output: no response text, only its commitment and
+/// per-violation evidence commitments (+ optional redaction proof).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PrivateOutput {
+    pub response_commitment: String,
+    pub passed: bool,
+    pub violations: Vec<PrivateViolation>,
+    pub redaction: Option<RedactionProof>,
+}
+
+/// Top-level job dispatched by the program (one ELF serves both modes).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Job {
+    Public(ProofRequest),
+    Private(PrivateRequest),
+}
+
+/// Top-level committed outcome.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Outcome {
+    Public(ProofOutput),
+    Private(PrivateOutput),
+}
+
+/// VDR-style redaction check: equal code-point length, masked positions hold
+/// `*`, every other position unchanged. Mirrors `policydsl.commit.redaction_ok`.
+pub fn redaction_ok(response: &str, redacted: &str, mask: &[u32]) -> bool {
+    let r: Vec<char> = response.chars().collect();
+    let d: Vec<char> = redacted.chars().collect();
+    if r.len() != d.len() {
+        return false;
+    }
+    let n = r.len() as u32;
+    let masked: BTreeSet<u32> = mask.iter().copied().collect();
+    for &i in &masked {
+        if i >= n {
+            return false;
+        }
+    }
+    for (i, (a, b)) in r.iter().zip(d.iter()).enumerate() {
+        if masked.contains(&(i as u32)) {
+            if *b != '*' {
+                return false;
+            }
+        } else if a != b {
+            return false;
+        }
+    }
+    true
+}
+
+/// Judge a private request: compute the (shared) evaluation, but disclose only
+/// rule/kind + evidence commitments, plus the response commitment and an
+/// optional redaction proof.
+pub fn evaluate_private(req: &PrivateRequest) -> PrivateOutput {
+    let public = evaluate(&ProofRequest {
+        response: req.response.clone(),
+        constraints: req.constraints.clone(),
+    });
+    let violations = public
+        .violations
+        .iter()
+        .map(|v| PrivateViolation {
+            rule: v.rule.clone(),
+            kind: v.kind.clone(),
+            evidence_commitment: sha256_hex(&v.evidence),
+        })
+        .collect();
+    let redaction = req.redacted.as_ref().map(|red| RedactionProof {
+        redacted_commitment: sha256_hex(red),
+        mask_count: req.mask.len() as u32,
+        redaction_ok: redaction_ok(&req.response, red, &req.mask),
+    });
+    PrivateOutput {
+        response_commitment: sha256_hex(&req.response),
+        passed: public.passed,
+        violations,
+        redaction,
+    }
+}
+
+/// Dispatch a job to its outcome (used by the guest and host checks).
+pub fn run_job(job: &Job) -> Outcome {
+    match job {
+        Job::Public(r) => Outcome::Public(evaluate(r)),
+        Job::Private(r) => Outcome::Private(evaluate_private(r)),
     }
 }

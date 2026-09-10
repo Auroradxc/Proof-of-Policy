@@ -61,12 +61,24 @@
 | 回归矩阵 | ✅ fast-host 9 组合跨 3 包全部一致（含 keyword+pattern、三路 PII 等**多违规**） |
 | 交付 PoP v0（透明模式） | ✅（链上/证书属 Phase 5，私有模式属 Phase 4） |
 
-### Phase 4 · 私有模式 + 选择性披露（W5，尽力项）
-- [ ] `policydsl/commit.py`：承诺 + 证据类型化切片
-- [ ] 违规定位与证据披露（不见全文）
-- [ ] redaction-with-proof（复用 VDR 位选择器直觉）
-- [ ] Leak/不可伪造实验
-- 退路：只做「承诺+违规定位」
+### Phase 4 · 私有模式 + 选择性披露（W5）✅
+- [x] A：`policydsl/commit.py`——SHA-256 承诺、canonical 证据串、mask 生成（NFA 命中片段）、redact、`private_output` golden（与 Rust 严格对齐）
+- [x] B：`pop-types` 加 `Job/Outcome`、`PrivateRequest/PrivateOutput`、`sha256_hex`、`redaction_ok`、`evaluate_private`、`run_job`；program 读 Job 分发；script 支持 `private`/`mask`/`redacted` 向量
+- [x] 违规定位与证据披露：只公开 `rule + kind + evidence_commitment`，**不泄露证据片段**
+- [x] redaction-with-proof（VDR 式）：证明脱敏版与原版**仅在掩码位不同**（掩码位为 `*`）
+- [x] Leak 实验：公开值不含响应/证据文本（仅 64-hex 承诺）；Binding/不可伪造：承诺确定性、异输入不同、掩码外篡改被拒
+- [x] 私有真实证明 **PASS**（commitment/违规/脱敏与 golden 一致）；public 回归 host **7/7** + prove **7/7**
+- 单测：**47 全绿**（新增 `tests/test_commit.py`）
+
+**Phase 4 验收（对照 8 周计划 W5）**
+| 标准 | 结果 |
+|---|---|
+| 验证者看不到全文，但能确认「违反规则 X」 | ✅ 公开 `rule/kind` + 证据承诺；响应仅承诺 |
+| 泄露实验通过 | ✅ 公开输出无响应 token / 无证据明文 |
+| 不可伪造/绑定 | ✅ 承诺确定性且随输入变化；篡改脱敏被拒 |
+| redaction-with-proof | ✅ 简化版：仅掩码位不同（`mask_count`/`redaction_ok`/`redacted_commitment`） |
+
+**边界**：掩码「⊆ PII 命中」未在电路内强制（掩码由调用方给出）；证据片段的开示流程、链上锚定 → Phase 5 / E1。
 
 ### Phase 5 · Agent 集成 + 合规证书（W6）
 - [ ] demo/ LangGraph agent + hooks

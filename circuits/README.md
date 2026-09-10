@@ -45,3 +45,5 @@ SP1_PROVER=cpu cargo run --release --bin pop-script -- 42
    (no_std Pike VM) 判定；PII 规则(`policydsl/pii.py`)+`pii_redaction_v1` 包；host 7/7 + 真实证明 7/7。
 3. ✅ **Phase 3 已完成（透明模式 MVP）**：`policydsl.serialize` 映射 ConstraintSpec→ProofRequest；`scripts/prove_policy.py`
    对 `eu-ai-act-v1`(pass) / `finance-redaction-v1`(violate) 真实出证并验证，与 golden 一致（MVP 验收见 docs/dev-plan.md）。
+4. ✅ **Phase 4 已完成（私有模式）**：`Job/Outcome` 双模式；`PrivateOutput` 只公开响应承诺 + 证据承诺 + 脱敏证明；
+   `scripts/private_demo.py` 通过 host 比对 + 真实证明 + 泄露/绑定实验。

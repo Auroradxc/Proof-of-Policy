@@ -1,25 +1,22 @@
-//! SP1 driver: prove responses satisfy constraints (batch), or host-check.
+//! SP1 driver: prove jobs in batch (public or private mode), or host-check.
 //!
 //! Modes:
-//!   pop-script --check   --vectors vectors.json --out results.json
-//!       Host-side check only (no proof): runs `pop-types::evaluate` directly.
-//!       Used by cross-validation to test all vectors quickly.
+//!   pop-script --check --vectors vectors.json --out results.json
+//!       Host-side check only (no proof): runs `pop-types::run_job` directly.
 //!   pop-script --vectors vectors.json --out results.json
-//!       Generates + verifies an SP1 proof per vector and reads back the
-//!       committed `ProofOutput`.
+//!       Generates + verifies an SP1 proof per job and reads back the committed
+//!       `Outcome`.
 //!
-//! vectors.json shape (serde externally-tagged Constraint):
-//!   { "vectors": [ { "name": "...", "response": "...",
-//!                     "constraints": [
-//!                        {"KeywordBlock": {"name": "...", "keywords": [...]}},
-//!                        {"LengthBound":  {"name": "...", "min": 0, "max": 100}},
-//!                        {"PatternBlock": {"name": "...", "patterns": [...],
-//!                                          "specs": [ <NfaSpec>, ... ]}}
-//!                     ] } ] }
+//! vectors.json shape:
+//!   { "vectors": [ { "name": "...", "response": "...", "constraints": [...],
+//!                     "private": false,               // optional
+//!                     "mask": [int, ...],             // optional (private)
+//!                     "redacted": "..." } ] }         // optional (private)
 //!
-//! Cross-validation harness: scripts/cross_validate.py.
+//! cross-validation harness: scripts/cross_validate.py (public),
+//! scripts/private_demo.py (private).
 
-use pop_types::{evaluate, Constraint, ProofOutput, ProofRequest};
+use pop_types::{run_job, Constraint, Job, Outcome, PrivateRequest, ProofRequest};
 use serde::Deserialize;
 use serde_json::json;
 use sp1_sdk::{
@@ -35,6 +32,12 @@ struct VectorIn {
     name: Option<String>,
     response: String,
     constraints: Vec<Constraint>,
+    #[serde(default)]
+    private: bool,
+    #[serde(default)]
+    mask: Vec<u32>,
+    #[serde(default)]
+    redacted: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -43,12 +46,41 @@ struct VectorsFile {
     vectors: Vec<VectorIn>,
 }
 
-fn result_entry(name: &Option<String>, out: &ProofOutput) -> serde_json::Value {
-    json!({
-        "name": name,
-        "passed": out.passed,
-        "violations": out.violations,
-    })
+impl VectorIn {
+    fn to_job(&self) -> Job {
+        if self.private {
+            Job::Private(PrivateRequest {
+                response: self.response.clone(),
+                constraints: self.constraints.clone(),
+                mask: self.mask.clone(),
+                redacted: self.redacted.clone(),
+            })
+        } else {
+            Job::Public(ProofRequest {
+                response: self.response.clone(),
+                constraints: self.constraints.clone(),
+            })
+        }
+    }
+}
+
+fn outcome_json(name: &Option<String>, out: &Outcome) -> serde_json::Value {
+    match out {
+        Outcome::Public(o) => json!({
+            "name": name,
+            "mode": "public",
+            "passed": o.passed,
+            "violations": o.violations,
+        }),
+        Outcome::Private(o) => json!({
+            "name": name,
+            "mode": "private",
+            "passed": o.passed,
+            "response_commitment": o.response_commitment,
+            "violations": o.violations,
+            "redaction": o.redaction,
+        }),
+    }
 }
 
 fn main() {
@@ -85,43 +117,38 @@ fn main() {
             VectorsFile { vectors: v }
         }
     };
-    eprintln!("loaded {} vector(s) (mode={})", data.vectors.len(), if check_mode { "check" } else { "prove" });
+    eprintln!(
+        "loaded {} vector(s) (mode={})",
+        data.vectors.len(),
+        if check_mode { "check" } else { "prove" }
+    );
 
     let mut results: Vec<serde_json::Value> = Vec::new();
 
     if check_mode {
         for (idx, v) in data.vectors.iter().enumerate() {
             let label = v.name.clone().unwrap_or_else(|| format!("#{idx}"));
-            let req = ProofRequest {
-                response: v.response.clone(),
-                constraints: v.constraints.clone(),
-            };
-            let out = evaluate(&req);
-            results.push(result_entry(&v.name, &out));
-            eprintln!("[{label}] passed={} violations={}", out.passed, out.violations.len());
+            let out = run_job(&v.to_job());
+            results.push(outcome_json(&v.name, &out));
+            eprintln!("[{label}] done");
         }
     } else {
         let client = ProverClient::from_env();
         let pk = client.setup(POP_ELF).expect("setup elf");
         for (idx, v) in data.vectors.iter().enumerate() {
             let label = v.name.clone().unwrap_or_else(|| format!("#{idx}"));
-            let req = ProofRequest {
-                response: v.response.clone(),
-                constraints: v.constraints.clone(),
-            };
-
             let mut stdin = SP1Stdin::new();
-            stdin.write(&req);
+            stdin.write(&v.to_job());
 
             eprintln!("[{label}] generating proof ...");
             let mut proof = client.prove(&pk, stdin).run().expect("generate proof");
-            let out: ProofOutput = proof.public_values.read::<ProofOutput>();
+            let out: Outcome = proof.public_values.read::<Outcome>();
             client
                 .verify(&proof, pk.verifying_key(), None)
                 .expect("verify proof");
 
-            results.push(result_entry(&v.name, &out));
-            eprintln!("[{label}] passed={} violations={}", out.passed, out.violations.len());
+            results.push(outcome_json(&v.name, &out));
+            eprintln!("[{label}] proved");
         }
     }
 
