@@ -142,6 +142,50 @@ class TestRealLangChain(unittest.TestCase):
         self.assertTrue(ok)
         self.assertTrue(payload["outcome"]["passed"])
 
+    def _fake_llm(self, text):
+        from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+        return FakeListChatModel(responses=[text])
+
+    def test_real_llm_end_to_end_callback(self):
+        monitor = AgentMonitor(load_pack("agent_content_v1.json"))
+        h = PoPCallbackHandler(monitor, vkey_hash="vk-e2e")
+        self._fake_llm("A safe reply.").invoke("hi", config={"callbacks": [h]})
+        self.assertEqual(len(h.certificates), 1)
+        ok, payload = cert.verify_envelope(h.certificates[0], cert.DEMO_KEY)
+        self.assertTrue(ok)
+        self.assertTrue(payload["outcome"]["passed"])
+        self.assertEqual(payload["mode"], "public")
+
+    def test_real_llm_end_to_end_violation(self):
+        monitor = AgentMonitor(load_pack("agent_content_v1.json"))
+        h = PoPCallbackHandler(monitor)
+        self._fake_llm("Leak sk-abcdefghijklmnopqrstuvwxyz").invoke(
+            "hi", config={"callbacks": [h]})
+        _, payload = cert.verify_envelope(h.certificates[0], cert.DEMO_KEY)
+        self.assertFalse(payload["outcome"]["passed"])
+        self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret")
+
+    def test_real_tool_end_to_end_callback(self):
+        try:
+            from langchain_core.tools import tool
+        except Exception as exc:  # pragma: no cover
+            self.skipTest(f"langchain tool API unavailable: {exc}")
+
+        @tool
+        def search_kb(query: str, token: str = "") -> str:
+            """Search the knowledge base."""
+            return "ok"
+
+        monitor = AgentMonitor(load_pack("agent_tool_v1.json"))
+        h = PoPCallbackHandler(monitor)
+        search_kb.invoke({"query": "refund", "token": "secret"}, config={"callbacks": [h]})
+        self.assertTrue(h.certificates, "tool callbacks did not fire")
+        _, payload = cert.verify_envelope(h.certificates[-1], cert.DEMO_KEY)
+        self.assertEqual(payload["mode"], "tool-call")
+        self.assertFalse(payload["outcome"]["passed"])
+        self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret_args")
+
 
 @unittest.skipUnless(lg.langgraph_available(), "langgraph not installed")
 class TestRealLangGraph(unittest.TestCase):

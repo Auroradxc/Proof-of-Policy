@@ -9,5 +9,6 @@ scripts/results.json
 scripts/results_check.json
 scripts/results_prove.json
 scripts/examples/out/
+.install_frameworks.lock
 .DS_Store
 *.log
