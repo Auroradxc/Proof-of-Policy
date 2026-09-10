@@ -89,10 +89,12 @@
 - [x] 证书规范：`policydsl/cert.py` —— payload `{cert_version, policy(id,version), policy_hash, mode, outcome, binding{vkey_hash, proof_sha256}, ai_act, ts}` + **DSSE 信封**（HMAC-SHA256 demo 签名，可换 Ed25519）+ 稳定 `cert_digest`
 - [x] 证明持久化 + 独立验证：`pop-script --proof-out`（证明+vkey meta）、`pop-script --verify --proof`（**重新从 ELF 派生 vkey 并密码学验证**）
 - [x] 锚定：`policydsl/anchor.py` —— 追加式、哈希链式防篡改账本（file backend，可离线验证）；`anchor_on_chain` RPC 钩子显式未配置即报错（不假装已上链）
-- [x] Agent 插桩：`policydsl/agent.py` `AgentMonitor.on_generate/on_tool_call`（框架无关钩子）+ `mock_agent()` 会话；`langgraph_adapter.py` 懒加载、缺依赖时明确报错
+- [x] Agent 插桩：`policydsl/agent.py` `AgentMonitor.on_generate/on_tool_call`（框架无关钩子）+ `mock_agent()` 会话
 - [x] 端到端：`scripts/issue_cert.py`（pack+response → 证明 → 证书 → 锚定）与 `scripts/verify_cert.py`（第三方：签名/policy_hash/锚定链/证明）
-- [x] 测试：**65 全绿**（+test_cert/test_anchor/test_agent）
-- 与计划的偏差（已记）：LangGraph 未安装 → 提供框架无关钩子 + 适配器桩（可执行可测）；链上锚定 → file 账本后端（离线可验），RPC 后端留接口
+- [x] 测试：**78 全绿（2 skip=真实框架用例）**（+test_cert/test_anchor/test_agent/test_frameworks）
+- [x] **框架适配（LangChain + LangGraph）**：`langchain_adapter.py` `PoPCallbackHandler`（`on_llm_end`/`on_tool_start`/`on_tool_end`，二者共用 LangChain 回调）+ `langgraph_adapter.py` `attach`/`guard_node`/`LangGraphGuard`；`requirements-frameworks.txt` + `scripts/install_frameworks.sh`
+- ⚠️ **安装受阻（环境网络）**：PyPI HTTPS 全阻断、HTTP 镜像 ~0.5KB 截断、apt 下载超时 → 当前**无法 pip 安装** langchain/langgraph。适配按真实 API 编写且 import-guarded；真实框架测试 `skipUnless` 在依赖到位后自动启用。
+- 与计划的偏差（已记）：LangChain/LangGraph 适配代码已就绪（回调 + 节点包装），但受环境网络限制**未能安装**（PyPI 阻断）；链上锚定 → file 账本后端（离线可验），RPC 后端留接口
 
 **Phase 5 验收（对照 8 周计划 W6）**
 | 标准 | 结果 |

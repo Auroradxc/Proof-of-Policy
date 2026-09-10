@@ -1,0 +1,17 @@
+# Framework adapters for Proof-of-Policy (optional).
+#
+# Install (Linux/macOS):
+#   python3 -m venv .venv && . .venv/bin/activate
+#   pip install -r requirements-frameworks.txt
+#
+# If the default index is unreachable, use a mirror, e.g.:
+#   pip install -r requirements-frameworks.txt \
+#       -i https://pypi.tuna.tsinghua.edu.cn/simple
+#
+# The adapters (policydsl/langchain_adapter.py, policydsl/langgraph_adapter.py)
+# are import-guarded: without these packages the offline fake-object tests still
+# run; the real-framework tests enable automatically once installed.
+
+langchain>=0.3
+langchain-core>=0.3
+langgraph>=0.2

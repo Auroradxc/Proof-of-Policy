@@ -82,10 +82,14 @@ class TestMockSession(unittest.TestCase):
 
 
 class TestLangGraphAdapter(unittest.TestCase):
-    def test_attach_requires_wiring(self):
-        from policydsl import langgraph_adapter
-        with self.assertRaises((RuntimeError, NotImplementedError)):
-            langgraph_adapter.attach(object(), object())
+    def test_attach_returns_handler_and_require_raises(self):
+        from policydsl import langgraph_adapter as lg
+        from policydsl.langchain_adapter import PoPCallbackHandler
+        monitor = agent.AgentMonitor(load_pack("agent_content_v1.json"))
+        self.assertIsInstance(lg.attach(monitor), PoPCallbackHandler)
+        if not lg.langgraph_available():  # pragma: no branch
+            with self.assertRaises(RuntimeError):
+                lg.require_langgraph()
 
 
 if __name__ == "__main__":
