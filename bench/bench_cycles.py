@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Cycle-count matrix (zkVM execution, no proof) for Proof-of-Policy.
+"""Proof-of-Policy 的 cycle 数矩阵（只跑 zkVM 执行、不生成证明）。
 
-Sweeps response length x rule count x matcher mode and records the zkVM cycle
-count via ``pop-script --execute``. Fast enough to cover many points; the
-(much slower) proof time/size curve lives in ``bench_proofs.py``.
+扫描「响应长度 × 规则条数 × 匹配模式」的组合，用 ``pop-script --execute``
+记录 zkVM 的 cycle 数。因为省掉了证明生成所以很快，能铺很多采样点；真正（慢
+几个数量级）的证明耗时/体积曲线在 ``bench_proofs.py`` 里。
 
-Usage:
+结果写到 ``bench/results/cycles.json``，同时在同目录生成一份 .md 表格便于贴文档。
+
+用法：
   python3 bench/bench_cycles.py [--out bench/results/cycles.json]
 """
 
@@ -32,7 +34,11 @@ EMAIL = pii.PII_PATTERNS["email"]
 
 
 def make_policy(rule_count: int, mode: str = "pike") -> Policy:
-    """1 length rule + (rule_count-1) extra constraints (keyword/pattern)."""
+    """构造 1 条 length_bound + (rule_count-1) 条额外约束（keyword/pattern）。
+
+    固定第一条长度规则，是为了让不同规则数之间只差「扫描量」，便于横向比较；
+    ``mode`` 只作用于 pattern_block，用来对比 pike(线性) 与 naive(O(n^2)) 两种匹配。
+    """
     rules = [Rule("length_bound", "len", {"min": 1, "max": 10_000_000})]
     extras = [
         Rule("keyword_block", "kw", {"keywords": ["exploit", "weaponize", "doxxing"]}),
@@ -46,11 +52,20 @@ def make_policy(rule_count: int, mode: str = "pike") -> Policy:
 
 
 def response(prefix: str, length: int) -> str:
+    """生成一个恰好 ``length`` 字符、且不含任何命中词的干净响应文本。
+
+    纯干净（no hits）很重要：只有全部约束都被完整扫描到底，cycle 数才反映
+    「最坏情况」的扫描成本，而不是命中即停的短路成本。
+    """
     body = (prefix + " ") * ((length // (len(prefix) + 1)) + 1)
     return body[:length]
 
 
 def run_execute(vector: dict) -> dict:
+    """把单个向量喂给 ``pop-script --execute``，返回其 JSON 结果。
+
+    走子进程而不是 import，是为了测真实的 CLI 路径（参数解析 + 序列化开销）。
+    """
     WORK.mkdir(parents=True, exist_ok=True)
     vp = WORK / "v.json"
     op = WORK / "r.json"
@@ -61,6 +76,7 @@ def run_execute(vector: dict) -> dict:
 
 
 def main() -> int:
+    """遍历所有采样点，落盘 JSON 结果与 Markdown 表格。"""
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", type=Path, default=REPO / "bench" / "results" / "cycles.json")
     args = ap.parse_args()
@@ -72,12 +88,12 @@ def main() -> int:
     for length in lengths:
         for rc in rule_counts:
             for mode in modes:
-                # naive is O(n^2): keep it to the smaller lengths
+                # naive 匹配是 O(n^2)，长文本会把执行时间炸掉，只在短长度上跑
                 if mode == "naive" and length > 2_000:
                     continue
                 policy = make_policy(rc, mode)
                 spec = compile_policy(policy)
-                # a long clean response (no hits) so all constraints must be scanned
+                # 用不含命中词的长响应，强制每条约束都扫描到底（最坏情况）
                 text = response("the quick brown fox jumps", length)
                 out = run_execute({"name": f"L{length}-R{rc}-{mode}", "response": text,
                                    "constraints": spec_to_rust_constraints(spec)})
@@ -88,6 +104,7 @@ def main() -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(rows, indent=2))
 
+    # 同时输出 Markdown 表格，方便直接贴进 README/报告
     md = ["# Cycle-count matrix (zkVM execution, no proof)", "",
           "| length | rules | mode | cycles |", "|---:|---:|:--|---:|"]
     for r in rows:

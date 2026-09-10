@@ -1,4 +1,11 @@
-"""Tests for the matcher ablation switch (pike vs naive) across layers."""
+"""匹配器消融实验（Pike VM vs 朴素 O(n²)）跨层开关的测试。
+
+背景：``pattern_block`` 的模式在 Python 参考层和 Rust 电路层各有一份解释器，
+Rust 侧还提供两种匹配算法——默认的 Pike VM（每步只推进一次、线性时间、不做
+回溯）与朴素的 NFA 子集模拟（逐位置尝试、O(n²)，作为消融基线）。消融实验只有
+在**两者吃同一份 NFA 且判定完全一致**时才有意义：因此这里既逐点比对两种匹配器
+对同一语料的结果，也验证 ``match_mode`` 开关从 DSL 校验一路传导到 Rust 约束，
+并且非法的 mode 会被快速拒绝（避免消融旋钮被误用成正式语义）。"""
 
 import json
 import subprocess
@@ -17,6 +24,8 @@ from policydsl.serialize import spec_to_rust_constraints  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
+# 语料刻意覆盖真实 PII 模式与边界语法：量词（a+ / {2,4}）、分支、通配，
+# 以及空串和无命中文本（验证「不命中」这条路径两实现也一致）。
 PATTERNS = [
     r"[\w.+-]+@[\w-]+\.[\w.]+",
     r"sk-[A-Za-z0-9]{16,}",
@@ -30,6 +39,10 @@ TEXTS = [
 
 
 class TestMatcherParity(unittest.TestCase):
+    """消融前提：同一 NFA 上 Pike VM 与朴素匹配器的判定必须逐点相等。"""
+
+    # 穷举 模式×文本 的组合；一旦出现分歧，说明其中一侧语义（而非性能）有 bug，
+    # 消融数据也就不再可比。
     def test_pike_equals_naive(self):
         for pat in PATTERNS:
             spec = nfa.compile_pattern(pat)
@@ -40,6 +53,10 @@ class TestMatcherParity(unittest.TestCase):
 
 
 class TestModeWiring(unittest.TestCase):
+    """``match_mode`` 从 DSL 到 Rust 约束的传导与校验（消融旋钮的接线）。"""
+
+    # 默认必须是 pike（生产语义）；ConstraintSpec 里不落 "mode" 是为了保持
+    # 既有序列化契约稳定，只在生成 Rust 约束时补上默认值。
     def test_default_is_pike(self):
         spec = compile_policy(Policy("p", "1", rules=[
             Rule("pattern_block", "pb", {"patterns": [pii.PII_PATTERNS["email"]]})]))
@@ -47,6 +64,8 @@ class TestModeWiring(unittest.TestCase):
         rt = spec_to_rust_constraints(spec)[0]["PatternBlock"]
         self.assertEqual(rt["mode"], "pike")
 
+    # 显式指定 naive 时，两层（ConstraintSpec 与 Rust 约束）都要如实带上，
+    # 否则电路里仍会跑 pike，消融就测不到朴素路径。
     def test_naive_mode_propagates(self):
         spec = compile_policy(Policy("p", "1", rules=[
             Rule("pattern_block", "pb", {"patterns": [pii.PII_PATTERNS["email"]],
@@ -55,6 +74,8 @@ class TestModeWiring(unittest.TestCase):
         rt = spec_to_rust_constraints(spec)[0]["PatternBlock"]
         self.assertEqual(rt["mode"], "naive")
 
+    # 未知 mode（如 "dfa"）要快速失败：避免旋钮拼错后静默回落到默认匹配器，
+    # 让消融结果被错误归因。
     def test_bad_mode_rejected(self):
         with self.assertRaises(PolicyError):
             Policy("p", "1", rules=[Rule("pattern_block", "pb", {
@@ -63,8 +84,13 @@ class TestModeWiring(unittest.TestCase):
 
 @unittest.skipUnless(POP_SCRIPT.exists(), "pop-script not built")
 class TestRustNaivePath(unittest.TestCase):
-    """The in-zkVM naive matcher must agree with pike (checked host-side, fast)."""
+    """zkVM 内的朴素匹配器必须与 pike 判定一致（宿主机侧检查，快）。
 
+    用 ``pop-script --check`` 直接跑 Rust 实现（不生成证明），这样能在单元测试
+    里以秒级成本覆盖真实的电路逻辑；二进制未构建时整体跳过。
+    """
+
+    # 同一文本分别以 pike / naive 跑一次 Rust 检查，返回检查结果。
     def _run_check(self, mode: str, text: str) -> dict:
         spec = compile_policy(Policy("p", "1", rules=[
             Rule("pattern_block", "pb", {"patterns": [pii.PII_PATTERNS["email"]],
@@ -78,6 +104,8 @@ class TestRustNaivePath(unittest.TestCase):
                            cwd=str(REPO), check=True, capture_output=True, text=True)
             return json.loads(op.read_text())[0]
 
+    # 命中（含邮箱）与未命中（含空串）两类输入都要一致：只比 passed 不够，
+    # 还要比触发的规则名，防止「都判违规但归因不同」的假一致。
     def test_naive_matches_pike_on_hit_and_clean(self):
         for text in ["reach me at a@b.com", "no address here", ""]:
             pike = self._run_check("pike", text)
