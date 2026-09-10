@@ -28,18 +28,23 @@ sys.path.insert(0, str(REPO))
 
 from policydsl.compile import compile_policy
 from policydsl.evaluate import check
-from policydsl.model import Policy, Rule
+from policydsl.model import Policy, Rule, ToolCall, Transcript
 from policydsl.serialize import spec_to_rust_constraints
 from policydsl import pii
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
 # python Violation.evidence_kind -> guest kind string
-KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block"}
+KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block",
+            "format": "format_check", "tool_arg": "tool_arg_guard", "budget": "budget_bound"}
 
 
 def vectors() -> list[tuple]:
-    """Return (name, policy, response) triples. Inputs are ASCII-only."""
+    """Return (name, policy, response, extras) tuples. Inputs are ASCII-only.
+
+    ``extras`` may carry ``tool_calls`` / ``token_count`` for the trace rules
+    (tool_arg_guard / budget_bound).
+    """
     base = Policy(
         id="x", version="0.1.0", semantic="and",
         rules=[
@@ -55,21 +60,55 @@ def vectors() -> list[tuple]:
         id="p2", version="0.1.0", semantic="and",
         rules=[Rule("pattern_block", "no_secret", {"patterns": [pii.PII_PATTERNS["secret_key"]]})],
     )
+    fmt = Policy(
+        id="f1", version="0.1.0", semantic="and",
+        rules=[Rule("format_check", "must_be_json", {"format": "json"})],
+    )
+    toolpol = Policy(
+        id="t1", version="0.1.0", semantic="and",
+        rules=[Rule("tool_arg_guard", "no_secret_args",
+                    {"forbidden_fields": ["password", "token", "api_key"]})],
+    )
+    budgetpol = Policy(
+        id="b1", version="0.1.0", semantic="and",
+        rules=[Rule("budget_bound", "call_budget", {"budget": 2, "unit": "calls"})],
+    )
+    tokenpol = Policy(
+        id="b2", version="0.1.0", semantic="and",
+        rules=[Rule("budget_bound", "token_budget", {"budget": 100, "unit": "tokens"})],
+    )
+    call = lambda n, a: {"name": n, "args": a}  # noqa: E731
     return [
         ("clean_pass", base,
-         "The service processed your request and will reply shortly. Thank you."),
+         "The service processed your request and will reply shortly. Thank you.", {}),
         ("keyword_hit", base,
-         "Here is a step-by-step guide on how to exploit the login endpoint."),
-        ("length_too_long", base, "x" * 2500),
-        ("email_hit", pii_email, "My details: reach dev@example.com anytime."),
-        ("email_clean", pii_email, "This guidance contains no addresses or mailboxes."),
-        ("secret_hit", pii_secret, "Rotate the key sk-abcdefghijklmnopqrstuvwxyz now."),
-        ("secret_clean", pii_secret, "All credentials have been rotated."),
+         "Here is a step-by-step guide on how to exploit the login endpoint.", {}),
+        ("length_too_long", base, "x" * 2500, {}),
+        ("email_hit", pii_email, "My details: reach dev@example.com anytime.", {}),
+        ("email_clean", pii_email, "This guidance contains no addresses or mailboxes.", {}),
+        ("secret_hit", pii_secret, "Rotate the key sk-abcdefghijklmnopqrstuvwxyz now.", {}),
+        ("secret_clean", pii_secret, "All credentials have been rotated.", {}),
+        ("format_ok", fmt, '{"ok": true, "n": 1}', {}),
+        ("format_bad", fmt, "plain text, not json", {}),
+        ("tool_arg_hit", toolpol, "",
+         {"tool_calls": [call("search_kb", {"query": "refund", "token": "secret"})]}),
+        ("tool_arg_clean", toolpol, "",
+         {"tool_calls": [call("search_kb", {"query": "refund"})]}),
+        ("budget_over", budgetpol, "",
+         {"tool_calls": [call("a", {}), call("b", {}), call("c", {})]}),
+        ("budget_ok", budgetpol, "", {"tool_calls": [call("a", {}), call("b", {})]}),
+        ("token_over", tokenpol, "", {"token_count": 150}),
     ]
 
 
-def golden(policy: Policy, response: str) -> dict:
-    res = check(policy, response)
+def golden(policy: Policy, response: str, extras: dict | None = None) -> dict:
+    extras = extras or {}
+    tx = Transcript(
+        response=response,
+        tool_calls=[ToolCall(c["name"], c.get("args", {})) for c in extras.get("tool_calls", [])],
+        token_count=extras.get("token_count"),
+    )
+    res = check(policy, tx)
     rules = sorted({(v.rule.name, KIND_MAP.get(v.evidence_kind, v.evidence_kind))
                     for v in res.violations})
     return {"passed": res.passed, "violations": rules}
@@ -106,14 +145,13 @@ def main() -> int:
     vectors_in = vectors()
     payload = {"vectors": []}
     expected = []
-    for name, policy, response in vectors_in:
+    for name, policy, response, extras in vectors_in:
         spec = compile_policy(policy)
-        payload["vectors"].append({
-            "name": name,
-            "response": response,
-            "constraints": spec_to_rust_constraints(spec),
-        })
-        expected.append((name, golden(policy, response)))
+        entry = {"name": name, "response": response,
+                 "constraints": spec_to_rust_constraints(spec)}
+        entry.update(extras or {})
+        payload["vectors"].append(entry)
+        expected.append((name, golden(policy, response, extras)))
 
     if not POP_SCRIPT.exists():
         print(f"error: driver not built: {POP_SCRIPT}\n  cd circuits && cargo build --release -p pop-script")
@@ -132,11 +170,16 @@ def main() -> int:
     report("check", [ok for _, ok, _, _ in d1], d1)
 
     results_prove = scripts / "results_prove.json"
-    print("--- real proofs (SP1 guest) ---")
-    run_pop("prove", vectors_path, results_prove)
-    rp = json.loads(results_prove.read_text())
-    n2, d2 = compare(rp, expected)
-    report("prove", [ok for _, ok, _, _ in d2], d2)
+    if "--no-prove" in sys.argv:
+        print("--- real proofs: skipped (--no-prove) ---")
+        n2 = n1
+        d2 = d1
+    else:
+        print("--- real proofs (SP1 guest) ---")
+        run_pop("prove", vectors_path, results_prove)
+        rp = json.loads(results_prove.read_text())
+        n2, d2 = compare(rp, expected)
+        report("prove", [ok for _, ok, _, _ in d2], d2)
 
     ok = n1 == len(expected) and n2 == len(expected)
     print("\n" + "=" * 60)

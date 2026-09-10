@@ -27,7 +27,7 @@
 ## 1. 复现：参考层（秒级，无需 Rust）
 
 ```bash
-cd 方向二/03_代码仓库/zk-policy
+cd Proof-of-Policy/03_代码仓库/zk-policy     # 仓库根（目录曾名为“方向二”，已重命名）
 python3 -m unittest discover tests -v          # 期望 101 passed（1 skip=设计内）
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json | head    # 编译出 ConstraintSpec
 ```

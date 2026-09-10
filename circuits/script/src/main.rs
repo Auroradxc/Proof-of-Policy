@@ -35,6 +35,10 @@ struct VectorIn {
     redacted: Option<String>,
     #[serde(default)]
     spans: Vec<(u32, u32)>,
+    #[serde(default)]
+    tool_calls: Vec<pop_types::ToolCall>,
+    #[serde(default)]
+    token_count: Option<u32>,
 }
 
 #[derive(Deserialize)]
@@ -52,11 +56,15 @@ impl VectorIn {
                 mask: self.mask.clone(),
                 redacted: self.redacted.clone(),
                 spans: self.spans.clone(),
+                tool_calls: self.tool_calls.clone(),
+                token_count: self.token_count,
             })
         } else {
             Job::Public(ProofRequest {
                 response: self.response.clone(),
                 constraints: self.constraints.clone(),
+                tool_calls: self.tool_calls.clone(),
+                token_count: self.token_count,
             })
         }
     }

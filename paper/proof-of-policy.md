@@ -112,7 +112,7 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 
 ## 5. Security Model（摘要；详见仓库 `docs/security-model.md`）
 
-- **Soundness**：入电路规则下，`pub` 等于 zkVM 确定性执行输出 `J(π,T)`；伪造需攻破 zkVM 或哈希。
+- **Soundness**：**全部 6 类规则入电路**（keyword/length/pattern/format/tool-arg/budget）后，`pub` 等于 zkVM 确定性执行输出 `J(π,T)`；伪造需攻破 zkVM 或哈希。
 - **Privacy**：验证者视图仅含承诺；Leak 实验验证无明文泄露。
 - **Redaction soundness**：`redaction_ok ∧ mask_covered` ⇒ 只遮蔽真实命中内容。
 - **Unforgeability/binding**：证据开示需 `SHA256(f)=e`；策略/电路/证明哈希绑定并在验证时**重算**。

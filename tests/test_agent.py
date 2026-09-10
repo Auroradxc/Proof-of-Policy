@@ -57,7 +57,9 @@ class TestToolPath(unittest.TestCase):
         _, payload = cert.verify_envelope(env, m.key)
         self.assertEqual(payload["mode"], "tool-call")
         self.assertFalse(payload["outcome"]["passed"])
-        self.assertFalse(payload["outcome"]["zk"])
+        # tool rules are now in-circuit kinds (whether a *proof* is attached is
+        # recorded separately in binding.vkey_hash)
+        self.assertTrue(payload["outcome"]["zk"])
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret_args")
 
         clean = m.tool_call_outcome("search_kb", {"q": "x"})

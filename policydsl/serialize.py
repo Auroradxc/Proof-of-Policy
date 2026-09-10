@@ -31,6 +31,16 @@ def spec_to_rust_constraints(spec: Dict) -> List[Dict]:
                 "specs": c["nfa"]["compiled"],
                 "mode": c.get("mode", "pike"),
             }})
+        elif kind == "format_check":
+            out.append({"FormatCheck": {"name": name, "format": c["format"]}})
+        elif kind == "tool_arg_guard":
+            variant = {"name": name,
+                       "forbidden_fields": c["forbidden_fields"],
+                       "tools": c.get("tools", [])}
+            out.append({"ToolArgGuard": variant})
+        elif kind == "budget_bound":
+            out.append({"BudgetBound": {"name": name, "budget": c["budget"],
+                                        "unit": c.get("unit", "calls")}})
         else:
             raise NotImplementedError(
                 f"kind '{kind}' (rule '{name}') is not yet provable in-circuit "

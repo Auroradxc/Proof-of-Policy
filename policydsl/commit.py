@@ -39,13 +39,19 @@ def evidence_commitment(evidence: str) -> str:
     return commitment(evidence)
 
 
-def canonical_violations(spec: Dict, response: str) -> List[Dict]:
+def canonical_violations(spec: Dict, response: str,
+                         tool_calls: Optional[List[Dict]] = None,
+                         token_count: Optional[int] = None) -> List[Dict]:
     """Mirror ``pop-types::evaluate`` exactly, returning (rule, kind, evidence).
 
-    Used so the private-mode golden (with committed evidence) matches the
-    in-circuit judging field-for-field.
+    ``tool_calls`` is a list of ``{"name": str, "args": {str: str}}``; evidence
+    strings are byte-identical to the Rust side (needed for private-mode
+    evidence commitments).
     """
+    from .evaluate import _parse_format  # canonical subset parser
+
     lower = _ascii_lower(response)
+    calls = tool_calls or []
     out: List[Dict] = []
     for c in spec["constraints"]:
         kind, name = c["kind"], c["name"]
@@ -63,6 +69,27 @@ def canonical_violations(spec: Dict, response: str) -> List[Dict]:
                     out.append({"rule": name, "kind": "pattern_block",
                                 "evidence": c["patterns"][i]})
                     break
+        elif kind == "format_check":
+            if not _parse_format(c["format"], response):
+                out.append({"rule": name, "kind": "format_check", "evidence": c["format"]})
+        elif kind == "tool_arg_guard":
+            allowed = c.get("tools") or []
+            for call in calls:
+                cname = call["name"] if isinstance(call, dict) else call.name
+                args = (call.get("args", {}) if isinstance(call, dict) else call.args)
+                if allowed and cname not in allowed:
+                    continue
+                hit = next((f for f in c["forbidden_fields"] if f in args), None)
+                if hit is not None:
+                    out.append({"rule": name, "kind": "tool_arg_guard",
+                                "evidence": f"{cname}:{hit}"})
+                    break  # at most one violation per tool call
+        elif kind == "budget_bound":
+            unit = c.get("unit", "calls")
+            total = len(calls) if unit == "calls" else int(token_count or 0)
+            if total > c["budget"]:
+                out.append({"rule": name, "kind": "budget_bound",
+                            "evidence": f"{unit}={total}/{c['budget']}"})
         else:
             raise NotImplementedError(f"kind '{kind}' not provable in-circuit yet")
     return out
@@ -131,14 +158,16 @@ def redaction_ok(response: str, redacted: str, mask: List[int],
 def private_output(spec: Dict, response: str,
                    mask: Optional[List[int]] = None,
                    redacted: Optional[str] = None,
-                   spans: Optional[List[Tuple[int, int]]] = None) -> Dict:
+                   spans: Optional[List[Tuple[int, int]]] = None,
+                   tool_calls: Optional[List[Dict]] = None,
+                   token_count: Optional[int] = None) -> Dict:
     """Build the dict matching ``pop-types::PrivateOutput`` (golden).
 
     ``spans`` are witness match spans (char ranges) proving that masked
     positions are inside genuine pattern matches: ``mask_covered`` is true iff
     every span is a real match and every masked index lies in a span.
     """
-    vs = canonical_violations(spec, response)
+    vs = canonical_violations(spec, response, tool_calls, token_count)
     violations = [{"rule": v["rule"], "kind": v["kind"],
                    "evidence_commitment": evidence_commitment(v["evidence"])} for v in vs]
     redaction = None

@@ -11,9 +11,36 @@
 
 extern crate alloc;
 
-use alloc::{collections::BTreeSet, format, string::String, vec, vec::Vec};
+use alloc::{collections::{BTreeMap, BTreeSet}, format, string::String, vec, vec::Vec};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+/// A tool invocation in an agent trace (used by tool/budget rules).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ToolCall {
+    pub name: String,
+    #[serde(default)]
+    pub args: BTreeMap<String, String>,
+}
+
+/// Declared response format for `format_check`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FormatKind {
+    #[default]
+    Json,
+    Int,
+    Float,
+}
+
+/// Unit for `budget_bound`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BudgetUnit {
+    #[default]
+    Calls,
+    Tokens,
+}
 
 /// Compiled NFA (Thompson), produced by `policydsl.nfa` and serialized into
 /// the ConstraintSpec. This is the cross-layer contract for pattern_block.
@@ -67,13 +94,29 @@ pub enum Constraint {
         #[serde(default)]
         mode: PatternMode,
     },
+    /// Response must parse as the declared format (canonical subset).
+    FormatCheck { name: String, format: FormatKind },
+    /// Forbidden keys in tool-call arguments (optionally restricted to `tools`).
+    ToolArgGuard {
+        name: String,
+        #[serde(default)]
+        tools: Vec<String>,
+        forbidden_fields: Vec<String>,
+    },
+    /// Cumulative budget: number of tool calls, or declared `token_count`.
+    BudgetBound { name: String, budget: u32, unit: BudgetUnit },
 }
 
-/// Input to the prover: the agent response plus the constraints to check.
+/// Input to the prover: the agent response, the constraints to check, and the
+/// tool-call trace (used by tool_arg_guard / budget_bound).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProofRequest {
     pub response: String,
     pub constraints: Vec<Constraint>,
+    #[serde(default)]
+    pub tool_calls: Vec<ToolCall>,
+    #[serde(default)]
+    pub token_count: Option<u32>,
 }
 
 /// A single violated rule (only populated when not passed).
@@ -214,6 +257,48 @@ fn ascii_lower(s: &str) -> String {
     s.chars().map(|c| c.to_ascii_lowercase()).collect()
 }
 
+fn format_name(f: FormatKind) -> &'static str {
+    match f {
+        FormatKind::Json => "json",
+        FormatKind::Int => "int",
+        FormatKind::Float => "float",
+    }
+}
+
+fn budget_unit_name(u: BudgetUnit) -> &'static str {
+    match u {
+        BudgetUnit::Calls => "calls",
+        BudgetUnit::Tokens => "tokens",
+    }
+}
+
+/// Canonical `format_check` parsers — the accepted subset is deliberately narrow
+/// so the Python golden and the zkVM agree exactly:
+///   int:   optional sign + 1..=19 ASCII digits (no underscores, no unicode digits)
+///   float: Rust `f64` parse, rejecting underscores / nan / inf spellings
+///   json:  `serde_json` (which rejects NaN/Infinity, like the golden is forced to)
+pub fn parse_int_ok(s: &str) -> bool {
+    let t = s.trim();
+    let digits = t.strip_prefix(['+', '-']).unwrap_or(t);
+    !digits.is_empty() && digits.len() <= 19 && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+pub fn parse_float_ok(s: &str) -> bool {
+    let t = s.trim();
+    if t.is_empty() || t.contains('_') {
+        return false;
+    }
+    let lower = t.to_ascii_lowercase();
+    if lower.contains("nan") || lower.contains("inf") {
+        return false;
+    }
+    t.parse::<f64>().is_ok()
+}
+
+pub fn parse_json_ok(s: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(s).is_ok()
+}
+
 /// Judge a ProofRequest against its constraints. Phase 1-2 rule kinds:
 /// keyword_block (ASCII case-insensitive substring), length_bound (code-point
 /// length), pattern_block (substring regex via compiled NFA).
@@ -256,6 +341,48 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                         });
                         break;
                     }
+                }
+            }
+            Constraint::FormatCheck { name, format } => {
+                let ok = match format {
+                    FormatKind::Json => parse_json_ok(&req.response),
+                    FormatKind::Int => parse_int_ok(&req.response),
+                    FormatKind::Float => parse_float_ok(&req.response),
+                };
+                if !ok {
+                    violations.push(Violation {
+                        rule: name.clone(),
+                        kind: "format_check".into(),
+                        evidence: format_name(*format).into(),
+                    });
+                }
+            }
+            Constraint::ToolArgGuard { name, tools, forbidden_fields } => {
+                for call in &req.tool_calls {
+                    if !tools.is_empty() && !tools.contains(&call.name) {
+                        continue;
+                    }
+                    if let Some(f) = forbidden_fields.iter().find(|f| call.args.contains_key(*f)) {
+                        violations.push(Violation {
+                            rule: name.clone(),
+                            kind: "tool_arg_guard".into(),
+                            evidence: format!("{}:{}", call.name, f),
+                        });
+                        break; // at most one violation per tool call
+                    }
+                }
+            }
+            Constraint::BudgetBound { name, budget, unit } => {
+                let total: u32 = match unit {
+                    BudgetUnit::Calls => req.tool_calls.len() as u32,
+                    BudgetUnit::Tokens => req.token_count.unwrap_or(0),
+                };
+                if total > *budget {
+                    violations.push(Violation {
+                        rule: name.clone(),
+                        kind: "budget_bound".into(),
+                        evidence: format!("{}={}/{}", budget_unit_name(*unit), total, budget),
+                    });
                 }
             }
         }
@@ -319,6 +446,10 @@ pub struct PrivateRequest {
     pub redacted: Option<String>,
     #[serde(default)]
     pub spans: Vec<(u32, u32)>,
+    #[serde(default)]
+    pub tool_calls: Vec<ToolCall>,
+    #[serde(default)]
+    pub token_count: Option<u32>,
 }
 
 /// Private-mode public output: no response text, only its commitment and
@@ -435,6 +566,8 @@ pub fn evaluate_private(req: &PrivateRequest) -> PrivateOutput {
     let public = evaluate(&ProofRequest {
         response: req.response.clone(),
         constraints: req.constraints.clone(),
+        tool_calls: req.tool_calls.clone(),
+        token_count: req.token_count,
     });
     let violations = public
         .violations

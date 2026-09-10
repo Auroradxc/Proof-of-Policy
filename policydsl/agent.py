@@ -61,12 +61,16 @@ class AgentMonitor:
     # -- tool-call path (Python reference kinds) --
     def tool_call_outcome(self, name: str, args: Dict[str, Any],
                           response: Optional[str] = None) -> Dict[str, Any]:
+        """Judge a tool call. ``tool_arg_guard``/``budget_bound`` are now
+        in-circuit rule kinds, so the outcome is marked ``zk: True``; whether a
+        *proof* is attached is indicated separately by the certificate's
+        ``binding.vkey_hash`` (``unproven`` when no proof was generated)."""
         tx = Transcript(response=response, tool_calls=[ToolCall(name, args)])
         try:
             res = check(self.policy, tx)
         except PolicyError as exc:
             raise PolicyError(f"tool-call check needs a response for content rules: {exc}") from exc
-        return {"passed": res.passed, "zk": False,
+        return {"passed": res.passed, "zk": True,
                 "violations": [{"rule": v.rule.name, "kind": v.rule.kind,
                                 "evidence_kind": v.evidence_kind, "evidence": v.evidence}
                                for v in res.violations]}

@@ -17,6 +17,7 @@ compiled NFA (``policydsl.nfa``), the same contract the SP1 program consumes.
 from __future__ import annotations
 
 import json
+import re
 from typing import List, Union
 
 from . import nfa
@@ -24,24 +25,33 @@ from .model import CheckResult, Policy, PolicyError, Transcript, Violation
 
 Target = Union[str, Transcript]
 
+# Canonical subsets — must match `pop-types` (parse_int_ok/parse_float_ok/parse_json_ok)
+_INT_RE = re.compile(r"[+-]?\d{1,19}\Z")
+
+
+def _reject_json_constant(name: str):
+    raise ValueError(f"non-finite JSON constant not allowed: {name}")
+
 
 def _parse_format(fmt: str, text: str) -> bool:
-    """Return True if ``text`` parses as the declared ``fmt``."""
+    """Return True if ``text`` parses as the declared ``fmt`` (canonical subset)."""
     if fmt == "json":
         try:
-            json.loads(text)
+            json.loads(text, parse_constant=_reject_json_constant)
         except ValueError:
             return False
         return True
     if fmt == "int":
-        try:
-            int(text.strip())
-        except ValueError:
-            return False
-        return True
+        return bool(_INT_RE.match(text.strip()))
     if fmt == "float":
+        t = text.strip()
+        if not t or "_" in t:
+            return False
+        low = t.lower()
+        if "nan" in low or "inf" in low:
+            return False
         try:
-            float(text.strip())
+            float(t)
         except ValueError:
             return False
         return True

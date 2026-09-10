@@ -70,7 +70,10 @@ zkVM 执行输出；确定性判定给出 `J(π,T).passed = false`，矛盾。�
 1. **zkVM 假设**：SP1 的健全性/零知识性；我们复用其 verifier。链上最终性（Groth16 合约）在 Phase 5 仅做接口（file 账本后端）。
 2. **哈希假设**：SHA-256 抗碰撞/抗原像。
 3. **签名**：当前为 **HMAC-SHA256 demo signer**（`policydsl/cert.py`），仅演示完整性；生产应替换为 Ed25519/HSM（信封结构不变）。
-4. **未入电路的规则**：`format_check` / `tool_arg_guard` / `budget_bound`（及 MCP 工具路径）为**链下参考判定**，证书标 `zk:false`；
-   对这些规则不做健全性承诺，避免“证书暗示已证明”的误导。将其入电路是后续工作。
+4. **规则覆盖（P7-b 后更新）**：`keyword_block` / `length_bound` / `pattern_block` / **`format_check`（json/int/float 规范子集）**
+   / **`tool_arg_guard`（工具参数，含 `tools` 限定）** / **`budget_bound`（calls；tokens 用请求携带的 `token_count`）**
+   均已**入电路**（`pop-types::evaluate`），因此 §2 的健全性定义覆盖这 6 类。
+   两处仍需注意：① `budget_bound` 的 `tokens` 依赖 `token_count`，该值是**证明者声明**而非电路内分词结果（文档标注）；
+   ② Agent 工具路径证书的 `zk:true` 表示**规则可证**，是否**附证明**由证书 `binding.vkey_hash`（`unproven` 表示仅链下判定）表明。
 5. **语义**：正则为受支持子集 + ASCII 语义；长度按码点。非 ASCII 字母大小写等差异已在代码/文档标注。
 6. **非目标**：不证明“模型推理”本身（那是 zkAgent/zkML 层）；不覆盖训练数据/模型卡（EU AI Act Art.11 等）。

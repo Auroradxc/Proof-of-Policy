@@ -28,25 +28,21 @@
 
 **跟进选项**：把 WSL 上调到 15–16 GB 重试（宿主 15.7 GB，需权衡）；或在更大内存机器/CI 上跑 `make_audit_proof.sh`。
 
-## B. format / budget / tool 规则入电路
+## B. format / budget / tool 规则入电路 —— 已实现
 
-**问题**：三类规则目前仅链下参考判定，证书标 `zk:false`（安全模型的不承诺项）。
+**已交付**
+1. `pop-types`：请求扩展为「响应 + 工具轨迹」（`ProofRequest.tool_calls/token_count`，`PrivateRequest` 同）；
+   新增 `Constraint::{FormatCheck, ToolArgGuard, BudgetBound}` 变体与 `ToolCall`/`FormatKind`/`BudgetUnit`。
+2. `evaluate`（guest 与宿主共用）：JSON 用 `serde_json`（no_std+alloc）；`int`/`float` 采用**规范子集**
+   （int：可选符号 + 1..=19 ASCII 数字；float：拒绝 `_`/`nan`/`inf`）——与 Python golden **逐点对齐**；
+   `tool_arg_guard` 支持 `tools` 限定；`budget_bound` 的 `calls` 用 `tool_calls.len()`，`tokens` 用声明的 `token_count`。
+3. 跨层：`serialize.py` 增三 kind 映射；`commit.canonical_violations` 证据串与 Rust **逐字一致**
+   （`format`、`tool:field`、`unit=total/budget`），私有模式证据承诺因此可比对；`AgentMonitor` 工具路径 `zk:true`。
+4. 测试：`tests/test_rules_incircuit.py`（8 例：三类规则 host 对齐 + 规范子集边界 + **私有证据承诺逐字一致**）；
+   `cross_validate` 扩到 **14 向量**（含 format/tool/budget/token）。
 
-**方案**：把**输入扩展为「响应 + 工具轨迹」**，判定下沉到 `pop-types::evaluate`。
-1. 请求结构（serde 默认值，向后兼容）：
-   `ProofRequest { response, constraints, #[serde(default)] tool_calls: Vec<ToolCall>, #[serde(default)] token_count: Option<u32> }`，
-   `ToolCall { name: String, args: BTreeMap<String,String> }`。
-2. 新约束变体：
-   - `FormatCheck{format: Json|Int|Float}`：guest 用 `serde_json`（no_std+alloc）；与 Python `json.loads` 的接受域差异用测试钉死子集；
-   - `ToolArgGuard{tools?: [str], forbidden_fields: [str]}`：遍历 `tool_calls`，命中即违规（证据＝工具名+字段）；
-   - `BudgetBound{budget, unit: Calls|Tokens}`：`calls = tool_calls.len()`；`tokens` 用请求携带的 `token_count`（文档写明是**声明值**）。
-3. 跨层对齐：`policydsl/serialize.py` 增三 kind 映射；`commit.canonical_violations` 与 Rust 证据串**逐字一致**（私有承诺）；
-   `AgentMonitor` 工具路径证书 `zk:false → true`；安全模型 §5 边界条目收缩。
-4. 测试：`cross_validate.py` 增三组向量（host + 真证）；`tests/test_rules_incircuit.py`；私有模式证据承诺对齐。
-
-**验收**：三规则 host 与真证均与 Python golden 逐字段一致；安全模型/论文“未入电路”表述更新。
-**风险**：guest 内 serde_json 周期开销（用 `--execute` 量化）；`token_count` 语义为声明值（文档标注）。
-**工作量**：2–3 天（离线可完成）。
+**验收**：host 交叉验证 **14/14 PASS**；**真实证明交叉验证 14/14 PASS**（含 format/tool/budget/token 全部四类新向量）。
+**边界（保留）**：`token_count` 为声明值（非电路内分词）；`int/float` 仅规范子集（超集输入按子集规则拒绝，已文档化）。
 
 ## C. 链上锚定 RPC 后端（真跑本地 Anvil）
 
