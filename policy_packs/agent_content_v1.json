@@ -1,0 +1,23 @@
+{
+  "id": "agent-content-v1",
+  "version": "0.1.0",
+  "description": "Content guard for an agent's generation path (in-circuit kinds only).",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "keyword_block",
+      "name": "no_bad_topics",
+      "params": { "keywords": ["exploit", "doxxing", "weaponize"] }
+    },
+    {
+      "kind": "length_bound",
+      "name": "bounded_reply",
+      "params": { "min": 1, "max": 2000 }
+    },
+    {
+      "kind": "pattern_block",
+      "name": "no_secret",
+      "params": { "patterns": ["sk-[A-Za-z0-9]{16,}"] }
+    }
+  ]
+}

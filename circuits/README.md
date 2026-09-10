@@ -48,3 +48,6 @@ SP1_PROVER=cpu cargo run --release --bin pop-script -- 42
 4. ✅ **Phase 4 已完成（私有模式 + 边界增强）**：`Job/Outcome` 双模式；`PrivateOutput` 只公开响应承诺 + 证据承诺 +
    脱敏证明（`redaction_ok` 且 **`mask_covered`：掩码 ⊆ 电路内验证的真实命中**）；`scripts/private_demo.py` 通过
    host 比对 + 真实证明 + 泄露/绑定/**证据开示**实验。
+5. ✅ **Phase 5 已完成（合规证书 + 独立验证）**：`pop-script --proof-out` 保存证明、`--verify` 独立验证；
+   `policydsl/cert.py`（DSSE 证书）、`anchor.py`（防篡改账本）、`agent.py`（Agent 钩子）；
+   `scripts/issue_cert.py` / `verify_cert.py` 端到端（第三方验证全 PASS，含 SP1 证明密码学验证）。

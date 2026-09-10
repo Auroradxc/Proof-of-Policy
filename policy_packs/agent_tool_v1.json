@@ -1,0 +1,18 @@
+{
+  "id": "agent-tool-v1",
+  "version": "0.1.0",
+  "description": "Guard for an agent's tool-call path (Python reference kinds).",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "tool_arg_guard",
+      "name": "no_secret_args",
+      "params": { "forbidden_fields": ["password", "token", "api_key"] }
+    },
+    {
+      "kind": "budget_bound",
+      "name": "call_budget",
+      "params": { "budget": 5, "unit": "calls" }
+    }
+  ]
+}

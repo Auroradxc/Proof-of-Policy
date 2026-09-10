@@ -85,10 +85,22 @@
 
 **边界**：掩码「⊇ 命中」未强制（允许只遮蔽部分命中）；证据片段的链上开示流程 → Phase 5。
 
-### Phase 5 · Agent 集成 + 合规证书（W6）
-- [ ] demo/ LangGraph agent + hooks
-- [ ] 证书规范 `{policy, policy_hash, response_commitment, passed, proof, ts}`(DSSE/JSON)
-- [ ] 链上锚定（sp1 verify 合约 / 本地 Anvil）
+### Phase 5 · Agent 集成 + 合规证书（W6）✅
+- [x] 证书规范：`policydsl/cert.py` —— payload `{cert_version, policy(id,version), policy_hash, mode, outcome, binding{vkey_hash, proof_sha256}, ai_act, ts}` + **DSSE 信封**（HMAC-SHA256 demo 签名，可换 Ed25519）+ 稳定 `cert_digest`
+- [x] 证明持久化 + 独立验证：`pop-script --proof-out`（证明+vkey meta）、`pop-script --verify --proof`（**重新从 ELF 派生 vkey 并密码学验证**）
+- [x] 锚定：`policydsl/anchor.py` —— 追加式、哈希链式防篡改账本（file backend，可离线验证）；`anchor_on_chain` RPC 钩子显式未配置即报错（不假装已上链）
+- [x] Agent 插桩：`policydsl/agent.py` `AgentMonitor.on_generate/on_tool_call`（框架无关钩子）+ `mock_agent()` 会话；`langgraph_adapter.py` 懒加载、缺依赖时明确报错
+- [x] 端到端：`scripts/issue_cert.py`（pack+response → 证明 → 证书 → 锚定）与 `scripts/verify_cert.py`（第三方：签名/policy_hash/锚定链/证明）
+- [x] 测试：**65 全绿**（+test_cert/test_anchor/test_agent）
+- 与计划的偏差（已记）：LangGraph 未安装 → 提供框架无关钩子 + 适配器桩（可执行可测）；链上锚定 → file 账本后端（离线可验），RPC 后端留接口
+
+**Phase 5 验收（对照 8 周计划 W6）**
+| 标准 | 结果 |
+|---|---|
+| 证书规范 `{π版本, 电路hash, 响应承诺, 证明, ts}` | ✅ `policy_hash`≈电路/策略绑定；`binding.proof_sha256`+`vkey_hash`；`outcome` 含响应承诺(私有) |
+| 第三方用证书独立验证通过 | ✅ 见 `scripts/verify_cert.py`：签名+策略绑定+锚定链+**SP1 证明密码学验证**全 PASS |
+| Agent 生成路径 + 工具调用出证 | ✅ `AgentMonitor` 两条路径均产证书（工具路径标注 `zk:false`） |
+| EU AI Act Art.12/13 | ✅ 证书携带 `ai_act.art12_record_keeping/art13_transparency`，映射见 `docs/eu-ai-act-mapping.md` |
 
 ### Phase 6 · 评测 + 安全模型 + 发布（W7–W8）
 - [ ] bench/：成本曲线 + NFA/DFA 消融 + 四象限表
