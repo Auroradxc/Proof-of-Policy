@@ -29,7 +29,7 @@ sys.path.insert(0, str(REPO))
 from policydsl.compile import compile_policy
 from policydsl.evaluate import check
 from policydsl.model import Policy, Rule, ToolCall, Transcript
-from policydsl.serialize import spec_to_rust_constraints
+from policydsl.serialize import spec_canonical_text
 from policydsl import pii
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
@@ -152,7 +152,7 @@ def main() -> int:
     for name, policy, response, extras in vectors_in:
         spec = compile_policy(policy)
         entry = {"name": name, "response": response,
-                 "constraints": spec_to_rust_constraints(spec)}
+                 "spec_canonical": spec_canonical_text(spec)}
         entry.update(extras or {})
         payload["vectors"].append(entry)
         expected.append((name, golden(policy, response, extras)))

@@ -74,8 +74,8 @@ zk-policy/
                        │
        ┌───────────────┴────────────────────────────┐
        ▼（链下 golden）                              ▼（链上证明）
-④a  evaluate.check()                          ④b serialize.spec_to_rust_constraints()
-       │                                             │  → vectors.json
+④a  evaluate.check()                          ④b serialize.spec_canonical_text()
+       │                                             │  → vectors.json（原始字节）
        │                                             ▼
        │                                       circuits/script (pop-script)
        │                                             │  → pop-types::run_job
@@ -121,15 +121,16 @@ zk-policy/
 
 ## 5. 全局不变量
 
-贯穿全部模块、改代码时必须保持的五条：
+贯穿全部模块、改代码时必须保持的六条：
 
 | # | 不变量 | 由什么保证 |
 |---|---|---|
 | I1 | **跨层判定一致**：同一 `ConstraintSpec` + 同一输入，Python golden 与 `pop-types` 结果逐字段相同 | `scripts/cross_validate.py`（host 14/14 + prove 14/14）、`tests/test_rules_incircuit.py` |
 | I2 | **契约哈希稳定**：语义相同 ⇒ `spec["sha256"]` 相同（键排序、紧凑分隔符、字符串排序去重小写化） | `compile._canonical_hash`、`cert.canonical` |
 | I3 | **ASCII 语义**：关键词大小写折叠、NFA 的 `\w\d\s` 都只在 ASCII 上定义，避免 Python `str.lower()` 与 Rust 的差异 | `commit._ascii_lower`、`types::ascii_lower`、`nfa.py` 模块注释 |
-| I4 | **不出电路就无法证明**：一个规则类型要么两侧都实现，要么 `serialize.spec_to_rust_constraints` 显式 `NotImplementedError`，绝不静默跳过 | `serialize.py` 的 `else: raise`；证书用 `zk: false` 标注链下规则 |
+| I4 | **不出电路就无法证明**：一个规则类型要么两侧都实现，要么**根本产不出证明**，绝不静默跳过 | `compile.py` 把未知 kind 原样写进规范字节 → guest 的 serde 解析失败即 panic（fail-closed）；`tests/test_policy_binding.TestFailsClosed` 锁死 |
 | I5 | **先有事实再有记录**：链上交易成功之后才写本地账本 `meta.on_chain`，哈希链因此始终自洽 | `RpcAnchorBackend.anchor` |
+| I6 | **策略绑定**：证书声称的 `policy_hash` == 由策略包现场重编译的 == **证明公开值承诺的**（三方比对，缺一不可；只有两个来源时一律判失败，防空洞） | `policydsl.verifier.check_policy_binding`；`tests/test_policy_binding.py` |
 
 ---
 

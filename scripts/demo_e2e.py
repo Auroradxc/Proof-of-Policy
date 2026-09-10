@@ -39,7 +39,7 @@ from policydsl.agent import AgentMonitor  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.langchain_adapter import PoPCallbackHandler  # noqa: E402
 from policydsl.mcp_adapter import MCPBlocked, MCPGuard  # noqa: E402
-from policydsl.serialize import spec_to_rust_constraints  # noqa: E402
+from policydsl.serialize import spec_canonical_text  # noqa: E402
 import issue_cert as ic  # noqa: E402  （复用 load_policy/run_pop/POP_SCRIPT）
 
 # 内容策略包 / 工具策略包 / MCP 服务器脚本
@@ -98,7 +98,7 @@ def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
     vectors = zk_dir / "vectors.json"
     vectors.write_text(json.dumps({"vectors": [{
         "name": policy.id, "response": response,
-        "constraints": spec_to_rust_constraints(spec)}]}, indent=2))
+        "spec_canonical": spec_canonical_text(spec)}]}, indent=2))
     results = zk_dir / "results.json"
     proof = zk_dir / "proof.bin"
     if no_prove:

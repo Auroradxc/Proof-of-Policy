@@ -33,7 +33,7 @@ sys.path.insert(0, str(REPO))
 from policydsl import anchor, cert, commit
 from policydsl.compile import compile_policy
 from policydsl.model import Policy, Rule
-from policydsl.serialize import spec_to_rust_constraints
+from policydsl.serialize import spec_canonical_text
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
@@ -80,7 +80,7 @@ def main() -> int:
 
     # 构造单个证明请求向量
     vector = {"name": policy.id, "response": response,
-              "constraints": spec_to_rust_constraints(spec)}
+              "spec_canonical": spec_canonical_text(spec)}
     if args.mode == "private":
         # 私有模式：附带掩码、脱敏文本与见证区间（witness spans）
         patterns = [p for c in spec["constraints"] if c["kind"] == "pattern_block"

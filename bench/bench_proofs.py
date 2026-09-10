@@ -30,7 +30,7 @@ sys.path.insert(0, str(REPO / "bench"))
 
 import bench_cycles as bc  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.serialize import spec_to_rust_constraints  # noqa: E402
+from policydsl.serialize import spec_canonical_text  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 WORK = REPO / "bench" / "work"
@@ -56,7 +56,7 @@ def main() -> int:
         proof = WORK / "proof.bin"
         vp.write_text(json.dumps({"vectors": [{
             "name": f"L{length}-R{rc}", "response": text,
-            "constraints": spec_to_rust_constraints(spec)}]}))
+            "spec_canonical": spec_canonical_text(spec)}]}))
 
         # 计时区间只包住出证这一条命令
         t0 = time.perf_counter()

@@ -42,9 +42,9 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
   [--out-dir DIR] [--no-prove] [--expect pass|violate]
 ```
 
-流程：`load_policy` → `check`（golden）→ `compile_policy` → `spec_to_rust_constraints` →
-写 `vectors.json` → `pop-script --check`（host）→ `pop-script`（prove）→ 逐项与 golden 比
-`passed` + 违规规则集合。
+流程：`load_policy` → `check`（golden）→ `compile_policy` → `spec_canonical_text` →
+写 `vectors.json`（`spec_canonical` 字段）→ `pop-script --check`（host）→ `pop-script`（prove）
+→ 逐项与 golden 比 `passed` + 违规规则集合。
 
 - `--expect pass|violate` 是**健全性护栏**：先验 golden 是否符合预期，不符合直接退出码 2
   （防止「测试通过」其实是因为响应早就变了）。

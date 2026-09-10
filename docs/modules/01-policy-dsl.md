@@ -197,11 +197,18 @@ ASCII 语义：`\w` = `[A-Za-z0-9_]`、`\d` = `[0-9]`、`\s` = `[ \t\n\r\f\v]`�
 
 | 函数 | 说明 |
 |---|---|
-| `spec_to_rust_constraints(spec) -> list[dict]` | 转成 serde 外部标签枚举：`{"KeywordBlock": {...}}` / `{"LengthBound": {...}}` / … |
+| `spec_canonical_text(spec) -> str` | 策略的**规范 JSON 文本**（再导出 `compile.canonical_spec_text`）——写进 vectors 条目的 `spec_canonical` 字段 |
+| `vector_entry(spec, response, **extra) -> dict` | 构造一个 vectors 条目，把「契约文本从哪来」收敛到一处 |
 | `build_vectors(entries) -> dict` | 包装成 `{"vectors": [...]}` |
 
-> **`else: raise NotImplementedError`** 是刻意的：任何未在 Rust 侧实现的 kind 都必须在
-> 序列化这一步炸掉，而不是悄悄生成一个「电路里根本没人检查」的向量 —— 见全局不变量 I4。
+> **契约只有一份，且是原始字节。** 电路侧收到的不是「转换后的枚举」，而是
+> `canonical_spec_text` 产出的**同一段字节**：guest 从它同时派生 `policy_hash`
+> 与解析出的约束。因此这里**不存在**「Python 形状 → Rust 形状」的映射，
+> 也就没有映射带来的可分离性（P0-1 之前 `spec_to_rust_constraints` 的
+> 外部标签映射正是漏洞所在，已经删除）。
+>
+> **fail-closed 依然成立，只是换了机制**：未知 kind 被**原样**写进规范字节，
+> guest 的 serde 解析失败即 panic —— 产不出证明，而不是静默跳过（全局不变量 I4）。
 
 ### `pii.py`
 
@@ -243,7 +250,8 @@ python3 -m policydsl check <response.txt> --policy <policy.json>
 | `tests/test_dsl.py` | 模型与校验、六类规则的通过/违规矩阵、`PolicyError` 路径 |
 | `tests/test_nfa.py` | 解析器、NFA 构造、`match_search` 与 Python `re` 的行为对照、不支持语法的 fail-fast |
 | `tests/test_pii.py` | 四个 PII 模式的命中/漏报、IBAN 校验位 |
-| `tests/test_serialize.py` | `spec_to_rust_constraints` 的枚举形状、未知 kind 抛 `NotImplementedError` |
+| `tests/test_serialize.py` | **契约字节**的性质：确定性/键排序/紧凑、纯 ASCII、`sha256(字节) == spec["sha256"]` 恒等式、六类 kind 与编译后 NFA 都在字节里、未知 kind 原样携带 |
+| `tests/test_policy_binding.py` | 策略绑定：攻击回归（空策略证明 + 真策略哈希）、fail-closed、三方比对、伪造证书必须被拒 |
 | `tests/test_ablation.py` | `match_search` ≡ `match_search_naive`（pike/naive 语义等价） |
 | `tests/test_rules_incircuit.py` + `scripts/cross_validate.py` | Python golden ↔ SP1 逐向量一致（I1） |
 
@@ -251,17 +259,22 @@ python3 -m policydsl check <response.txt> --policy <policy.json>
 
 ## 7. 扩展指引：新增一种规则类型
 
-必须**同时**改动下面 6 处，缺一不可（否则违反 I1/I4）：
+必须**同时**改动下面 5 处，缺一不可（否则违反 I1/I4）：
 
 1. `model.py::Rule.validate` —— 新 kind 的参数校验分支。
 2. `compile.py::compile_policy` —— 归一化后写入 `constraints`。
 3. `evaluate.py::check` —— golden 判定分支（决定 `evidence_kind` 与 `evidence` 形状）。
-4. `serialize.py` —— 映射为新的 Rust 枚举变体（否则 `NotImplementedError`）。
-5. `circuits/types/src/lib.rs` —— `Constraint` 新变体 + `evaluate` 分支（**必须与第 3 步逐字段一致**）。
-6. `tests/` + `scripts/cross_validate.py` —— 至少一条 pass、一条 violate 向量，跑 `cross_validate` 确认 host/prove 都对上。
+4. `circuits/types/src/lib.rs` —— `SpecConstraint` 新变体（内部标签 `kind`）+
+   `evaluate` 分支（**必须与第 3 步逐字段一致**）。
+5. `tests/` + `scripts/cross_validate.py` —— 至少一条 pass、一条 violate 向量，
+   跑 `cross_validate` 确认 host/prove 都对上。
 
-若该规则只打算**链下**支持（不打算证），则跳过 4/5，但必须接受：证书会标 `zk: false`，
-且 `serialize.spec_to_rust_constraints` 会显式报错 —— 这是刻意设计，不要改成静默跳过。
+若该规则只打算**链下**支持（不打算证），则**不要**加第 2 步：让未知 kind 原样进规范
+字节，电路侧解析失败即产不出证明（fail-closed）。这是刻意设计，不要改成静默跳过。
+
+> 注意第 2/4 步是「同一种 kind」的两侧实现：`compile.py` 必须让该 kind 的字段名与
+> Rust 变体逐一对应（serde 内部标签直接吃这份形状）。**没有中间映射层**，字段名
+> 对不上就是解析失败 —— 这正是 P0-1 想要的耦合。
 
 ---
 

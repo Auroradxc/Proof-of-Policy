@@ -3,9 +3,11 @@
 
 仅凭公开工件（session.json + ledger + 可选 proof），检查：
   1. 锚定账本链完整（防篡改的记录留存）；
-  2. 每张证书：DSSE 签名有效 + policy_hash 能由其策略包重算 + 证书摘要存在于账本中；
+  2. 每张证书：DSSE 签名有效 + policy_hash 三方比对（证书声明 / 证书 outcome 内嵌 /
+     由策略包现场重编译）+ 证书摘要存在于账本中；
   3. 流式证书形成有效的哈希链（按 run）；
-  4. zk 证书的 SP1 证明做密码学验证，其承诺的 outcome / vkey 哈希 / 证明哈希与证书一致；
+  4. zk 证书的 SP1 证明做密码学验证，其承诺的 outcome / vkey 哈希 / 证明哈希与证书一致，
+     并补上策略绑定的最后一条腿（证明公开值承诺的 policy_hash）；
   5. （可选）链上锚定核对：每个证书摘要都能在 Anchor 合约上读回，且链上记录与本地
      账本 meta 里的 tx/区块/时间戳一致（**需要 RPC**，见下）。
 
@@ -81,6 +83,7 @@ def main() -> int:
 
     # 1) 逐证书检查：签名 / policy_hash / 锚定
     sig_ok = pol_ok = anch_ok = True
+    pol_bad: list[str] = []
     kinds = {}
     for e in entries:
         env = e["envelope"]
@@ -90,10 +93,21 @@ def main() -> int:
             pol_ok = anch_ok = False
             continue
         kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
-        pol_ok &= payload["policy_hash"] == spec_for(e["policy_pack"])["sha256"]
+        # policy_hash 三方比对（链下部分）：证书载荷、证书 outcome 内嵌值、
+        # 由策略包现场重编译的 sha256。带证明的证书还会在下面第 3 步补上
+        # 「证明公开值承诺的 policy_hash」这一路。
+        ok_pol, pol_detail = verifier.check_policy_binding([
+            ("cert", payload.get("policy_hash")),
+            ("cert.outcome", (payload.get("outcome") or {}).get("policy_hash")),
+            ("recompiled", spec_for(e["policy_pack"])["sha256"]),
+        ])
+        pol_ok &= ok_pol
+        if not ok_pol:
+            pol_bad.append(pol_detail)
         anch_ok &= anchor.find_anchor(ledger, cert.cert_digest(payload)) is not None
     results.append(("certificates_signature", sig_ok, f"{len(entries)} certs"))
-    results.append(("certificates_policy_hash", pol_ok, f"{len(spec_cache)} pack(s)"))
+    pol_detail = f"{len(spec_cache)} pack(s), 3 sources" if pol_ok else "; ".join(pol_bad[:2])
+    results.append(("certificates_policy_hash", pol_ok, pol_detail))
     results.append(("certificates_anchored", anch_ok, "digest present in ledger"))
 
     # 2) 流式链：在 chain.index == 0 处拆成多个 run
@@ -137,6 +151,8 @@ def main() -> int:
             zk_ok &= v.get("public_values_sha256") == b.get("public_values_sha256")
             zk_ok &= v.get("vkey_hash") == b.get("vkey_hash")
             zk_ok &= sha256_file(proof) == payload["binding"]["proof_sha256"]
+            # 公开值解出来的 outcome 必须与证书载荷逐字段一致（含 policy_hash）
+            zk_ok &= verifier.outcome_without_meta(v) == payload["outcome"]
             detail = f"pop-verify ({v.get('proof_mode')}, no prover)"
         else:
             # Core 证明：用 pop-script --verify 重新验证
@@ -144,13 +160,21 @@ def main() -> int:
             subprocess.run([str(POP_SCRIPT), "--verify", "--proof", str(proof), "--out", str(out)],
                            env=dict(os.environ, SP1_PROVER="cpu"), check=True, cwd=str(REPO))
             v = json.loads(out.read_text())
-            outcome = v.get("outcome", {})
-            outcome.pop("name", None); outcome.pop("mode", None)
             zk_ok &= bool(v.get("verified"))
-            zk_ok &= outcome == payload["outcome"]
+            zk_ok &= verifier.outcome_without_meta(v) == payload["outcome"]
             zk_ok &= v.get("vkey_hash") == payload["binding"]["vkey_hash"]
             zk_ok &= sha256_file(proof) == payload["binding"]["proof_sha256"]
             detail = "SP1 proof verified (pop-script)"
+        # 第三方比对的最后一腿：证明公开值承诺的 policy_hash，必须与证书声明的
+        # 一致，也必须与「该证书所用的策略包现场重编译」所得一致。
+        ok_bind, bind_detail = verifier.check_policy_binding([
+            ("cert", payload.get("policy_hash")),
+            ("recompiled", spec_for(e["policy_pack"])["sha256"]),
+            ("proof", verifier.committed_policy_hash(v)),
+        ])
+        zk_ok &= ok_bind
+        if not ok_bind:
+            detail += " | " + bind_detail
     results.append(("zk_proof", zk_ok, detail))
 
     # 4) 链上锚定核对（可选）：每个证书摘要都能从 Anchor 合约读回，且链上时间戳

@@ -2711,6 +2711,7 @@ name = "pop-verify"
 version = "0.1.0"
 dependencies = [
  "bincode",
+ "pop-types",
  "serde_json",
  "sha2",
  "sp1-verifier",

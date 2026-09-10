@@ -29,7 +29,7 @@ sys.path.insert(0, str(REPO))
 from policydsl import commit, pii
 from policydsl.compile import compile_policy
 from policydsl.model import Policy, Rule
-from policydsl.serialize import spec_to_rust_constraints
+from policydsl.serialize import spec_canonical_text
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
@@ -51,7 +51,7 @@ def build_case() -> dict:
     vector = {
         "name": policy.id,
         "response": response,
-        "constraints": spec_to_rust_constraints(spec),
+        "spec_canonical": spec_canonical_text(spec),
         "private": True,
         "mask": mask,
         "redacted": redacted,

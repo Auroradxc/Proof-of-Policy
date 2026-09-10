@@ -33,7 +33,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 from policydsl.compile import compile_policy
 from policydsl.evaluate import check
 from policydsl.model import Policy, PolicyError, Rule
-from policydsl.serialize import spec_to_rust_constraints
+from policydsl.serialize import spec_canonical_text
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 # Python Violation.evidence_kind → guest 规则类型字符串
@@ -102,7 +102,7 @@ def main() -> int:
     vectors = {"vectors": [{
         "name": policy.id,
         "response": response,
-        "constraints": spec_to_rust_constraints(spec),
+        "spec_canonical": spec_canonical_text(spec),
     }]}
 
     args.out_dir.mkdir(parents=True, exist_ok=True)

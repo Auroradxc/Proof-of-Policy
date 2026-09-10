@@ -108,14 +108,36 @@ fn main() {
         }
     };
 
+    // 解码公开值 —— 这一步是策略绑定的关键，不能省。
+    //
+    // 只报 `public_values_sha256` 是不够的：那只能证明「证明的公开值是证书
+    // 声称的那串字节」，而证书**另有一个** `outcome`/`policy_hash` 字段与之
+    // 并列，二者之间没有任何可核对的联系。签发方（或被篡改的证书组装流程）
+    // 完全可以声称 `policy_hash = π_real`，而证明的公开值其实来自空策略。
+    //
+    // 因此这里把公开值**解回 `Outcome` 并原样输出**，让验证方拿它与证书载荷
+    // 逐字段比对（三方比对：证书声称的哈希、重编译策略包的哈希、证明承诺的
+    // 哈希）。解码失败即视为验证失败：宁可 fail-closed，也不能让「解不出来」
+    // 退化成「跳过检查」。
+    let decoded: Result<pop_types::Outcome, _> =
+        bincode::deserialize::<pop_types::Outcome>(&public_values);
+    let (decoded_ok, outcome_json) = match decoded {
+        Ok(out) => (true, pop_types::outcome_value(&out)),
+        Err(e) => {
+            eprintln!("public values do not decode as pop_types::Outcome: {e}");
+            (false, serde_json::Value::Null)
+        }
+    };
+
     // 汇总验证结果，供第三方核验
     let result = serde_json::json!({
-        "verified": verified,
+        "verified": verified && decoded_ok,
         "proof_mode": mode,
         "vkey_hash": meta["vkey_hash_str"],
         "public_values_sha256": sha256_hex(&public_values),
         "public_values_len": public_values.len(),
         "proof_bytes_len": proof.len(),
+        "outcome": outcome_json,
     });
     println!("{}", serde_json::to_string_pretty(&result).unwrap());
     if let Some(p) = out_path {

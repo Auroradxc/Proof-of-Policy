@@ -20,7 +20,7 @@ sys.path.insert(0, str(REPO))
 from policydsl import nfa, pii  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.model import Policy, PolicyError, Rule  # noqa: E402
-from policydsl.serialize import spec_to_rust_constraints  # noqa: E402
+from policydsl.serialize import spec_canonical_text  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
@@ -55,24 +55,23 @@ class TestMatcherParity(unittest.TestCase):
 class TestModeWiring(unittest.TestCase):
     """``match_mode`` 从 DSL 到 Rust 约束的传导与校验（消融旋钮的接线）。"""
 
-    # 默认必须是 pike（生产语义）；ConstraintSpec 里不落 "mode" 是为了保持
-    # 既有序列化契约稳定，只在生成 Rust 约束时补上默认值。
+    # 默认必须是 pike（生产语义）。契约字节里**不出现** "mode"：Rust 侧
+    # `SpecConstraint::PatternBlock` 对 mode 标了 #[serde(default)]，缺省即 pike。
+    # 断言直接落在电路将要解析的那段字节上，而非某个中间映射。
     def test_default_is_pike(self):
         spec = compile_policy(Policy("p", "1", rules=[
             Rule("pattern_block", "pb", {"patterns": [pii.PII_PATTERNS["email"]]})]))
         self.assertNotIn("mode", spec["constraints"][0])
-        rt = spec_to_rust_constraints(spec)[0]["PatternBlock"]
-        self.assertEqual(rt["mode"], "pike")
+        self.assertNotIn('"mode"', spec_canonical_text(spec))
 
-    # 显式指定 naive 时，两层（ConstraintSpec 与 Rust 约束）都要如实带上，
-    # 否则电路里仍会跑 pike，消融就测不到朴素路径。
+    # 显式指定 naive 时必须如实出现在契约字节里，否则电路仍会跑 pike，
+    # 消融就测不到朴素路径。
     def test_naive_mode_propagates(self):
         spec = compile_policy(Policy("p", "1", rules=[
             Rule("pattern_block", "pb", {"patterns": [pii.PII_PATTERNS["email"]],
                                          "match_mode": "naive"})]))
         self.assertEqual(spec["constraints"][0]["mode"], "naive")
-        rt = spec_to_rust_constraints(spec)[0]["PatternBlock"]
-        self.assertEqual(rt["mode"], "naive")
+        self.assertIn('"mode":"naive"', spec_canonical_text(spec))
 
     # 未知 mode（如 "dfa"）要快速失败：避免旋钮拼错后静默回落到默认匹配器，
     # 让消融结果被错误归因。
@@ -96,7 +95,7 @@ class TestRustNaivePath(unittest.TestCase):
             Rule("pattern_block", "pb", {"patterns": [pii.PII_PATTERNS["email"]],
                                          "match_mode": mode})]))
         vectors = {"vectors": [{"name": f"{mode}", "response": text,
-                                "constraints": spec_to_rust_constraints(spec)}]}
+                                "spec_canonical": spec_canonical_text(spec)}]}
         with tempfile.TemporaryDirectory() as tmp:
             vp, op = Path(tmp) / "v.json", Path(tmp) / "r.json"
             vp.write_text(json.dumps(vectors))

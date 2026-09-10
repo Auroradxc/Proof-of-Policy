@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 #: 可以被 `pop-verify` 独立验证的证明模式（core 不在其中）
 VERIFIER_ONLY_MODES = ("compressed", "groth16", "plonk")
@@ -42,3 +42,81 @@ def prefer_verifier_only(proof: Path, pop_verify: Path) -> bool:
     if not (Path(pop_verify).exists() and sidecar.exists()):
         return False
     return sidecar_proof_mode(sidecar) in VERIFIER_ONLY_MODES
+
+
+# --------------------------------------------------------------------------- #
+# 策略绑定（P0-1）：三方比对
+#
+# 证书里有**两处**各自独立声称 policy_hash 的字段（载荷顶层的 `policy_hash`
+# 与 `outcome.policy_hash`），验证方还会**自己重编译**策略包得到第三个值，
+# 而证明的公开值里还有电路承诺的第四个值。这些值必须全部相等。
+#
+# 为什么不能只比其中两个：P0-1 的教训是「被哈希的东西」与「被使用的东西」
+# 必须是同一份。同理，这里任何一个来源都可能与另外几个脱钩 —— 只比
+# 「证书声称 == 重编译」会漏掉「证明其实是对另一个策略做的」，只比
+# 「证书声称 == 证明承诺」则漏掉「证书声称的策略根本不是这个策略包」。
+# --------------------------------------------------------------------------- #
+
+#: `check_policy_binding` 的默认来源标签 → 说明（用于失败时的可读诊断）
+_SOURCE_LABELS = {
+    "cert": "证书载荷声明的 policy_hash",
+    "cert.outcome": "证书 outcome 内嵌的 policy_hash",
+    "recompiled": "由策略包现场重编译得到的 sha256",
+    "proof": "证明公开值承诺的 policy_hash",
+}
+
+
+def committed_policy_hash(proof_result: Dict[str, Any]) -> Optional[str]:
+    """从 `pop-verify` / `pop-script --verify` 的结果里取出**证明承诺的**策略哈希。
+
+    取不到返回 None —— 调用方必须把它当作「这一路来源缺失」处理，而不是
+    「检查通过」：把缺失当成通过正是 P0-1 那个漏洞的形态。
+    """
+    outcome = proof_result.get("outcome")
+    if isinstance(outcome, dict):
+        h = outcome.get("policy_hash")
+        if isinstance(h, str):
+            return h
+    return None
+
+
+def check_policy_binding(sources: Sequence[Tuple[str, Optional[str]]]) -> Tuple[bool, str]:
+    """比对若干来源声称的 policy_hash：**非 None 的来源必须全部相等**。
+
+    ``sources`` 是 ``[(label, hash_or_None), ...]``；``label`` 用于诊断，
+    取值见 :data:`_SOURCE_LABELS`。返回 ``(ok, detail)``。
+
+    只要**至少两个**来源参与比对才算通过：只有一个来源时「全部相等」是空洞的，
+    那等于没有任何约束。缺失的来源会被如实列进 detail，避免报告读起来像是
+    做过完整的三方比对。
+    """
+    present = [(lbl, h) for lbl, h in sources if h is not None]
+    missing = [lbl for lbl, h in sources if h is None]
+    uniq = {h for _, h in present}
+    ok = len(present) >= 2 and len(uniq) == 1
+    if len(present) < 2:
+        return False, ("only {} source(s) available ({}) — binding uncheckable"
+                       .format(len(present), ", ".join(lbl for lbl, _ in present) or "none"))
+    detail = " == ".join(f"{short_hash(h)}[{lbl}]" for lbl, h in present)
+    if not ok:
+        detail = "MISMATCH: " + detail
+    if missing:
+        detail += " (absent: " + ", ".join(missing) + ")"
+    return ok, detail
+
+
+def short_hash(h: str, n: int = 8) -> str:
+    """把长哈希截断成便于打印的形式（仅用于诊断输出）。"""
+    return f"{h[:n]}…" if len(h) > n + 1 else h
+
+
+def outcome_without_meta(proof_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """把验证结果里的 outcome 去掉展示元信息（``name``/``mode``）后的副本。
+
+    证书载荷里的 ``outcome`` 是签发时以同样方式剥掉这两个字段存的，因此
+    验证方要用相同的剥法才能逐字段比对。取不到 outcome 时返回 None。
+    """
+    outcome = proof_result.get("outcome")
+    if not isinstance(outcome, dict):
+        return None
+    return {k: v for k, v in outcome.items() if k not in ("name", "mode")}

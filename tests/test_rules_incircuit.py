@@ -26,7 +26,7 @@ sys.path.insert(0, str(REPO))
 from policydsl import commit  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.model import Policy, Rule  # noqa: E402
-from policydsl.serialize import spec_to_rust_constraints  # noqa: E402
+from policydsl.serialize import spec_canonical_text  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
@@ -66,7 +66,7 @@ class TestRulesInCircuit(unittest.TestCase):
     # 对齐断言的核心：golden 与 Rust 两边的违规 kind 集合、以及 passed 都要相同。
     def _parity(self, spec, response, golden_kinds, extras=None):
         vector = {"name": "t", "response": response,
-                  "constraints": spec_to_rust_constraints(spec)}
+                  "spec_canonical": spec_canonical_text(spec)}
         vector.update(extras or {})
         got = run_check(vector)
         canon = commit.canonical_violations(spec, response,
@@ -151,7 +151,7 @@ class TestEvidenceCommitmentParity(unittest.TestCase):
         response = "not json"
         calls = [{"name": "search_kb", "args": {"query": "x", "token": "s"}}]
         vector = {"name": "p", "response": response, "private": True,
-                  "constraints": spec_to_rust_constraints(spec), "tool_calls": calls}
+                  "spec_canonical": spec_canonical_text(spec), "tool_calls": calls}
         got = run_check(vector)
 
         canon = commit.canonical_violations(spec, response, calls, None)

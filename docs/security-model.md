@@ -24,8 +24,18 @@
 而确定性保证输出唯一 = `J(π,T)`。故伪造需攻破 zkVM 健全性（或哈希碰撞）。**边界**：仅对**入电路**的规则种类成立
 （keyword/length/pattern）；工具参数/`format`/`budget` 目前为链下参考判定，证书标 `zk:false`，不适用本定义（见 §5）。
 
-**策略绑定 Provenance (A4).** 证书携带 `policy_hash = H(canonical(ConstraintSpec))`，验证者**重算** `compile(π)` 并比对；
-`binding.vkey_hash` 绑定程序（由 ELF 派生），`binding.proof_sha256` 绑定证明工件。任一被替换 ⇒ 验证失败。
+**策略绑定 Provenance (A4).** 证明的公开值**必然携带** `policy_hash = H(canonical(π))` —— 它由 guest 从
+**参与判定的同一段规范字节**上算出来（P0-1），因此不可能「用策略 π′ 判定、却声称 π 的哈希」。
+验证者做**三方比对**，三者必须同时相等：
+
+1. 证书载荷声明的 `policy_hash`（及证书 `outcome` 内嵌的那份，二者须自洽）；
+2. 由策略包**现场重编译**得到的 `sha256`；
+3. **证明公开值**解出来的 `policy_hash`（`pop-verify` 现在会解码公开值，而不只是哈希一遍）。
+
+只有两个来源时一律判**失败**（防止「三方比对」退化成恒真）。此外
+`binding.vkey_hash` 绑定程序（由 ELF 派生），`binding.proof_sha256` 绑定证明工件。
+任一被替换 ⇒ 验证失败。实验：`tests/test_policy_binding.py`（含「空策略证明 + 真策略哈希」
+攻击回归，以及「真证明 + 假哈希必须被拒」的证明层测试）。
 
 **内容隐私 Content privacy (A2, 私有模式).** 验证者视图 `V = (c, {rule_i, kind_i, e_i}, redaction)`，其中 `e_i = H(evidence_i)`。
 *论证*：`V` 不含 `T` 的任何明文（仅 64-hex 承诺）；由 `H` 的抗碰撞/抗原像性，`V` 对 `T` 的泄露仅为“承诺可验证性”。
@@ -56,7 +66,9 @@
 
 设 `T ⊭ π`，即 `J(π,T).passed = false`（存在违规 `v`）。若对手产出被接受的证明，则 `pub.passed = true` 且 `pub` 等于
 zkVM 执行输出；确定性判定给出 `J(π,T).passed = false`，矛盾。因此在 zkVM 健全性与 `H` 抗碰撞的假设下，
-对手只能：① 攻破 zkVM；② 更换策略/程序（被 `policy_hash`/`vkey_hash` 检测）；③ 对**未入电路**的规则种类伪造（此时证书不声称 `zk`，见 §5）。
+对手只能：① 攻破 zkVM；② 更换策略/程序（被 `policy_hash` 三方比对 / `vkey_hash` 检测 —— 注意
+**换策略这一路现在是电路内强制的**：想判 `π′` 就必然承诺 `H(π′)`，无法再声称 `H(π)`）；
+③ 对**未入电路**的规则种类伪造（此时证书不声称 `zk`，见 §5）。
 
 ## 4. 实验对照（可复现）
 
@@ -64,7 +76,7 @@ zkVM 执行输出；确定性判定给出 `J(π,T).passed = false`，矛盾。�
 |---|---|
 | Completeness | `scripts/prove_policy.py`（eu pass）、`scripts/cross_validate.py` host/prove 7/7 |
 | Soundness (入电路规则) | 违规向量证明产出 `passed=false`（`cross_validate` 的 hit 向量；`private_demo` 违规） |
-| Provenance | `scripts/verify_cert.py` 各卡（policy_hash / vkey / proof_sha256）；`TestCertificate` |
+| Provenance | `scripts/verify_cert.py` 各卡（policy_hash 三方比对 / vkey / proof_sha256）；`tests/test_policy_binding.py`（攻击回归 + 证明层 opt-in） |
 | Content privacy | Leak 实验（`private_demo`）；`test_private_output_no_leak` |
 | Redaction soundness | `TestMaskCoverage`（伪造 span → `mask_covered=false`） |
 | Evidence unforgeability | `TestEvidenceOpening`（篡改开示 → 失败） |

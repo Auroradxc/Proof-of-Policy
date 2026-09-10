@@ -9,7 +9,7 @@
 //! 携带程序 vkey 哈希（供证书使用）。`--verify` 加载证明、从 ELF 重新推导
 //! 验证密钥、做密码学验证，并打印承诺的 Outcome JSON（无需任何秘密）。
 
-use pop_types::{run_job, Constraint, Job, Outcome, PrivateRequest, ProofRequest};
+use pop_types::{run_job, Job, Outcome, PrivateRequest, ProofRequest};
 use serde::Deserialize;
 use serde_json::json;
 use sp1_sdk::{
@@ -21,12 +21,15 @@ use sp1_sdk::{
 const POP_ELF: Elf = include_elf!("pop-program");
 
 /// 从 vectors.json 反序列化的单个输入向量。
+///
+/// `spec_canonical` 是策略的**规范 JSON 文本**（唯一真相源）：guest 从它
+/// 同时派生 `policy_hash` 与要判定的约束。缺失即报错，不做缺省。
 #[derive(Deserialize)]
 struct VectorIn {
     #[serde(default)]
     name: Option<String>,
     response: String,
-    constraints: Vec<Constraint>,
+    spec_canonical: String,
     #[serde(default)]
     private: bool,
     #[serde(default)]
@@ -52,8 +55,8 @@ impl VectorIn {
     fn to_job(&self) -> Job {
         if self.private {
             Job::Private(PrivateRequest {
+                spec_canonical: self.spec_canonical.clone(),
                 response: self.response.clone(),
-                constraints: self.constraints.clone(),
                 mask: self.mask.clone(),
                 redacted: self.redacted.clone(),
                 spans: self.spans.clone(),
@@ -62,8 +65,8 @@ impl VectorIn {
             })
         } else {
             Job::Public(ProofRequest {
+                spec_canonical: self.spec_canonical.clone(),
                 response: self.response.clone(),
-                constraints: self.constraints.clone(),
                 tool_calls: self.tool_calls.clone(),
                 token_count: self.token_count,
             })
@@ -71,21 +74,17 @@ impl VectorIn {
     }
 }
 
-/// 把 Outcome 序列化为带 name/mode 的结果 JSON（公开/私有两种形态）。
+/// 把 Outcome 序列化为结果 JSON，并附上该向量的 `name`。
+///
+/// 摊平逻辑（含 `policy_hash`）在 `pop_types::outcome_value` —— 与
+/// `pop-verify` 共用同一份实现，保证「证书载荷里的 outcome」与「证明公开值
+/// 解出来的 outcome」形状一致，可逐字段比对，而不是只比对 `passed`。
 fn outcome_json(name: &Option<String>, out: &Outcome) -> serde_json::Value {
-    match out {
-        Outcome::Public(o) => json!({
-            "name": name, "mode": "public",
-            "passed": o.passed, "violations": o.violations,
-        }),
-        Outcome::Private(o) => json!({
-            "name": name, "mode": "private",
-            "passed": o.passed,
-            "response_commitment": o.response_commitment,
-            "violations": o.violations,
-            "redaction": o.redaction,
-        }),
+    let mut v = pop_types::outcome_value(out);
+    if let Some(obj) = v.as_object_mut() {
+        obj.insert("name".to_string(), json!(name));
     }
+    v
 }
 
 /// 把 JSON 值美化写入文件。

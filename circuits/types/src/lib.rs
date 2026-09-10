@@ -1,10 +1,25 @@
 //! Proof-of-Policy 的共享（反）序列化类型。
 //!
-//! `ProofRequest` 是 SP1 程序消费的输入（响应 + 编译后的约束）；
-//! `ProofOutput` 是它作为公开值（public values）承诺的输出。这些类型是
-//! `no_std` + `alloc`，因此既能编译进 RISC-V guest，也能编译进宿主驱动。
-//! JSON 表示镜像了 Rust 枚举布局（serde 外部标签），使 Python 参考层能
-//! 产出/消费同一份 schema。
+//! `ProofRequest` 是 SP1 程序消费的输入：**策略的规范 JSON 字节** + 响应 +
+//! 工具调用轨迹。`Outcome` 是它作为公开值（public values）承诺的输出，
+//! 其中**必然携带 `policy_hash`**。
+//!
+//! ## 健全性的核心约定
+//!
+//! 策略以**规范字节**（`spec_canonical`）的形式传入，guest 从中
+//! **同时**得到两样东西：
+//!
+//! 1. `policy_hash = SHA256(spec_canonical)` —— 进公开值；
+//! 2. 解析出的 `ConstraintSpec.constraints` —— 实际参与判定。
+//!
+//! 二者同源、不可分离。若策略以「独立的结构化字段」传入而公开值里不含其
+//! 哈希，证明者就能用空策略（恒通过）判定、再在证书里声称哈希对应真实策略 ——
+//! 那样证明的义务会退化为「存在某个策略通过」，而非「策略 π 通过」。
+//!
+//! 这些类型是 `no_std` + `alloc`，因此既能编译进 RISC-V guest，也能编译进
+//! 宿主驱动。`SpecConstraint` 用 serde **内部标签**（`"kind"`）直接吃
+//! `policydsl/compile.py` 产出的形状 —— 这样「被哈希的文本」与「被解析的文本」
+//! 是同一份，无需在两套序列化之间做映射（映射本身就是漏洞温床）。
 
 #![no_std]
 
@@ -74,22 +89,24 @@ pub enum PatternMode {
     Naive,
 }
 
-/// 来自 ConstraintSpec 的一条编译后约束。
+/// 来自 ConstraintSpec 的一条约束 —— **直接映射 `policydsl/compile.py` 产出的
+/// 规范 JSON 形状**（内部标签 `"kind"`，值取 snake_case 变体名）。
 ///
-/// 阶段一至二覆盖 `KeywordBlock`、`LengthBound` 与 `PatternBlock`；更多变体
-/// 在后续阶段落地。字段值遵循 `policydsl/compile.py`。
+/// 之所以用内部标签而不是外部标签：电路消费的约束与「被哈希的规范字节」必须
+/// 是**同一份文本**。见 `ConstraintSpec` 与 `run_job` 的说明。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub enum Constraint {
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SpecConstraint {
     /// 响应不得包含 `keywords` 中任意关键词（不区分大小写，ASCII）。
     KeywordBlock { name: String, keywords: Vec<String> },
     /// 响应长度（码点数）必须满足 `min <= len <= max`。
     LengthBound { name: String, min: u32, max: u32 },
     /// 响应不得匹配任意编译后的模式（子串匹配，`patterns[i]` 的正则
-    /// 编译为 `specs[i]`）。
+    /// 编译为 `nfa.compiled[i]`）。
     PatternBlock {
         name: String,
         patterns: Vec<String>,
-        specs: Vec<NfaSpec>,
+        nfa: NfaBlock,
         #[serde(default)]
         mode: PatternMode,
     },
@@ -106,12 +123,44 @@ pub enum Constraint {
     BudgetBound { name: String, budget: u32, unit: BudgetUnit },
 }
 
-/// prover 的输入：agent 响应、要检查的约束、以及工具调用轨迹
+/// `pattern_block.nfa` 的包装（Python 侧为 `{"nfa": {"compiled": [...]}}`）。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct NfaBlock {
+    pub compiled: Vec<NfaSpec>,
+}
+
+/// 完整的 ConstraintSpec —— 跨层契约的**规范化 JSON 文本**解析结果。
+///
+/// **健全性关键**：本结构是从 `spec_canonical` 那段字节解析出来的，而
+/// `policy_hash = SHA256(spec_canonical)` 是对**同一段字节**求哈希。因此
+/// 「被哈希的策略」与「被判定的策略」在构造上不可分离：证明者无法一边用
+/// 空策略（恒通过）判定、一边声称哈希对应真实策略。
+///
+/// 注意：`sha256` 字段**不在**规范字节里（它是对规范字节本身的哈希），
+/// 所以这里也不需要它。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ConstraintSpec {
+    pub spec_version: String,
+    pub policy_id: String,
+    pub policy_version: String,
+    pub semantic: String,
+    pub constraints: Vec<SpecConstraint>,
+}
+
+/// 本程序实现的契约版本（对应 `policydsl.compile.SPEC_VERSION`）。
+pub const SPEC_VERSION: &str = "v1";
+
+/// 本程序实现的规则组合语义：全部规则都要通过（对应 `Policy` 的默认值）。
+pub const SEMANTIC_AND: &str = "and";
+
+/// prover 的输入：agent 响应、规范策略字节、以及工具调用轨迹
 /// （供 tool_arg_guard / budget_bound 使用）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProofRequest {
+    /// 策略的规范 JSON 文本（`policydsl.compile.canonical_spec_bytes` 产出）。
+    /// 唯一真相源：既用于派生 `policy_hash`，也用于解析要判定的约束。
+    pub spec_canonical: String,
     pub response: String,
-    pub constraints: Vec<Constraint>,
     #[serde(default)]
     pub tool_calls: Vec<ToolCall>,
     #[serde(default)]
@@ -132,6 +181,9 @@ pub struct Violation {
 /// 程序承诺的公开输出。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ProofOutput {
+    /// 被判定策略的哈希 = SHA256(规范字节)。**由电路内计算**，验证方据此确认
+    /// 「这条证明确实是对声明的策略 π 做的判定」，而不是别的策略。
+    pub policy_hash: String,
     pub passed: bool,
     pub violations: Vec<Violation>,
 }
@@ -305,17 +357,27 @@ pub fn parse_json_ok(s: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(s).is_ok()
 }
 
-/// 依据约束判定一个 ProofRequest。阶段一至二规则类型：
+/// 依据约束判定一个响应（六类规则全部入电路）：
 /// keyword_block（ASCII 不区分大小写子串）、length_bound（码点长度）、
-/// pattern_block（通过编译后 NFA 的子串正则）。
-pub fn evaluate(req: &ProofRequest) -> ProofOutput {
+/// pattern_block（通过编译后 NFA 的子串正则）、format_check（规范解析子集）、
+/// tool_arg_guard（工具参数被禁键）、budget_bound（calls / tokens）。
+///
+/// `policy_hash` 由调用方（`run_job`）从**同一段规范字节**派生后传入，
+/// 保证公开值里的策略哈希与实际参与判定的约束同源、不可分离。
+pub fn evaluate(
+    policy_hash: &str,
+    constraints: &[SpecConstraint],
+    response: &str,
+    tool_calls: &[ToolCall],
+    token_count: Option<u32>,
+) -> ProofOutput {
     let mut violations: Vec<Violation> = Vec::new();
 
-    for c in &req.constraints {
+    for c in constraints {
         match c {
-            Constraint::KeywordBlock { name, keywords } => {
+            SpecConstraint::KeywordBlock { name, keywords } => {
                 // 关键词阻断：小写化后检查是否包含任意禁用词
-                let text = ascii_lower(&req.response);
+                let text = ascii_lower(response);
                 if let Some(hit) = keywords.iter().find(|kw| text.contains(kw.as_str())) {
                     violations.push(Violation {
                         rule: name.clone(),
@@ -324,9 +386,9 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                     });
                 }
             }
-            Constraint::LengthBound { name, min, max } => {
+            SpecConstraint::LengthBound { name, min, max } => {
                 // 长度边界：按码点数计长
-                let n = req.response.chars().count() as u32;
+                let n = response.chars().count() as u32;
                 if n < *min || n > *max {
                     violations.push(Violation {
                         rule: name.clone(),
@@ -335,12 +397,12 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                     });
                 }
             }
-            Constraint::PatternBlock { name, patterns, specs, mode } => {
+            SpecConstraint::PatternBlock { name, patterns, nfa, mode } => {
                 // 正则阻断：按编译顺序逐条匹配，命中即记证据并跳出
-                for (i, spec) in specs.iter().enumerate() {
+                for (i, spec) in nfa.compiled.iter().enumerate() {
                     let hit = match mode {
-                        PatternMode::Pike => nfa_match(spec, &req.response),
-                        PatternMode::Naive => nfa_match_naive(spec, &req.response),
+                        PatternMode::Pike => nfa_match(spec, response),
+                        PatternMode::Naive => nfa_match_naive(spec, response),
                     };
                     if hit {
                         violations.push(Violation {
@@ -352,12 +414,12 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                     }
                 }
             }
-            Constraint::FormatCheck { name, format } => {
+            SpecConstraint::FormatCheck { name, format } => {
                 // 格式校验：按声明格式解析
                 let ok = match format {
-                    FormatKind::Json => parse_json_ok(&req.response),
-                    FormatKind::Int => parse_int_ok(&req.response),
-                    FormatKind::Float => parse_float_ok(&req.response),
+                    FormatKind::Json => parse_json_ok(response),
+                    FormatKind::Int => parse_int_ok(response),
+                    FormatKind::Float => parse_float_ok(response),
                 };
                 if !ok {
                     violations.push(Violation {
@@ -367,9 +429,9 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                     });
                 }
             }
-            Constraint::ToolArgGuard { name, tools, forbidden_fields } => {
+            SpecConstraint::ToolArgGuard { name, tools, forbidden_fields } => {
                 // 工具参数防护：检查（可选白名单限定后的）调用参数是否含被禁字段
-                for call in &req.tool_calls {
+                for call in tool_calls {
                     if !tools.is_empty() && !tools.contains(&call.name) {
                         continue;
                     }
@@ -383,11 +445,11 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
                     }
                 }
             }
-            Constraint::BudgetBound { name, budget, unit } => {
+            SpecConstraint::BudgetBound { name, budget, unit } => {
                 // 预算边界：按 calls 计调用次数，按 tokens 计 token_count
                 let total: u32 = match unit {
-                    BudgetUnit::Calls => req.tool_calls.len() as u32,
-                    BudgetUnit::Tokens => req.token_count.unwrap_or(0),
+                    BudgetUnit::Calls => tool_calls.len() as u32,
+                    BudgetUnit::Tokens => token_count.unwrap_or(0),
                 };
                 if total > *budget {
                     violations.push(Violation {
@@ -401,6 +463,7 @@ pub fn evaluate(req: &ProofRequest) -> ProofOutput {
     }
 
     ProofOutput {
+        policy_hash: String::from(policy_hash),
         passed: violations.is_empty(),
         violations,
     }
@@ -448,8 +511,9 @@ pub struct RedactionProof {
 /// 验证的候选脱敏串（可选）；`spans` 是证明这些位置为真实匹配的见证字符区间。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PrivateRequest {
+    /// 策略的规范 JSON 文本（与 `ProofRequest::spec_canonical` 同义，唯一真相源）。
+    pub spec_canonical: String,
     pub response: String,
-    pub constraints: Vec<Constraint>,
     #[serde(default)]
     pub mask: Vec<u32>,
     #[serde(default)]
@@ -466,6 +530,8 @@ pub struct PrivateRequest {
 /// （+ 可选的脱敏证明）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PrivateOutput {
+    /// 被判定策略的哈希 = SHA256(规范字节)，由电路内计算（见 `ProofOutput`）。
+    pub policy_hash: String,
     pub response_commitment: String,
     pub passed: bool,
     pub violations: Vec<PrivateViolation>,
@@ -484,6 +550,34 @@ pub enum Job {
 pub enum Outcome {
     Public(ProofOutput),
     Private(PrivateOutput),
+}
+
+/// 把承诺的 `Outcome` 摊平成验证方可直接比对的 JSON 形状（**唯一真相源**）。
+///
+/// 证明方（`pop-script`）与验证者（`pop-verify`）必须产出**同形**的 outcome：
+/// 否则「证书载荷里写的 outcome」与「证明公开值解出来的 outcome」无法逐字段
+/// 比对，验证方就只能退回「信任证书自称的字段」—— 那正是 P0-1 要消除的模式。
+/// 把摊平逻辑放在共享类型里，两边都调用同一个函数，形状就不可能漂移。
+///
+/// **本函数不含 `name`**：那是调用方按需追加的展示元信息，不参与承诺。
+/// `mode` 则如实保留（它由 `Outcome` 的变体决定，是承诺语义的一部分）。
+pub fn outcome_value(out: &Outcome) -> serde_json::Value {
+    match out {
+        Outcome::Public(o) => serde_json::json!({
+            "mode": "public",
+            "policy_hash": o.policy_hash,
+            "passed": o.passed,
+            "violations": o.violations,
+        }),
+        Outcome::Private(o) => serde_json::json!({
+            "mode": "private",
+            "policy_hash": o.policy_hash,
+            "passed": o.passed,
+            "response_commitment": o.response_commitment,
+            "violations": o.violations,
+            "redaction": o.redaction,
+        }),
+    }
 }
 
 /// VDR 风格脱敏检查：码点等长、掩码位置为 `*`、其余位置不变。
@@ -550,11 +644,11 @@ fn anchored_full_match(spec: &NfaSpec, chars: &[char], start: usize, end: usize)
 }
 
 /// 每个区间都必须是某条 pattern_block 模式的真实完整匹配。
-fn spans_valid(constraints: &[Constraint], chars: &[char], spans: &[(u32, u32)]) -> bool {
+fn spans_valid(constraints: &[SpecConstraint], chars: &[char], spans: &[(u32, u32)]) -> bool {
     let specs: Vec<&NfaSpec> = constraints
         .iter()
         .filter_map(|c| match c {
-            Constraint::PatternBlock { specs, .. } => Some(specs.iter()),
+            SpecConstraint::PatternBlock { nfa, .. } => Some(nfa.compiled.iter()),
             _ => None,
         })
         .flatten()
@@ -571,13 +665,10 @@ fn mask_within_spans(mask: &[u32], spans: &[(u32, u32)]) -> bool {
 
 /// 判定私有请求：做（共享的）评估，但只披露 rule/kind + 证据承诺，加上
 /// 响应承诺与可选的脱敏证明。
-pub fn evaluate_private(req: &PrivateRequest) -> PrivateOutput {
-    let public = evaluate(&ProofRequest {
-        response: req.response.clone(),
-        constraints: req.constraints.clone(),
-        tool_calls: req.tool_calls.clone(),
-        token_count: req.token_count,
-    });
+pub fn evaluate_private(req: &PrivateRequest, policy_hash: &str,
+                        constraints: &[SpecConstraint]) -> PrivateOutput {
+    let public = evaluate(policy_hash, constraints, &req.response,
+                          &req.tool_calls, req.token_count);
     let violations = public
         .violations
         .iter()
@@ -589,7 +680,7 @@ pub fn evaluate_private(req: &PrivateRequest) -> PrivateOutput {
         .collect();
     let redaction = req.redacted.as_ref().map(|red| {
         let chars: Vec<char> = req.response.chars().collect();
-        let covered = spans_valid(&req.constraints, &chars, &req.spans)
+        let covered = spans_valid(constraints, &chars, &req.spans)
             && mask_within_spans(&req.mask, &req.spans);
         RedactionProof {
             redacted_commitment: sha256_hex(red),
@@ -599,6 +690,7 @@ pub fn evaluate_private(req: &PrivateRequest) -> PrivateOutput {
         }
     });
     PrivateOutput {
+        policy_hash: public.policy_hash.clone(),
         response_commitment: sha256_hex(&req.response),
         passed: public.passed,
         violations,
@@ -606,10 +698,54 @@ pub fn evaluate_private(req: &PrivateRequest) -> PrivateOutput {
     }
 }
 
+/// 从规范字节解析 `ConstraintSpec`，并派生策略哈希。
+///
+/// **健全性的锚点**：`policy_hash = SHA256(spec_canonical)` 与「解析出的约束」
+/// 来自**同一段字节**，因此证明者无法一边用空策略（恒通过）判定、一边声称
+/// 哈希对应真实策略 —— 这正是此前版本的漏洞（`constraints` 是独立私有输入，
+/// 公开值里什么都没有）。
+///
+/// 解析失败直接 panic：电路内 fail-closed（产出不了证明），不做静默降级。
+///
+/// 还要挡住一类同型脱钩：**进了哈希却没被判定使用**的字段。当前有两位：
+///
+/// * `semantic` —— `evaluate` 只实现 `"and"`；放行 `"or"` 之类的值，契约里
+///   就多出一个「被承诺、却对结果毫无影响」的字段。
+/// * `spec_version` —— 契约格式的版本号；版本不同意味着字段语义可能不同，
+///   按当前版本去解读一个未来版本会静默得出错误结论。
+///
+/// 二者都 fail-closed，而不是默默按当前语义判定。Python 侧（`Policy.validate()`
+/// 只接受 `"and"`、`SPEC_VERSION = "v1"`）正常路径不会触发；这道闸门挡住的是
+/// **绕过编译器手搓规范字节**的路径。
+fn parse_spec(spec_canonical: &str) -> (String, ConstraintSpec) {
+    let spec: ConstraintSpec = serde_json::from_str(spec_canonical)
+        .expect("spec_canonical is not a valid ConstraintSpec");
+    assert!(
+        spec.semantic == SEMANTIC_AND,
+        "unsupported semantic '{}': the evaluator only implements '{}'",
+        spec.semantic,
+        SEMANTIC_AND
+    );
+    assert!(
+        spec.spec_version == SPEC_VERSION,
+        "unsupported spec_version '{}': this program implements '{}'",
+        spec.spec_version,
+        SPEC_VERSION
+    );
+    (sha256_hex(spec_canonical), spec)
+}
+
 /// 把一个任务分派到其结果（guest 与宿主检查共用）。
 pub fn run_job(job: &Job) -> Outcome {
     match job {
-        Job::Public(r) => Outcome::Public(evaluate(r)),
-        Job::Private(r) => Outcome::Private(evaluate_private(r)),
+        Job::Public(r) => {
+            let (hash, spec) = parse_spec(&r.spec_canonical);
+            Outcome::Public(evaluate(&hash, &spec.constraints, &r.response,
+                                     &r.tool_calls, r.token_count))
+        }
+        Job::Private(r) => {
+            let (hash, spec) = parse_spec(&r.spec_canonical);
+            Outcome::Private(evaluate_private(r, &hash, &spec.constraints))
+        }
     }
 }

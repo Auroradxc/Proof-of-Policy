@@ -67,7 +67,22 @@ ToolArgGuard  { name, tools, forbidden_fields }
 BudgetBound   { name, budget, unit: BudgetUnit }
 ```
 
-序列化为 serde 的**外部标签**枚举（`{"KeywordBlock": {...}}`），由 `serialize.spec_to_rust_constraints` 生产。
+序列化为 serde 的**内部标签**枚举（`#[serde(tag = "kind", rename_all = "snake_case")]`，
+即 `{"kind": "keyword_block", ...}`）—— 直接吃 `policydsl/compile.py` 产出的形状，
+**没有中间映射层**。
+
+### 2.1a 策略怎么进来：规范字节，而不是结构化字段
+
+guest 读到的 `spec_canonical` 是一段**规范 JSON 字节**（`compile.canonical_spec_bytes`：
+键排序 + 紧凑分隔符；纯 ASCII）。从这**同一段字节**同时得到两样东西：
+
+1. `policy_hash = SHA256(字节)` → 进公开值（`ProofOutput`/`PrivateOutput`）；
+2. 反序列化出的 `SpecConstraint` 列表 → 实际参与判定。
+
+二者同源、不可分离。这是 P0-1 的核心：若策略以「独立的结构化字段」传入而公开值里
+不含其哈希，证明者就能用空策略（恒通过）判定、再在证书里声称哈希对应真实策略 ——
+证明的义务会退化成「存在某个策略通过」，而非「策略 π 通过」。
+回归测试见 `tests/test_policy_binding.py`。
 
 ### 2.2 NFA 匹配（`nfa_match` / `nfa_match_naive`）
 

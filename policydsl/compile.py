@@ -31,14 +31,40 @@ from .model import Policy, PolicyError
 SPEC_VERSION = "v1"
 
 
+#: 参与规范哈希的「契约主体」字段（不含随序列化方式变化的元信息，如 sha256 自身）。
+STABLE_KEYS = ("spec_version", "policy_id", "policy_version", "semantic", "constraints")
+
+
+def canonical_spec_bytes(spec: Dict[str, Any]) -> bytes:
+    """把 ConstraintSpec 序列化为**规范 JSON 字节** —— 跨层唯一真相源。
+
+    规范 = 键排序 + 紧凑分隔符 + UTF-8。Rust/SP1 侧把这段字节整段读入，
+    **同时**用它派生 ``policy_hash`` 与解析要判定的约束，二者因此不可分离：
+    证明者无法一边用空策略（恒通过）判定、一边声称哈希对应真实策略。
+
+    ``ensure_ascii`` 保持默认 True（与 :func:`_canonical_hash` 一致），
+    产出纯 ASCII，可安全地作为 UTF-8 文本跨进程/跨语言传递。
+    """
+    stable = {k: spec[k] for k in STABLE_KEYS}
+    return json.dumps(stable, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def canonical_spec_text(spec: Dict[str, Any]) -> str:
+    """:func:`canonical_spec_bytes` 的文本形式（写进 vectors.json 用）。
+
+    因为规范字节是纯 ASCII，``decode("utf-8")`` 与再次 ``encode("utf-8")``
+    是恒等变换 —— 电路侧算出的哈希因此与本模块的逐字节相同。
+    """
+    return canonical_spec_bytes(spec).decode("utf-8")
+
+
 def _canonical_hash(obj: Dict[str, Any]) -> str:
-    """对字典做「规范化哈希」：按键排序、紧凑分隔符后求 SHA-256。
+    """对契约主体做「规范化哈希」：按键排序、紧凑分隔符后求 SHA-256。
 
     规范化（canonical）保证：只要语义内容相同，无论键的插入顺序如何，
     得到的哈希都一致 —— 这是证书中 policy_hash 可被独立重算的前提。
     """
-    body = json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(body).hexdigest()
+    return hashlib.sha256(canonical_spec_bytes(obj)).hexdigest()
 
 
 def compile_policy(policy: Policy) -> Dict[str, Any]:

@@ -25,7 +25,7 @@ sys.path.insert(0, str(REPO))
 from policydsl import pii  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.model import Policy, Rule  # noqa: E402
-from policydsl.serialize import spec_to_rust_constraints  # noqa: E402
+from policydsl.serialize import spec_canonical_text  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 WORK = REPO / "bench" / "work"
@@ -96,7 +96,7 @@ def main() -> int:
                 # 用不含命中词的长响应，强制每条约束都扫描到底（最坏情况）
                 text = response("the quick brown fox jumps", length)
                 out = run_execute({"name": f"L{length}-R{rc}-{mode}", "response": text,
-                                   "constraints": spec_to_rust_constraints(spec)})
+                                   "spec_canonical": spec_canonical_text(spec)})
                 rows.append({"length": length, "rules": rc, "mode": mode,
                              "cycles": out["cycles"], "passed": out["passed"]})
                 print(f"L={length:>6} rules={rc} mode={mode:<5} cycles={out['cycles']:,}")

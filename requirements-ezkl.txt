@@ -1,0 +1,37 @@
+# EZKL 依赖栈（P2-9 的硬前置；见 docs/plan-p0p1p2.md §8）。
+#
+# 安装（--user，无需 sudo；pip 本身由 §8.0 的 get-pip 引导恢复）：
+#   python3 -m pip install --user -r requirements-ezkl.txt
+#
+# 镜像已写进用户级 pip.conf（~/.config/pip/pip.conf），不必每次带 -i。
+# 装完请跑一次冒烟测试确认链路可用（约 5 秒，见下）。
+#
+# 版本是本机 2026-09-10 实测锁定的（Python 3.10.12 / linux x86_64 / WSL2）。
+# ezkl 是 PyO3 扩展（Rust 编译的 abi3 wheel），版本号与 PyPI 的 `info.version`
+# 字段（那是 12.0.1）不一致 —— 以实际安装到的 23.0.5 为准。
+# 注意 ezkl 23.x 的 API 与本仓库早期文档里的写法有出入：
+#   - 编译电路是 `ezkl.compile_circuit(...)`，不是 `ezkl.compile(...)`
+#   - `gen_settings` / `setup` / `prove` 等一律用 path 参数（str），不用 file handle
+ezkl==23.0.5
+onnx==1.22.0
+torch==2.14.0
+
+# 以上三者的直接依赖（一并锁定，避免解析漂移）：
+numpy==2.2.6
+protobuf==7.36.1
+sympy==1.14.0
+networkx==3.4.2
+
+# 冒烟测试（一条最小但完整的链路：ONNX → settings → 编译 → SRS → setup
+# → witness → prove → verify）已实测通过：全部步骤 OK，verify() -> True，
+# 证明 21 KB，端到端约 5 秒。
+#
+# 两个实测踩到的坑，P2-9 必须避开：
+#   1. 导出的 ONNX **不能带 dynamic_axes**（符号维度会让 tract 前端报
+#      "Undetermined symbol in expression: <Sym0>"）。所有维度必须常量 ——
+#      这与 P2-9「特征在图中派生」的设计一致（输入形状固定）。
+#   2. `torch.onnx.export` 在 torch ≥2.9 默认走 dynamo 导出器；本栈用
+#      `dynamo=False`（legacy TorchScript 路径）验证通过。
+#
+# 另：`ezkl.create_evm_verifier(...)` 生成 Solidity 验证器需要环境里有 `solc`。
+# 本机当前未装 —— 那是 P2-9 链上验证部分的前置，不属于本文件。
