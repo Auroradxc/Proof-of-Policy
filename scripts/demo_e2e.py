@@ -9,14 +9,16 @@
   2. 工具路径，针对**真实 MCP 服务器**（stdio）：参数被认证（含飞行前拦截），
      工具的**结果**也被认证（结果侧）；
   3. zk 层：为一条响应生成真实 SP1 证明（除非 --no-prove），通过 vkey 哈希 +
-     证明哈希绑定进证书；
+     证明哈希绑定进证书；并走一次**真实的挑战流程**（P0-2）：客户端先出题
+     （一次性 nonce），证明方把 (nonce, T) 一起承诺进公开值，最后用**送达的
+     响应 T′** 与 nonce 离线核对 —— 演示里还会故意送错一条 T′ 来看它被拒；
   4. 每张证书都锚定进一个仅追加、防篡改的账本；给了 `--rpc/--contract` 时
      **同时登记到 Anchor 合约**（链上存在性 + 时间戳，链上成功后回写本地 meta）。
 
 之后用 `python3 scripts/verify_session.py ...` 独立验证这一切。
 
 用法：
-  SP1_PROVER=cpu python3 scripts/demo_e2e.py [--out-dir DIR] [--no-prove]
+  SP1_PROVER=cpu python3 scripts/demo_e2e.py [--out-dir DIR] [--no-prove] [--nonce auto|<hex>|none]
   # 链上锚定（另开终端跑 `anvil`，先部署合约：python3 scripts/deploy_anchor.py）
   SP1_PROVER=cpu python3 scripts/demo_e2e.py --no-prove \
       --rpc http://127.0.0.1:8545 --contract 0x5FbDB2315678afecb367f032d93F642f64180aa3
@@ -34,7 +36,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
-from policydsl import anchor, cert  # noqa: E402
+from policydsl import anchor, cert, challenge  # noqa: E402
 from policydsl.agent import AgentMonitor  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.langchain_adapter import PoPCallbackHandler  # noqa: E402
@@ -89,8 +91,12 @@ async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str) -> lis
 
 
 def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
-            proof_mode: str = "core"):
-    """为一条响应生成真实 SP1 证明（或宿主校验），并签发绑定它的证书。"""
+            nonce: bytes = b"", proof_mode: str = "core"):
+    """为一条响应生成真实 SP1 证明（或宿主校验），并签发绑定它的证书。
+
+    ``nonce`` 是客户端事先出的挑战值（P0-2）：它随响应一起进电路，产出
+    ``response_binding``，证书的 ``challenge`` 块把它公开出来。
+    """
     policy = ic.load_policy(REPO / CONTENT_PACK)
     spec = compile_policy(policy)
     zk_dir = out_dir / "zk"
@@ -98,7 +104,8 @@ def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
     vectors = zk_dir / "vectors.json"
     vectors.write_text(json.dumps({"vectors": [{
         "name": policy.id, "response": response,
-        "spec_canonical": spec_canonical_text(spec)}]}, indent=2))
+        "spec_canonical": spec_canonical_text(spec),
+        "nonce": list(nonce)}]}, indent=2))
     results = zk_dir / "results.json"
     proof = zk_dir / "proof.bin"
     if no_prove:
@@ -120,8 +127,37 @@ def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
     got = json.loads(results.read_text())[0]
     outcome = {k: v for k, v in got.items() if k not in ("name", "mode")}
     payload = cert.build_payload(policy.id, policy.version, spec, "public", outcome,
-                                 vkey_hash, proof_sha, public_values_sha256=pv_sha)
-    return cert.sign_payload(payload, cert.DEMO_KEY), policy.id, proof_rel, outcome["passed"]
+                                 vkey_hash, proof_sha, public_values_sha256=pv_sha,
+                                 challenge=challenge.challenge_block(
+                                     nonce, outcome["response_binding"]))
+    env = cert.sign_payload(payload, cert.DEMO_KEY)
+    return env, policy.id, proof_rel, outcome["passed"]
+
+
+def challenge_experiment(env: dict, delivered: str) -> bool:
+    """挑战流程的收尾核对（P0-2）：用**送达的 T′** 离线验绑定。
+
+    三件事一起演示，缺一不可：
+      - 正确的 T′ 通过（绑定确实能用）；
+      - 换一条 T′ 失败（**这就是中间人换货被抓住的地方**）；
+      - 同一个 nonce 配另一条响应也算出的绑定不同 ⇒ 换 nonce 同样失败。
+    """
+    payload = cert.envelope_payload(env)
+    ch = payload.get("challenge") or {}
+    nonce_hex, binding = ch.get("nonce"), ch.get("response_binding")
+    ok_delivered = challenge.check_challenge(payload, delivered)
+    ok_tampered = not challenge.check_challenge(payload, delivered + " (被替换)")
+    ok_nonce = False
+    if isinstance(nonce_hex, str) and isinstance(binding, str):
+        nonce = challenge.parse_nonce(nonce_hex)
+        other = bytes(len(nonce))  # 另一个挑战值（全零），必然与随机 nonce 不同
+        ok_nonce = (other != nonce
+                    and challenge.verify_binding(nonce, delivered, binding)
+                    and not challenge.verify_binding(other, delivered, binding))
+    ok = ok_delivered and ok_tampered and ok_nonce
+    print(f"[{'PASS' if ok else 'FAIL'}] challenge delivered_T'_ok={ok_delivered} "
+          f"tampered_T'_rejected={ok_tampered} wrong_nonce_rejected={ok_nonce}")
+    return ok
 
 
 def main() -> int:
@@ -130,6 +166,8 @@ def main() -> int:
     ap.add_argument("--no-prove", action="store_true", help="skip the real SP1 proof")
     ap.add_argument("--proof-mode", choices=["core", "compressed", "groth16", "plonk"],
                     default="core", help="core (default) or compressed for verifier-only audit")
+    ap.add_argument("--nonce", default="auto",
+                    help="挑战值：auto（默认，现场生成）| none（不绑定）| <hex>")
     ap.add_argument("--rpc", default=None, help="EVM RPC：把每张证书摘要同时登记上链")
     ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
     ap.add_argument("--private-key", default=None, help="上链提交私钥（默认 Anvil #0）")
@@ -158,13 +196,17 @@ def main() -> int:
     for env in guard.result_certificates:
         session_entries.append({"kind": "tool-result", "policy_pack": CONTENT_PACK, "envelope": env})
 
-    # ---- 3) zk 路径（真实 SP1 证明） ----
+    # ---- 3) zk 路径（真实 SP1 证明 + 真实挑战流程） ----
+    # 挑战由**客户端**（这里是扮演该角色的 demo）先出，证明方只能照做 ——
+    # 这正是 P0-2 想表达的信任方向：出题权在验证方手里。
+    nonce = ic.resolve_nonce(args.nonce)
     zk_env, zk_policy, proof_rel, zk_passed = zk_path(out_dir, CLEAN_REPLY, vkey,
-                                                      args.no_prove, args.proof_mode)
+                                                      args.no_prove, nonce, args.proof_mode)
     entry = {"kind": "zk", "policy_pack": CONTENT_PACK, "envelope": zk_env}
     if proof_rel:
         entry["proof"] = proof_rel
     session_entries.append(entry)
+    ok_challenge = challenge_experiment(zk_env, CLEAN_REPLY)
 
     # ---- 4) 把每张证书锚定进账本（可选：同时上链） ----
     backend = anchor.backend_from_env(ledger, rpc_url=args.rpc, contract=args.contract,
@@ -192,10 +234,17 @@ def main() -> int:
             "stream_certs": sum(1 for e in session_entries if e["kind"] == "stream"),
             "blocked_tool_calls": getattr(guard, "_blocked", []),
             "zk_passed": zk_passed,
+            "challenge_bound": ok_challenge,
             "ledger_ok": ok_chain,
             "on_chain": on_chain["n"],
         },
     }
+    # 挑战坐标（nonce + 绑定）是**公开**的：谁持有一条候选响应 T′，都能凭它离线
+    # 核对「这条 T′ 是不是被证明的那条」。刻意不把 T 本身写进会话包 —— 演示里它
+    # 是公开的，但真实场景下那正是要被保护的内容。
+    zk_ch = cert.envelope_payload(zk_env).get("challenge")
+    if zk_ch:
+        session["challenge"] = zk_ch
     if on_chain["n"]:
         # 第三方验证只需公开坐标：把 RPC + 合约地址写进 session
         session["chain"] = {"rpc_url": backend.rpc_url, "contract": on_chain["contract"],
@@ -208,6 +257,9 @@ def main() -> int:
           f"(stream={session['summary']['stream_certs']})")
     print(f"blocked tool calls: {session['summary']['blocked_tool_calls']}")
     print(f"zk proof    : {proof_rel or '(skipped: --no-prove)'}  passed={zk_passed}")
+    if zk_ch:
+        print(f"challenge   : nonce={zk_ch['nonce'][:16]}… "
+              f"response_bound={ok_challenge}")
     print(f"ledger      : {ledger} chain={reason}")
     if on_chain["n"]:
         print(f"on-chain    : {on_chain['n']}/{len(session_entries)} anchored on "
@@ -215,7 +267,7 @@ def main() -> int:
     else:
         print("on-chain    : skipped (no --rpc/--contract; pass them to anchor on a real chain)")
     print("\nverify with: python3 scripts/verify_session.py --session " + str(out_dir / "session.json"))
-    return 0 if ok_chain else 1
+    return 0 if (ok_chain and ok_challenge) else 1
 
 
 if __name__ == "__main__":

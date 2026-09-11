@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（15 个模块，143 个用例）与 `bench/`（3 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（17 个模块，184 个用例）与 `bench/`（3 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,7 +8,7 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover tests -v      # 期望 143 passed, 3 skipped
+python3 -m unittest discover tests -v      # 期望 184 passed, 5 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
@@ -16,8 +16,10 @@ python3 -m unittest discover tests -v      # 期望 143 passed, 3 skipped
 | `test_dsl` | 23 | 领域模型、六类规则的通过/违规矩阵、`PolicyError` 路径 |
 | `test_nfa` | 7 | 正则子集解析、NFA 构造、`match_search` 与 `re` 的行为对照、fail-fast |
 | `test_pii` | 8 | 四个 PII 模式的命中/漏报、IBAN MOD-97 校验位 |
-| `test_serialize` | 3 | serde 外部标签枚举形状、未知 kind 抛 `NotImplementedError` |
+| `test_serialize` | 9 | serde 外部标签枚举形状、未知 kind 抛 `NotImplementedError`、`spec_canonical` 字节稳定 |
 | `test_commit` | 12 | 承诺、私有输出、掩码覆盖、脱敏、证据开示 |
+| `test_policy_binding` | 16 | **P0-1**：策略绑定三方比对；「空策略证明 + 真策略哈希」攻击回归；未入电路的 kind **fail-closed** |
+| `test_binding` | 19 | **P0-2**：挑战-响应绑定（①正确对通过 ②换 T 拒 ③换 nonce 拒 ④空 nonce 独立域）、`NonceStore` 重放、Python↔Rust 逐字节对齐、带挑战证书端到端 |
 | `test_cert` | 4 | 证书载荷、`cert_digest` 稳定性、签名与篡改拒绝 |
 | `test_agent` | 5 | `AgentMonitor` 两条路径、`mock_agent` 确定性、LangGraph 适配 |
 | `test_frameworks` | 26 | LangChain 回调（流式链/篡改/早停）、`guard_node`、`astream_events` |
@@ -28,14 +30,18 @@ python3 -m unittest discover tests -v      # 期望 143 passed, 3 skipped
 | `test_ablation` | 5 | pike ≡ naive（Python 与 Rust 两侧） |
 | `test_verifier_only` | 5 | `prefer_verifier_only` 三条件、core 不走近路 |
 | `test_demo_e2e` | 2 | 端到端会话产物结构 |
-| **合计** | **143** | |
+| **合计** | **184** | |
 
-### 3 个 skip（都是设计内的）
+### 5 个 skip（都是设计内的）
 
 | skip | 原因 | 怎么启用 |
 |---|---|---|
 | `test_verifier_only` 中 2 例 | `circuits/testdata/audit_proof/` 没有 compressed fixture | 在 ≥16 GB 机器上跑 `SP1_PROVER=cpu bash scripts/make_audit_proof.sh` |
 | `test_frameworks`（或 `test_mcp`）中 1 例 | 依赖已安装而用例本身是「缺依赖时的行为」 | 设计如此，装了框架就会 skip |
+| `test_policy_binding` 中 2 例 | 「证明层」用例默认关闭（每例真出一次 core 证明，~2 分钟） | `POP_TEST_PROOF=1 python3 -m unittest tests.test_policy_binding` |
+
+> `test_binding` 的 19 例**全部实际执行**：它靠 `pop-script --check`（秒级、不出证明）做
+> Python↔Rust 逐字节比对，不需要真证明，因此不受 `POP_TEST_PROOF` 门控。
 
 > 这是当前环境下的计数（`langchain`/`langgraph`/`mcp` 与 `pop-script`/`pop-verify` 均已安装，
 > 因此真实框架用例与 Rust 路径用例**实际执行**了，而不是跳过）。
@@ -67,7 +73,8 @@ CI（`.github/workflows/ci.yml`）跑的是**最轻的一档**：Python 套件 +
 | Content privacy | `test_commit.py::TestPrivateOutput`（无明文泄露）、`private_demo` 的 `leak` 实验 |
 | Redaction soundness | `test_commit.py::TestMaskCoverage`（伪造 span → `mask_covered=false`） |
 | Evidence unforgeability | `test_commit.py::TestEvidenceOpening`（篡改开示 → 失败） |
-| Provenance | `scripts/verify_cert.py` 的 `policy_hash`/`vkey`/`proof_sha256` 卡；`test_cert.py` |
+| Provenance | `scripts/verify_cert.py` 的 `policy_hash`/`vkey`/`proof_sha256` 卡；`test_cert.py`；`test_policy_binding.py`（P0-1 攻击回归） |
+| Response binding (A6) | `scripts/verify_cert.py --response` 卡；`test_binding.py`（换 T′/换 nonce/域分离）；`demo_e2e` 的 challenge 实验 |
 | Ledger integrity | `test_anchor.py`（链篡改检出）、`verify_session.py::ledger_chain` |
 | Stream chain | `test_frameworks.py`（链路验证/篡改/早停） |
 | 链上锚定 | `test_anchor_chain.py`（离线 fake + anvil e2e）、`anchor_e2e.sh` 的 `chain_anchored` 与反例 |
@@ -195,7 +202,7 @@ SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **143 passed / 3 skip**、`cross_validate` host 14/14 + prove 14/14。
+  当前验收判据是 **184 passed / 5 skip**、`cross_validate` host 14/14 + prove 14/14。
 
 ---
 

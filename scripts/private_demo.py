@@ -26,7 +26,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import commit, pii
+from policydsl import challenge, commit, pii
 from policydsl.compile import compile_policy
 from policydsl.model import Policy, Rule
 from policydsl.serialize import spec_canonical_text
@@ -47,18 +47,22 @@ def build_case() -> dict:
     mask = commit.mask_from_patterns([pii.PII_PATTERNS["email"]], response)
     redacted = commit.redact(response, mask)
     spans = commit.spec_spans(spec, response)
-    golden = commit.private_output(spec, response, mask, redacted, spans)
+    # 一次性挑战值（P0-2）。私有模式正是它最要紧的地方：验证者拿不到 T，
+    # 只有 nonce + 一条送达的 T′ 可以核对。
+    nonce = challenge.new_nonce()
+    golden = commit.private_output(spec, response, mask, redacted, spans, nonce=nonce)
     vector = {
         "name": policy.id,
         "response": response,
         "spec_canonical": spec_canonical_text(spec),
         "private": True,
+        "nonce": list(nonce),
         "mask": mask,
         "redacted": redacted,
         "spans": [list(s) for s in spans],
     }
     return {"policy": policy, "spec": spec, "response": response, "redacted": redacted,
-            "mask": mask, "spans": spans, "golden": golden, "vector": vector}
+            "mask": mask, "spans": spans, "nonce": nonce, "golden": golden, "vector": vector}
 
 
 def run_pop(check_mode: bool, vectors: Path, out: Path) -> None:
@@ -76,6 +80,9 @@ def compare_private(mode: str, name: str, golden: dict, got: dict) -> bool:
     s_rules = sorted((v["rule"], v["kind"], v["evidence_commitment"]) for v in got["violations"])
     checks = {
         "passed": got["passed"] == golden["passed"],
+        # 响应绑定（P0-2）必须与承诺一样逐字节对齐：验证方是用 Python 侧重算的
+        # 绑定去核对证明公开值的，两端算法一分叉，核对就永远失败（或永远通过）。
+        "response_binding": got["response_binding"] == golden["response_binding"],
         "response_commitment": got["response_commitment"] == golden["response_commitment"],
         "violations": g_rules == s_rules,
         "redaction": (got["redaction"] or {}) == (golden["redaction"] or {}),
@@ -104,14 +111,29 @@ def leak_experiment(case: dict, public_out: dict) -> bool:
 
 
 def binding_experiment(case: dict) -> bool:
-    """绑定实验：承诺确定性、不同输入不同承诺、伪造脱敏被拒。"""
+    """绑定实验：承诺确定性、不同输入不同承诺、伪造脱敏被拒，
+    以及挑战-响应绑定（P0-2）的三条性质。"""
     a = commit.commitment(case["response"])
     deterministic = a == commit.commitment(case["response"])
     distinct = a != commit.commitment(case["response"] + "x")
     forged_ok = commit.redaction_ok(case["response"], "Q" + case["redacted"][1:], case["mask"])
-    ok = deterministic and distinct and not forged_ok
+
+    # 挑战-响应绑定：证明承诺的那条绑定，能用 (nonce, T′) 打开；换 T′ 或换 nonce 都打不开。
+    nonce = case["nonce"]
+    binding = case["golden"]["response_binding"]
+    opens = commit.verify_binding(nonce, case["response"], binding)
+    other_t = not commit.verify_binding(nonce, case["response"] + "x", binding)
+    other_n = not commit.verify_binding(bytes(len(nonce)), case["response"], binding)
+    # 域分离：空 nonce 与真 nonce 算出的绑定不同（长度前缀让拼接无歧义）
+    domain = (commit.response_binding(b"", case["response"])
+              != commit.response_binding(nonce, case["response"]))
+    challenge_ok = opens and other_t and other_n and domain
+
+    ok = deterministic and distinct and not forged_ok and challenge_ok
     print(f"[{'PASS' if ok else 'FAIL'}] binding   deterministic={deterministic} "
           f"distinct={distinct} forged_rejected={not forged_ok}")
+    print(f"[{'PASS' if challenge_ok else 'FAIL'}] challenge (T',nonce)_opens={opens} "
+          f"wrong_T'_rejected={other_t} wrong_nonce_rejected={other_n} domain_separated={domain}")
     return ok
 
 
@@ -142,7 +164,7 @@ def main() -> int:
     # 负例：伪造见证区间（未覆盖掩码）
     bad_vector = {**case["vector"], "name": "private-demo-badspan", "spans": [[0, 1]]}
     bad_golden = commit.private_output(case["spec"], case["response"], case["mask"],
-                                       case["redacted"], [(0, 1)])
+                                       case["redacted"], [(0, 1)], nonce=case["nonce"])
 
     out_dir = REPO / "scripts" / "examples" / "out" / "private"
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -32,6 +32,9 @@ struct VectorIn {
     spec_canonical: String,
     #[serde(default)]
     private: bool,
+    /// 一次性挑战值（P0-2）。JSON 里是字节数组，与 `mask`/`spans` 的写法一致。
+    #[serde(default)]
+    nonce: Vec<u8>,
     #[serde(default)]
     mask: Vec<u32>,
     #[serde(default)]
@@ -57,6 +60,7 @@ impl VectorIn {
             Job::Private(PrivateRequest {
                 spec_canonical: self.spec_canonical.clone(),
                 response: self.response.clone(),
+                nonce: self.nonce.clone(),
                 mask: self.mask.clone(),
                 redacted: self.redacted.clone(),
                 spans: self.spans.clone(),
@@ -67,6 +71,7 @@ impl VectorIn {
             Job::Public(ProofRequest {
                 spec_canonical: self.spec_canonical.clone(),
                 response: self.response.clone(),
+                nonce: self.nonce.clone(),
                 tool_calls: self.tool_calls.clone(),
                 token_count: self.token_count,
             })

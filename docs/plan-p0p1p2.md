@@ -222,7 +222,57 @@ def test_empty_policy_commits_empty_hash_not_real(self):
 
 ---
 
-### P0-2 挑战-响应绑定
+### P0-2 挑战-响应绑定 —— ✅ 已完成（2026-09-10）
+
+> **状态**：电路与参考层两侧都落地，`tests/test_binding.py` 19 项全绿（四种 nonce
+> 长度与 Python golden 逐字节对齐），全部工件按新 ELF 重新生成并端到端验证通过。
+>
+> **与下方设计稿的偏差（以实现为准）**
+> 1. **绑定公式加了长度前缀**：`SHA256(BIND_DOMAIN ‖ u32_be(len(nonce)) ‖ nonce ‖ T_utf8)`。
+>    没有它，`(nonce=b"ab", T="cd")` 与 `(nonce=b"abcd", T="")` 会哈希成同一个值 ——
+>    拼接的经典歧义。挑战值通常定长，但把无歧义性寄托在调用方自觉上不是好买卖。
+>    代价是 4 字节；收益是 `(nonce, T) → 字节串` 恒为单射。
+> 2. `BIND_SCHEME = "pop-bind-v1"` 一并写进证书的 `challenge` 块，便于将来换代时
+>    验证方**从证书本身**看出该用哪套算法，而不是猜。
+> 3. `ProofOutput` **和** `PrivateOutput` 都加 `response_binding`（原设计只提私有模式）。
+>    公开模式下 T 同样是证明的私有输入、证书里也不出现 T，同样需要这一绑定。
+> 4. `response_commitment` **保留原义**（`SHA256(T)`，即「存在某条通过判定的 T」），
+>    没有被「升级」成绑定值 —— 二者回答的是不同的问题，合并会让「这到底是哪条 T」
+>    这个区分消失。会话绑定由 `response_binding` 单独承担。
+> 5. `challenge.py` 多了一个 `NonceStore`（追加式「已用 nonce」记录）。一次性是协议
+>    使用方的责任，给个语义正确、离线可跑的最小参考比只写一句注释强。
+> 6. `cert.ai_act_claims` 增加 `art12_response_bound`，**如实**反映本证书是否带
+>    challenge 块 —— 没有它时不能默认成 True。
+>
+> **验收证据**（本机实跑）
+> ```
+> python3 -m unittest discover tests                     → Ran 184 tests, OK (skipped=5)
+> python3 -m unittest tests.test_binding -v              → Ran 19 tests, OK
+> python3 scripts/cross_validate.py --no-prove           → host 14/14  PASS
+> python3 scripts/private_demo.py                        → challenge (T',nonce)_opens=True
+>                                                          wrong_T'_rejected=True
+>                                                          wrong_nonce_rejected=True
+>                                                          domain_separated=True
+> python3 scripts/verify_cert.py ... --response T.txt    → [PASS] response_binding
+>                                                          — 送达的 T′ 就是被证明的 T
+> python3 scripts/verify_session.py --session …/session.json
+>                                                        → [PASS] certificates_response_binding
+>                                                          [PASS] zk_proof … + response binding
+> ```
+>
+> 反例对照（同一条命令，只把 `--response` 换成另一条响应）：
+> ```
+> [PASS] policy_hash     …四路一致…
+> [FAIL] response_binding MISMATCH: fceb8f96…[cert.challenge] == fceb8f96…[cert.outcome]
+>                         == 8ea38633…[response] — 送达的 T′ 与被证明的 T 对不上
+> RESULT: FAIL
+> ```
+> 这一正一反是 P0-2 的验收实质：换 T′ 后**只有**响应绑定那一卡变红，其余照旧 ——
+> 说明它确实在独立地承担「T′ == T」这件事，而不是搭便车。
+
+---
+
+> ### ↓ 以下是原始设计稿（保留备查，以本节开头的实现为准）
 
 **问题**：证明的 T ≠ 送达的 T′；私有模式下验证者永远看不到 T，无法自证绑定。
 
@@ -244,11 +294,21 @@ def new_nonce() -> bytes:   # 32 字节 CSPRNG，一次性
     return secrets.token_bytes(32)
 ```
 
-- 私有模式下 `response_commitment` 语义升级为「绑定到本次会话的承诺」；保留 `commitment(T)` 供兼容。
-- `scripts/issue_cert.py` / `demo_e2e.py` 接受 `--nonce`；`verify_session.py` 加 `--nonce` 做核对。
+- ~~私有模式下 `response_commitment` 语义升级为「绑定到本次会话的承诺」；保留 `commitment(T)` 供兼容。~~
+  （**未采纳**，见开头偏差 4：两个字段并置而非合并。）
+- `scripts/issue_cert.py` / `demo_e2e.py` 接受 `--nonce`；`verify_cert.py` 加 `--response` / `--nonce` 做核对
+  （`verify_session.py` 不做重算，只对会话内证书做自洽比对）。
 - `scripts/demo_e2e.py` 走真实挑战流程（客户端生成 → 传 → 验证）。
 
 **验收** `tests/test_binding.py`：① 正确 (nonce,T) 通过；② 换 T 失败；③ 换 nonce 失败（**重放防护**）；④ 空 nonce 与带 nonce 的绑定不同（域分离）。
+
+**验证方怎么用**：`verify_cert.py --cert ... --response T.txt` —— 新增的第 3b 卡做
+四路比对（`challenge` 块 / outcome 内嵌 / 证明公开值 / 由 T′ 与 nonce 现场重算），
+与策略绑定同构（同样要求 ≥2 个来源，缺失来源如实列出）。不给 `--response` 时那一路
+记为 `absent`，报告不会假装做过完整核对。
+
+**这一层**解决的是「送达的 T′ 是不是被证明的 T」。**不**解决的（留 P1-5）：
+`tool_calls` / `token_count` 仍是证明者自填的私有输入，工具轨迹的真伪不在绑定范围内。
 
 ---
 
@@ -282,11 +342,15 @@ class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 |---|---|---|
 | `paper §4.2` | 「keyword/length/pattern 入电路」 | 统一为 6 类（与 §5 一致） |
 | `paper §6` | 「102 全绿(1 skip)」 | 实跑值（P0 后会变） |
-| `docs/security-model.md:65` | `host/prove 7/7` | `14/14` |
+| `docs/security-model.md:65` | `host/prove 7/7` | ✅ 已改为 `14/14`（2026-09-10） |
 | `docs/eu-ai-act-mapping.md` | 工具路径「`zk:false`」 | 已入电路（P1-5 后语义再更新） |
-| **全仓库** | **未声明 ZK 性质** | 查证 SP1 v6.7 core proof 的 ZK 性并**显式声明**；若 core 非 ZK，私有模式须切到 ZK 模式 → 这是私有模式安全性的**前提**，必须有定论 |
+| **全仓库** | **未声明 ZK 性质** | ✅ **已查证（2026-09-11）**，结论见 [`sp1-zk-audit.md`](sp1-zk-audit.md)：**core/compressed 不满足零知识性**（两类独立证据：Succinct 安全模型明文 + 本机 SLOP 栈源码零盲化命中；另有实测佐证）；`groth16`/`plonk` 是唯一可能隐藏见证的模式（包装器层面声明、未被审计评估、非后量子、本机 12 GB 出不了证）；原生 ZK 的 `slop-veil` 已发布但未被任何证明路径依赖。**后果**：私有模式口径收紧为「公开值不泄露明文」，不再宣传「证明工件不泄露见证」；证书待加 `binding.proof_mode` 诚实标注（列为后续动作，非阻塞） |
 
 > P0-4 的最后一条是**调研任务**，不是文书任务，但它决定 §4.3（双隐私模式）能否成立，优先级等同 P0-1。
+> **已查证（2026-09-11）**：健全性成立；零知识性对 `core`/`compressed` **不成立**。
+> 私有模式**仍然成立**，但成立的是「承诺隐私」（公开值不含明文）这一较弱性质；
+> 另外核查还发现一个**与 SP1 无关的设计层结论**——对低熵 `T`，「响应绑定」与「响应内容隐藏」互斥
+> （`response_binding` 必须公开可重算 ⇒ 必然是一个离线猜测-验证 oracle）。详见 `sp1-zk-audit.md` §4。
 
 ---
 
@@ -512,7 +576,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 | 风险 | 概率 | 影响 | 缓解 |
 |---|---|---|---|
 | P0-1 的 20 个调用点替换引入回归 | 中 | 高 | 一次性完成 + `cross_validate` 作为总闸门（改判定逻辑后第一件事） |
-| **SP1 core proof 非 ZK → 私有模式不成立** | **未知** | **致命** | P0-4 优先查证；若否则切 ZK 模式并重测成本 |
+| ~~SP1 core proof 非 ZK → 私有模式不成立~~ | **已查证** | **降级：中** | **已核实（2026-09-11）**：core/compressed 确实非 ZK（见 [`sp1-zk-audit.md`](sp1-zk-audit.md)），但**私有模式不因此不成立**——它本来成立的就是较弱的「承诺隐私」（公开值不含明文，Leak 实验可测），而非「见证隐藏」。风险从「致命」降为「叙事风险」：须收紧口径 + 证书加 `proof_mode` 标注。真正需要 groth16 的场景（对**高熵** `T` 的见证隐藏）本机无法验证，标注为未实测 |
 | **ezkl 依赖栈调不通（D3 已选全量集成）** | **高** | **高** | §8.0 提前 W1 并行启动；离线 wheel 缓存；§9.1 的回退方案（特征在 SP1 内算，ezkl 只证 head）同样健全 |
 | **语义规则的「特征」被证明者声明** | 中 | **致命** | §9.0 的②：特征必须图内/电路内派生；`test_declared_features_rejected` 锁死 |
 | groth16 需 ≥64 GB，本机不可达 | 高 | 高 | D2 已定：云机一次性产出，结果入库 |
@@ -651,7 +715,14 @@ verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 
 ## 9. 下一步
 
-**关键路径**：`P0-1`（改动小、可验证、且直接产出论文的「绑定引理」）→ `P0-4`（ZK 性质查证，决定私有模式是否成立）
+**进度（2026-09-11）**：`P0-1` ✅ → `P0-2` ✅ → **`P0-4` 的 ZK 性质查证 ✅ 已完成**
+（结论见 [`sp1-zk-audit.md`](sp1-zk-audit.md)：健全性成立；`core`/`compressed` **非 ZK**；
+私有模式口径收紧为「承诺隐私」，`docs/security-model.md` §2/§5 已同步更新）。
+
+下一步是 **`P0-3` Ed25519**（`cryptography` 已升到 50.0.1，随时可开工），
+随后 `P0-4` 剩余的口径一致项（`paper §4.2/§6` 数字）与证书 `binding.proof_mode` 标注。
+
+原关键路径：`P0-1`（改动小、可验证、且直接产出论文的「绑定引理」）→ `P0-4`（ZK 性质查证，决定私有模式是否成立）
 → `P0-2` → `P0-3` → `P1-5` → …
 
 **并行启动**（与 P1 无耦合，越早越好）：

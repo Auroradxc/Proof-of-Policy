@@ -79,6 +79,7 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
 | `negative` | 伪造见证区间 → `mask_covered=false`（证明这个性质不是恒真） |
 | `leak` | 公开输出里**没有**响应/证据明文；承诺是 64 位十六进制且 ≠ 原响应 |
 | `binding` | 承诺确定性、不同输入不同承诺、伪造脱敏被拒 |
+| `challenge`（第二行） | P0-2 绑定：`(T′, nonce)` 能打开绑定、换 `T′` 拒、换 nonce 拒、空 nonce 域分离 |
 | `opening` | 证据开示自洽 + 承诺与证明输出一致 + 篡改被拒 |
 | `prove` | 同一任务真实证明后复查（`--no-prove` 跳过） |
 
@@ -87,8 +88,14 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
 ```bash
 python3 scripts/issue_cert.py --pack P --response R --out-dir D \
     [--mode public|private] [--proof-mode core|compressed|groth16|plonk] \
+    [--nonce auto|none|<hex>] \
     [--no-prove] [--ledger L] [--rpc URL --contract 0x…] [--private-key KEY]
 ```
+
+`--nonce` 默认 `auto`：现场 `challenge.new_nonce()` 出一个 32 字节随机挑战值，
+并把它写进向量（电路据此算 `response_binding`）与证书 `challenge` 块。
+`none` 表示空挑战（只绑定「空 nonce」，退化为旧行为）；也可以传一个十六进制串
+去**复现**某次会话。出证后会打印 `nonce` 与 `resp_binding` 两行，便于核对。
 
 产物：`vectors.json`、`results.json`、`proof.bin`（+ `.meta.json`/边车）、
 `cert.json`（信封）、`payload.json`（明文载荷，便于阅读）、`anchor.json`（锚定条目）。
@@ -104,7 +111,8 @@ python3 scripts/issue_cert.py --pack P --response R --out-dir D \
 ### 2.5 `verify_cert.py` —— 第三方验证单张证书
 
 ```bash
-python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] [--rpc URL --contract 0x…]
+python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] \
+    [--response T.txt] [--nonce HEX] [--rpc URL --contract 0x…]
 ```
 
 检查项（逐行 PASS/FAIL）：
@@ -113,12 +121,19 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 |---|---|
 | `signature` | DSSE 信封签名 |
 | `policy_hash` | **重新编译**策略包并比对（不是从证书里读） |
+| `response_binding` | P0-2：证书 `challenge` 块 / `outcome` 内嵌 / 证明公开值 / **由送达的 `--response` 现场重算** 四者比对（≥2 来源才算过） |
 | `anchor` | 账本链完整 + 摘要存在于账本 |
 | `anchor_on_chain`（可选） | 链上 `anchoredAt` 读回，且与本地 meta 的 `chain_ts` 一致 |
 | `proof_verify` / `proof_outcome` / `proof_vkey` / `proof_sha256` | 证明有效 + 承诺的 outcome/vkey/工件哈希都匹配 |
 | `verify_only` / `public_values` / `vkey_hash` | 走快路径时的对应三项 |
 
 签名失败会**提前返回**（`print_fail`），因为后面所有检查都建立在「载荷可信」之上。
+
+`--response` 是**你手上真正收到的那条 T′**。给了它，验证器就现场重算
+`commit.response_binding(nonce, T′)` 并和解出来的绑定比 —— 这是整套流程里
+唯一一处「证明的 T」与「送达的 T′」被真正对上的地方（P0-2 要解决的正是这个）。
+不给也能跑：此时只做证书内部两个来源的自洽比对，报告里**不会**声称已核对送达内容。
+`--nonce` 是给演示重放用的覆盖项（比如故意拿另一个 nonce 去重算，看它被拒）。
 
 ### 2.6 `demo_e2e.py` —— 一键真实会话
 
@@ -128,11 +143,15 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
    中途泄露 `sk-…` 触发**早停**与链式证书；
 2. **MCP 工具路径**：真实 `stdio_client` 起 `tests/mcp_echo_server.py`，
    调用 `search_kb`（干净）、`dump_config`（秘密结果）、带 `token` 参数的调用（**飞行前拦截**）；
-3. **zk 路径**：对一条响应真实出证（`zk_path`），vkey 哈希与证明哈希绑进证书；
+3. **zk 路径**：对一条响应真实出证（`zk_path`）——**走完整挑战流程**：客户端先出
+   `nonce = challenge.new_nonce()`，把它喂进向量与证书 `challenge` 块（`--nonce` 可覆盖），
+   出证后再用「送达的 T′」离线核对绑定（`challenge_experiment`：`T′` 能开、
+   篡改后的 `T′` 打不开、换 nonce 打不开），vkey 哈希与证明哈希绑进证书；
 4. **锚定**：每张证书的 `cert_digest` 入账本；给了 `--rpc/--contract` 就**同时上链**
    （成功后回写 `meta.on_chain`）。
 
-产出 `session.json`（含 `certificates` 列表、`summary`、以及有链时的 `chain` 坐标），
+产出 `session.json`（含 `certificates` 列表、`summary`（多一项 `challenge_bound`）、
+顶层的 `challenge` 记录、以及有链时的 `chain` 坐标），
 末尾提示用 `verify_session.py` 验证。**这是「12 张证书」的来源**。
 
 ### 2.7 `verify_session.py` —— 第三方验证整个会话
@@ -210,6 +229,7 @@ bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 | 快速验证一套改动没破坏一致性 | `python3 -m unittest discover tests` + `cross_validate.py --no-prove` |
 | 只看结论、不出证 | 给任意脚本加 `--no-prove`（走 `pop-script --check`） |
 | 第三方复核一张证书 | `verify_cert.py --cert … --pack … --ledger … [--proof …]` |
+| **核对送达的 T′ 就是被证明的 T** | 上一条再加 `--response T′.txt`（P0-2，见 §2.5） |
 | 全链路最小复现 | `bash scripts/anchor_e2e.sh` |
 | 生成论文/文档用的截图 | `python3 scripts/make_shots.py --run-demo` |
 
@@ -237,6 +257,7 @@ bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 |---|---|
 | `tests/test_verifier_only.py` | `verify_cert.py` / `verify_session.py` 的快路径判定 |
 | `tests/test_demo_e2e.py` | `demo_e2e.py` 的会话产物结构 |
+| `tests/test_binding.py::TestChallengedCertificateEndToEnd` | `issue_cert.py --nonce` → `verify_cert.py --response` 的完整闭环（含失败分支） |
 | `tests/test_anchor_chain.py::TestAnvilEndToEnd` | `deploy_anchor.py` 的部署与读回 |
 | （间接）`tests/test_rules_incircuit.py` | `cross_validate.py` 所用路径的单元版 |
 

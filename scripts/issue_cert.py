@@ -2,15 +2,22 @@
 """阶段五：为一条响应签发合规证书，然后锚定它。
 
 流水线：
-  策略包 + 响应 --(公开：SP1 证明 / 私有：承诺证明)--> 公开值
-  公开值 + policy_hash + vkey_hash + ts --(DSSE 签名)--> cert.json
+  挑战 nonce（默认现场生成） + 策略包 + 响应
+        --(公开：SP1 证明 / 私有：承诺证明)--> 公开值（含 response_binding）
+  公开值 + policy_hash + vkey_hash + ts + challenge 块 --(DSSE 签名)--> cert.json
   证书摘要 --> 锚定账本（仅追加、防篡改）；给了 --rpc/--contract 时**同时**上链
+
+关于 `--nonce`（P0-2）：证明只说明「某条 T 满足 π」，从不说 T 是哪一条。把
+挑战值随响应一起承诺进公开值后，持 T′ 与 nonce 的人可以离线核对「被证明的 T」
+就是「送达的 T′」。默认 `auto`（现场取一个 32 字节 CSPRNG 挑战值）；`none`
+表示不绑定（仅用于对照/兼容，会如实写进证书的 ai_act 声明）。
 
 用法：
   SP1_PROVER=cpu python3 scripts/issue_cert.py \
       --pack policy_packs/eu_ai_act_v1.json \
       --response scripts/examples/eu_agent_reply.txt \
-      --out-dir scripts/examples/out/cert_public [--mode public|private] [--no-prove]
+      --out-dir scripts/examples/out/cert_public [--mode public|private] [--no-prove] \
+      [--nonce auto|<hex>|none]
 
 链上锚定（可选，需要一条 EVM 链 + 已部署的 contracts/Anchor.sol）：
   python3 scripts/issue_cert.py ... --rpc http://127.0.0.1:8545 --contract 0x...
@@ -30,7 +37,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, commit
+from policydsl import anchor, cert, challenge, commit
 from policydsl.compile import compile_policy
 from policydsl.model import Policy, Rule
 from policydsl.serialize import spec_canonical_text
@@ -44,6 +51,19 @@ def load_policy(path: Path) -> Policy:
     rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
              for i, r in enumerate(d["rules"])]
     return Policy(d["id"], d.get("version", "0.1.0"), rules=rules)
+
+
+def resolve_nonce(text: str) -> bytes:
+    """把 `--nonce` 的取值解析成挑战值字节。
+
+    ``auto``（默认）= 现场生成；``none`` = 空（不绑定）；其余按十六进制解析。
+    """
+    t = (text or "auto").strip().lower()
+    if t in ("auto", ""):
+        return challenge.new_nonce()
+    if t == "none":
+        return b""
+    return challenge.parse_nonce(text)
 
 
 def sha256_file(path: Path) -> str:
@@ -67,6 +87,8 @@ def main() -> int:
                     default="core", help="core (fast, default) or compressed for verifier-only audit")
     ap.add_argument("--ledger", type=Path, default=REPO / "scripts" / "examples" / "out" / "ledger.jsonl")
     ap.add_argument("--no-prove", action="store_true", help="host-check only (no SP1 proof)")
+    ap.add_argument("--nonce", default="auto",
+                    help="挑战值：auto（默认，现场生成 32 字节）| none（不绑定）| <hex>")
     ap.add_argument("--rpc", default=None, help="EVM RPC：把证书摘要同时登记上链")
     ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
     ap.add_argument("--private-key", default=None, help="上链提交私钥（默认 Anvil #0）")
@@ -78,9 +100,13 @@ def main() -> int:
     out_dir = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # 挑战值：客户端/验证者给出的出题内容（默认现场生成一个一次性值）。
+    nonce = resolve_nonce(args.nonce)
+
     # 构造单个证明请求向量
     vector = {"name": policy.id, "response": response,
-              "spec_canonical": spec_canonical_text(spec)}
+              "spec_canonical": spec_canonical_text(spec),
+              "nonce": list(nonce)}
     if args.mode == "private":
         # 私有模式：附带掩码、脱敏文本与见证区间（witness spans）
         patterns = [p for c in spec["constraints"] if c["kind"] == "pattern_block"
@@ -116,8 +142,16 @@ def main() -> int:
     # 组装证书载荷（去掉 name/mode 元信息，得到纯 outcome）
     got = json.loads(results.read_text())[0]
     outcome = {k: v for k, v in got.items() if k not in ("name", "mode")}
+    # 挑战块：把 nonce 与**电路承诺的**绑定一并公开。绑定取自 outcome 而不是
+    # 现场重算 —— 证书要如实转述证明说了什么。若证明的绑定与现场重算不一致，
+    # 验证方的 response_binding 卡会当场发现（那正是它的用途）。
+    binding = outcome.get("response_binding")
+    if not isinstance(binding, str):
+        raise SystemExit("电路输出里没有 response_binding —— pop-script 是旧版本？"
+                         "（P0-2 之后它必须出现；缺了就无法把证明绑到送达的响应上）")
     payload = cert.build_payload(policy.id, policy.version, spec, args.mode, outcome,
-                                 vkey_hash, proof_sha, public_values_sha256=pv_sha)
+                                 vkey_hash, proof_sha, public_values_sha256=pv_sha,
+                                 challenge=challenge.challenge_block(nonce, binding))
     env = cert.sign_payload(payload, cert.DEMO_KEY)
     (out_dir / "cert.json").write_text(json.dumps(env, indent=2))
     (out_dir / "payload.json").write_text(json.dumps(payload, indent=2))
@@ -133,6 +167,8 @@ def main() -> int:
     print(f"policy_hash : {spec['sha256']}")
     print(f"vkey_hash   : {vkey_hash}")
     print(f"passed      : {outcome['passed']}")
+    print(f"nonce       : {challenge.nonce_hex(nonce) or '(none — 未绑定挑战)'}")
+    print(f"resp_binding: {binding}")
     print(f"cert_digest : {digest}")
     if entry.get("backend") == "rpc":
         print(f"anchor      : backend=rpc status={entry['status']} tx={str(entry.get('tx_hash'))[:18]}… "

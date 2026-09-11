@@ -46,13 +46,13 @@ pub fn main() {
 | `NfaSpec { start, accept, states }` / `NfaState { eps, edges }` / `NfaEdge { to, ranges }` | **可序列化 NFA 契约**（由 `policydsl.nfa` 产出） |
 | `PatternMode { Pike, Naive }` | 匹配模式（默认 `Pike`） |
 | `Constraint` | 六种变体的枚举（见下表） |
-| `ProofRequest { response, constraints, tool_calls, token_count }` | 公开模式输入 |
+| `ProofRequest { response, constraints, nonce, tool_calls, token_count }` | 公开模式输入（`nonce` 为 P0-2 挑战值，`serde(default)`） |
 | `Violation { rule, kind, evidence }` | 违规（证据为**字符串**） |
-| `ProofOutput { passed, violations }` | 公开模式输出（提交为公开值） |
+| `ProofOutput { policy_hash, response_binding, passed, violations }` | 公开模式输出（提交为公开值） |
 | `PrivateViolation { rule, kind, evidence_commitment }` | 私有模式的违规（只有承诺） |
 | `RedactionProof { redacted_commitment, mask_count, redaction_ok, mask_covered }` | 脱敏证明 |
-| `PrivateRequest { response, constraints, mask, redacted, spans, tool_calls, token_count }` | 私有模式输入 |
-| `PrivateOutput { response_commitment, passed, violations, redaction }` | 私有模式输出 |
+| `PrivateRequest { response, constraints, nonce, mask, redacted, spans, tool_calls, token_count }` | 私有模式输入（`nonce` 同上） |
+| `PrivateOutput { policy_hash, response_binding, response_commitment, passed, violations, redaction }` | 私有模式输出 |
 | `Job { Public(ProofRequest), Private(PrivateRequest) }` | 一个 ELF 服务两种模式的调度枚举 |
 | `Outcome { Public(ProofOutput), Private(PrivateOutput) }` | 顶层承诺结果 |
 
@@ -111,7 +111,7 @@ guest 读到的 `spec_canonical` 是一段**规范 JSON 字节**（`compile.cano
 | `ToolArgGuard` | `tools` 非空时限定范围；命中被禁字段即记（每个调用至多一条） | `"<tool>:<field>"` |
 | `BudgetBound` | `calls` → `tool_calls.len()`；`tokens` → `token_count.unwrap_or(0)` | `"<unit>=<total>/<budget>"` |
 
-`passed = violations.is_empty()`。
+`passed = violations.is_empty()`。此外输出里总带一条 `response_binding`（见 §2.5a）。
 
 **规范子集解析器**（必须与 Python 侧逐字节一致，见 `01` §4）：
 
@@ -130,8 +130,11 @@ violations = public.violations.map(|v| PrivateViolation {
     rule: v.rule, kind: v.kind,
     evidence_commitment: sha256_hex(&v.evidence),   // 证据明文不出电路
 });
-response_commitment = sha256_hex(&req.response);
+response_commitment = sha256_hex(&req.response);    // 只说明「存在某条 T」，不说「哪条」
 ```
+
+`policy_hash` / `response_binding` / `passed` 三项直接从 `public` 克隆 —— **两种模式承诺的
+同名字段必须逐字节相同**，否则同一份证明换个模式就能得出不同结论。
 
 脱敏证明（仅当提供了 `redacted`）：
 
@@ -146,6 +149,43 @@ RedactionProof { redacted_commitment: sha256_hex(red),
 
 `redaction_ok` 与 `anchored_full_match` 分别镜像 `commit.redaction_ok` 与 `nfa.anchored_full_match`
 （等长、掩码位为 `*`、其余不变；两端锚定且至少消耗 1 字符）。详见 [`02-privacy-commitment.md`](02-privacy-commitment.md)。
+
+### 2.5a 挑战-响应绑定 `response_binding`
+
+```rust
+pub const BIND_DOMAIN: &[u8] = b"pop-bind-v1";
+
+pub fn response_binding(nonce: &[u8], response: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(BIND_DOMAIN);
+    h.update((nonce.len() as u32).to_be_bytes());   // ← 长度前缀，见下
+    h.update(nonce);
+    h.update(response.as_bytes());
+    hex(&h.finalize())
+}
+```
+
+公开值与私有值里都有它，值一样。它与 `response_commitment` 解决**两个不同问题**：
+
+| 字段 | 公式 | 回答的问题 |
+|---|---|---|
+| `response_commitment` | `SHA256(T)` | 「**存在**某条响应通过了吗」 |
+| `response_binding` | `SHA256(domain ‖ len ‖ nonce ‖ T)` | 「通过的**是这一条** T 吗」（会话绑定） |
+
+两者都需要：只留后者，验证者无法在需要时**单独开示**「是这条 T」而不泄露 nonce 之外的
+会话结构；只留前者，就是 P0-2 之前的漏洞状态 —— 证明的 T 与送达的 T′ 毫无联系。
+
+`nonce.len()` 的 4 字节大端前缀不是装饰：没有它，
+`(nonce=b"ab", T="cd")` 与 `(nonce=b"abcd", T="")` 会哈希成同一个值，
+`(nonce, T) → 字节串` 就不是单射。加了前缀，任意长度组合都无歧义。
+
+域前缀 `BIND_DOMAIN` 同样必要：将来若用同一套原语绑定工具轨迹（P1-5），
+换一段前缀即可保证两个域的哈希**永不碰撞**。
+
+`nonce` 是 `#[serde(default)]` 的，所以旧向量（没有该字段）照样能解析，只是绑定退化成
+「空挑战的承诺」。Python 侧对应实现是 `commit.response_binding`；
+逐字节一致性由 `tests/test_binding.py::TestPythonRustParity` 真跑 `pop-script --check` 钉死
+（多种 nonce 长度，公开 + 私有两条路径）。
 
 ### 2.5 `sha256_hex`
 
@@ -191,6 +231,16 @@ RedactionProof { redacted_commitment: sha256_hex(red),
 - **`--verify`**：从 ELF 重新 `setup` 推导 vkey → 重复 `client.verify(...)` 计时 →
   读回公开值 `Outcome` → 输出 `{verified, vkey_hash, setup_seconds, verify_times_seconds, outcome}`。
   **不需要任何秘密**，这就是第三方验证的入口（也是 core 证明唯一可用的验证路径）。
+
+> ⚠️ **四种证明模式的安全性不同（P0-4 已查证，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)）**：
+> `core` / `compressed` 是**非零知识**的 STARK（Succinct 官方安全模型明文承认；
+> 源码侧 `ShardProof` 把轨迹 Merkle 根 `main_commitment` 与轨迹开值 `opened_values` 明文放进证明，
+> 整个 SLOP 栈无任何盲化）。
+> `groth16` / `plonk` 把内部 STARK 证明作为 gnark 电路的**私有见证**、只暴露 5 个公开输入，
+> 是唯一可能隐藏见证的模式 —— 但属包装器层面声明、未被审计评估、非后量子，且需 ≥16 GB 内存（本机出不了）。
+> **对本项目的影响**：**健全性不受影响**（§8 不变量全部成立）；受影响的只是
+> **私有模式能宣称什么** —— 见 [`02-privacy-commitment.md`](02-privacy-commitment.md) 与
+> `policydsl/commit.py` 的 `private_output` 文档串。
 
 ### `write_verifier_sidecar`：verifier-only 的物料
 
@@ -280,6 +330,11 @@ cd circuits/verifier && cargo build --release -p pop-verify  # 可选，审计�
 5. **`--proof-out` 只支持单向量**（多向量直接 panic）——证书的「一证一证明」模型要求如此。
 6. **区间必须排序**：`in_ranges` 假设 `ranges` 按 lo 升序；手工构造 `NfaSpec` 时若违反会得到错误结果。
 7. **`PatternBlock` 的证据按 `specs` 顺序取第一条命中**，与 Python 侧一致。
+8. **`response_binding` 两侧必须逐字节一致**（`pop_types::response_binding` ↔ `commit.response_binding`），
+   域前缀与 `len(nonce)` 大端前缀都不可省 —— 前者防跨域碰撞，后者保单射。改任一侧都要跑
+   `tests/test_binding.py::TestPythonRustParity`。
+9. **类型一改就要重建 guest**：`types`（含新增字段）变了 ⇒ ELF 变 ⇒ vkey 变 ⇒
+   `scripts/examples/out/` 下所有旧证明与证书**全部失效**，必须整体重生成。
 
 ---
 
@@ -288,6 +343,7 @@ cd circuits/verifier && cargo build --release -p pop-verify  # 可选，审计�
 | 测试 | 覆盖 |
 |---|---|
 | `tests/test_rules_incircuit.py` | 六类规则在 `--check` 下与 Python golden 逐点对齐（含规范化证据串） |
+| `tests/test_binding.py::TestPythonRustParity` | `response_binding` 在电路内与 Python 逐字节一致（公开 + 私有，多种 nonce 长度） |
 | `tests/test_ablation.py::TestRustNaivePath` | Rust 侧 `nfa_match` ≡ `nfa_match_naive` |
 | `tests/test_verifier_only.py` | `pop-verify` 的调用与快路径判定 |
 | `bench/bench_cycles.py` | `--execute` 的 cycle 数矩阵（长度 × 规则数 × pike/naive） |

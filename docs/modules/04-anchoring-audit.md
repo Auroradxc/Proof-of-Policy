@@ -179,6 +179,35 @@ def prefer_verifier_only(proof, pop_verify) -> bool:
 SP1 证明器状态 ~10 GB；这正是 `verifier-only` 想避免的）。`tests/test_verifier_only.py`
 里有一条专门的反向用例 `test_core_sidecar_does_not_take_the_fast_path`。
 
+### 5b. 绑定比对内核（`check_agreement`）
+
+`verifier.py` 的另一半职责是给「多方比对」提供一个**防空洞**的公共内核：
+
+```python
+def _committed_field(proof_result, field) -> str | None   # outcome[field] 是 str 才返回
+def committed_policy_hash(proof_result)      -> str | None
+def committed_response_binding(proof_result) -> str | None
+
+def check_agreement(sources, what) -> (bool, str)
+def check_policy_binding(sources)   == check_agreement(sources, "policy_hash")
+def check_response_binding(sources) == check_agreement(sources, "response_binding")
+```
+
+`sources` 是 `[(标签, 值或 None), …]` 的列表。判定规则是
+**「至少两个来源非 None，且它们两两相等」**：
+
+| 情况 | 结果 | 理由 |
+|---|---|---|
+| 只有 1 个来源 | **False**（`binding uncheckable`） | 单一来源是自己跟自己比，恒真 —— 这就是「空洞通过」 |
+| 0 个来源 | **False** | 无从比对 |
+| ≥2 个且全相等 | True | 独立性来自「来源互不派生」 |
+| ≥2 个但有分歧 | False（`MISMATCH: …`） | 有一方在说谎/被篡改 |
+
+缺失的来源会在详情里列为 `(absent: …)`，所以报告读起来能区分「比过了」和「没得比」。
+`verify_cert.py` 的 `policy_hash` / `response_binding` 两张卡、`verify_session.py` 的
+会话级与 zk 级绑定都走这个内核。来源标签见 `_SOURCE_LABELS`
+（含 `"cert.challenge"` 与 `"response"`）。
+
 ---
 
 ## 6. 函数级 API（`anchor.py`）

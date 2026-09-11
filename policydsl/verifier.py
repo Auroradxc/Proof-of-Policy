@@ -57,13 +57,25 @@ def prefer_verifier_only(proof: Path, pop_verify: Path) -> bool:
 # 「证书声称 == 证明承诺」则漏掉「证书声称的策略根本不是这个策略包」。
 # --------------------------------------------------------------------------- #
 
-#: `check_policy_binding` 的默认来源标签 → 说明（用于失败时的可读诊断）
+#: 绑定比对里来源标签 → 说明（用于失败时的可读诊断）
 _SOURCE_LABELS = {
     "cert": "证书载荷声明的 policy_hash",
     "cert.outcome": "证书 outcome 内嵌的 policy_hash",
     "recompiled": "由策略包现场重编译得到的 sha256",
     "proof": "证明公开值承诺的 policy_hash",
+    "cert.challenge": "证书 challenge 块声明的 response_binding",
+    "response": "由送达的响应 T′ 与 nonce 现场重算的 response_binding",
 }
+
+
+def _committed_field(proof_result: Dict[str, Any], field: str) -> Optional[str]:
+    """从验证器输出里取出证明公开值承诺的某个字符串字段；取不到返回 None。"""
+    outcome = proof_result.get("outcome")
+    if isinstance(outcome, dict):
+        v = outcome.get(field)
+        if isinstance(v, str):
+            return v
+    return None
 
 
 def committed_policy_hash(proof_result: Dict[str, Any]) -> Optional[str]:
@@ -72,19 +84,24 @@ def committed_policy_hash(proof_result: Dict[str, Any]) -> Optional[str]:
     取不到返回 None —— 调用方必须把它当作「这一路来源缺失」处理，而不是
     「检查通过」：把缺失当成通过正是 P0-1 那个漏洞的形态。
     """
-    outcome = proof_result.get("outcome")
-    if isinstance(outcome, dict):
-        h = outcome.get("policy_hash")
-        if isinstance(h, str):
-            return h
-    return None
+    return _committed_field(proof_result, "policy_hash")
 
 
-def check_policy_binding(sources: Sequence[Tuple[str, Optional[str]]]) -> Tuple[bool, str]:
-    """比对若干来源声称的 policy_hash：**非 None 的来源必须全部相等**。
+def committed_response_binding(proof_result: Dict[str, Any]) -> Optional[str]:
+    """从验证器输出里取出**证明承诺的**响应绑定（P0-2）。
 
-    ``sources`` 是 ``[(label, hash_or_None), ...]``；``label`` 用于诊断，
-    取值见 :data:`_SOURCE_LABELS`。返回 ``(ok, detail)``。
+    与 :func:`committed_policy_hash` 同样处理缺失：None 表示这一路来源不可用，
+    绝不是「通过」。
+    """
+    return _committed_field(proof_result, "response_binding")
+
+
+def check_agreement(sources: Sequence[Tuple[str, Optional[str]]],
+                    what: str = "policy_hash") -> Tuple[bool, str]:
+    """比对若干来源声称的同一个值：**非 None 的来源必须全部相等**。
+
+    ``sources`` 是 ``[(label, value_or_None), ...]``；``label`` 用于诊断，
+    取值见 :data:`_SOURCE_LABELS`。返回 ``(ok, detail)``。``what`` 只用于措辞。
 
     只要**至少两个**来源参与比对才算通过：只有一个来源时「全部相等」是空洞的，
     那等于没有任何约束。缺失的来源会被如实列进 detail，避免报告读起来像是
@@ -103,6 +120,22 @@ def check_policy_binding(sources: Sequence[Tuple[str, Optional[str]]]) -> Tuple[
     if missing:
         detail += " (absent: " + ", ".join(missing) + ")"
     return ok, detail
+
+
+def check_policy_binding(sources: Sequence[Tuple[str, Optional[str]]]) -> Tuple[bool, str]:
+    """策略绑定的比对（P0-1）：见 :func:`check_agreement`。"""
+    return check_agreement(sources, what="policy_hash")
+
+
+def check_response_binding(sources: Sequence[Tuple[str, Optional[str]]]) -> Tuple[bool, str]:
+    """响应绑定的比对（P0-2）：见 :func:`check_agreement`。
+
+    与策略绑定**同构**，理由也一样：证书的 challenge 块、outcome 内嵌值、
+    证明公开值、以及由送达响应 T′ 现场重算的值，四者必须全部相等。少比任何
+    一路都会留盲区 —— 只比「证书自称 == 重算」会漏掉「证明其实承诺的是另一条
+    响应」，只比「证书自称 == 证明承诺」则漏掉「送达的 T′ 根本不是被证明的 T」。
+    """
+    return check_agreement(sources, what="response_binding")
 
 
 def short_hash(h: str, n: int = 8) -> str:

@@ -153,6 +153,10 @@ pub const SPEC_VERSION: &str = "v1";
 /// 本程序实现的规则组合语义：全部规则都要通过（对应 `Policy` 的默认值）。
 pub const SEMANTIC_AND: &str = "and";
 
+/// 挑战-响应绑定的域分隔前缀（对应 `policydsl.commit.BIND_DOMAIN`）。
+/// 换个用途（如将来绑定工具轨迹）就用另一段前缀，两个域的哈希永不碰撞。
+pub const BIND_DOMAIN: &[u8] = b"pop-bind-v1";
+
 /// prover 的输入：agent 响应、规范策略字节、以及工具调用轨迹
 /// （供 tool_arg_guard / budget_bound 使用）。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -161,6 +165,10 @@ pub struct ProofRequest {
     /// 唯一真相源：既用于派生 `policy_hash`，也用于解析要判定的约束。
     pub spec_canonical: String,
     pub response: String,
+    /// 一次性挑战值（客户端/验证者出题）。空 = 未走挑战流程，仍然会给出一份
+    /// 「绑定到空挑战」的承诺（格式统一，见 `response_binding`）。
+    #[serde(default)]
+    pub nonce: Vec<u8>,
     #[serde(default)]
     pub tool_calls: Vec<ToolCall>,
     #[serde(default)]
@@ -184,6 +192,10 @@ pub struct ProofOutput {
     /// 被判定策略的哈希 = SHA256(规范字节)。**由电路内计算**，验证方据此确认
     /// 「这条证明确实是对声明的策略 π 做的判定」，而不是别的策略。
     pub policy_hash: String,
+    /// 挑战-响应绑定 = SHA256(BIND_DOMAIN ‖ len(nonce) ‖ nonce ‖ T)（见
+    /// `response_binding`）。持 T 与 nonce 者可**离线**核对「被证明的就是送达的
+    /// 那条响应」，无需在公开值里泄露 T。
+    pub response_binding: String,
     pub passed: bool,
     pub violations: Vec<Violation>,
 }
@@ -363,11 +375,14 @@ pub fn parse_json_ok(s: &str) -> bool {
 /// tool_arg_guard（工具参数被禁键）、budget_bound（calls / tokens）。
 ///
 /// `policy_hash` 由调用方（`run_job`）从**同一段规范字节**派生后传入，
-/// 保证公开值里的策略哈希与实际参与判定的约束同源、不可分离。
+/// 保证公开值里的策略哈希与实际参与判定的约束同源、不可分离。同理，
+/// `nonce` 也由调用方（同一次请求）传入，判定结果与响应绑定在电路内一起承诺，
+/// 使「被证明的 T」与「送达的 T′」可比对（见 `response_binding`）。
 pub fn evaluate(
     policy_hash: &str,
     constraints: &[SpecConstraint],
     response: &str,
+    nonce: &[u8],
     tool_calls: &[ToolCall],
     token_count: Option<u32>,
 ) -> ProofOutput {
@@ -464,6 +479,7 @@ pub fn evaluate(
 
     ProofOutput {
         policy_hash: String::from(policy_hash),
+        response_binding: response_binding(nonce, response),
         passed: violations.is_empty(),
         violations,
     }
@@ -477,15 +493,47 @@ pub fn evaluate(
 /// 十六进制字母表。
 const HEX: &[u8; 16] = b"0123456789abcdef";
 
-/// 对 UTF-8 字节求 SHA-256，返回小写十六进制（匹配 hashlib.sha256().hexdigest()）。
-pub fn sha256_hex(text: &str) -> String {
-    let digest = Sha256::digest(text.as_bytes());
-    let mut out = String::with_capacity(64);
-    for b in digest {
+/// 字节 → 小写十六进制（匹配 Python `bytes.hex()`）。
+pub fn hex(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
         out.push(HEX[(b >> 4) as usize] as char);
         out.push(HEX[(b & 0x0f) as usize] as char);
     }
     out
+}
+
+/// 对 UTF-8 字节求 SHA-256，返回小写十六进制（匹配 hashlib.sha256().hexdigest()）。
+pub fn sha256_hex(text: &str) -> String {
+    hex(&Sha256::digest(text.as_bytes()))
+}
+
+/// P0-2 挑战-响应绑定：`SHA256(BIND_DOMAIN ‖ len(nonce) ‖ nonce ‖ T_utf8)`。
+///
+/// 存在的理由：证明的是「某条 T 满足 π」，但**证明里的 T 与客户端收到的 T′
+/// 没有任何联系**。公开模式下 T 是证明的私有输入、证书里不出现；私有模式下
+/// 更只有一个 `response_commitment`（它说明「存在某个通过判定的 T」，却说不出
+/// 是哪一个）。于是中间人可以拿一条合规的 T 去换一条不合规的 T′ 送达 ——
+/// 证明依然有效，因为它压根没提过 T′。
+///
+/// 绑定的做法是让**验证者出题**：客户端给出一次性 nonce，电路把 (nonce, T)
+/// 一起承诺进公开值。持 (T′, nonce) 的一方离线重算即可确认 T′ = T。
+///
+/// 关于 `len(nonce)` 这个前缀：没有它，`nonce="ab", T="cd"` 与
+/// `nonce="abcd", T=""` 会哈希出同一个值（拼接的经典歧义）。挑战值通常是定长
+/// 的，但把无歧义性建立在调用方的自觉上不是个好买卖 —— 加 4 字节长度前缀后，
+/// 无论 nonce 多长，(nonce, T) 到字节串的映射都是单射。这与 Python 侧
+/// `policydsl.commit.response_binding` 必须逐字节一致。
+///
+/// nonce 为空是合法的（= 没走挑战流程）：那时绑定退化为「对一个空挑战的承诺」，
+/// **不提供任何重放防护**，但格式与其他情况一致，验证方无需分支处理。
+pub fn response_binding(nonce: &[u8], response: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(BIND_DOMAIN);
+    h.update((nonce.len() as u32).to_be_bytes());
+    h.update(nonce);
+    h.update(response.as_bytes());
+    hex(&h.finalize())
 }
 
 /// 私有模式下披露的一条违规：rule + kind + 对证据片段的*承诺*
@@ -514,6 +562,9 @@ pub struct PrivateRequest {
     /// 策略的规范 JSON 文本（与 `ProofRequest::spec_canonical` 同义，唯一真相源）。
     pub spec_canonical: String,
     pub response: String,
+    /// 一次性挑战值（与 `ProofRequest::nonce` 同义）。
+    #[serde(default)]
+    pub nonce: Vec<u8>,
     #[serde(default)]
     pub mask: Vec<u32>,
     #[serde(default)]
@@ -532,6 +583,11 @@ pub struct PrivateRequest {
 pub struct PrivateOutput {
     /// 被判定策略的哈希 = SHA256(规范字节)，由电路内计算（见 `ProofOutput`）。
     pub policy_hash: String,
+    /// 挑战-响应绑定（见 `ProofOutput::response_binding`）。私有模式下这是验证者
+    /// **唯一**能确认「送来的 T′ 就是被证明的 T」的手段 —— 因为 T 不出现在这里。
+    pub response_binding: String,
+    /// 响应本身的承诺 SHA256(T)。它只说明「某个 T 通过了」，不说「哪个 T」；
+    /// 要把它拴到一次具体会话上，靠的是上面那条 `response_binding`。
     pub response_commitment: String,
     pub passed: bool,
     pub violations: Vec<PrivateViolation>,
@@ -566,12 +622,14 @@ pub fn outcome_value(out: &Outcome) -> serde_json::Value {
         Outcome::Public(o) => serde_json::json!({
             "mode": "public",
             "policy_hash": o.policy_hash,
+            "response_binding": o.response_binding,
             "passed": o.passed,
             "violations": o.violations,
         }),
         Outcome::Private(o) => serde_json::json!({
             "mode": "private",
             "policy_hash": o.policy_hash,
+            "response_binding": o.response_binding,
             "passed": o.passed,
             "response_commitment": o.response_commitment,
             "violations": o.violations,
@@ -667,7 +725,7 @@ fn mask_within_spans(mask: &[u32], spans: &[(u32, u32)]) -> bool {
 /// 响应承诺与可选的脱敏证明。
 pub fn evaluate_private(req: &PrivateRequest, policy_hash: &str,
                         constraints: &[SpecConstraint]) -> PrivateOutput {
-    let public = evaluate(policy_hash, constraints, &req.response,
+    let public = evaluate(policy_hash, constraints, &req.response, &req.nonce,
                           &req.tool_calls, req.token_count);
     let violations = public
         .violations
@@ -691,6 +749,7 @@ pub fn evaluate_private(req: &PrivateRequest, policy_hash: &str,
     });
     PrivateOutput {
         policy_hash: public.policy_hash.clone(),
+        response_binding: public.response_binding.clone(),
         response_commitment: sha256_hex(&req.response),
         passed: public.passed,
         violations,
@@ -740,7 +799,7 @@ pub fn run_job(job: &Job) -> Outcome {
     match job {
         Job::Public(r) => {
             let (hash, spec) = parse_spec(&r.spec_canonical);
-            Outcome::Public(evaluate(&hash, &spec.constraints, &r.response,
+            Outcome::Public(evaluate(&hash, &spec.constraints, &r.response, &r.nonce,
                                      &r.tool_calls, r.token_count))
         }
         Job::Private(r) => {

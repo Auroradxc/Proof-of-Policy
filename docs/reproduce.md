@@ -28,7 +28,7 @@
 
 ```bash
 cd Proof-of-Policy/03_代码仓库/zk-policy     # 仓库根（目录曾名为“方向二”，已重命名）
-python3 -m unittest discover tests -v          # 期望 143 passed（3 skip：2 个 compressed fixture + 1 设计内）
+python3 -m unittest discover tests -v          # 期望 184 passed（5 skip：2 个 compressed fixture + 2 个 POP_TEST_PROOF 门控 + 1 设计内）
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json | head    # 编译出 ConstraintSpec
 ```
 
@@ -60,14 +60,15 @@ RESULT: PASS
 ## 4. 复现：双端一致性（Python golden ↔ SP1）
 
 ```bash
-SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 7/7 + prove 7/7
+SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 14/14 + prove 14/14
 ```
 
 ## 5. 复现：私有模式（承诺 + 选择性披露 + 证据开示）
 
 ```bash
 SP1_PROVER=cpu python3 scripts/private_demo.py
-# 期望：check/prove 与 golden 一致；leak/binding/opening 全 PASS；redaction.mask_covered=true
+# 期望：check/prove 与 golden 一致；leak/binding/challenge/opening 全 PASS；redaction.mask_covered=true
+#      （challenge 行： (T',nonce)_opens=True wrong_T'_rejected=True wrong_nonce_rejected=True domain_separated=True）
 ```
 
 ## 6. 复现：合规证书 + 第三方验证
@@ -75,12 +76,20 @@ SP1_PROVER=cpu python3 scripts/private_demo.py
 ```bash
 SP1_PROVER=cpu python3 scripts/issue_cert.py \
   --pack policy_packs/eu_ai_act_v1.json --response scripts/examples/eu_agent_reply.txt \
-  --out-dir scripts/examples/out/cert_public
+  --out-dir scripts/examples/out/cert_public          # 默认 --nonce auto：现场出一个 32 字节挑战值
 SP1_PROVER=cpu python3 scripts/verify_cert.py \
   --cert scripts/examples/out/cert_public/cert.json --pack policy_packs/eu_ai_act_v1.json \
-  --ledger scripts/examples/out/ledger.jsonl --proof scripts/examples/out/cert_public/proof.bin
-# 期望 7 项全 PASS（签名 / policy_hash / 锚定 / SP1 证明 / outcome / vkey / proof_sha256）
+  --ledger scripts/examples/out/ledger.jsonl --proof scripts/examples/out/cert_public/proof.bin \
+  --response scripts/examples/eu_agent_reply.txt      # ← 送达的 T′，用来核对响应绑定
+# 期望 8 项全 PASS（签名 / policy_hash / response_binding / 锚定 / SP1 证明 / outcome / vkey / proof_sha256）
 ```
+
+> **`--response` 是 P0-2 的验收点**：加上它，验证器会现场重算 `SHA256("pop-bind-v1"‖len‖nonce‖T′)`
+> 并与证明公开值里承诺的绑定比对，报告里出现
+> `[PASS] response_binding — 送达的 T′ 就是被证明的 T`。
+> 把 `--response` 换成**另一条**响应，这一项应变成 `[FAIL] … 对不上` 且 `RESULT: FAIL`
+> —— 这正是「中间人换响应」被拦下的样子。不带 `--response` 时该项只做证书内部自洽比对，
+> 报告会写明来源仅来自证书本身。
 
 ## 7. 复现：一键端到端 demo + 截图
 
@@ -166,9 +175,9 @@ python3 scripts/verify_session.py --session .../session.json \
 
 ## 验收判据（复现成功）
 
-- `python3 -m unittest discover tests` → **143 passed（3 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，1 = 设计内「依赖已装」用例）；
+- `python3 -m unittest discover tests` → **184 passed（5 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = 设计内「依赖已装」用例）；
 - `scripts/prove_policy.py` / `cross_validate.py` → **RESULT: PASS**（host 14/14；`--no-prove` 时跳过真实证明）；
-- `verify_cert.py` / `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证）；
+- `verify_cert.py`（带 `--response T′`）/ `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证与响应绑定核对）；
 - `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 12/12 + 反例对照，见 §10）。
 
 ## 故障排查

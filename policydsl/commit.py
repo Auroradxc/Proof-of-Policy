@@ -1,10 +1,12 @@
-"""私有模式原语：响应承诺、选择性披露、以及「带证明的脱敏」
-（VDR 风格，即「仅在掩码位置不同」）。
+"""私有模式原语：响应承诺、选择性披露、「带证明的脱敏」（VDR 风格，即「仅在
+掩码位置不同」），以及 P0-2 的**挑战-响应绑定**。
 
 这是 SP1 私有模式程序（``pop-types::evaluate_private``）的参考层实现。
 语义与 Rust 侧逐字节兼容：
 
 - ``commitment`` / ``evidence_commitment``：对 UTF-8 字节求 SHA-256，小写十六进制。
+- ``response_binding``：对 ``BIND_DOMAIN ‖ len(nonce) ‖ nonce ‖ T`` 求 SHA-256
+  （P0-2；与 ``pop_types::response_binding`` 逐字节一致）。
 - 关键词匹配采用 ASCII 小写化（与电路内匹配器一致）。
 - 违规采用每种类型各自的「规范证据字符串」：
     keyword_block -> （第一个、按 spec 顺序）命中的关键词
@@ -17,11 +19,17 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 from typing import Dict, List, Optional, Tuple
 
 from . import nfa
 
 MASK_CHAR = "*"
+
+#: 挑战-响应绑定的域分隔前缀（对应 ``pop_types::BIND_DOMAIN``）。
+BIND_DOMAIN = b"pop-bind-v1"
+#: 证书 ``challenge`` 块里声明的绑定方案名（便于将来换代）。
+BIND_SCHEME = "pop-bind-v1"
 
 
 def _ascii_lower(s: str) -> str:
@@ -41,6 +49,40 @@ def commitment(text: str) -> str:
 def evidence_commitment(evidence: str) -> str:
     """对违规证据片段的承诺（与 ``commitment`` 用同一个哈希）。"""
     return commitment(evidence)
+
+
+# --------------------------------------------------------------------------- #
+# 挑战-响应绑定（P0-2）
+# --------------------------------------------------------------------------- #
+
+def response_binding(nonce: bytes, response: str) -> str:
+    """把一条响应 ``T`` 绑定到一个一次性挑战 ``nonce`` 上。
+
+    计算 ``SHA256(BIND_DOMAIN ‖ len(nonce) ‖ nonce ‖ T_utf8)``，小写十六进制。
+
+    **为什么需要它**：证明只说明「某条 T 满足 π」，从不说 T 是哪一条 ——
+    公开模式下 T 是证明的私有输入、证书里不出现，私有模式下更是只剩一个
+    ``commitment(T)``（「存在某个通过判定的 T」，但说不出是哪个）。于是
+    「被证明的 T」与「客户端收到的 T′」之间没有任何联系，中间人可以用一条
+    合规的 T 换一条不合规的 T′ 送达。绑定让**验证者出题**：电路把
+    ``(nonce, T)`` 一起承诺进公开值，持 ``T′`` 与 ``nonce`` 的一方离线重算
+    即可确认 ``T′ == T``。
+
+    ``len(nonce)`` 这个 4 字节大端长度前缀不是装饰：没有它，
+    ``nonce=b"ab", T="cd"`` 与 ``nonce=b"abcd", T=""`` 会哈希出同一个值。
+    挑战值通常定长，但把无歧义性寄托在调用方自觉上不是好买卖 —— 加了长度
+    前缀，(nonce, T) → 字节串就是单射。
+
+    ``nonce`` 为空是合法的（= 未走挑战流程）：绑定退化为「对空挑战的承诺」，
+    **不提供重放防护**，但格式统一，验证方无需分支处理。
+    """
+    return hashlib.sha256(BIND_DOMAIN + len(nonce).to_bytes(4, "big") + nonce
+                          + response.encode("utf-8")).hexdigest()
+
+
+def verify_binding(nonce: bytes, response: str, binding: str) -> bool:
+    """``response`` 配上 ``nonce`` 能否「打开」``binding``（常量时间比较）。"""
+    return hmac.compare_digest(response_binding(nonce, response), binding)
 
 
 def canonical_violations(spec: Dict, response: str,
@@ -168,12 +210,26 @@ def private_output(spec: Dict, response: str,
                    redacted: Optional[str] = None,
                    spans: Optional[List[Tuple[int, int]]] = None,
                    tool_calls: Optional[List[Dict]] = None,
-                   token_count: Optional[int] = None) -> Dict:
+                   token_count: Optional[int] = None,
+                   nonce: bytes = b"") -> Dict:
     """构建与 ``pop-types::PrivateOutput`` 一致的字典（golden）。
 
     ``spans`` 是「见证匹配区间」，用于证明被掩码位置确实落在真实模式匹配内：
     仅当每个区间都是真实匹配、且每个掩码下标都落在区间内时，``mask_covered``
     才为 True。
+
+    ``nonce`` 是本次会话的一次性挑战（P0-2）；缺省 ``b""`` 表示未走挑战流程。
+    ``response_commitment`` 仍然只是 ``commitment(T)`` —— 它说明「存在某个
+    通过判定的 T」；把 T 拴到这次会话上的是 ``response_binding``。
+    二者是不同的问题，所以都保留。
+
+    ⚠️ **隐藏性的上界（P0-4 查证后收紧，见 ``docs/sp1-zk-audit.md``）**：
+    这里的「承诺」只保证**公开值不出现明文**，**不保证 T 不可恢复**。
+    ``response_binding`` 与 ``response_commitment`` 都是**公开且可离线重算**的 T 的函数，
+    而自然语言响应的熵远低于 SHA-256 的 256 bit —— 任何持 ``(nonce, T')`` 的一方
+    都能对候选 ``T'`` 算一遍哈希比对（这正是绑定可被独立核对的原因）。
+    更一般地：在「验证者独立重算绑定」这一前提下，
+    **响应绑定与响应内容隐藏对低熵 T 互斥**。
     """
     vs = canonical_violations(spec, response, tool_calls, token_count)
     # 违规只暴露证据承诺（不泄露明文证据），实现选择性披露
@@ -191,6 +247,7 @@ def private_output(spec: Dict, response: str,
             "mask_covered": covered,
         }
     return {
+        "response_binding": response_binding(nonce, response),
         "response_commitment": commitment(response),
         "passed": len(vs) == 0,
         "violations": violations,

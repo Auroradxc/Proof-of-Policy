@@ -2,7 +2,7 @@
 
 > 草稿（Phase 6 / W7）。形式化程度：定义 + 归约论证 + 对应实验；完整游戏式证明见论文附录。
 > 记号：策略 `π`（ConstraintSpec，含 `policy_hash`）；响应/轨迹 `T`；判定函数 `J(π,T) ∈ {passed, violations}`；
-> 证明 `p`；公共值 `pub`；承诺 `c = H(T)`（SHA-256）。
+> 证明 `p`；公共值 `pub`；承诺 `c = H(T)`（SHA-256）；一次性挑战 `n`（nonce）；响应绑定 `b = H(BIND_DOMAIN ‖ len(n) ‖ n ‖ T)`。
 
 ## 1. 参与方与威胁模型
 
@@ -13,7 +13,9 @@
 | 策略作者 | 发布 `π`，其 `policy_hash` 绑定进证明与证书 |
 
 **对抗目标**：(A1) 对违反 `π` 的 `T` 伪造“通过”；(A2) 从公共值中推断 `T` 的内容；
-(A3) 伪造/否认违规证据；(A4) 换用不同策略/程序后仍复用旧证书；(A5) 事后篡改审计记录。
+(A3) 伪造/否认违规证据；(A4) 换用不同策略/程序后仍复用旧证书；(A5) 事后篡改审计记录；
+**(A6) 换响应**：用一条合规的 `T` 出证/出证明，却把一条不合规的 `T′` 送达验证者/用户
+（「证明的 T」与「送达的 T′」脱钩）。
 
 ## 2. 定义
 
@@ -37,9 +39,31 @@
 任一被替换 ⇒ 验证失败。实验：`tests/test_policy_binding.py`（含「空策略证明 + 真策略哈希」
 攻击回归，以及「真证明 + 假哈希必须被拒」的证明层测试）。
 
-**内容隐私 Content privacy (A2, 私有模式).** 验证者视图 `V = (c, {rule_i, kind_i, e_i}, redaction)`，其中 `e_i = H(evidence_i)`。
+**响应绑定 Response binding (A6).** 验证者（或客户端）在出证前出一个一次性挑战 `n`；电路把
+`b = H(BIND_DOMAIN ‖ u32_be(len(n)) ‖ n ‖ T)` 写进公开值，证书把它连同 `n` 一起记录。
+*论证*：被接受的 `pub` 必然携带 `b`，而 `b` 由 zkVM 内用**参与判定的同一条 `T`** 算出（与
+`policy_hash` 同源，见 §2 Provenance）。若送达的 `T′ ≠ T`，验证者用 `(n, T′)` 重算得到
+`b′ ≠ b`（`H` 抗碰撞 + 编码单射），绑定核对失败。因此对手只能：① 攻破 zkVM/哈希；
+② 让送达的 `T′` 就是被证明的 `T`。**边界**：`n` 必须由**验证者**选取且**一次性**——
+`b` 绑定的是「本次会话的这条 T」，不是「任何一次会话的这条 T」，重放一条已用 nonce 的合法证书
+在密码学上成立（危害是会话计数，不是伪造 `T′`）；nonce 是公开值，必须公开否则无人能核对。
+一次性由协议使用方保证（`policydsl.challenge.NonceStore` 为最小参考实现）。
+实验：`tests/test_binding.py`（换 `T` 拒、换 `n` 拒、域分离）。
+
+**承诺隐私 Committed-value privacy (A2, 私有模式).** 验证者视图 `V = (b, c, {rule_i, kind_i, e_i}, redaction)`，其中 `e_i = H(evidence_i)`。
 *论证*：`V` 不含 `T` 的任何明文（仅 64-hex 承诺）；由 `H` 的抗碰撞/抗原像性，`V` 对 `T` 的泄露仅为“承诺可验证性”。
+新增的 `b` 也不扩大泄露面：它与 `c` 同为 `T` 的哈希——拿到 `V` 的人能做的只是**猜测—验证**
+（猜一条 `T′` 看 `b` 是否吻合），这对任何承诺都成立，不能反推 `T`。
 *实验*：Leak 实验——公开值中不含响应/证据明文，且 `c ≠ T`（`tests/test_commit.py::TestPrivateOutput`、`scripts/private_demo.py`）。
+
+> ⚠️ **本定义的上界必须读准（P0-4 核查后收紧）**：它保证的是「**公开值不出现明文**」，
+> **不是**「`T` 不可恢复」。`b` 与 `c` 都是**公开且可离线重算**的 `T` 的函数，而自然语言响应的熵远低于
+> SHA-256 的 256 bit，因此「猜测—验证」是**可行**的离线枚举，不是理论摆设。更关键的是：
+> P0-2 要求 `b` 必须可由任意持 `(n, T′)` 的一方重算（这正是它防「换响应」的价值），
+> 所以**在「验证者独立重算绑定」这一前提下，「响应绑定」与「响应内容隐藏」对低熵 `T` 互斥**——
+> 想要后者只能让 `n` 保密（退化为信任出证方）或让 `T` 高熵。
+> 因此私有模式的正确定位是「**不公开明文 + 违规只暴露证据承诺**」，
+> 不可宣传为「`T` 不可恢复」。核查全文见 [`sp1-zk-audit.md`](sp1-zk-audit.md) §4。
 
 **选择性披露与脱敏健全性.** `redaction_ok` ⇒ 同长且 `R` 与 `T` **仅在掩码位置不同**（掩码位为 `*`，VDR 式位选择器性质）；
 `mask_covered` ⇒ 每个掩码位落在**电路内验证为真实完整匹配**的见证 span 内（`anchored_full_match` 逐 span 校验）。
@@ -70,14 +94,21 @@ zkVM 执行输出；确定性判定给出 `J(π,T).passed = false`，矛盾。�
 **换策略这一路现在是电路内强制的**：想判 `π′` 就必然承诺 `H(π′)`，无法再声称 `H(π)`）；
 ③ 对**未入电路**的规则种类伪造（此时证书不声称 `zk`，见 §5）。
 
+注意这一论证有个**前提**：验证者拿到的 `T` 必须就是被证明的那条。P0-2 之前这一点是**缺的** ——
+对手完全可以拿合规的 `T` 出证、送出不合规的 `T′`，上述「设 `T ⊭ π`」根本不适用，
+因为 `T` 与 `T′` 是两条不同的串。响应绑定（§2）补上的正是这条前提：验证者用自己出的 `n`
+核对 `b`，`T′ ≠ T` 时核对必败。所以 §3 的论证应当读作「**在 `b` 核对通过的前提下**，
+`T′ ⊭ π` 无法通过验证」。
+
 ## 4. 实验对照（可复现）
 
 | 定义 | 对应测试/实验 |
 |---|---|
-| Completeness | `scripts/prove_policy.py`（eu pass）、`scripts/cross_validate.py` host/prove 7/7 |
+| Completeness | `scripts/prove_policy.py`（eu pass）、`scripts/cross_validate.py` host/prove 14/14 |
 | Soundness (入电路规则) | 违规向量证明产出 `passed=false`（`cross_validate` 的 hit 向量；`private_demo` 违规） |
 | Provenance | `scripts/verify_cert.py` 各卡（policy_hash 三方比对 / vkey / proof_sha256）；`tests/test_policy_binding.py`（攻击回归 + 证明层 opt-in） |
-| Content privacy | Leak 实验（`private_demo`）；`test_private_output_no_leak` |
+| Response binding (A6) | `scripts/verify_cert.py --response T′`（第 3b 卡）；`tests/test_binding.py`（换 T′ 拒 / 换 nonce 拒 / 域分离 / 空 nonce）；`scripts/demo_e2e.py` 的 challenge 实验 |
+| Committed-value privacy | Leak 实验（`private_demo`）；`test_private_output_no_leak` |
 | Redaction soundness | `TestMaskCoverage`（伪造 span → `mask_covered=false`） |
 | Evidence unforgeability | `TestEvidenceOpening`（篡改开示 → 失败） |
 | Ledger integrity | `TestAnchorLedger`（链篡改检出）；`verify_session.py::ledger_chain` |
@@ -86,7 +117,21 @@ zkVM 执行输出；确定性判定给出 `J(π,T).passed = false`，矛盾。�
 
 ## 5. 假设、边界与非目标
 
-1. **zkVM 假设**：SP1 的健全性/零知识性；我们复用其 verifier。链上最终性（Groth16 合约）在 Phase 5 仅做接口（file 账本后端）。
+1. **zkVM 假设**：SP1 的**健全性**（成立，我们复用其 verifier）+ **零知识性**（**不成立**）。
+   链上最终性（Groth16 合约）在 Phase 5 仅做接口（file 账本后端）。
+   > ✅ **已核实（P0-4，2026-09-11）**：核查结论见 [`sp1-zk-audit.md`](sp1-zk-audit.md)。三句话：
+   > ①**健全性成立**（官方安全模型 + Zellic 审计 + 本项目实测反例，三者一致），§3 的论证不受影响；
+   > ②**`core` / `compressed` 证明不满足零知识性** —— Succinct 官方安全模型明文
+   >   "individual STARK proofs in SP1 do not currently satisfy the zero-knowledge property"，
+   >   源码侧独立印证：整个 SLOP 栈对 blinding/hiding/randomizer **命中 0**，
+   >   `ShardProof` 把 `main_commitment`（轨迹 Merkle 根）与 `opened_values`（轨迹在挑战点的真实开值）**明文**放进证明；
+   >   唯一可能的 ZK 路径是 `groth16`/`plonk`（内部 STARK 证明作为 gnark 电路的**私有见证**，
+   >   公开输入只有 5 个），但该性质属**包装器层面声明、未被任何审计评估、非后量子，且本机 12 GB 出不了证**；
+   >   原生 ZK 的 `slop-veil`（eprint 2026/683）已发布但**未被任何证明路径依赖**。
+   > ③因此**私有模式的准确定义是「公开值不泄露明文」**，不是「证明工件不泄露见证」，
+   >   更不是「`T` 不可恢复」（后者对低熵 `T` 由 §2 的猜测—验证论证直接否证，与 SP1 无关）。
+   > **待办**：证书 `binding` 增加 `proof_mode` 字段诚实标注；论文/README 的「零知识」口径收紧为
+   > 「策略零知识 + 响应内容隐藏有明确上界」。
 2. **哈希假设**：SHA-256 抗碰撞/抗原像。
 3. **签名**：当前为 **HMAC-SHA256 demo signer**（`policydsl/cert.py`），仅演示完整性；生产应替换为 Ed25519/HSM（信封结构不变）。
 4. **规则覆盖（P7-b 后更新）**：`keyword_block` / `length_bound` / `pattern_block` / **`format_check`（json/int/float 规范子集）**

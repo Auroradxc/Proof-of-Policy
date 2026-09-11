@@ -35,7 +35,8 @@ zk-policy/
 │   ├── serialize.py          #   ConstraintSpec → serde 外部标签枚举 JSON
 │   ├── nfa.py                #   正则子集 → 可序列化 NFA + Pike VM（唯一的正则编译器）
 │   ├── pii.py                #   规范 PII 模式 + IBAN MOD-97 校验位
-│   ├── commit.py             #   私有模式原语（承诺 / 选择性披露 / 可证明脱敏 / 证据开示）
+│   ├── commit.py             #   私有模式原语（承诺 / 选择性披露 / 可证明脱敏 / 证据开示 / 挑战-响应绑定）
+│   ├── challenge.py          #   一次性挑战 nonce 的生成、编解码与重放记录
 │   ├── cert.py               #   合规证书（DSSE 风格信封 + HMAC 演示签名器）
 │   ├── anchor.py             #   锚定后端：文件哈希链账本 / 链上 Anchor 合约
 │   ├── agent.py              #   框架无关钩子 AgentMonitor（生成路径 + 工具路径）
@@ -53,7 +54,7 @@ zk-policy/
 ├── contracts/                # Anchor.sol + 已编译 artifact（Anchor.json，免 solc 部署）
 ├── scripts/                  # 端到端脚本（demo / 交叉验证 / 出证 / 验证 / 安装）
 ├── bench/                    # 评测（cycl数矩阵 / 证明成本 / 验证成本 / 对标）
-├── tests/                    # 单测与集成测试（143 passed / 3 skip）
+├── tests/                    # 单测与集成测试（184 passed / 5 skip）
 ├── policy_packs/             # 示例策略包（EU AI Act / PII / 金融 / agent 内容与工具）
 └── docs/                     # 文档（本目录为分板块模块文档）
 ```
@@ -63,6 +64,9 @@ zk-policy/
 ## 3. 端到端数据流（带函数名）
 
 ```
+⓪ 出题            challenge.new_nonce()
+                       │  一次性挑战值；P0-2 把「被证明的 T」拴到「送达的 T′」
+                       ▼
 ① 策略编写        policy_packs/*.json
                        │  model.Policy / model.Rule.validate
                        ▼
@@ -87,6 +91,7 @@ zk-policy/
                        ▼
 ⑤ 证书            cert.build_payload(...) → cert.sign_payload(payload, key)
                        │  policy_hash / vkey_hash / proof_sha256 / outcome
+                       │  challenge{nonce, response_binding}
                        ▼
 ⑥ 锚定            anchor.backend_from_env(ledger, rpc, contract)
                        │    ├─ FileLedgerBackend   哈希链账本（离线可验）
@@ -102,13 +107,13 @@ zk-policy/
 | # | 文档 | 覆盖文件 | 一句话 |
 |---|---|---|---|
 | 01 | [策略 DSL 与编译](01-policy-dsl.md) | `model.py` `compile.py` `evaluate.py` `serialize.py` `pii.py` `nfa.py` `__init__.py` `__main__.py` | 把 JSON 策略变成可跨层消费的约束契约，并给出参考判定 |
-| 02 | [隐私与承诺](02-privacy-commitment.md) | `commit.py`（+ `nfa.py` 的区间计算） | 私有模式：承诺、选择性披露、可证明脱敏、证据开示 |
+| 02 | [隐私与承诺](02-privacy-commitment.md) | `commit.py` `challenge.py`（+ `nfa.py` 的区间计算） | 私有模式：承诺、选择性披露、可证明脱敏、证据开示、挑战-响应绑定 |
 | 03 | [合规证书](03-certificate.md) | `cert.py` `agent.py` | 把一次判定包成可签名、可重算哈希的 DSSE 信封 |
 | 04 | [锚定与审计](04-anchoring-audit.md) | `anchor.py` `contracts/` `verifier.py` | 防篡改记录：本地哈希链账本 + 链上存在性证明 |
-| 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/types` `program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证 |
+| 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/types` `program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
 | 06 | [框架集成](06-frameworks.md) | `langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` | 把两个钩子接到真实 agent 框架上（含流式与飞行前拦截） |
 | 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/*` | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
-| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 143 个测试覆盖什么、评测数字怎么来的 |
+| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 184 个测试覆盖什么、评测数字怎么来的 |
 
 推荐阅读路径：
 
@@ -121,7 +126,7 @@ zk-policy/
 
 ## 5. 全局不变量
 
-贯穿全部模块、改代码时必须保持的六条：
+贯穿全部模块、改代码时必须保持的七条：
 
 | # | 不变量 | 由什么保证 |
 |---|---|---|
@@ -131,6 +136,7 @@ zk-policy/
 | I4 | **不出电路就无法证明**：一个规则类型要么两侧都实现，要么**根本产不出证明**，绝不静默跳过 | `compile.py` 把未知 kind 原样写进规范字节 → guest 的 serde 解析失败即 panic（fail-closed）；`tests/test_policy_binding.TestFailsClosed` 锁死 |
 | I5 | **先有事实再有记录**：链上交易成功之后才写本地账本 `meta.on_chain`，哈希链因此始终自洽 | `RpcAnchorBackend.anchor` |
 | I6 | **策略绑定**：证书声称的 `policy_hash` == 由策略包现场重编译的 == **证明公开值承诺的**（三方比对，缺一不可；只有两个来源时一律判失败，防空洞） | `policydsl.verifier.check_policy_binding`；`tests/test_policy_binding.py` |
+| I7 | **响应绑定**：证书 `challenge` 块声明的 `response_binding` == outcome 内嵌的 == **证明公开值承诺的** == 由**送达的响应 T′** 与 nonce 现场重算的（同样 ≥2 来源才算比对）。绑定公式含 nonce 长度前缀，`(nonce, T) → 字节串`恒为单射 | `policydsl.verifier.check_response_binding`、`commit.response_binding`（↔ `pop_types::response_binding`）；`tests/test_binding.py` |
 
 ---
 
@@ -138,7 +144,7 @@ zk-policy/
 
 ```bash
 # 只跑参考层（秒级，无需 Rust）
-python3 -m unittest discover tests -v            # 143 passed / 3 skip
+python3 -m unittest discover tests -v            # 184 passed / 5 skip
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
 python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
 

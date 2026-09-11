@@ -6,16 +6,24 @@
   2. （带 --proof 时）SP1 证明做密码学验证，其承诺的 outcome + vkey 哈希与证书一致；
   3. 策略绑定**三方比对**：证书声明的 policy_hash == 由策略包现场重编译的 sha256
      == 证明公开值承诺的 policy_hash（三者必须同时成立，见 policydsl.verifier）；
+  3b. 响应绑定（P0-2）：证书 challenge 块声明的 response_binding == outcome 内嵌的
+     == 证明公开值承诺的 == 由**送达的响应 T′** 与 nonce 现场重算的。带 --response
+     时这一路才齐全 —— 那也正是「持 T′ 的一方」要做的核对；
   4. 证书摘要存在于锚定账本中、且账本链完整（记录留存/防篡改）；
   5. （带 --rpc/--contract 时）证书摘要能在 Anchor 合约上读回（链上存在性 + 时间戳）。
 
-步骤 2 必须排在步骤 3 之前：三方比对里的「证明公开值」要先验出来才谈得上比对。
+步骤 2 必须排在步骤 3/3b 之前：比对里的「证明公开值」要先验出来才谈得上比对。
+
+**不带 --proof 时的边界**：步骤 3/3b 仍会跑，但参与比对的来源只剩证书自己的两处
+声称（载荷顶层 vs outcome 内嵌）。那两处都是签发者写的，所以它挡得住「证书自相
+矛盾」，挡不住「签发者整体造假」—— 真正的密码学保证来自步骤 2 的证明。
 
 用法：
   python3 scripts/verify_cert.py --cert scripts/examples/out/cert_public/cert.json \
       --pack policy_packs/eu_ai_act_v1.json \
       --ledger scripts/examples/out/ledger.jsonl \
       [--proof scripts/examples/out/cert_public/proof.bin] \
+      [--response scripts/examples/eu_agent_reply.txt] [--nonce <hex>] \
       [--rpc http://127.0.0.1:8545 --contract 0x...]
 """
 
@@ -32,7 +40,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, verifier
+from policydsl import anchor, cert, challenge, commit, verifier
 from policydsl.compile import compile_policy
 from policydsl.model import Policy, Rule
 
@@ -58,6 +66,10 @@ def main() -> int:
     ap.add_argument("--pack", type=Path, required=True)
     ap.add_argument("--ledger", type=Path, required=True)
     ap.add_argument("--proof", type=Path, default=None)
+    ap.add_argument("--response", type=Path, default=None,
+                    help="送达的响应 T′：给了才能把「被证明的 T」与「收到的 T′」对上")
+    ap.add_argument("--nonce", default=None,
+                    help="覆盖证书里的挑战值（十六进制）；用于验证重放/换 nonce 会被拒")
     ap.add_argument("--rpc", default=None, help="EVM RPC 端点（链上锚定核对）")
     ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
     args = ap.parse_args()
@@ -133,6 +145,43 @@ def main() -> int:
     ]
     ok_pol, pol_detail = verifier.check_policy_binding(sources)
     results.append(("policy_hash", ok_pol, pol_detail))
+
+    # 3b) 响应绑定（P0-2）：被证明的 T 是不是送达的 T′。
+    #
+    #     策略绑定保证「判定的规则就是声明的策略」，却完全不提「判定的是哪条
+    #     响应」—— 公开模式还好（T 至少是证明的输入），私有模式下验证者连 T 的
+    #     影子都看不到。这一卡补的就是那一段：把 T 拴到本次会话的 nonce 上。
+    #
+    #     证书里**没有** challenge 块（或证明的公开值里没有 response_binding）时
+    #     如实跳过 —— 那是「这张证书本来就没绑定响应」，不是「绑定通过」。
+    ch = payload.get("challenge") or {}
+    proof_binding = verifier.committed_response_binding(proof_result) if proof_result else None
+    if not ch and proof_binding is None:
+        results.append(("response_binding", True,
+                        "certificate is not challenge-bound — skipped (no challenge block)"))
+    else:
+        nonce_hex = args.nonce if args.nonce is not None else ch.get("nonce")
+        recomputed, note = None, ""
+        if args.response is not None:
+            if nonce_hex is None:
+                note = " (--response given 但证书没有 nonce，无法重算)"
+            else:
+                try:
+                    recomputed = commit.response_binding(
+                        challenge.parse_nonce(nonce_hex),
+                        args.response.read_text(encoding="utf-8"))
+                    note = " — 送达的 T′ 就是被证明的 T"
+                except ValueError as exc:
+                    note = f" (nonce 无法解析: {exc})"
+        ok_bind, bind_detail = verifier.check_response_binding([
+            ("cert.challenge", ch.get("response_binding")),
+            ("cert.outcome", (payload.get("outcome") or {}).get("response_binding")),
+            ("proof", proof_binding),
+            ("response", recomputed),
+        ])
+        if not ok_bind and recomputed is not None:
+            note = " — 送达的 T′ 与被证明的 T 对不上"
+        results.append(("response_binding", ok_bind, bind_detail + note))
 
     # 4) 锚定账本：链完整 + 证书摘要确实在账本中
     ok_chain, reason = anchor.verify_ledger(args.ledger)

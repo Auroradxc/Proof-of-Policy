@@ -4,10 +4,12 @@
 仅凭公开工件（session.json + ledger + 可选 proof），检查：
   1. 锚定账本链完整（防篡改的记录留存）；
   2. 每张证书：DSSE 签名有效 + policy_hash 三方比对（证书声明 / 证书 outcome 内嵌 /
-     由策略包现场重编译）+ 证书摘要存在于账本中；
+     由策略包现场重编译）+ 证书摘要存在于账本中；带 challenge 块的证书再做一次
+     证书内部的响应绑定自洽比对（challenge 块 vs outcome 内嵌，P0-2）；
   3. 流式证书形成有效的哈希链（按 run）；
   4. zk 证书的 SP1 证明做密码学验证，其承诺的 outcome / vkey 哈希 / 证明哈希与证书一致，
-     并补上策略绑定的最后一条腿（证明公开值承诺的 policy_hash）；
+     并补上策略绑定与响应绑定各自缺失的那条腿（证明公开值承诺的 policy_hash 与
+     response_binding）；
   5. （可选）链上锚定核对：每个证书摘要都能在 Anchor 合约上读回，且链上记录与本地
      账本 meta 里的 tx/区块/时间戳一致（**需要 RPC**，见下）。
 
@@ -84,13 +86,16 @@ def main() -> int:
     # 1) 逐证书检查：签名 / policy_hash / 锚定
     sig_ok = pol_ok = anch_ok = True
     pol_bad: list[str] = []
+    bind_ok = True
+    bind_bad: list[str] = []
+    bound_n = 0
     kinds = {}
     for e in entries:
         env = e["envelope"]
         ok, payload = cert.verify_envelope(env, cert.DEMO_KEY)
         sig_ok &= ok
         if not ok or payload is None:
-            pol_ok = anch_ok = False
+            pol_ok = anch_ok = bind_ok = False
             continue
         kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
         # policy_hash 三方比对（链下部分）：证书载荷、证书 outcome 内嵌值、
@@ -104,10 +109,25 @@ def main() -> int:
         pol_ok &= ok_pol
         if not ok_pol:
             pol_bad.append(pol_detail)
+        # 响应绑定（P0-2）：证书内部两处声称（challenge 块 vs outcome 内嵌）必须一致。
+        # 没有 challenge 块的证书（流式/工具路径）不参与 —— 那是「本来就没绑定」，
+        # 不是「绑定通过」。真正的密码学那一腿在第 4 步用证明公开值补上。
+        if payload.get("challenge"):
+            bound_n += 1
+            ok_bind, bind_detail = verifier.check_response_binding([
+                ("cert.challenge", payload["challenge"].get("response_binding")),
+                ("cert.outcome", (payload.get("outcome") or {}).get("response_binding")),
+            ])
+            bind_ok &= ok_bind
+            if not ok_bind:
+                bind_bad.append(bind_detail)
         anch_ok &= anchor.find_anchor(ledger, cert.cert_digest(payload)) is not None
     results.append(("certificates_signature", sig_ok, f"{len(entries)} certs"))
     pol_detail = f"{len(spec_cache)} pack(s), 3 sources" if pol_ok else "; ".join(pol_bad[:2])
     results.append(("certificates_policy_hash", pol_ok, pol_detail))
+    results.append(("certificates_response_binding", bind_ok,
+                    f"{bound_n} challenge-bound cert(s), self-consistent"
+                    if bind_ok else "; ".join(bind_bad[:2])))
     results.append(("certificates_anchored", anch_ok, "digest present in ledger"))
 
     # 2) 流式链：在 chain.index == 0 处拆成多个 run
@@ -175,6 +195,16 @@ def main() -> int:
         zk_ok &= ok_bind
         if not ok_bind:
             detail += " | " + bind_detail
+        # 响应绑定同理：证明公开值承诺的 response_binding 必须与证书里那两处
+        # 声称一致。这三路都指向「被证明的 T」，缺了它，证书所说的「某条响应
+        # 通过了」就没法拴到任何一条具体响应上。
+        ok_rbind, rbind_detail = verifier.check_response_binding([
+            ("cert.challenge", (payload.get("challenge") or {}).get("response_binding")),
+            ("cert.outcome", (payload.get("outcome") or {}).get("response_binding")),
+            ("proof", verifier.committed_response_binding(v)),
+        ])
+        zk_ok &= ok_rbind
+        detail += " + response binding" if ok_rbind else " | " + rbind_detail
     results.append(("zk_proof", zk_ok, detail))
 
     # 4) 链上锚定核对（可选）：每个证书摘要都能从 Anchor 合约读回，且链上时间戳

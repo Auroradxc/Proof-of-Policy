@@ -49,16 +49,21 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def ai_act_claims(mode: str) -> Dict[str, Any]:
+def ai_act_claims(mode: str, challenge_bound: bool = False) -> Dict[str, Any]:
     """证书携带的 EU AI Act 关联声明。
 
     Art.12（记录留存）：每张证书都是一条防篡改、按调用的审计记录（已锚定）。
     Art.13（透明度）：policy hash + mode + outcome 使系统声明的行为可被第三方核验。
+
+    ``challenge_bound`` 如实反映这张证书是否带 ``challenge`` 块（P0-2）——
+    没有它，证书只说明「某条 T 通过了」，说不出是哪条。这是个实质性区别，
+    不能默认成 True。
     """
     return {
         "art12_record_keeping": {
             "per_call_record": True,
             "policy_hash_bound": True,
+            "response_bound": challenge_bound,
             "anchored": True,
         },
         "art13_transparency": {
@@ -74,13 +79,18 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
                   proof_sha256: Optional[str] = None,
                   ts: Optional[str] = None,
                   extra: Optional[Dict[str, Any]] = None,
-                  public_values_sha256: Optional[str] = None) -> Dict[str, Any]:
+                  public_values_sha256: Optional[str] = None,
+                  challenge: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """组装证书载荷（给定输入 + ts 后即为确定性结构）。
 
     ``extra`` 携带可选注解，例如 ``{"streaming": {"partial": true, "tokens": N}}``
     用于流式（增量）证书（在流中间为前缀签发）。
     ``public_values_sha256`` 绑定承诺的公开值，供 verifier-only（``pop-verify``）
     校验使用。
+    ``challenge`` 是 P0-2 的挑战块（见 ``policydsl.challenge.challenge_block``）：
+    它公开 nonce 与证明承诺的 ``response_binding``，让持 T′ 的一方能离线确认
+    「被证明的 T」就是「送达的 T′」。**nonce 是公开的**（它必须公开，否则没人
+    能核对）；它的一次性由协议使用方保证，不是秘密。
     """
     payload = {
         "cert_version": CERT_VERSION,
@@ -90,9 +100,11 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
         "outcome": outcome,
         "binding": {"vkey_hash": vkey_hash, "proof_sha256": proof_sha256,
                     "public_values_sha256": public_values_sha256},
-        "ai_act": ai_act_claims(mode),
+        "ai_act": ai_act_claims(mode, challenge_bound=challenge is not None),
         "ts": ts or utc_now(),
     }
+    if challenge is not None:
+        payload["challenge"] = challenge
     if extra:
         payload.update(extra)
     return payload
