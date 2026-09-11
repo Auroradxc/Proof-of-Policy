@@ -68,6 +68,8 @@ W1    W2    W3    W4    W5    W6    W7    W8    W9    W10
 
 > **并行建议**：P2-9 的前置（§8.0 恢复 pip、装 torch/onnx/ezkl）与 P1 无耦合，
 > **建议 W1 就并行启动**，否则 2–3 周的依赖栈调试会串行吃掉 P2 的全部预算。
+> **2026-09-11 状态**：该前置里最后一块未知数（§9.1 的 ezkl EVM 验证器接口）已解（见待办 T2），
+> P2-9 自身已无已知硬阻塞；P1 段剩下的唯一障碍是 **T1 的租机**（见 §9 待办）。
 
 ---
 
@@ -378,7 +380,7 @@ class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 
 > **落地结果**（下面的设计稿保留作对照，实现与原稿的差异见文末「与设计稿的差异」）：
 > `policydsl/trace.py`（回执/网关/链校验）+ `pop-types` 镜像 + 三个适配器接线 + `tests/test_trace.py`
-> （四条验收 + 五例第三方核对，28 例全绿）+ `cross_validate.py` 全部向量改为回执驱动（host 14/14、prove 14/14）。
+> （四条验收 + 六例第三方核对，29 例全绿）+ `cross_validate.py` 全部向量改为回执驱动（host 14/14、prove 14/14）。
 
 **问题**：`tool_calls` 与 `token_count` 是 `ProofRequest` 里由证明者自填的私有输入
 （`circuits/types/src/lib.rs:112-119,390`）。`tool_arg_guard`/`budget_bound` 因此**语义上不健全**。
@@ -453,7 +455,17 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
 
 ---
 
-### P1-7 链上证明验证（受 D2 影响）
+### P1-7 链上证明验证（受 D2 影响）—— ⛔ **未开始：等外部算力**
+
+> **本项卡在硬件上，代码侧推不动。** 前置 ② 要求 **≥64 GB 内存的外部机器**产出 groth16 证明
+> —— 本机 12 GB 实测**必 OOM**（compressed 与 groth16 均在峰值 ~11.0 GB 被 OOM killer 终止，
+> 见 [`plan-p7.md`](plan-p7.md) §A）。这不是"再优化一下就行"的余量问题：递归包装的**固定开销**
+> 就超过本机内存，`SHARD_SIZE` / `MEMORY_LIMIT` 对它无效。**须人工租一台一次性 ≥64 GB 云机**
+> （约数小时窗口），产物入库后本机可离线复核。登记见 **§9 待办 T1**。
+>
+> 代码侧可以先行、不受影响的部分：`contracts/Anchor.sol` 的 `anchorWithProof` 骨架、
+> `scripts/anchor_e2e.sh --onchain-verify` 的驱动与反例用例 —— 这些在 §P7-C 已有可运行基础
+> （真实 Anvil 上端到端 PASS），本项只差 **groth16 证明工件**入不了库。
 
 现状 `contracts/Anchor.sol` 只存 `bytes32` 摘要 —— **链上不验证证明**，「链上可验证」是过度声明。
 
@@ -483,7 +495,21 @@ function anchorWithProof(bytes32 digest, bytes calldata proof, bytes calldata pu
 
 ---
 
-### P1-8 形式化安全模型 v2
+### P1-8 形式化安全模型 v2 —— ✅ 已完成（2026-09-11）
+
+> **状态**：`docs/security-model.md` 已重写为 v2（§0 记号/参与方/信任边界/口径纪律 → §1 假设 A1–A7 →
+> §2 游戏 G_Sound / G_Bind_pol / G_Bind_resp / G_Bind_trace / G_Priv / G_Redact / G_Ledger →
+> §3 引理链 L1–L6 → §4 主定理 → §5 诚实边界 → §6 代码落点对照表 → §7 实验对照）。
+>
+> **与下方设计稿的偏差（以实现为准）**
+> 1. 游戏从 5 个扩到 **7 个**：补 `Bind_pol`（策略绑定，P0-1 的构造性论证不能只算在 Sound 里）
+>    与 `Ledger`（账本完整性），并显式记 `Redact`。
+> 2. 主定理拆项写全：`Adv^Sound_π ≤ Adv^sound_zkVM + Adv^CR_SHA256 + Adv^EUF-CMA_Ed25519`，
+>    并把**截尾**作为独立项 `+ Pr[截尾攻击](A)` 单列 —— 见 §5.3。
+> 3. 新增**口径纪律 D1–D3**（不主张未证之事 / 不把链下步骤算作电路内 / 「公开值无明文」≠「内容不可恢复」）。
+> 4. **本次工作产出一个新的健全性发现**：P1-5 回执链存在**截尾缺口**，已实跑复现、钉成用例
+>    （`test_tail_truncation_is_a_known_gap`）并登记为待办 **T4**（对策：网关会话末端 seal）。
+>    这正是「先写形式化模型」的价值 —— 缺口是形式化过程发现的，不是事后补的。
 
 `docs/security-model.md` 重写为**游戏式定义 + 归约**：
 
@@ -652,8 +678,8 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 | 阶段 | 判据 |
 |---|---|
-| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（P1-5 后当前 **250 全绿 / 5 skip**） |
-| P1 | ① `test_trace.py` ✅（**P1-5 已完成**：28 例含四条验收，`cross_validate` host/prove 14/14）/ `test_compose.py` / `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应 |
+| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（T2 关闭后当前 **261 全绿 / 5 skip**） |
+| P1 | ① `test_trace.py` ✅（**P1-5 已完成**：29 例含四条验收，`cross_validate` host/prove 14/14）/ `test_compose.py` / `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应 |
 | P2 | ① `test_semantic.py` **7 例全绿含 5 条反例**（§9.3）；② `test_session.py`；③ `test_multiparty.py`；④ `bench/results/` 新增三张表（含 ezkl 出证成本）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 L6 对接 |
 
 ---
@@ -811,18 +837,23 @@ verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 
 **并行启动**（与 P1 无耦合，越早越好）：
 - `§8.0` 恢复 pip —— ✅ 已完成（2026-09-10）；
-- `§9.1` ezkl 依赖栈 —— 依赖已装并冒烟通过，但 `create_evm_verifier()` 仍抛
-  `RuntimeError: no running event loop`，是 **P2-9 的剩余硬阻塞**，见下方待办 T2。
+- `§9.1` ezkl 依赖栈 —— 依赖已装并冒烟通过；`create_evm_verifier()` 的
+  `RuntimeError: no running event loop` **已解**（2026-09-11，见下方待办 T2 与 §P2-9 的 9.0 记要），
+  **P2-9 目前无已知硬阻塞**。
 
 ### 待办登记（需要外部资源或人工动作，代码侧推不动）
 
 | # | 待办 | 阻塞谁 | 前置/成本 | 状态 |
 |---|---|---|---|---|
-| **T1** | **租一台一次性 ≥64 GB 云机**，产出 groth16 证明 + 测通验证合约（D2 已拍板） | `P1-7` 链上证明验证的**硬前置**：本机 12 GB 必 OOM，groth16/plonk 出不来 | 需要人工租机（约数小时窗口）+ 一次环境搭建（Rust/SP1 工具链或直接搬 `circuits/` 目标目录）；产出入库后本机可离线复核 | ⬜ 未开始 —— **P1-5 已完成，本项现在是 P1 段内唯一的外部阻塞，建议优先排期** |
-| **T2** | 解开 ezkl `create_evm_verifier()` 的 `RuntimeError: no running event loop` | `P2-9`（D3 选定的全量 ezkl 集成）的最后一个阻塞 | 先试 ezkl 12.x；或绕开该 API，直接由编译产物手写 Solidity verifier | ⬜ 未开始 |
+| **T1** | **租一台一次性 ≥64 GB 云机**（**外部资源，人工动作**），产出 groth16 证明 + 测通验证合约（D2 已拍板） | `P1-7` 链上证明验证的**硬前置**：**本机 12 GB 必 OOM**（compressed 与 groth16 实测都在峰值 ~11.0 GB 被 OOM killer 终止 —— 递归包装的固定开销就超了本机内存，`SHARD_SIZE`/`MEMORY_LIMIT` 无效），groth16/plonk 出不来 | 需要人工租机（约数小时窗口）+ 一次环境搭建（Rust/SP1 工具链或直接搬 `circuits/` 目标目录）；产出入库后本机可离线复核 | ⬜ **未开始（阻塞中）** —— P1-5 完成后，本项是 **P1 段内唯一剩余任务**，也是唯一的外部阻塞；**不解决它，P1 段无法收尾**。建议立即排期租机 |
+| **T2** | 解开 ezkl `create_evm_verifier()` 的 `RuntimeError: no running event loop` | `P2-9`（D3 选定的全量 ezkl 集成）的最后一个阻塞 | 先试 ezkl 12.x；或绕开该 API，直接由编译产物手写 Solidity verifier | ✅ **已完成（2026-09-11）** —— 两条预设备选都不需要：真因是**调用方式**（API 内部走 `pyo3-async-runtimes`，须在事件循环内调用并 await 其返回的 Future），非版本、非依赖。解见 `policydsl/ezkl_evm.py` + `tests/test_ezkl_evm.py`（10 例）、记要见 §P2-9 子任务表 9.0 |
 | **T3** | 真实 SP1 证明的**全量**回归改为「出证 + 验证」两条腿都在 CI 之外定期跑 | 论文 §7 的证明时间/内存数字 | 单次 `cross_validate --prove` ≈ 24 分钟；本机跑即可 | ⬜ 未开始 |
+| **T4** | **P1-5b：堵住回执链的「截尾」缺口**（做 P1-8 时发现，见 [`security-model.md`](security-model.md) §5.3） | `P1-5` 的**健全性缺口**：把链尾那条违规回执**整条删掉**后，剩下的仍是一条结构自洽、逐条签名有效的**真链**，`trace_binding`（证书绑的链 == 送检的链）与 `receipt_chain`（逐条验签）**双双 PASS** —— 实测可复现（`tests/test_trace.py::TestVerifyCertTraceBinding::test_tail_truncation_is_a_known_gap`）。**当链与证书由出证方一起转交时，违规尾巴可被静默截掉** | 需**网关对会话末端做一次承诺**：会话结束回执 `seal{count, trace_root}`（签名），验证方核对 `len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root`。改动面：`policydsl/trace.py`（+ 电路内对 seal 的结构校验）+ `verify_cert.py` 3c + 上述缺口用例**翻转为「截尾必须被拒」** | ⬜ 未开始 —— **在 seal 落地前，`--receipts` 只有在验证方自己从网关取链（渠道不被出证方控制）时才可信**，这一点已写进文档与缺口用例 |
 
-> T1/T2 与 P1-5 无耦合，可与 P1-5 并行推进；T1 尤其是**外部队列**，越早排队越好。
+> **T2 已于 2026-09-11 关闭**（理由见上表与 §P2-9 的 9.0 记要）。
+> **T1 仍开着，且现在没有别的并行项了** —— 它是 P1 段收尾的唯一障碍，也是**外部队列**
+> （要人工去租机、等机器就绪），**越早排队越好**：租机窗口本身可能就要等，
+> 而它一到手，P1-7 的代码侧工作（§P7-C 已有可运行基础）就能立刻接上。
 
 ```bash
 # 现在就能做的两件事

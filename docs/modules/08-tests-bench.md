@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（19 个模块，250 个用例）与 `bench/`（3 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（20 个模块，261 个用例）与 `bench/`（3 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,12 +8,12 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 期望 250 passed, 5 skipped
+python3 -m unittest discover -s tests -t . -v   # 期望 261 passed, 5 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
 |---|---:|---|
-| `test_trace` | 28 | **P1-5**：四条验收（①完整链通过 ②删/换/重排失败 ③伪造「参数干净」的回执验签失败 ④旧 `tool_calls` 向量被拒）；`trace_root` 与 Python **逐字节一致**（实测 `--check`）；编码层的长度前缀/键序/keyid 覆盖；链尾篡改**只有链下验签抓得住**的边界；**第三方核对**（`verify_cert.py --receipts [--gateway-key]` 5 例：摘要重算对齐 / 换链对不上 / 重排结构先炸 / 伪造链尾只被验签抓住 / 缺网关公钥时如实报「签名未验」） |
+| `test_trace` | 29 | **P1-5**：四条验收（①完整链通过 ②删/换/重排失败 ③伪造「参数干净」的回执验签失败 ④旧 `tool_calls` 向量被拒）；`trace_root` 与 Python **逐字节一致**（实测 `--check`）；编码层的长度前缀/键序/keyid 覆盖；链尾篡改**只有链下验签抓得住**的边界；**第三方核对**（`verify_cert.py --receipts [--gateway-key]` 5 例：摘要重算对齐 / 换链对不上 / 重排结构先炸 / 伪造链尾只被验签抓住 / 缺网关公钥时如实报「签名未验」）；**截尾缺口**（`test_tail_truncation_is_a_known_gap`：丢掉违规尾条后链仍真签且 `trace_binding`/`receipt_chain` 双 PASS —— 把「已知缺口」钉成用例而非文档口径，见安全模型 §5.3 与待办 T4） |
 | `test_dsl` | 24 | 领域模型、六类规则的通过/违规矩阵、`PolicyError` 路径；**P1-5**：链坏 fail-closed、tokens 电路内自算（不可自填） |
 | `test_nfa` | 7 | 正则子集解析、NFA 构造、`match_search` 与 `re` 的行为对照、fail-fast |
 | `test_pii` | 8 | 四个 PII 模式的命中/漏报、IBAN MOD-97 校验位 |
@@ -32,7 +32,8 @@ python3 -m unittest discover -s tests -t . -v   # 期望 250 passed, 5 skipped
 | `test_ablation` | 5 | pike ≡ naive（Python 与 Rust 两侧） |
 | `test_verifier_only` | 8 | `prefer_verifier_only` 三条件、core 不走近路；**P0-4**：`artifact_proof_modes` 收齐多来源、缺失不编默认值、来源不一致如实暴露 |
 | `test_demo_e2e` | 2 | 端到端会话产物结构 |
-| **合计** | **250** | |
+| `test_ezkl_evm` | 10 | **T2**：`ezkl_evm.run` 对同步/异步/Future 三种可调用对象都成立（5 例，**不依赖 ezkl**）；真实 ezkl 下裸调用必抛 `no running event loop`（把上游坏行为钉死）、包一层即产出 `Halo2Verifier` 源码与 `verifyProof` ABI、连调互不影响、`reusable` 变体 + VK artifact（`vka.json` 实为 bincode，不是 JSON）、**剥空 `PATH` 也不调用 solc** |
+| **合计** | **261** | |
 
 ### 5 个 skip（都是设计内的）
 
@@ -45,8 +46,11 @@ python3 -m unittest discover -s tests -t . -v   # 期望 250 passed, 5 skipped
 > `test_binding` 的 19 例**全部实际执行**：它靠 `pop-script --check`（秒级、不出证明）做
 > Python↔Rust 逐字节比对，不需要真证明，因此不受 `POP_TEST_PROOF` 门控。
 
-> 这是当前环境下的计数（`langchain`/`langgraph`/`mcp` 与 `pop-script`/`pop-verify` 均已安装，
-> 因此真实框架用例与 Rust 路径用例**实际执行**了，而不是跳过）。
+> 这是当前环境下的计数（`langchain`/`langgraph`/`mcp`、`pop-script`/`pop-verify`、
+> 以及 `ezkl`/`torch` 均已安装，因此真实框架用例、Rust 路径用例与 ezkl 用例**实际执行**了，
+> 而不是跳过）。**CI 上的 skip 数会更多（5 → 10）**：CI 不装 `ezkl`/`torch`，
+> `test_ezkl_evm` 里需要真实 ezkl 的 5 例（`TestEzklEvmVerifier`）整组跳过，只有不依赖 ezkl 的
+> `TestRunHelper` 5 例照跑 —— 这是设计内的，P2-9 的可选依赖不进 CI。
 
 ### 分层设计：为什么没装框架也能跑
 
@@ -205,7 +209,7 @@ SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **250 passed / 5 skip**、`cross_validate` host 14/14 + prove 14/14。
+  当前验收判据是 **261 passed / 5 skip**（CI 上 10 skip，见 §1）、`cross_validate` host 14/14 + prove 14/14。
 
 ---
 

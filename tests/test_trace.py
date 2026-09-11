@@ -500,6 +500,37 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
         # 「来源」是两道关：这一步只证明后者。
         self.assertIn("[PASS] trace_binding", proc.stdout)
 
+    # ⚠️ 已知缺口（缺口用例，不是"应有的行为"）：**截尾**。
+    #
+    #    前三层都拦不住「把链尾那条违规回执**整条删掉**」：删掉之后剩下的仍是一条
+    #    结构自洽、逐条签名有效的**真链**，只是短了。摘要比对也过 —— 因为比较的是
+    #    「证书绑的链」与「送检的链」，而攻击者让两边同时是那条截断的链。
+    #
+    #    这不是"再比一次"能补的：任何只基于**交付链本身**的检查都无法知道"后面还有没有"。
+    #    要堵住它，必须让网关对**会话末端**做一次承诺（如会话结束回执
+    #    `seal{count, trace_root}`），验证方核对 `len == count ∧ trace_root == seal.trace_root`。
+    #    **本仓库尚未实现该 seal**，因此：`--receipts` 只有在验证方**自己**从网关取链
+    #    （且该渠道不被出证方控制）时才可信；若链与证书来自同一条由出证方转交的渠道，
+    #    截尾可过。缺口登记见 `docs/plan-p0p1p2.md` §9 待办 T4（P1-5b）。
+    #
+    #    这条用例把缺口钉死：哪天 seal 落地，它会失败 —— 那不是回归，是提醒把它改成
+    #    "截尾必须被拒"并更新文档。
+    def test_tail_truncation_is_a_known_gap(self):
+        gw = trace.ToolGateway(ts=GW_TS)
+        gw.issue("search_kb", {"query": "ok"}, "hit")
+        gw.issue("write_file", {"path": "/tmp/a"}, "ok")
+        gw.issue("http_get", {"url": "https://ex", "token": "sk-secret"}, "leak")
+        truncated = list(gw.receipts[:2])            # 丢掉那条违规的尾
+        self.assertEqual(trace.chain_ok(truncated), (True, ""), "结构与签名都是真的")
+        self.assertEqual(trace.verify_chain(truncated, gw.keyring()), (True, ""))
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            cert_file = self._issue(tmp, truncated)
+            proc = self._verify(tmp, cert_file, truncated, gw)
+        self.assertEqual(proc.returncode, 0, "缺口：截尾后验证方仍全 PASS")
+        self.assertIn("[PASS] trace_binding", proc.stdout)
+        self.assertIn("[PASS] receipt_chain", proc.stdout)
+
     # 只给 --receipts 不给 --gateway-key：如实说明「签名未验」，不假装验过。
     def test_without_gateway_key_reports_unverified(self):
         gw = trace.ToolGateway(ts=GW_TS)
