@@ -41,7 +41,7 @@
 | `mask: [u32]` | 允许不同（置为 `*`）的字符下标 |
 | `redacted: str?` | 要验证的候选脱敏串（可选） |
 | `spans: [(u32,u32)]` | **见证区间**：声称「这些位置是真实模式匹配」的证据 |
-| `tool_calls` / `token_count` | 轨迹类规则用 |
+| `receipts` | 轨迹类规则用：**工具网关签发的回执链**（P1-5，含明文 `args`；同样是私密输入） |
 
 ### 2.2 私有输出 `PrivateOutput`
 
@@ -206,7 +206,7 @@ Python 侧与 `pop_types::response_binding` 必须逐字节一致 —— 否则�
 |---|---|---|
 | `commitment(text)` | `str -> hex` | `SHA256(text.encode("utf-8"))` 小写十六进制 |
 | `evidence_commitment(evidence)` | `str -> hex` | 同 `commitment`（语义别名，便于阅读） |
-| `canonical_violations(spec, response, tool_calls=None, token_count=None)` | `-> list[dict]` | **镜像 Rust 判定**，返回 `(rule, kind, evidence)`；未知 kind 抛 `NotImplementedError` |
+| `canonical_violations(spec, response, receipts=None)` | `-> list[dict]` | **镜像 Rust 判定**，返回 `(rule, kind, evidence)`；未知 kind 抛 `NotImplementedError`（P1-5：`receipts` 取代 `tool_calls`/`token_count`） |
 | `private_output(spec, response, mask=None, redacted=None, spans=None, nonce=b"", ...)` | `-> dict` | 组装 `PrivateOutput` golden（含脱敏证明与 `response_binding`） |
 | `response_binding(nonce, response)` | `bytes,str -> hex` | `SHA256(BIND_DOMAIN ‖ u32_be(len) ‖ nonce ‖ T_utf8)`（P0-2；↔ `pop_types::response_binding`） |
 | `verify_binding(nonce, response, binding)` | `-> bool` | 常量时间（`hmac.compare_digest`）核对绑定 |

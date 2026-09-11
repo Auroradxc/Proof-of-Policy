@@ -133,6 +133,16 @@ def committed_response_binding(proof_result: Dict[str, Any]) -> Optional[str]:
     return _committed_field(proof_result, "response_binding")
 
 
+def committed_trace_root(proof_result: Dict[str, Any]) -> Optional[str]:
+    """从验证器输出里取出**证明承诺的**链尾摘要（P1-5）。
+
+    与另两个 ``committed_*`` 同样处理缺失：None 表示这一路来源不可用，绝不是
+    「通过」。空链的合法值是字面量 ``"genesis"`` —— 它是一个**正常取值**，
+    不是缺失。
+    """
+    return _committed_field(proof_result, "trace_root")
+
+
 def check_agreement(sources: Sequence[Tuple[str, Optional[str]]],
                     what: str = "policy_hash") -> Tuple[bool, str]:
     """比对若干来源声称的同一个值：**非 None 的来源必须全部相等**。
@@ -173,6 +183,20 @@ def check_response_binding(sources: Sequence[Tuple[str, Optional[str]]]) -> Tupl
     响应」，只比「证书自称 == 证明承诺」则漏掉「送达的 T′ 根本不是被证明的 T」。
     """
     return check_agreement(sources, what="response_binding")
+
+
+def check_trace_binding(sources: Sequence[Tuple[str, Optional[str]]]) -> Tuple[bool, str]:
+    """轨迹绑定的比对（P1-5）：见 :func:`check_agreement`。
+
+    来源：证书 outcome 内嵌的 `trace_root`、证明公开值承诺的 `trace_root`、
+    以及验证方拿**网关侧回执**现场重算的链尾。三者相等 ⇒ 这份证明绑的正是
+    **验证方自己手上那条链**，而不是出证方转述的另一条。
+
+    **本函数只比对摘要，不验签**：链尾摘要能对上，说明链的内容一致；「这条链
+    是不是网关真的签过」是另一件事，由 :func:`policydsl.trace.verify_chain`
+    独立完成（`verify_cert.py --gateway-key` 会把两步都跑）。
+    """
+    return check_agreement(sources, what="trace_root")
 
 
 def short_hash(h: str, n: int = 8) -> str:

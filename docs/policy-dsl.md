@@ -31,7 +31,7 @@
 
 - `semantic="and"`：全部规则通过 → 合规；任一违反 → 违规并记录 `violations[].kind` 与证据。
 - `pattern_block` 语义 = **子串存在匹配即违规**（对齐 Python `re.search`）。参考判定用编译进 ConstraintSpec 的 NFA（`policydsl.nfa`），SP1 用同一份 NFA spec（`pop-types::nfa_match`）——保证跨层一致。受支持语法子集（字符类/转义/`.`/量词/分组/或）与 ASCII 语义见 `policydsl/nfa.py`；不支持语法（锚点、反向引用、环视）在编译时 fail-fast。
-- 内容规则（keyword/pattern/length/format）判定自由文本 `response`；`tool_arg_guard` / `budget_bound` 判定结构化 `Transcript`（`evaluate.check` 的入参可以是 `str` 或 `policydsl.model.Transcript`：含 `response`、`tool_calls: [ToolCall]`、`token_count`）。
+- 内容规则（keyword/pattern/length/format）判定自由文本 `response`；`tool_arg_guard` / `budget_bound` 判定结构化 `Transcript`（`evaluate.check` 的入参可以是 `str` 或 `policydsl.model.Transcript`：含 `response` 与 `receipts`——**工具网关签发的回执链**，P1-5）。`budget_bound(unit="tokens")` 数的是 `response` 按固定空白字节集切出的 run 数（电路内自算），**没有**可自填的 `token_count`。
 
 ## 编译输出
 

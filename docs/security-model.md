@@ -139,9 +139,31 @@ zkVM 执行输出；确定性判定给出 `J(π,T).passed = false`，矛盾。�
 2. **哈希假设**：SHA-256 抗碰撞/抗原像。
 3. **签名**：**Ed25519**（`policydsl/cert.py` 的 `Ed25519Signer` + `policydsl/keys.py`）。私钥留在出证方，验证方只持公钥，因此**无法伪造**签名 —— 这是「证书可交第三方审计」的前提。P0-3 之前的 `DEMO_KEY` HMAC（对称，验证方也能伪造）已**结构性废弃**：`verify_envelope` 按 `keyid` 前缀分发，`demo-hmac-sha256` 不在白名单里，连配对密钥放进 keyring 也会被拒。**HSM/KMS 托管仍待补**（当前私钥是文件，口令可选）。
 4. **规则覆盖（P7-b 后更新）**：`keyword_block` / `length_bound` / `pattern_block` / **`format_check`（json/int/float 规范子集）**
-   / **`tool_arg_guard`（工具参数，含 `tools` 限定）** / **`budget_bound`（calls；tokens 用请求携带的 `token_count`）**
+   / **`tool_arg_guard`（工具回执，含 `tools` 限定）** / **`budget_bound`（calls 数回执；tokens 电路内自算）**
    均已**入电路**（`pop-types::evaluate`），因此 §2 的健全性定义覆盖这 6 类。
-   两处仍需注意：① `budget_bound` 的 `tokens` 依赖 `token_count`，该值是**证明者声明**而非电路内分词结果（文档标注）；
-   ② Agent 工具路径证书的 `zk:true` 表示**规则可证**，是否**附证明**由证书 `binding.vkey_hash`（`unproven` 表示仅链下判定）表明。
+   两点仍需注意：① Agent 工具路径证书的 `zk:true` 表示**规则可证**，是否**附证明**由证书
+   `binding.vkey_hash`（`unproven` 表示仅链下判定）表明；② 轨迹类规则的**输入**（工具回执链）不是
+   证明者的自述，但**回执确由网关签发**这一步在**链下**验签完成（见下条「轨迹绑定」）。
+   `budget_bound(unit="tokens")` 的口径已从「证明者声明的 `token_count`」改为**电路内按固定空白字节集自算**的
+   run 数（不兼容变更，见「轨迹绑定」）。
+
+   **轨迹绑定（P1-5）**：`ProofRequest`/`PrivateRequest` 里的 `tool_calls`/`token_count` 已**删除**，
+   代之以网关签发的 `receipts`（`{seq,tool,args,result_digest,ts,prev,keyid,sig}` 链）。健全性主张分三层，
+   必须分别陈述，不可合并成"电路证明了整个轨迹"：
+   | 层 | 保证 | 不保证 |
+   |---|---|---|
+   | 电路内（`verify_receipt_chain`） | 链**结构**自洽：`seq` 连续、`prev` 逐条咬合、摘要由内容重算；不自洽则 `trace_unbound` **fail-closed** | 也**不**验签：改动链**尾**那条的内容，结构上仍自洽 |
+   | 链下（`trace.verify_chain`） | 每条回执确由 keyring 里的 `keyid` 钥签过（Ed25519）；非白名单方案前缀结构性拒绝 | 不防**网关自身**作恶 |
+   | 公开值（`trace_root`） | 链尾摘要随证明承诺，验证方拿网关侧回执重算即可核对「证明绑的是哪条链」 | 公开的只是摘要，不是链本身 |
+   第三层已落成**可执行的验证路径**：`verify_cert.py --receipts R.json` 由验证方**自己手上**的回执
+   重算链尾（与 `--response` 之于响应对称），`--gateway-key` 再跑一遍链下验签。
+   这两道关**不可互相替代**：摘要比对回答「送检的链与证明绑的是不是同一条」，
+   验签回答「这条链是不是网关签的」。链尾被改内容而保留原签名、且送检的链正是被改的那一份时，
+   结构校验与摘要都过得去（`trace_binding` PASS）而 `receipt_chain` 判 FAIL —— 这正是
+   「只核对一致性不等于核对来源」的实例。该边界被写成显式用例而不是被含糊过去
+   （`tests/test_trace.py::TestVerifyCertTraceBinding`，含缺 `--gateway-key` 时如实报「签名未验」）。
+   因此**信任前提**是「网关密钥不被滥用」——网关是被显式信任的第三方，不在被证明之列。旧向量里的
+   `tool_calls`/`token_count` 现在是**未知字段**且三处请求结构（`VectorIn`/`ProofRequest`/`PrivateRequest`）
+   都 `deny_unknown_fields`：拿旧向量出证会**解析失败**，不会退化成"零次工具调用"照样出证。
 5. **语义**：正则为受支持子集 + ASCII 语义；长度按码点。非 ASCII 字母大小写等差异已在代码/文档标注。
 6. **非目标**：不证明“模型推理”本身（那是 zkAgent/zkML 层）；不覆盖训练数据/模型卡（EU AI Act Art.11 等）。

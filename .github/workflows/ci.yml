@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: "3.10"
       - name: Python test suite (Rust binaries absent → those cases skip)
-        run: python3 -m unittest discover tests -v
+        run: python3 -m unittest discover -s tests -t . -v
       - name: On-chain anchoring tests (offline fake-RPC; anvil e2e auto-skips without foundry)
         run: python3 -m unittest tests.test_anchor tests.test_anchor_chain -v
       - name: Docs sanity (no absolute machine paths)

@@ -44,6 +44,12 @@ Core 证明路径不受影响（~10 GB，回归 PASS）。
 **验收**：host 交叉验证 **14/14 PASS**；**真实证明交叉验证 14/14 PASS**（含 format/tool/budget/token 全部四类新向量）。
 **边界（保留）**：`token_count` 为声明值（非电路内分词）；`int/float` 仅规范子集（超集输入按子集规则拒绝，已文档化）。
 
+> ⚠️ **本节记述的是 P7 当时的状态，其中两处已被 P1-5 取代**（2026-09-11）：
+> ① `ProofRequest.tool_calls` / `token_count` 与 `ToolCall` **已删除**，代之以网关签发的
+> `receipts` 回执链；② `budget_bound(tokens)` 不再是"声明的 `token_count`"，而是**电路内自算**。
+> 现状见 `docs/plan-p0p1p2.md` §P1-5 与 `docs/modules/05-zk-circuits.md` §2.3a。本节保留作对照，
+> 不复写历史。
+
 ## C. 链上锚定 RPC 后端（真跑本地 Anvil）—— 已实现并端到端 PASS
 
 **问题**：`anchor_on_chain` 仅为桩；账本只有本地文件。

@@ -40,19 +40,19 @@ pub fn main() {
 
 | 类型 | 说明 |
 |---|---|
-| `ToolCall { name, args: BTreeMap<String,String> }` | 轨迹里的工具调用 |
+| `ToolReceipt { seq, tool, args: BTreeMap<String,String>, result_digest, ts, prev, keyid }` | **网关签发的工具回执**（P1-5；链的元素）。`sig` **不在**结构体里 —— 电路内不验签，字段被 serde 忽略 |
 | `FormatKind { Json, Int, Float }` | `format_check` 的格式（snake_case 序列化） |
 | `BudgetUnit { Calls, Tokens }` | `budget_bound` 的计量单位 |
 | `NfaSpec { start, accept, states }` / `NfaState { eps, edges }` / `NfaEdge { to, ranges }` | **可序列化 NFA 契约**（由 `policydsl.nfa` 产出） |
 | `PatternMode { Pike, Naive }` | 匹配模式（默认 `Pike`） |
 | `Constraint` | 六种变体的枚举（见下表） |
-| `ProofRequest { response, constraints, nonce, tool_calls, token_count }` | 公开模式输入（`nonce` 为 P0-2 挑战值，`serde(default)`） |
+| `ProofRequest { response, constraints, nonce, receipts }` | 公开模式输入（`nonce` 为 P0-2 挑战值，`serde(default)`；`receipts` 为 P1-5 回执链）。**`deny_unknown_fields`** |
 | `Violation { rule, kind, evidence }` | 违规（证据为**字符串**） |
-| `ProofOutput { policy_hash, response_binding, passed, violations }` | 公开模式输出（提交为公开值） |
+| `ProofOutput { policy_hash, response_binding, trace_root, passed, violations }` | 公开模式输出（提交为公开值；`trace_root` 为链尾摘要，空链为 `"genesis"`） |
 | `PrivateViolation { rule, kind, evidence_commitment }` | 私有模式的违规（只有承诺） |
 | `RedactionProof { redacted_commitment, mask_count, redaction_ok, mask_covered }` | 脱敏证明 |
-| `PrivateRequest { response, constraints, nonce, mask, redacted, spans, tool_calls, token_count }` | 私有模式输入（`nonce` 同上） |
-| `PrivateOutput { policy_hash, response_binding, response_commitment, passed, violations, redaction }` | 私有模式输出 |
+| `PrivateRequest { response, constraints, nonce, mask, redacted, spans, receipts }` | 私有模式输入（`nonce` 同上）。**`deny_unknown_fields`** |
+| `PrivateOutput { policy_hash, response_binding, response_commitment, trace_root, passed, violations, redaction }` | 私有模式输出 |
 | `Job { Public(ProofRequest), Private(PrivateRequest) }` | 一个 ELF 服务两种模式的调度枚举 |
 | `Outcome { Public(ProofOutput), Private(PrivateOutput) }` | 顶层承诺结果 |
 
@@ -108,10 +108,33 @@ guest 读到的 `spec_canonical` 是一段**规范 JSON 字节**（`compile.cano
 | `LengthBound` | `response.chars().count()` 是否在 `[min,max]` | `"len=<N>"` |
 | `PatternBlock` | 按 `specs` 顺序匹配，命中即记并 `break` | 命中的模式串 |
 | `FormatCheck` | `parse_json_ok` / `parse_int_ok` / `parse_float_ok` | 格式名 |
-| `ToolArgGuard` | `tools` 非空时限定范围；命中被禁字段即记（每个调用至多一条） | `"<tool>:<field>"` |
-| `BudgetBound` | `calls` → `tool_calls.len()`；`tokens` → `token_count.unwrap_or(0)` | `"<unit>=<total>/<budget>"` |
+| `ToolArgGuard` | **先验链结构**（`verify_receipt_chain`）：不自洽 → `trace_unbound` 并 `continue`；否则 `tools` 非空时限定范围，命中被禁字段即记（每个回执至多一条） | `"<tool>:<field>"` |
+| `BudgetBound` | `calls` → 同上先验链，然后 `receipts.len()`；`tokens` → `token_count(response)`（电路内自算，见 §2.3a） | `"<unit>=<total>/<budget>"` |
 
-`passed = violations.is_empty()`。此外输出里总带一条 `response_binding`（见 §2.5a）。
+`passed = violations.is_empty()`。此外输出里总带一条 `response_binding`（见 §2.5a）与 `trace_root`（§2.5b）。
+若链结构不自洽而**没有任何工具规则**兜住它（策略里没有工具类规则），末尾会补一条
+`rule="<trace>"`、`kind="trace_unbound"` 的合成违规 —— 保证「链坏了」这件事**永远**不会因为策略恰好不查工具
+而被静默放过（fail-closed）。
+
+### 2.3a `verify_receipt_chain` 与 `token_count`（P1-5）
+
+```rust
+verify_receipt_chain(rs) -> Result<(), String>
+// 逐条：seq 必须 == 下标；prev 必须 == 前一条的 receipt_digest（首条 == "genesis"）
+// 失败原因字符串与 Python trace.chain_ok 逐字符相同："receipt {i}: seq={seq} != {i}" / "receipt {i}: prev mismatch"
+```
+
+`receipt_digest = SHA256(canonical_receipt_bytes(r))`，编码为
+`TRACE_DOMAIN(b"pop-trace-v1") ‖ u32_be(seq) ‖ lp(tool) ‖ u32_be(len(args)) ‖ [lp(k)‖lp(v)]_按键升序 ‖
+lp(result_digest) ‖ lp(ts) ‖ lp(prev) ‖ lp(keyid)`（`lp` = `u32_be(len)‖data`，长度前缀消除拼接歧义）。
+与 `policydsl.trace.canonical_receipt_bytes` **逐字节一致**，由 `tests/test_trace.py::test_full_chain_parity`
+实测核对（`trace_root` 是这串字节的哈希，任何编码差异都会让它对不上）。
+
+`token_count(text)`：把 UTF-8 字节按固定空白集 `{0x20, 0x09, 0x0a, 0x0b, 0x0c, 0x0d}` 切分，数非空白
+run 的个数。**不用** Unicode White_Space（随 Unicode 版本漂移），也**不是**任何真实分词器。
+
+> ⚠️ 电路内**不验签名**（zkVM 内 Ed25519 代价高）：结构校验只保证链自洽，不保证回执由网关签发。
+> 后者由链下 `trace.verify_chain` 与公开值里的 `trace_root` 共同承担，见 `docs/security-model.md`。
 
 **规范子集解析器**（必须与 Python 侧逐字节一致，见 `01` §4）：
 
@@ -179,13 +202,28 @@ pub fn response_binding(nonce: &[u8], response: &str) -> String {
 `(nonce=b"ab", T="cd")` 与 `(nonce=b"abcd", T="")` 会哈希成同一个值，
 `(nonce, T) → 字节串` 就不是单射。加了前缀，任意长度组合都无歧义。
 
-域前缀 `BIND_DOMAIN` 同样必要：将来若用同一套原语绑定工具轨迹（P1-5），
-换一段前缀即可保证两个域的哈希**永不碰撞**。
+域前缀 `BIND_DOMAIN` 同样必要：P1-5 的工具轨迹用的正是**同一套原语 + 另一段前缀**
+（`TRACE_DOMAIN = b"pop-trace-v1"`），域前缀保证了两个域的哈希**永不碰撞** ——
+否则同一条字符串在两边可能算出同一个承诺，绑定就串了域。
 
 `nonce` 是 `#[serde(default)]` 的，所以旧向量（没有该字段）照样能解析，只是绑定退化成
 「空挑战的承诺」。Python 侧对应实现是 `commit.response_binding`；
 逐字节一致性由 `tests/test_binding.py::TestPythonRustParity` 真跑 `pop-script --check` 钉死
 （多种 nonce 长度，公开 + 私有两条路径）。
+
+### 2.5b 轨迹绑定 `trace_root`
+
+`trace_root` = **链尾那条回执的 `receipt_digest`**（空链为字面量 `"genesis"`），公开值与私有值里都有它，
+值一样。它与 `response_binding` 的作用**完全对称**：
+
+| 字段 | 绑定的是 | 验证方怎么核对 |
+|---|---|---|
+| `response_binding` | 被判定**响应** T（+ 挑战值） | 拿送达的 T′ 与 nonce 重算 |
+| `trace_root` | 工具**回执链**的链尾 | 拿**网关侧收到的回执**重算最后一条的摘要 |
+
+链长了也不需要把链塞进公开值：验证方本来就持有网关发给它的回执，重算链尾即可比对，
+这与「不公开整条响应、只公开承诺」是同一个思路。链尾（而不是整条链的 Merkle 根）够用，是因为
+`prev` 已把整条链串成一条哈希链 —— 链尾摘要**已经**承诺了它之前的所有内容。
 
 ### 2.5 `sha256_hex`
 
@@ -344,6 +382,7 @@ cd circuits/verifier && cargo build --release -p pop-verify  # 可选，审计�
 | 测试 | 覆盖 |
 |---|---|
 | `tests/test_rules_incircuit.py` | 六类规则在 `--check` 下与 Python golden 逐点对齐（含规范化证据串） |
+| `tests/test_trace.py` | P1-5 四条验收（完整链通过 / 删·换·重排失败 / 伪造回执验签失败 / 旧向量被拒），并实测 `trace_root` 与 Python 逐字节一致 |
 | `tests/test_binding.py::TestPythonRustParity` | `response_binding` 在电路内与 Python 逐字节一致（公开 + 私有，多种 nonce 长度） |
 | `tests/test_ablation.py::TestRustNaivePath` | Rust 侧 `nfa_match` ≡ `nfa_match_naive` |
 | `tests/test_verifier_only.py` | `pop-verify` 的调用与快路径判定 |

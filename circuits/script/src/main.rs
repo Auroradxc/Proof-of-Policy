@@ -24,7 +24,12 @@ const POP_ELF: Elf = include_elf!("pop-program");
 ///
 /// `spec_canonical` 是策略的**规范 JSON 文本**（唯一真相源）：guest 从它
 /// 同时派生 `policy_hash` 与要判定的约束。缺失即报错，不做缺省。
+/// `deny_unknown_fields` 在这里是**P1-5 验收项 ④ 的关键**：旧工具链产出的
+/// vectors.json 带 `tool_calls`/`token_count`，若在这里被静默丢字段，旧向量就会
+/// 退化成「零次工具调用」并照样出证 —— 那正是 P1-5 要消灭的自述式轨迹。
+/// 拒收未知字段，旧向量到此即止（进程报错、拿不到证明）。
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct VectorIn {
     #[serde(default)]
     name: Option<String>,
@@ -41,10 +46,11 @@ struct VectorIn {
     redacted: Option<String>,
     #[serde(default)]
     spans: Vec<(u32, u32)>,
+    /// 工具回执链（P1-5）。旧向量里的 `tool_calls`/`token_count` 现在是**未知
+    /// 字段**：`ProofRequest`/`PrivateRequest` 都标了 `deny_unknown_fields`，
+    /// 拿旧向量出证会在客户端就报错，而不是静默当成零次调用。
     #[serde(default)]
-    tool_calls: Vec<pop_types::ToolCall>,
-    #[serde(default)]
-    token_count: Option<u32>,
+    receipts: Vec<pop_types::ToolReceipt>,
 }
 
 #[derive(Deserialize)]
@@ -64,16 +70,14 @@ impl VectorIn {
                 mask: self.mask.clone(),
                 redacted: self.redacted.clone(),
                 spans: self.spans.clone(),
-                tool_calls: self.tool_calls.clone(),
-                token_count: self.token_count,
+                receipts: self.receipts.clone(),
             })
         } else {
             Job::Public(ProofRequest {
                 spec_canonical: self.spec_canonical.clone(),
                 response: self.response.clone(),
                 nonce: self.nonce.clone(),
-                tool_calls: self.tool_calls.clone(),
-                token_count: self.token_count,
+                receipts: self.receipts.clone(),
             })
         }
     }
@@ -210,15 +214,21 @@ fn main() {
         return;
     }
 
-    // 读取 vectors 文件（支持 {"vectors":[...]} 或裸 [...] 两种形态）
+    // 读取 vectors 文件（支持 {"vectors":[...]} 或裸 [...] 两种形态）。
+    // 先解析成 `Value` 判形态、再针对性反序列化：若直接「先按对象试、失败再按
+    // 数组试」，`VectorIn` 的字段错误（如旧向量里的 `tool_calls`）会被二次解析
+    // 的 "expected a sequence" 覆盖掉，报错指向错误的方向。
     let text = std::fs::read_to_string(&vectors_path)
         .unwrap_or_else(|e| panic!("read {vectors_path}: {e}"));
-    let data: VectorsFile = match serde_json::from_str(&text) {
-        Ok(d) => d,
-        Err(_) => VectorsFile {
-            vectors: serde_json::from_str(&text)
-                .expect("vectors must be {\"vectors\":[...]} or [...]"),
-        },
+    let value: serde_json::Value = serde_json::from_str(&text)
+        .unwrap_or_else(|e| panic!("parse {vectors_path}: {e}"));
+    let data: VectorsFile = if value.is_array() {
+        VectorsFile {
+            vectors: serde_json::from_value(value).expect("vectors array"),
+        }
+    } else {
+        serde_json::from_value(value)
+            .unwrap_or_else(|e| panic!("vectors must be {{\"vectors\":[...]}} or [...]: {e}"))
     };
     eprintln!(
         "loaded {} vector(s) (mode={})",

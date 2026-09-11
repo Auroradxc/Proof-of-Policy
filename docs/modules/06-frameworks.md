@@ -157,20 +157,30 @@ guard = MCPGuard(tools_monitor, vkey_hash=vkey,
 result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refund"})
 ```
 
-`call_tool` 的顺序是刻意的：
+`call_tool` 的顺序是刻意的（**P1-5** 起工具**执行后**多一步「网关签发回执」）：
 
 ```
-① check(name, args)          → 参数证书（tool_arg_guard / budget_bound）
-② block_on_violation?        → 违规则抛 MCPBlocked(phase="args")，工具根本没被调用
+① _screen(name, args)        → 飞行前筛查（**预览回执**，未签名、未入链）
+② block_on_violation?        → 违规则存证 + 抛 MCPBlocked(phase="args")，工具根本没被调用
 ③ await session.call_tool()  → 真正执行
-④ judge_result(name, result) → 结果证书（内容策略，tool-result 路径）
-⑤ block_on_result_violation? → 违规则抛 MCPBlocked(phase="result")
+④ gateway.issue(...)         → 网关签发真回执（含结果摘要）并接到链尾
+⑤ on_tool_call(receipt)      → 参数证书（tool_arg_guard / budget_bound）—— 判的是**回执**
+⑥ judge_result(name, result) → 结果证书（内容策略，tool-result 路径）
+⑦ block_on_result_violation? → 违规则抛 MCPBlocked(phase="result")
 ```
 
 要点：
 
+- **轨迹是网关签的，不是 agent 填的**：证书里判定用的输入是 `ToolReceipt`（网关在**执行后**签发、
+  带 `seq`/`prev`/`sig` 的回执）。三个适配器（LangChain / LangGraph / MCP）共用同一个
+  `ToolGateway`；`guard.receipts` 即当前链，交给生成路径一并出证（`trace_root` 进公开值）。
+- **判定范围是整条链**：工具调用证书的 `passed` 意为「会话进行到这次调用为止一直合规」——
+  链上任何一条违规都会让后续证书继续判失败，`passed=true` 不会出现在脏轨迹上。
 - **「飞行前」是可验证的**：`tests/test_mcp.py` 的 `FakeSession` 记录 `calls`，用例断言被拦截的调用
-  **没有出现在 `calls` 里** —— 即拦截确实发生在执行之前。
+  **没有出现在 `calls` 里** —— 即拦截确实发生在执行之前。被拦下的调用**不进链**（链只记录真的发生过
+  的事），但仍会签出一张筛查证书存证 —— 「曾经试图调用」不该查无实据。
+- **预览回执的诚实边界**：`_screen` 时工具还没执行，`result_digest` 无从谈起，所以那张证书（以及
+  单独调用 `guard.check()` 得到的证书）里 `trace_root` 是**临时值**；随证明走的是第 ⑤ 步那张。
 - **结果侧证书是独立的**：`result_monitor` 是**另一个** `AgentMonitor`（内容策略包），
   `on_generate(..., extra={"tool": {"name": ..., "phase": "result"}})`，
   保证「工具的返回文本」也被内容策略判定。
@@ -184,7 +194,8 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
 
 | 名称 | 说明 |
 |---|---|
-| `MCPGuard(monitor, vkey_hash, block_on_violation=False, on_cert=None, result_monitor=None, block_on_result_violation=False, on_result_cert=None, proof_mode=None)` | 守护 |
+| `MCPGuard(monitor, vkey_hash, block_on_violation=False, on_cert=None, result_monitor=None, block_on_result_violation=False, on_result_cert=None, proof_mode=None, gateway=None)` | 守护（`gateway` 缺省用进程内临时 Ed25519 钥的工具网关） |
+| `guard.receipts` | 当前回执链（交给生成路径出证；`trace_root` 进公开值） |
 | `guard.check(name, args)` | 只判定参数并出证（不调用工具） |
 | `guard.judge_result(name, result)` | 只判定返回文本（未配 `result_monitor` 时返回 `None`） |
 | `guard.call_tool(session, name, args)` / `call_tool_sync(...)` | 完整流程，返回 `(result, args_cert)` |

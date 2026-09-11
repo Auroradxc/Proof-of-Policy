@@ -34,7 +34,16 @@ def vector_entry(spec: Dict[str, Any], response: str, **extra: Any) -> Dict[str,
     """构造一个 vectors 条目：``{name?, spec_canonical, response, ...}``。
 
     把「契约文本从哪来」收敛到一处，避免调用点各自拼装而写错字段名。
+
+    ``receipts``（P1-5）可以是 :class:`policydsl.trace.ToolReceipt` 列表，
+    会自动转成 JSON 形状 —— 直接传对象的话 ``json.dumps`` 会炸。
     """
+    if extra.get("receipts") is not None:
+        from .trace import ToolReceipt, receipts_to_json
+
+        items = extra["receipts"]
+        extra["receipts"] = (receipts_to_json(items)
+                             if items and isinstance(items[0], ToolReceipt) else items)
     return {"spec_canonical": spec_canonical_text(spec), "response": response, **extra}
 
 

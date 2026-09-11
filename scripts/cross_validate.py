@@ -39,9 +39,10 @@ sys.path.insert(0, str(REPO))
 
 from policydsl.compile import compile_policy
 from policydsl.evaluate import check
-from policydsl.model import Policy, Rule, ToolCall, Transcript
+from policydsl.model import Policy, Rule, Transcript
 from policydsl.serialize import spec_canonical_text
 from policydsl import pii
+from policydsl import trace
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
@@ -70,11 +71,21 @@ def parse_chunk(argv: list[str]) -> int:
     return DEFAULT_CHUNK
 
 
+#: 回执链的固定时间戳 —— 让 vectors.json 每次都逐字节相同（可复现）。
+TRACE_TS = "2026-01-01T00:00:00+00:00"
+
+
+def gateway() -> "trace.ToolGateway":
+    """造一个**一次性**网关（进程内临时钥、固定时间戳），用于签发测试回执。"""
+    return trace.ToolGateway(ts=TRACE_TS)
+
+
 def vectors() -> list[tuple]:
     """返回 (name, policy, response, extras) 元组列表。输入均为纯 ASCII。
 
-    ``extras`` 可携带 ``tool_calls`` / ``token_count``，用于轨迹类规则
-    （tool_arg_guard / budget_bound）。
+    ``extras`` 可携带 ``receipts``（P1-5 的网关回执链），用于轨迹类规则
+    （tool_arg_guard / budget_bound）。回执由本模块的 :func:`gateway` 签出，
+    与真实链路一致 —— 不是手搓的字典。
     """
     base = Policy(
         id="x", version="0.1.0", semantic="and",
@@ -108,7 +119,11 @@ def vectors() -> list[tuple]:
         id="b2", version="0.1.0", semantic="and",
         rules=[Rule("budget_bound", "token_budget", {"budget": 100, "unit": "tokens"})],
     )
-    call = lambda n, a: {"name": n, "args": a}  # noqa: E731
+    def chain(*calls: tuple) -> list:
+        """用一次性网关把 ``[(tool, args, result), ...]`` 签成回执链（JSON 形状）。"""
+        return trace.receipts_to_json(trace.make_chain(list(calls),
+                                                       gateway=gateway()))
+
     return [
         ("clean_pass", base,
          "The service processed your request and will reply shortly. Thank you.", {}),
@@ -122,13 +137,16 @@ def vectors() -> list[tuple]:
         ("format_ok", fmt, '{"ok": true, "n": 1}', {}),
         ("format_bad", fmt, "plain text, not json", {}),
         ("tool_arg_hit", toolpol, "",
-         {"tool_calls": [call("search_kb", {"query": "refund", "token": "secret"})]}),
+         {"receipts": chain(("search_kb", {"query": "refund", "token": "secret"}, "hit"))}),
         ("tool_arg_clean", toolpol, "",
-         {"tool_calls": [call("search_kb", {"query": "refund"})]}),
+         {"receipts": chain(("search_kb", {"query": "refund"}, "clean"))}),
         ("budget_over", budgetpol, "",
-         {"tool_calls": [call("a", {}), call("b", {}), call("c", {})]}),
-        ("budget_ok", budgetpol, "", {"tool_calls": [call("a", {}), call("b", {})]}),
-        ("token_over", tokenpol, "", {"token_count": 150}),
+         {"receipts": chain(("a", {}, "x"), ("b", {}, "y"), ("c", {}, "z"))}),
+        ("budget_ok", budgetpol, "",
+         {"receipts": chain(("a", {}, "x"), ("b", {}, "y"))}),
+        # token 规则现在判**响应**的确定性 token 数（P1-5：电路内自算，
+        # 不再读自填值）。150 个空白分隔的 run 超过预算 100。
+        ("token_over", tokenpol, " ".join(["tok"] * 150), {}),
     ]
 
 
@@ -137,8 +155,7 @@ def golden(policy: Policy, response: str, extras: dict | None = None) -> dict:
     extras = extras or {}
     tx = Transcript(
         response=response,
-        tool_calls=[ToolCall(c["name"], c.get("args", {})) for c in extras.get("tool_calls", [])],
-        token_count=extras.get("token_count"),
+        receipts=trace.receipts_from_json(extras.get("receipts")),
     )
     res = check(policy, tx)
     rules = sorted({(v.rule.name, KIND_MAP.get(v.evidence_kind, v.evidence_kind))

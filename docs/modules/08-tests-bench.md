@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（18 个模块，220 个用例）与 `bench/`（3 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（19 个模块，250 个用例）与 `bench/`（3 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,12 +8,13 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover tests -v      # 期望 220 passed, 5 skipped
+python3 -m unittest discover -s tests -t . -v   # 期望 250 passed, 5 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
 |---|---:|---|
-| `test_dsl` | 23 | 领域模型、六类规则的通过/违规矩阵、`PolicyError` 路径 |
+| `test_trace` | 28 | **P1-5**：四条验收（①完整链通过 ②删/换/重排失败 ③伪造「参数干净」的回执验签失败 ④旧 `tool_calls` 向量被拒）；`trace_root` 与 Python **逐字节一致**（实测 `--check`）；编码层的长度前缀/键序/keyid 覆盖；链尾篡改**只有链下验签抓得住**的边界；**第三方核对**（`verify_cert.py --receipts [--gateway-key]` 5 例：摘要重算对齐 / 换链对不上 / 重排结构先炸 / 伪造链尾只被验签抓住 / 缺网关公钥时如实报「签名未验」） |
+| `test_dsl` | 24 | 领域模型、六类规则的通过/违规矩阵、`PolicyError` 路径；**P1-5**：链坏 fail-closed、tokens 电路内自算（不可自填） |
 | `test_nfa` | 7 | 正则子集解析、NFA 构造、`match_search` 与 `re` 的行为对照、fail-fast |
 | `test_pii` | 8 | 四个 PII 模式的命中/漏报、IBAN MOD-97 校验位 |
 | `test_serialize` | 9 | serde 外部标签枚举形状、未知 kind 抛 `NotImplementedError`、`spec_canonical` 字节稳定 |
@@ -27,11 +28,11 @@ python3 -m unittest discover tests -v      # 期望 220 passed, 5 skipped
 | `test_mcp` | 11 | 参数侧飞行前拦截、结果侧判定、文本提取；**P0-4**：`proof_mode` 同时落到参数侧与结果侧证书 |
 | `test_anchor` | 4 | 账本读写、`verify_ledger`、篡改检出 |
 | `test_anchor_chain` | 22 | 合约 artifact、摘要编码、后端选择、RPC 后端离线（幂等/竞态）、cast 命令行、anvil 端到端 |
-| `test_rules_incircuit` | 8 | 六类规则在 `--check` 下与 Python golden 逐点对齐 |
+| `test_rules_incircuit` | 9 | 六类规则在 `--check` 下与 Python golden 逐点对齐（**P1-5**：轨迹类规则判回执链，链坏两端都 fail-closed） |
 | `test_ablation` | 5 | pike ≡ naive（Python 与 Rust 两侧） |
 | `test_verifier_only` | 8 | `prefer_verifier_only` 三条件、core 不走近路；**P0-4**：`artifact_proof_modes` 收齐多来源、缺失不编默认值、来源不一致如实暴露 |
 | `test_demo_e2e` | 2 | 端到端会话产物结构 |
-| **合计** | **220** | |
+| **合计** | **250** | |
 
 ### 5 个 skip（都是设计内的）
 
@@ -204,7 +205,7 @@ SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **220 passed / 5 skip**、`cross_validate` host 14/14 + prove 14/14。
+  当前验收判据是 **250 passed / 5 skip**、`cross_validate` host 14/14 + prove 14/14。
 
 ---
 

@@ -312,8 +312,8 @@ def new_nonce() -> bytes:   # 32 字节 CSPRNG，一次性
 与策略绑定同构（同样要求 ≥2 个来源，缺失来源如实列出）。不给 `--response` 时那一路
 记为 `absent`，报告不会假装做过完整核对。
 
-**这一层**解决的是「送达的 T′ 是不是被证明的 T」。**不**解决的（留 P1-5）：
-`tool_calls` / `token_count` 仍是证明者自填的私有输入，工具轨迹的真伪不在绑定范围内。
+**这一层**解决的是「送达的 T′ 是不是被证明的 T」。**不**解决的（已由 P1-5 补上，见下）：
+`tool_calls` / `token_count` 当时是证明者自填的私有输入，工具轨迹的真伪不在绑定范围内。
 
 ---
 
@@ -361,7 +361,7 @@ class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 | `paper §4.2` | 「keyword/length/pattern 入电路」 | 统一为 6 类（与 §5 一致） |
 | `paper §6` | 「102 全绿(1 skip)」 | 实跑值（P0 后会变） |
 | `docs/security-model.md:65` | `host/prove 7/7` | ✅ 已改为 `14/14`（2026-09-10） |
-| `docs/eu-ai-act-mapping.md` | 工具路径「`zk:false`」 | 已入电路（P1-5 后语义再更新） |
+| `docs/eu-ai-act-mapping.md` | 工具路径「`zk:false`」 | ✅ 已入电路；「轨迹未绑定」一条已随 P1-5 改写为「链路可证 + 身份可验」 |
 | **全仓库** | **未声明 ZK 性质** | ✅ **已查证（2026-09-11）**，结论见 [`sp1-zk-audit.md`](sp1-zk-audit.md)：**core/compressed 不满足零知识性**（两类独立证据：Succinct 安全模型明文 + 本机 SLOP 栈源码零盲化命中；另有实测佐证）；`groth16`/`plonk` 是唯一可能隐藏见证的模式（包装器层面声明、未被审计评估、非后量子、本机 12 GB 出不了证）；原生 ZK 的 `slop-veil` 已发布但未被任何证明路径依赖。**后果**：私有模式口径收紧为「公开值不泄露明文」，不再宣传「证明工件不泄露见证」；证书的 `binding.proof_mode` 诚实标注**已落地**（`verify_cert.py` 逐证书与工件自报模式比对，无工件只能标 `unproven`） |
 
 > P0-4 的最后一条是**调研任务**，不是文书任务，但它决定 §4.3（双隐私模式）能否成立，优先级等同 P0-1。
@@ -374,7 +374,11 @@ class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 
 ## 4. P1：从「合规原语」到「可验证 agent」（3 周）
 
-### P1-5 轨迹绑定 —— 把「证明者的声明」变成「可验证的事实」
+### P1-5 轨迹绑定 ✅（2026-09-11 完成）—— 把「证明者的声明」变成「可验证的事实」
+
+> **落地结果**（下面的设计稿保留作对照，实现与原稿的差异见文末「与设计稿的差异」）：
+> `policydsl/trace.py`（回执/网关/链校验）+ `pop-types` 镜像 + 三个适配器接线 + `tests/test_trace.py`
+> （四条验收 + 五例第三方核对，28 例全绿）+ `cross_validate.py` 全部向量改为回执驱动（host 14/14、prove 14/14）。
 
 **问题**：`tool_calls` 与 `token_count` 是 `ProofRequest` 里由证明者自填的私有输入
 （`circuits/types/src/lib.rs:112-119,390`）。`tool_arg_guard`/`budget_bound` 因此**语义上不健全**。
@@ -412,6 +416,24 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
 「参数不含被禁字段」的回执但仍带违规参数 → 验签失败；④ 旧路径（自填 `tool_calls`）**不再被接受**。
 
 > 这是与 zkAgent 差距最大的地方，也是本计划**最有论文价值**的一段：把轨迹完整性做进同一份证明。
+
+**与设计稿的差异**（实现时改动，均有理由）：
+
+1. **参数放明文，不是 `args_digest`**：摘要**没办法**支撑 `forbidden_fields` —— 电路拿
+   `H(canonical(args))` 无从判断某次调用的参数里有没有 `password` 这个键。要么规则改判一个证明者
+   同样能编的字段（自欺），要么把参数放进回执。回执是**私有输入**、不进公开值，放明文不额外泄露；
+   防篡改靠签名，不靠保密。
+2. **`verify_chain` 返回 `(bool, str)` 而非 `bool`**：失败原因要作为违规证据进证书（两端口径一致）。
+3. **链不自洽 → fail-closed**：原稿只写"验结构"，没说验不过怎么办。实现选择：工具规则记
+   `trace_unbound` 并**不通过**，且若策略里没有工具类规则，末尾补一条合成违规（`rule="<trace>"`）——
+   杜绝"读不出来 = 零次调用"。
+4. **`trace_root` 进公开值**（原稿未提）：与 `response_binding` 对称，让"证明绑的是哪条链"可被
+   验证方离线核对；否则链与证明之间没有可见的拴点。
+5. **驱动层也 `deny_unknown_fields`**：只在 `ProofRequest` 上标不够 —— `VectorIn` 不加的话，
+   旧向量会在驱动层被静默丢字段，退化成"零次调用"照样出证（验收项 ④ 就落空了）。
+6. **分词空白集取死为 6 个 ASCII 字节**，明确**不**用 Unicode White_Space（随 Unicode 版本漂移）。
+7. **每调用证书的判定范围是整条链**：`passed` 的含义是「会话进行到这次调用为止一直合规」，
+   链上任何一条违规都会让后续证书继续判失败 —— 保守取向，`passed=true` 绝不出现在脏轨迹上。
 
 ---
 
@@ -453,7 +475,7 @@ function anchorWithProof(bytes32 digest, bytes calldata proof, bytes calldata pu
 ```
 
 **前置**：① 拉取 SP1 `SP1VerifierGateway`/`SP1VerifierGroth16` artifact 入库（与 `Anchor.json` 同策略）；
-② **≥64 GB 机器**产出 groth16 证明（本机 12 GB 必 OOM）；
+② **≥64 GB 机器**产出 groth16 证明（本机 12 GB 必 OOM）—— **见 §9 待办 T1（需人工租机，建议与 P1-5 并行排期）**；
 ③ `scripts/anchor_e2e.sh --onchain-verify`。
 
 **验收**：有效证明 → 锚定成功 + `anchoredAt>0`；**反例**——篡改 publicValues → `verifyProof` revert；
@@ -608,8 +630,8 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 | 阶段 | 判据 |
 |---|---|
-| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（当前 **220 全绿 / 5 skip**） |
-| P1 | ① `test_trace.py` / `test_compose.py` / `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应 |
+| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（P1-5 后当前 **250 全绿 / 5 skip**） |
+| P1 | ① `test_trace.py` ✅（**P1-5 已完成**：28 例含四条验收，`cross_validate` host/prove 14/14）/ `test_compose.py` / `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应 |
 | P2 | ① `test_semantic.py` **7 例全绿含 5 条反例**（§9.3）；② `test_session.py`；③ `test_multiparty.py`；④ `bench/results/` 新增三张表（含 ezkl 出证成本）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 L6 对接 |
 
 ---
@@ -766,8 +788,19 @@ verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 → `P0-2` → `P0-3` → `P1-5` → …
 
 **并行启动**（与 P1 无耦合，越早越好）：
-- `§8.0` 恢复 pip —— 不需要 sudo，两条命令，实测源可达；
-- `§9.1` ezkl 依赖栈 —— 这是 D3 选全量集成后**最大的进度风险**，必须提前吃满工期。
+- `§8.0` 恢复 pip —— ✅ 已完成（2026-09-10）；
+- `§9.1` ezkl 依赖栈 —— 依赖已装并冒烟通过，但 `create_evm_verifier()` 仍抛
+  `RuntimeError: no running event loop`，是 **P2-9 的剩余硬阻塞**，见下方待办 T2。
+
+### 待办登记（需要外部资源或人工动作，代码侧推不动）
+
+| # | 待办 | 阻塞谁 | 前置/成本 | 状态 |
+|---|---|---|---|---|
+| **T1** | **租一台一次性 ≥64 GB 云机**，产出 groth16 证明 + 测通验证合约（D2 已拍板） | `P1-7` 链上证明验证的**硬前置**：本机 12 GB 必 OOM，groth16/plonk 出不来 | 需要人工租机（约数小时窗口）+ 一次环境搭建（Rust/SP1 工具链或直接搬 `circuits/` 目标目录）；产出入库后本机可离线复核 | ⬜ 未开始 —— **P1-5 已完成，本项现在是 P1 段内唯一的外部阻塞，建议优先排期** |
+| **T2** | 解开 ezkl `create_evm_verifier()` 的 `RuntimeError: no running event loop` | `P2-9`（D3 选定的全量 ezkl 集成）的最后一个阻塞 | 先试 ezkl 12.x；或绕开该 API，直接由编译产物手写 Solidity verifier | ⬜ 未开始 |
+| **T3** | 真实 SP1 证明的**全量**回归改为「出证 + 验证」两条腿都在 CI 之外定期跑 | 论文 §7 的证明时间/内存数字 | 单次 `cross_validate --prove` ≈ 24 分钟；本机跑即可 | ⬜ 未开始 |
+
+> T1/T2 与 P1-5 无耦合，可与 P1-5 并行推进；T1 尤其是**外部队列**，越早排队越好。
 
 ```bash
 # 现在就能做的两件事
@@ -778,3 +811,5 @@ python3 -m pip install --user torch onnx ezkl -i https://pypi.tuna.tsinghua.edu.
 
 > 完成 P0 后，我在评估中**已实跑复现**的那个攻击（空策略证明 + 真策略哈希 → 全绿）
 > 会被 `tests/test_policy_binding.py` 永久锁死——这是本计划第一个可交付、可验证的里程碑。
+
+**P0 收尾提交**：`538c6d8`（37 files，+2029/−227），工作区干净，P0 四项全部完成。

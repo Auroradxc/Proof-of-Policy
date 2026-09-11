@@ -26,6 +26,17 @@ from . import nfa
 
 MASK_CHAR = "*"
 
+
+def as_receipt(obj: Any) -> Any:
+    """把「回执对象或它的字典形式」统一成 :class:`policydsl.trace.ToolReceipt`。
+
+    证书/向量里流转的是字典（JSON），判定逻辑要的是对象方法。集中在这里转换，
+    免得每个调用点各自 ``isinstance`` 一遍。
+    """
+    from .trace import ToolReceipt
+
+    return obj if isinstance(obj, ToolReceipt) else ToolReceipt.from_dict(obj)
+
 #: 挑战-响应绑定的域分隔前缀（对应 ``pop_types::BIND_DOMAIN``）。
 BIND_DOMAIN = b"pop-bind-v1"
 #: 证书 ``challenge`` 块里声明的绑定方案名（便于将来换代）。
@@ -86,17 +97,24 @@ def verify_binding(nonce: bytes, response: str, binding: str) -> bool:
 
 
 def canonical_violations(spec: Dict, response: str,
-                         tool_calls: Optional[List[Dict]] = None,
-                         token_count: Optional[int] = None) -> List[Dict]:
+                         receipts: Optional[List[Any]] = None) -> List[Dict]:
     """精确镜像 ``pop-types::evaluate``，返回 (rule, kind, evidence) 列表。
 
-    ``tool_calls`` 是 ``{"name": str, "args": {str: str}}`` 列表；证据字符串
-    与 Rust 侧逐字节一致（私有模式证据承诺需要这种一致）。
+    ``receipts`` 是工具网关的回执链（``policydsl.trace.ToolReceipt`` 或同形的
+    字典）；证据字符串与 Rust 侧**逐字符**一致（私有模式要对证据求承诺，
+    两边不一致就等于证书里写着一条链上算不出来的证据）。
+
+    链结构不自洽时，工具类规则记 ``trace_unbound``（fail-closed）；若没有任何
+    工具规则「接住」它，末尾补一条 ``rule="<trace>"`` 的同类违规 —— 与 Rust 侧
+    的兜底逻辑一一对应。
     """
     from .evaluate import _parse_format  # 复用规范子集解析器
+    from .trace import chain_ok, token_count
 
     lower = _ascii_lower(response)
-    calls = tool_calls or []
+    rs = [as_receipt(r) for r in (receipts or [])]
+    ok, why = chain_ok(rs)
+    tokens = token_count(response)
     out: List[Dict] = []
     for c in spec["constraints"]:
         kind, name = c["kind"], c["name"]
@@ -120,26 +138,36 @@ def canonical_violations(spec: Dict, response: str,
             if not _parse_format(c["format"], response):
                 out.append({"rule": name, "kind": "format_check", "evidence": c["format"]})
         elif kind == "tool_arg_guard":
-            # 工具参数：兼容 dict 与对象两种调用表示，取「工具:字段」为证据
+            # 工具参数：判**回执**参数，取「工具:字段」为证据。坏链 fail-closed。
+            if not ok:
+                out.append({"rule": name, "kind": "trace_unbound", "evidence": why})
+                continue
             allowed = c.get("tools") or []
-            for call in calls:
-                cname = call["name"] if isinstance(call, dict) else call.name
-                args = (call.get("args", {}) if isinstance(call, dict) else call.args)
-                if allowed and cname not in allowed:
+            for r in rs:
+                if allowed and r.tool not in allowed:
                     continue
-                hit = next((f for f in c["forbidden_fields"] if f in args), None)
+                hit = next((f for f in c["forbidden_fields"] if f in r.args), None)
                 if hit is not None:
                     out.append({"rule": name, "kind": "tool_arg_guard",
-                                "evidence": f"{cname}:{hit}"})
+                                "evidence": f"{r.tool}:{hit}"})
                     break  # 每个工具调用至多记一条违规
         elif kind == "budget_bound":
             unit = c.get("unit", "calls")
-            total = len(calls) if unit == "calls" else int(token_count or 0)
+            if unit == "calls":
+                if not ok:
+                    out.append({"rule": name, "kind": "trace_unbound", "evidence": why})
+                    continue
+                total = len(rs)
+            else:  # tokens：电路内自算，不再读任何声明值
+                total = tokens
             if total > c["budget"]:
                 out.append({"rule": name, "kind": "budget_bound",
                             "evidence": f"{unit}={total}/{c['budget']}"})
         else:
             raise NotImplementedError(f"kind '{kind}' not provable in-circuit yet")
+    # 兜底：坏链没有被任何工具规则接住时也要记一笔（与 Rust 侧同构）
+    if not ok and not any(v["kind"] == "trace_unbound" for v in out):
+        out.append({"rule": "<trace>", "kind": "trace_unbound", "evidence": why})
     return out
 
 
@@ -209,8 +237,7 @@ def private_output(spec: Dict, response: str,
                    mask: Optional[List[int]] = None,
                    redacted: Optional[str] = None,
                    spans: Optional[List[Tuple[int, int]]] = None,
-                   tool_calls: Optional[List[Dict]] = None,
-                   token_count: Optional[int] = None,
+                   receipts: Optional[List[Any]] = None,
                    nonce: bytes = b"") -> Dict:
     """构建与 ``pop-types::PrivateOutput`` 一致的字典（golden）。
 
@@ -231,7 +258,9 @@ def private_output(spec: Dict, response: str,
     更一般地：在「验证者独立重算绑定」这一前提下，
     **响应绑定与响应内容隐藏对低熵 T 互斥**。
     """
-    vs = canonical_violations(spec, response, tool_calls, token_count)
+    from .trace import trace_root
+
+    vs = canonical_violations(spec, response, receipts)
     # 违规只暴露证据承诺（不泄露明文证据），实现选择性披露
     violations = [{"rule": v["rule"], "kind": v["kind"],
                    "evidence_commitment": evidence_commitment(v["evidence"])} for v in vs]
@@ -249,6 +278,7 @@ def private_output(spec: Dict, response: str,
     return {
         "response_binding": response_binding(nonce, response),
         "response_commitment": commitment(response),
+        "trace_root": trace_root([as_receipt(r) for r in (receipts or [])]),
         "passed": len(vs) == 0,
         "violations": violations,
         "redaction": redaction,

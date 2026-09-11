@@ -39,12 +39,16 @@ policy_packs/a.json ──► policydsl.compile ──► ConstraintSpec ──�
 response.txt ──────────────────────────────────────────────────────┤
 nonce ─────────── challenge.new_nonce() ────────────────────────────┘
                                                                     │
-                                      circuits/program 内重放约束判定 commit(passed, policy_hash, response_binding)
+                                      circuits/program 内重放约束判定 commit(passed, policy_hash, response_binding, trace_root)
                                                                     │
                                      host/链上 verify(passed, proof) ◄── 合规证书
                                                                     │
                           验证方：用送达的 T′ 与 nonce 重算 response_binding 并比对
+                                  用网关侧回执重算链尾 trace_root 并比对（P1-5）
 ```
+
+工具轨迹（P1-5）另有一路：**工具网关**在每次调用执行后签发回执并接链，agent 只能原样转发；
+`tool_arg_guard` / `budget_bound(calls)` 判的是这条链，链尾摘要 `trace_root` 进公开值。
 
 ## 安全模型
 
@@ -56,6 +60,11 @@ nonce ─────────── challenge.new_nonce() ──────
 - **承诺隐私**（私有模式）：验证者看不到响应全文，只看到承诺与违规定位（+ 可证明的脱敏）。
   ⚠️ 上界（P0-4 查证，[`sp1-zk-audit.md`](sp1-zk-audit.md)）：公开值里的 `response_binding` 是
   **公开可重算**的 `T` 的函数，对低熵 `T` 可离线枚举 —— 该性质是「不暴露明文」，**不是**「`T` 不可恢复」。
+- **轨迹绑定（P1-5）**：`tool_arg_guard` / `budget_bound` 判的是**工具网关**签发的**回执链**
+  （不再是 agent 自填的 `tool_calls`）。链**结构**由电路保证（删/换/重排 → `trace_unbound` fail-closed，
+  见 `pop-types::verify_receipt_chain`），链尾摘要 `trace_root` 进公开值；**签发者身份**由**链下**
+  Ed25519 验签承担（zkVM 内不验签）。因此信任前提是「网关密钥不被滥用」——网关是被显式信任的第三方。
+  详见 [`security-model.md`](security-model.md) §5 与 `docs/modules/05-zk-circuits.md` §2.3a/§2.5b。
 - **不可伪造**：无原响应的攻击者不能伪造「通过」证明；证据开示需 `SHA256(片段)=承诺`。
 - **记录完整性**：哈希链账本 + 链上锚定（`cert_digest` 登记进 `contracts/Anchor.sol`）。
 

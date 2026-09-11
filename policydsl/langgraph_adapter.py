@@ -26,6 +26,7 @@ from .agent import AgentMonitor
 from .langchain_adapter import (  # noqa: F401
     PoPCallbackHandler, _extract_text, langgraph_available,
 )
+from .trace import ToolGateway, extract_result_text
 
 
 def _content_text(obj: Any) -> str:
@@ -71,13 +72,17 @@ def guard_node(monitor: AgentMonitor, node: Callable[..., Any], kind: str = "gen
                key: str = "output", certs_key: str = "certificates",
                vkey_hash: str = "unproven", proof_sha256: Optional[str] = None,
                proof_mode: Optional[str] = None,
-               tool_name_key: str = "name", tool_args_key: str = "args") -> Callable[..., Dict[str, Any]]:
+               tool_name_key: str = "name", tool_args_key: str = "args",
+               gateway: Optional[ToolGateway] = None) -> Callable[..., Dict[str, Any]]:
     """包装一个 LangGraph 节点，使其结果被判定并签发证书。
 
     kind="generate"：读取 ``result[key]`` 作为响应文本。
-    kind="tool"：    读取 ``result[tool_name_key]`` / ``result[tool_args_key]``。
+    kind="tool"：    读取 ``result[tool_name_key]`` / ``result[tool_args_key]``；
+                     节点**已经返回**（工具已经跑完），因此网关在此刻签发
+                     含结果摘要的回执（P1-5）。
     返回的字典 = 原节点结果 + ``certs_key``（证书列表）。
     """
+    gw = gateway if gateway is not None else ToolGateway()
 
     def wrapped(state: Any, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         result = node(state, *args, **kwargs)
@@ -93,8 +98,11 @@ def guard_node(monitor: AgentMonitor, node: Callable[..., Any], kind: str = "gen
         elif kind == "tool":
             name = str(result.get(tool_name_key, "tool"))
             targs = result.get(tool_args_key, {}) or {}
-            certs.append(monitor.on_tool_call(name, targs, vkey_hash=vkey_hash,
-                                              proof_mode=proof_mode))
+            receipt = gw.issue(name, targs,
+                               result=extract_result_text(result.get(key, "")))
+            certs.append(monitor.on_tool_call(receipt, vkey_hash=vkey_hash,
+                                              proof_mode=proof_mode,
+                                              chain=gw.receipts))
         else:
             raise ValueError("kind must be 'generate' or 'tool'")
         out = dict(result)
@@ -132,10 +140,15 @@ class LangGraphEventCertifier:
     def __init__(self, monitor: AgentMonitor, tool_monitor: Optional[AgentMonitor] = None,
                  vkey_hash: str = "unproven",
                  stream_handler: Optional[PoPCallbackHandler] = None,
-                 proof_mode: Optional[str] = None):
+                 proof_mode: Optional[str] = None,
+                 gateway: Optional[ToolGateway] = None):
         self.monitor = monitor
         self.tool_monitor = tool_monitor or monitor
         self.vkey_hash = vkey_hash
+        # 工具网关（P1-5）：``on_tool_end`` 在工具执行后触发，正好能签出含
+        # 结果摘要的回执。未显式给出时沿用流式 handler 的网关（同一会话同一条链）。
+        self.gateway = (gateway if gateway is not None
+                        else getattr(stream_handler, "gateway", None) or ToolGateway())
         # 未显式给出时，沿用流式 handler 的标注（两者本就是同一份证据）
         self.proof_mode = (proof_mode if proof_mode is not None
                            else getattr(stream_handler, "proof_mode", None))
@@ -184,6 +197,9 @@ class LangGraphEventCertifier:
             args = data.get("input") or {}
             if not isinstance(args, dict):
                 args = {"input": args}
+            receipt = self.gateway.issue(tool, args,
+                                         result=extract_result_text(data.get("output")))
             self.certificates.append(
-                self.tool_monitor.on_tool_call(tool, args, vkey_hash=self.vkey_hash,
-                                               proof_mode=self.proof_mode))
+                self.tool_monitor.on_tool_call(receipt, vkey_hash=self.vkey_hash,
+                                               proof_mode=self.proof_mode,
+                                               chain=self.gateway.receipts))

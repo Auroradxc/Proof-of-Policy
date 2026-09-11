@@ -12,6 +12,10 @@
   3b. 响应绑定（P0-2）：证书 challenge 块声明的 response_binding == outcome 内嵌的
      == 证明公开值承诺的 == 由**送达的响应 T′** 与 nonce 现场重算的。带 --response
      时这一路才齐全 —— 那也正是「持 T′ 的一方」要做的核对；
+  3c. 轨迹绑定（P1-5）：证书 outcome 内嵌的 trace_root == 证明公开值承诺的
+     == 由**网关侧收到的回执链**现场重算的（带 --receipts 时这一路才齐全）。
+     另：带 --gateway-key 时对回执链**逐条验签**（链下验签，与电路内的结构校验
+     是两道独立的关）—— 摘要对得上只说明内容一致，不说明网关签过；
   4. 证书摘要存在于锚定账本中、且账本链完整（记录留存/防篡改）；
   5. （带 --rpc/--contract 时）证书摘要能在 Anchor 合约上读回（链上存在性 + 时间戳）。
 
@@ -28,6 +32,7 @@
       [--proof scripts/examples/out/cert_public/proof.bin] \
       [--response scripts/examples/eu_agent_reply.txt] [--nonce <hex>] \
       [--keyring scripts/examples/out/cert_public/key.json] \
+      [--receipts receipts.json --gateway-key gateway_pub.hex] \
       [--rpc http://127.0.0.1:8545 --contract 0x...]
 """
 
@@ -44,7 +49,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, challenge, commit, keys, verifier
+from policydsl import anchor, cert, challenge, commit, keys, trace, verifier
 from policydsl.compile import compile_policy
 from policydsl.model import Policy, Rule
 
@@ -79,6 +84,11 @@ def main() -> int:
     ap.add_argument("--keyring", default=None,
                     help="出证方公钥：key.json / *.pub.hex / *.pub.pem / hex 文本。"
                          "缺省读证书同目录的 key.json")
+    ap.add_argument("--receipts", type=Path, default=None,
+                    help="P1-5：**网关侧收到的**工具回执链（JSON 数组）。给了才能把"
+                         "「证明承诺的链尾」与「自己手上这条链」对上")
+    ap.add_argument("--gateway-key", default=None,
+                    help="工具网关公钥（P1-5，形式同 --keyring）：给了就对回执链逐条验签")
     args = ap.parse_args()
 
     env = json.loads(args.cert.read_text(encoding="utf-8"))
@@ -237,6 +247,49 @@ def main() -> int:
         if not ok_bind and recomputed is not None:
             note = " — 送达的 T′ 与被证明的 T 对不上"
         results.append(("response_binding", ok_bind, bind_detail + note))
+
+    # 3c) 轨迹绑定（P1-5）：被证明的轨迹是不是**我手上这条**链。
+    #
+    #     与 3b 同构，但绑的对象从「响应」换成「工具回执链」。缺 `--receipts`
+    #     时这一路来源就没有 —— 此时证书里那些 `trace_root` 只能证明「出证方
+    #     前后自洽」，证明不了链里到底有什么。链长了也不必把链塞进公开值：
+    #     验证方本来就持有网关发给它的回执，重算链尾即可。
+    tr_cert = (payload.get("outcome") or {}).get("trace_root")
+    tr_proof = verifier.committed_trace_root(proof_result) if proof_result else None
+    tr_gateway, tr_note = None, ""
+    if args.receipts is not None:
+        receipts = trace.receipts_from_json(
+            json.loads(args.receipts.read_text(encoding="utf-8")))
+        tr_gateway = trace.trace_root(receipts)
+        tr_note = f" — 网关侧 {len(receipts)} 条回执重算"
+        # 验签是**另一件事**：摘要对得上只说明内容一致，不说明网关签过。
+        # 给了网关公钥就顺带验一遍（这与电路内的结构校验是两道独立的关）。
+        if args.gateway_key:
+            try:
+                gw_ring = keys.load_keyring(args.gateway_key)
+            except (OSError, ValueError, TypeError) as exc:
+                results.append(("receipt_chain", False, f"网关公钥无法加载：{exc}"))
+                gw_ring = None
+            if gw_ring:
+                ok_chain, why = trace.verify_chain(receipts, gw_ring)
+                results.append(("receipt_chain", ok_chain,
+                                f"{len(receipts)} 条回执验签通过" if ok_chain else why))
+        # 单独给了 --receipts 却没给网关公钥：如实说明「结构未验、签名未验」
+        if not args.gateway_key:
+            results.append(("receipt_chain", True,
+                            "只重算了链尾摘要；未给 --gateway-key，回执签名未验"))
+    if tr_cert is None and tr_proof is None:
+        results.append(("trace_binding", True,
+                        "certificate has no trace_root — skipped（P1-5 之前签发的证书）"))
+    else:
+        ok_tr, tr_detail = verifier.check_trace_binding([
+            ("cert.outcome", tr_cert),
+            ("proof", tr_proof),
+            ("receipts", tr_gateway),
+        ])
+        if not ok_tr and tr_gateway is not None:
+            tr_note = " — 网关侧回执链与证书对不上"
+        results.append(("trace_binding", ok_tr, tr_detail + tr_note))
 
     # 4) 锚定账本：链完整 + 证书摘要确实在账本中
     ok_chain, reason = anchor.verify_ledger(args.ledger)

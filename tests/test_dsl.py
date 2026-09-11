@@ -4,15 +4,25 @@
 产出的规范要与 Rust/SP1 侧逐字节对齐。两者都必须行为稳定、可复现。
 """
 
+import dataclasses
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from policydsl import trace  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.evaluate import check  # noqa: E402
-from policydsl.model import Policy, PolicyError, Rule, ToolCall, Transcript  # noqa: E402
+from policydsl.model import Policy, PolicyError, Rule, Transcript  # noqa: E402
+
+#: 固定时间戳的一次性网关 —— 让测试里的回执链可复现。
+GW_TS = "2026-01-01T00:00:00+00:00"
+
+
+def signed(calls: list) -> list:
+    """把 ``[(tool, args), ...]`` 签成网关回执链（P1-5）。"""
+    return trace.make_chain(calls, gateway=trace.ToolGateway(ts=GW_TS))
 
 
 class TestKeywordBlock(unittest.TestCase):
@@ -142,7 +152,7 @@ class TestToolArgGuard(unittest.TestCase):
         # 参数中出现 password -> 违规，证据需指出具体字段名，便于审计定位。
         p = Policy("t", "1", rules=[
             Rule("tool_arg_guard", "tag", {"forbidden_fields": ["password", "token"]})])
-        tx = Transcript(tool_calls=[ToolCall("search", {"q": "hi", "password": "secret"})])
+        tx = Transcript(receipts=signed([("search", {"q": "hi", "password": "secret"})]))
         r = check(p, tx)
         self.assertFalse(r.passed)
         self.assertEqual(r.violations[0].evidence_kind, "tool_arg")
@@ -152,7 +162,7 @@ class TestToolArgGuard(unittest.TestCase):
         # 参数中不含敏感字段则通过。
         p = Policy("t", "1", rules=[
             Rule("tool_arg_guard", "tag", {"forbidden_fields": ["password", "token"]})])
-        tx = Transcript(tool_calls=[ToolCall("search", {"q": "hi"})])
+        tx = Transcript(receipts=signed([("search", {"q": "hi"})]))
         self.assertTrue(check(p, tx).passed)
 
     def test_tools_restriction(self):
@@ -160,9 +170,19 @@ class TestToolArgGuard(unittest.TestCase):
         p = Policy("t", "1", rules=[
             Rule("tool_arg_guard", "tag",
                  {"forbidden_fields": ["token"], "tools": ["search"]})])
-        tx = Transcript(tool_calls=[
-            ToolCall("http_get", {"url": "https://x?a", "token": "t"})])
+        tx = Transcript(receipts=signed(
+            [("http_get", {"url": "https://x?a", "token": "t"})]))
         self.assertTrue(check(p, tx).passed)
+
+    def test_broken_chain_fails_closed(self):
+        # P1-5：链结构不自洽时工具规则一律不通过 —— 不能退化成「读不出来就当没调用」。
+        p = Policy("t", "1", rules=[
+            Rule("tool_arg_guard", "tag", {"forbidden_fields": ["password"]})])
+        chain = signed([("search", {"q": "hi"})])
+        broken = [dataclasses.replace(chain[0], seq=7)]
+        r = check(p, Transcript(receipts=broken))
+        self.assertFalse(r.passed)
+        self.assertEqual(r.violations[0].evidence_kind, "trace_unbound")
 
 
 class TestBudgetBound(unittest.TestCase):
@@ -172,7 +192,7 @@ class TestBudgetBound(unittest.TestCase):
         # 3 次调用超过预算 2 -> 违规，证据里给出实际总次数以便核对。
         p = Policy("t", "1", rules=[
             Rule("budget_bound", "bb", {"budget": 2, "unit": "calls"})])
-        tx = Transcript(tool_calls=[ToolCall("a", {}), ToolCall("b", {}), ToolCall("c", {})])
+        tx = Transcript(receipts=signed([("a", {}), ("b", {}), ("c", {})]))
         r = check(p, tx)
         self.assertFalse(r.passed)
         self.assertEqual(r.violations[0].evidence["total"], 3)
@@ -181,16 +201,19 @@ class TestBudgetBound(unittest.TestCase):
         # 恰好用满预算不算超支（上界取闭区间）。
         p = Policy("t", "1", rules=[
             Rule("budget_bound", "bb", {"budget": 2, "unit": "calls"})])
-        tx = Transcript(tool_calls=[ToolCall("a", {}), ToolCall("b", {})])
+        tx = Transcript(receipts=signed([("a", {}), ("b", {})]))
         self.assertTrue(check(p, tx).passed)
 
-    def test_token_budget(self):
-        # token 超限失败；token_count 缺失应报错，而不是当成 0 静默放行（否则可绕过预算）。
+    def test_token_budget_is_computed_not_declared(self):
+        # P1-5：tokens 语义改为「响应按固定空白集合切分后的 run 数」，在电路内
+        # 自算。Transcript 里已经没有可以自填的 token_count 了 —— 超限只能靠
+        # 真的写出这么多 token 来触发（下面 150 个 run > 预算 100）。
         p = Policy("t", "1", rules=[
             Rule("budget_bound", "bb", {"budget": 100, "unit": "tokens"})])
-        self.assertFalse(check(p, Transcript(tool_calls=[], token_count=150)).passed)
-        with self.assertRaises(PolicyError):
-            check(p, Transcript(tool_calls=[], token_count=None))
+        self.assertFalse(check(p, " ".join(["w"] * 150)).passed)
+        self.assertTrue(check(p, "only three words").passed)
+        # 边界取闭区间：恰好 100 个 run 不算超
+        self.assertTrue(check(p, " ".join(["w"] * 100)).passed)
 
     def test_bad_budget(self):
         # 负预算无意义，属非法配置。

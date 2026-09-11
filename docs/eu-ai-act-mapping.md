@@ -40,7 +40,9 @@ anchor   = Anchor.anchor(digest) { ts, by, seq } + Anchored 事件 # 链上登�
 
 - ~~真实链上锚定（`anchor_on_chain` RPC 后端）与智能合约事件~~ → **已实现**（`contracts/Anchor.sol` + `RpcAnchorBackend`，本地 Anvil 端到端 PASS，见 `docs/reproduce.md` §10；公共测试网/生产部署与密钥托管仍待补）；
 - ~~Ed25519/HSM 签名替换 demo HMAC~~ → **Ed25519 已落地**（P0-3：私钥不动、公钥随 `key.json`/`session.json` 分发，`verify_cert.py --keyring`）；HSM/KMS 托管仍待补；
-- **工具调用轨迹的绑定**：`tool_arg_guard` / `budget_bound` 的规则本身**已入电路**（证书 `zk:true` 即此意），
-  但 `tool_calls` / `token_count` 仍是证明者自填的**私有输入**，不是被证明的事实 —— 即「规则可证」
-  不等于「轨迹为真」。把轨迹本身拴住是 P1-5（工具回执链 / MCP 签名）；
+- ~~**工具调用轨迹的绑定**~~ → **P1-5 已落地**：轨迹类规则改判**工具网关签发的回执链**
+  （`receipts`，删除自填的 `tool_calls`/`token_count`）。链**结构**由电路保证（删/换/重排 → `trace_unbound`
+  fail-closed），**签发者身份**由链下 Ed25519 验签 + 公开值 `trace_root` 承担 —— 即「链路可证 + 身份可验」，
+  但仍**不**证明网关本身未作恶（网关是被显式信任的第三方）。
+  剩余边界：网关密钥托管与撤销（与 Ed25519 私钥托管同一待办）；
 - 训练数据/模型卡（Art.11 等）超出本系统范围。

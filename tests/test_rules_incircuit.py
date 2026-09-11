@@ -23,12 +23,31 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import commit  # noqa: E402
+from policydsl import commit, trace  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.model import Policy, Rule  # noqa: E402
 from policydsl.serialize import spec_canonical_text  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+
+#: 固定时间戳的一次性网关 —— 让向量里的回执链可复现。
+GW_TS = "2026-01-01T00:00:00+00:00"
+
+
+def chain(*calls: tuple) -> list:
+    """把 ``[(tool, args, result), ...]`` 签成网关回执链（JSON 形状，P1-5）。"""
+    return trace.receipts_to_json(
+        trace.make_chain(list(calls), gateway=trace.ToolGateway(ts=GW_TS)))
+
+
+def broken(calls: tuple) -> list:
+    """签一条链再把某一条的 ``seq`` 改坏 —— 结构校验必须挡住它。"""
+    import dataclasses
+
+    items = chain(calls)
+    items[0] = dataclasses.asdict(
+        dataclasses.replace(trace.ToolReceipt.from_dict(items[0]), seq=99))
+    return items
 
 
 def run_check(vector: dict) -> dict:
@@ -70,8 +89,7 @@ class TestRulesInCircuit(unittest.TestCase):
         vector.update(extras or {})
         got = run_check(vector)
         canon = commit.canonical_violations(spec, response,
-                                            (extras or {}).get("tool_calls"),
-                                            (extras or {}).get("token_count"))
+                                            (extras or {}).get("receipts"))
         self.assertEqual(sorted(v["kind"] for v in canon), sorted(golden_kinds))
         self.assertEqual(sorted(v["kind"] for v in got["violations"]), sorted(golden_kinds))
         self.assertEqual(got["passed"], not golden_kinds)
@@ -108,29 +126,38 @@ class TestRulesInCircuit(unittest.TestCase):
         self._parity(self.fmt, "NaN", ["format_check"])
 
     # 工具参数守卫：命中禁用字段（password/token）即违规；无工具调用时不误报。
+    # P1-5 起判的是**网关回执链**（不是自填的 tool_calls）。
     def test_tool_arg_guard(self):
-        self._parity(self.tool, "", [], {"tool_calls": [{"name": "s", "args": {"q": "x"}}]})
+        self._parity(self.tool, "", [], {"receipts": chain(("s", {"q": "x"}, "ok"))})
         self._parity(self.tool, "", ["tool_arg_guard"],
-                     {"tool_calls": [{"name": "s", "args": {"q": "x", "token": "t"}}]})
+                     {"receipts": chain(("s", {"q": "x", "token": "t"}, "ok"))})
 
     # ``tools`` 白名单把守卫限定到指定工具：非白名单工具即使带禁用字段也不该被拦，
     # 否则策略会越权误伤（这是最容易写反的一处）。
     def test_tool_arg_guard_tools_restriction(self):
         spec = spec_of([Rule("tool_arg_guard", "g",
                              {"forbidden_fields": ["token"], "tools": ["search_kb"]})])
-        self._parity(spec, "", [], {"tool_calls": [{"name": "other", "args": {"token": "t"}}]})
+        self._parity(spec, "", [], {"receipts": chain(("other", {"token": "t"}, "ok"))})
         self._parity(spec, "", ["tool_arg_guard"],
-                     {"tool_calls": [{"name": "search_kb", "args": {"token": "t"}}]})
+                     {"receipts": chain(("search_kb", {"token": "t"}, "ok"))})
+
+    # 链结构不自洽（这里把第 0 条的 seq 改坏）时，工具规则**两端都**必须
+    # fail-closed 记 trace_unbound —— 而不是「读不出来就当作零次调用」。
+    def test_broken_chain_fails_closed_in_both(self):
+        self._parity(self.tool, "", ["trace_unbound"],
+                     {"receipts": broken(("s", {"q": "x"}, "ok"))})
+        self._parity(self.budget, "", ["trace_unbound"],
+                     {"receipts": broken(("a", {}, "ok"))})
 
     # 预算约束两种单位（calls / tokens）的判定：未超出上限放行，超出即违规。
     # 判据是「total > budget」（恰好等于预算视为通过），这里取未超与超出两点。
+    # tokens 那一支现在数的是**响应**的确定性 token 数（P1-5 语义变更）。
     def test_budget_calls_and_tokens(self):
-        self._parity(self.budget, "", [], {"tool_calls": [{"name": "a", "args": {}}]})
+        self._parity(self.budget, "", [], {"receipts": chain(("a", {}, "ok"))})
         self._parity(self.budget, "", ["budget_bound"],
-                     {"tool_calls": [{"name": "a", "args": {}}, {"name": "b", "args": {}},
-                                     {"name": "c", "args": {}}]})
-        self._parity(self.tokens, "", [], {"token_count": 50})
-        self._parity(self.tokens, "", ["budget_bound"], {"token_count": 150})
+                     {"receipts": chain(("a", {}, "1"), ("b", {}, "2"), ("c", {}, "3"))})
+        self._parity(self.tokens, " ".join(["w"] * 50), [])
+        self._parity(self.tokens, " ".join(["w"] * 150), ["budget_bound"])
 
 
 @unittest.skipUnless(POP_SCRIPT.exists(), "pop-script not built")
@@ -149,12 +176,12 @@ class TestEvidenceCommitmentParity(unittest.TestCase):
             Rule("tool_arg_guard", "no_secret_args", {"forbidden_fields": ["password", "token"]}),
         ]))
         response = "not json"
-        calls = [{"name": "search_kb", "args": {"query": "x", "token": "s"}}]
+        calls = chain(("search_kb", {"query": "x", "token": "s"}, "ok"))
         vector = {"name": "p", "response": response, "private": True,
-                  "spec_canonical": spec_canonical_text(spec), "tool_calls": calls}
+                  "spec_canonical": spec_canonical_text(spec), "receipts": calls}
         got = run_check(vector)
 
-        canon = commit.canonical_violations(spec, response, calls, None)
+        canon = commit.canonical_violations(spec, response, calls)
         expected = sorted((v["rule"], v["kind"], commit.evidence_commitment(v["evidence"]))
                           for v in canon)
         seen = sorted((v["rule"], v["kind"], v["evidence_commitment"])

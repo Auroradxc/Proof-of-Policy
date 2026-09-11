@@ -257,6 +257,15 @@ def main() -> int:
             "certificates": len(session_entries),
             "stream_certs": sum(1 for e in session_entries if e["kind"] == "stream"),
             "blocked_tool_calls": getattr(guard, "_blocked", []),
+            # 工具轨迹（P1-5）：网关签发的回执链。链尾摘要 + 网关公钥都是**公开**
+            # 坐标 —— 验证方拿网关侧收到的回执重算最后一条的 SHA256，即可独立核对
+            # 「这份证明绑的是哪条链」，无需相信出证方的转述。
+            "tool_trace": {
+                "receipts": len(guard.receipts),
+                "trace_root": guard.gateway.trace_root,
+                "gateway_keyid": guard.gateway.signer.keyid,
+                "gateway_public_hex": getattr(guard.gateway.signer, "public_hex", None),
+            },
             "zk_passed": zk_passed,
             # 诚实标注（P0-4）：这张 zk 证书到底附了哪一档证据
             "zk_proof_mode": zk_mode,
@@ -284,6 +293,9 @@ def main() -> int:
     print(f"certificates: {session['summary']['certificates']} "
           f"(stream={session['summary']['stream_certs']})")
     print(f"blocked tool calls: {session['summary']['blocked_tool_calls']}")
+    tt = session["summary"]["tool_trace"]
+    print(f"tool trace  : {tt['receipts']} receipt(s), "
+          f"trace_root={tt['trace_root'][:16]}… (gateway {tt['gateway_keyid']})")
     print(f"zk proof    : {proof_rel or '(skipped: --no-prove)'}  passed={zk_passed}")
     print(f"proof_mode  : {zk_mode} (hiding: {cert.proof_hiding(zk_mode)})")
     if zk_ch:

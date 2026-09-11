@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from .agent import AgentMonitor
 from . import cert as _cert
+from .trace import ToolGateway, extract_result_text
 
 try:  # 有 LangChain 时用真实基类
     from langchain_core.callbacks import BaseCallbackHandler  # type: ignore
@@ -112,9 +113,13 @@ class PoPCallbackHandler(BaseCallbackHandler):
                  proof_sha256: Optional[str] = None, on_cert=None,
                  stream_check: bool = True, stream_every: int = 1,
                  on_stream_cert=None, stop_on_violation: bool = False,
-                 on_early_stop=None, proof_mode: Optional[str] = None):
+                 on_early_stop=None, proof_mode: Optional[str] = None,
+                 gateway: Optional[ToolGateway] = None):
         super().__init__()
         self.monitor = monitor
+        # 工具网关（P1-5）：工具回执由它签发（``on_tool_end`` 在工具**执行后**
+        # 触发，此刻结果已经拿到，所以能签出含结果摘要的真回执）。
+        self.gateway = gateway if gateway is not None else ToolGateway()
         self.vkey_hash = vkey_hash
         self.proof_sha256 = proof_sha256
         # 诚实标注（P0-4）：这张 handler 签出的证书，证据属于哪一档证明模式。
@@ -220,12 +225,14 @@ class PoPCallbackHandler(BaseCallbackHandler):
                                      "args": _parse_args(input_str)}
 
     def on_tool_end(self, output: Any, **kwargs: Any) -> None:
-        """工具结束：签发工具调用证书。"""
+        """工具结束：网关签发回执，再凭回执签发工具调用证书（P1-5）。"""
         run_id = str(kwargs.get("run_id") or "")
         rec = self._tool_starts.pop(run_id, None) or {"name": _tool_name(None, kwargs), "args": {}}
-        self._emit(self.monitor.on_tool_call(rec["name"], rec["args"],
-                                             vkey_hash=self.vkey_hash,
-                                             proof_mode=self.proof_mode))
+        receipt = self.gateway.issue(rec["name"], rec["args"],
+                                     result=extract_result_text(output))
+        self._emit(self.monitor.on_tool_call(receipt, vkey_hash=self.vkey_hash,
+                                             proof_mode=self.proof_mode,
+                                             chain=self.gateway.receipts))
 
 
 def verify_certificates(handler: "PoPCallbackHandler", keyring: Any = None) -> bool:

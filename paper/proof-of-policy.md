@@ -94,9 +94,40 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 ### 4.2 策略 DSL 与 NFA 契约
 
 规则子集（**6 类全部入电路**）：`keyword_block` / `length_bound` / `pattern_block` / `format_check`（json/int/float 规范子集）/
-`tool_arg_guard`（含 `tools` 限定）/ `budget_bound`（calls；tokens 用请求携带的 `token_count`）。
-> ⚠️ 语义边界：`tool_arg_guard` / `budget_bound` 的**规则**已入电路（可证），但 `tool_calls` / `token_count`
-> 仍是证明者自填的**私有输入**，不是被证明的事实 —— 「规则可证」≠「轨迹为真」（P1-5 工具回执链待补）。
+`tool_arg_guard`（含 `tools` 限定）/ `budget_bound`（calls / tokens）。
+
+#### 4.2.1 轨迹绑定：工具回执链（P1-5）
+
+轨迹类规则原先判的是 `ProofRequest` 里由**证明者自填**的 `tool_calls` / `token_count`——电路只能证明
+「若轨迹如我所述，则策略通过」，把列表填空即可通过 `tool_arg_guard`。P1-5 把这两个字段**删除**，
+代之以**工具网关**签发的**回执链**：
+
+- 网关在每次调用**执行后**签发一条回执 `{seq, tool, args, result_digest, ts, prev, keyid, sig}`；
+  `seq` 从 0 起，`prev` 是前一条回执的 `SHA256`（首条为 `genesis`）——链把"哪次调用先发生"钉死。
+- agent 只能**原样转发**回执链；电路内 `verify_receipt_chain` 校验**结构**（`seq` 连续、`prev` 逐条咬合、
+  每条摘要由其自身内容重算），结构不自洽时工具规则一律 **fail-closed** 记为 `trace_unbound`，
+  而不是退化成"读不出来 = 零次调用"。参数以**明文**入回执（是私有输入、不进公开值）：摘要无法支撑
+  `forbidden_fields` 判定，而防篡改靠的是签名而非保密。
+- 链尾摘要 `trace_root` 进公开值，与 `response_binding` 对称——验证方拿**网关侧收到的回执**重算即可
+  独立核对"这份证明绑定的是哪条链"。这条路径已落成可执行命令：`verify_cert.py --receipts R.json`
+  由验证方**自己手上**的回执重算链尾，`--gateway-key` 再补一遍链下逐条验签；两道关独立，
+  摘要对得上并不等于网关签过。
+
+> ⚠️ **语义边界（如实标注）**：Ed25519 **验签在链下**完成（zkVM 内验签代价高），电路内只做结构校验。
+> 因此"回执确由网关签发"这一步依赖 **链下验签 + 公开值里的 `trace_root`**，本文**不**宣称电路内完成了
+> 签名验证。结构校验挡住删/换/重排（改动任一条会使其后继的 `prev` 对不上），**但改动链尾那条的内容
+> 结构上仍自洽**——电路内对此完全是盲的。这一条实际由**两道链下的关**分别承担，且不可互相替代：
+> 摘要比对回答"这份证明绑的是**不是同一条**链"，验签回答"这条链**是不是网关签的**"。只比摘要，
+> 一个链与证书一并伪造的人仍能"自洽"通过；只验签，则无从知道被证明的是哪条链。该边界由
+> `tests/test_trace.py` 的 `test_in_circuit_blind_to_last_element_forgery` 与
+> `TestVerifyCertTraceBinding::test_forged_last_element_caught_by_gateway_key` 显式钉死。
+
+`budget_bound(unit="tokens")` 同步改为**电路内自算**：按固定空白集合 `{0x20,09,0a,0b,0c,0d}` 把响应切成
+非空白 run 并计数（**不**依赖 Unicode White_Space：该定义随 Unicode 版本漂移，而两端必须永远给出同一个数；
+也**不**假称是任何真实分词器）。语义变更对既有策略是**不兼容**的：`tokens` 的数值口径变了，`policy_hash`
+随之变化，旧证书不再与同一策略包对应。旧向量里的 `tool_calls` / `token_count` 现在是**未知字段**，
+`ProofRequest` / `PrivateRequest` / 驱动层输入都标了 `deny_unknown_fields`——拿旧向量出证会**直接解析失败**，
+而不是被静默当成零次调用后照样出证。
 正则编译为 **Thompson NFA**（可序列化：states/eps/edges/ranges），受支持子集 + ASCII 语义，**不支持即 fail-fast**
 （锚点/反向引用/环视）。判定用 **Pike VM** 单趟状态并集（unanchored 存在性，对齐 `re.search`）。
 
@@ -126,7 +157,9 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 
 `AgentMonitor`（框架无关钩子）产证书；**LangChain 回调**（`on_llm_end`/`on_tool_start`/`on_tool_end`/`on_llm_new_token`）；
 **LangGraph**（同一回调 + `guard_node` 包装 + `astream_events` 全事件）；**MCP**（`MCPGuard` 对工具**参数**与**响应**判定，
-可预检拦截）。真实框架（langchain 1.4 / langgraph 1.2 / mcp 2.2）均通过端到端测试。
+可预检拦截）。三个适配器共用同一
+`ToolGateway`：工具**执行后**由网关签发回执（§4.2.1），故轨迹证书与证明走的是同一条链。真实框架
+（langchain 1.4 / langgraph 1.2 / mcp 2.2）均通过端到端测试。
 
 ## 5. Security Model（摘要；详见仓库 `docs/security-model.md`）
 
@@ -136,13 +169,18 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 - **Redaction soundness**：`redaction_ok ∧ mask_covered` ⇒ 只遮蔽真实命中内容。
 - **Unforgeability/binding**：证据开示需 `SHA256(f)=e`；策略/电路/证明哈希绑定并在验证时**重算**。
 - **Integrity**：账本与流式链的篡改/重排可检出。
-- **边界**：`tool_calls` / `token_count` 为证明者声明的私有输入，故 `tool_arg_guard`/`budget_bound` 的**轨迹真实性**
-  不在健全性定义内（规则本身已入电路）；工具路径证书的 `zk:true` 意指「规则可证」，是否附证明看 `binding.vkey_hash`（P1-5）。
+- **Trace binding（§4.2.1）**：轨迹类规则判的是**网关签发的回执链**，`trace_root` 进公开值；链的**结构**由电路
+  保证（删/换/重排即 `trace_unbound` fail-closed），**签发者身份**由链下 Ed25519 验签 + 公开值比对保证。
+  健全性以「网关密钥不被滥用」为前提——网关是被显式信任的第三方，不是被证明的对象。
+- **边界**：工具路径证书的 `zk:true` 意指「规则可证」，是否附证明看 `binding.vkey_hash`；而"回执链确由网关
+  签发"这一步在**链下**完成（见上条），不在电路内。
 
 ## 6. Implementation
 
 Python 参考层（DSL/编译/NFA/私密/证书/锚定/框架适配）+ Rust（SP1 v6 workspace：`types` 共享判定、`program` guest、`script` 驱动）。
-单测 + 集成测试 **220 全绿（5 skip 均为设计内）**；`scripts/` 提供交叉验证、demo、证书签发/验证、截图；`docs/reproduce.md` 复现指南。
+单测 + 集成测试 **250 全绿（5 skip 均为设计内）**，其中 `tests/test_trace.py`（28 例）覆盖 §4.2.1 的四条验收，
+`tests/test_rules_incircuit.py` 钉死 Python 参考层与电路内实现的逐点对齐；`scripts/` 提供交叉验证、
+demo、证书签发/验证、截图；`docs/reproduce.md` 复现指南。
 
 ## 7. Evaluation
 

@@ -2,7 +2,11 @@
 
 本模块定义了 Proof-of-Policy 的策略领域模型：规则（Rule）、策略（Policy）、
 违规（Violation）、判定结果（CheckResult），以及用于结构化评估的输入
-（ToolCall / Transcript）。整个 Python 参考层都围绕这些数据结构展开。
+（ToolReceipt / Transcript）。整个 Python 参考层都围绕这些数据结构展开。
+
+工具轨迹以**网关签发的回执链**表示（P1-5）：``Transcript.receipts`` 的元素类型
+是 :class:`policydsl.trace.ToolReceipt` —— 这里不重复定义，只在需要时做
+``TYPE_CHECKING`` 导入，免得两个模块互相 import。
 
 规则类型（Rule kinds，阶段一范围）：
   keyword_block : 响应文本不得包含列出的任意关键词/短语
@@ -18,14 +22,17 @@ Python 层是「参考语义」（reference semantics）：单测与 SP1 程序�
 
 内容类规则（keyword/pattern/length/format）判定自由文本 ``response``；
 ``tool_arg_guard`` / ``budget_bound`` 判定结构化 ``Transcript``
-（见 ``evaluate.check``）。
+（P1-5 起其轨迹部分是**网关签发的回执链**，见 ``evaluate.check``）。
 """
 
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:  # 只用于类型标注：避免 model ↔ trace 的循环导入
+    from .trace import ToolReceipt
 
 
 class PolicyError(ValueError):
@@ -183,22 +190,18 @@ class CheckResult:
 
 
 @dataclass
-class ToolCall:
-    """agent 轨迹（trace）中的一次工具调用。"""
-
-    name: str
-    args: Dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass
 class Transcript:
     """用于参考评估的结构化输入。
 
     内容类规则（keyword/pattern/length/format）判定 ``response``；
-    ``tool_arg_guard`` 判定 ``tool_calls``；``budget_bound`` 判定累计调用次数
-    （``len(tool_calls)``），当 ``unit == "tokens"`` 时判定 ``token_count``。
+    ``tool_arg_guard`` 判定 ``receipts`` 里各条回执的参数；``budget_bound``
+    按 ``unit`` 判定回执条数（``calls``）或**按固定空白规则自算**的 token 数
+    （``tokens``，见 :func:`policydsl.trace.token_count`）。
+
+    **P1-5**：原来的 ``tool_calls``/``token_count`` 两个字段已被移除 —— 它们是
+    「证明者自填」的，判出来的结论没有任何东西拴着。回执必须由工具网关签发
+    （:class:`policydsl.trace.ToolGateway`）。
     """
 
     response: Optional[str] = None
-    tool_calls: List[ToolCall] = field(default_factory=list)
-    token_count: Optional[int] = None
+    receipts: List["ToolReceipt"] = field(default_factory=list)

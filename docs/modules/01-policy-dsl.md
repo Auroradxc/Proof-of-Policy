@@ -33,12 +33,18 @@
 | `length_bound` | `min:int, max:int`，`0 ≤ min ≤ max` | `response` | ✅ | 码点长度须落在 `[min, max]` |
 | `pattern_block` | `patterns: [str]`（非空），可选 `match_mode: pike\|naive` | `response` | ✅ | 响应**不得匹配**任一正则（子串存在性） |
 | `format_check` | `format: json\|int\|float` | `response` | ✅ | 响应整体须能按规范子集解析 |
-| `tool_arg_guard` | `forbidden_fields: [str]`（非空），可选 `tools: [str]` | `tool_calls` | ✅ | 工具参数不得含被禁字段（`tools` 非空时限定范围） |
-| `budget_bound` | `budget:int ≥ 0`，`unit: calls\|tokens` | `tool_calls` / `token_count` | ✅ | 累计量不得超过 `budget` |
+| `tool_arg_guard` | `forbidden_fields: [str]`（非空），可选 `tools: [str]` | **工具回执链** `receipts` | ✅ | 工具参数不得含被禁字段（`tools` 非空时限定范围） |
+| `budget_bound` | `budget:int ≥ 0`，`unit: calls\|tokens` | `receipts`（calls）/ `response`（tokens，电路内自算） | ✅ | 累计量不得超过 `budget` |
 
-> 六类**全部入电路**（P7-b 之后）。两处边界见 `../security-model.md` §5：
-> ① `budget_bound/tokens` 依赖**证明者声明**的 `token_count`（电路内不做分词）；
+> 六类**全部入电路**（P7-b 之后）。两点见 `../security-model.md` §5：
+> ① `budget_bound/tokens` 的口径自 P1-5 起改为**电路内自算**（响应按固定空白字节集切分的 run 数，
+> **不是**证明者声明值，也**不是**真实分词器）——对既有策略是**不兼容变更**，`policy_hash` 随之改变；
 > ② agent 工具路径证书的 `zk:true` 表示「规则可证」，是否**附了证明**看 `binding.vkey_hash`（`unproven` = 仅链下判定），而这一档证据隐藏程度看 `binding.proof_mode`（P0-4，见 [`03`](03-certificate.md) §2）。
+>
+> **轨迹类规则的输入**（P1-5）：不再是 agent 自报的 `tool_calls`，而是**工具网关**签发的回执链
+> （`{seq, tool, args, result_digest, ts, prev, keyid, sig}`）。链**结构**由电路校验（删/换/重排 →
+> `trace_unbound` fail-closed），**签发者身份**由链下 Ed25519 验签 + 公开值里的 `trace_root` 承担。
+> 详见 [`05`](05-zk-circuits.md) §2.3a/§2.5b 与 [`02`](02-privacy-commitment.md)。
 
 `params` 校验在 `Rule.validate()` 中**逐类型**进行，未知 kind 直接报错（防止拼写错误退化成空操作）：
 
@@ -64,10 +70,12 @@ class Violation:   rule: Rule; evidence_kind: str; evidence: Any
 @dataclass
 class CheckResult: passed: bool; violations: list[Violation]; notes: list[str]
 @dataclass
-class ToolCall:    name: str; args: dict
-@dataclass
-class Transcript:  response: str|None; tool_calls: list[ToolCall]; token_count: int|None
+class Transcript:  response: str|None; receipts: list[ToolReceipt]   # P1-5：无可自填的 token 数
 ```
+
+> **旧字段已删除**：`Transcript.tool_calls` / `token_count` 与 `model.ToolCall` 在 P1-5 中被移除，
+> 传它们会直接 `TypeError`（而不是"传了但被忽略"——后者会让人误以为还生效）。`ToolReceipt`
+> 定义在 `policydsl/trace.py`（`model` 里只有 `TYPE_CHECKING` 下的类型标注，避免循环导入）。
 
 `Violation.evidence_kind` 与 `evidence` 的对应（**跨层证据字符串的参考定义**）：
 
@@ -235,11 +243,13 @@ python3 -m policydsl check <response.txt> --policy <policy.json>
 
 1. **`passed ⇔ violations == []`**（`and` 语义）——没有例外，也没有 `semantic="or"`（会报 `PolicyError`）。
 2. **内容类规则要求 `response` 非空**：`keyword/length/pattern/format` 遇到 `Transcript(response=None)` 抛
-   `PolicyError`；`tool_arg_guard` 不要求 `response`；`budget_bound/tokens` 要求 `token_count`。
-3. **顺序敏感处**：`pattern_block` 的证据取「第一条命中的模式」；`tool_arg_guard` 每个工具调用**至多记一条**违规。
-4. **长度按码点**（Python `len(str)` = Rust `chars().count()`），不是字节数。
-5. **函数外无副作用**：`check` / `compile_policy` 不写文件、不联网（`__main__` 会写 `proof-request.json`）。
-6. **`semantic` 只支持 `"and"`**；扩展 or/优先级需要同时改两侧判定器与哈希覆盖字段。
+   `PolicyError`；`tool_arg_guard` 不要求 `response`；`budget_bound/tokens` 要求 `response`（token 数由它现算）。
+3. **顺序敏感处**：`pattern_block` 的证据取「第一条命中的模式」；`tool_arg_guard` 每条回执**至多记一条**违规。
+4. **链坏即 fail-closed**：`trace.chain_ok(receipts)` 不成立时，工具类规则一律记 `trace_unbound`；若策略里
+   **没有**任何工具类规则，末尾补一条合成违规（`rule="<trace>"`）——「链坏了」永远不会被静默放过。
+5. **长度按码点**（Python `len(str)` = Rust `chars().count()`），不是字节数。
+6. **函数外无副作用**：`check` / `compile_policy` 不写文件、不联网（`__main__` 会写 `proof-request.json`）。
+7. **`semantic` 只支持 `"and"`**；扩展 or/优先级需要同时改两侧判定器与哈希覆盖字段。
 
 ---
 

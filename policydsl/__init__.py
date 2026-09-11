@@ -8,13 +8,15 @@ __version__ = "0.1.0"
 
 # 从各子模块 re-export 常用符号，方便 `from policydsl import Policy` 等用法
 from .model import (  # noqa: F401
-    Policy, Rule, ToolCall, Transcript, Violation, CheckResult, PolicyError,
+    Policy, Rule, Transcript, Violation, CheckResult, PolicyError,
 )
 from .compile import compile_policy, SPEC_VERSION  # noqa: F401
 from .evaluate import check  # noqa: F401
+from .trace import ToolGateway, ToolReceipt, verify_chain  # noqa: F401
 
 __all__ = [
-    "Policy", "Rule", "ToolCall", "Transcript", "Violation", "CheckResult",
+    "Policy", "Rule", "Transcript", "Violation", "CheckResult",
     "PolicyError",
     "compile_policy", "SPEC_VERSION", "check",
+    "ToolGateway", "ToolReceipt", "verify_chain",
 ]

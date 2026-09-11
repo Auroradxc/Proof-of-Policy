@@ -1,8 +1,9 @@
 //! Proof-of-Policy 的共享（反）序列化类型。
 //!
 //! `ProofRequest` 是 SP1 程序消费的输入：**策略的规范 JSON 字节** + 响应 +
-//! 工具调用轨迹。`Outcome` 是它作为公开值（public values）承诺的输出，
-//! 其中**必然携带 `policy_hash`**。
+//! 工具回执链（P1-5；回执由工具网关签发，不再是 agent 的自述）。
+//! `Outcome` 是它作为公开值（public values）承诺的输出，其中**必然携带
+//! `policy_hash`**。
 //!
 //! ## 健全性的核心约定
 //!
@@ -29,12 +30,151 @@ use alloc::{collections::{BTreeMap, BTreeSet}, format, string::String, vec, vec:
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-/// agent 轨迹里的一次工具调用（用于 tool/budget 规则）。
+/// 工具网关对**一次工具调用**签发的回执（P1-5）。
+///
+/// 在 P1-5 之前，`tool_calls` 是证明者自填的私有输入 —— 想通过
+/// `tool_arg_guard`，把它填成空列表即可。回执改由**真正执行工具的那一方**
+/// （网关）签发，agent 只能转发，于是 `tool_arg_guard`/`budget_bound` 判的
+/// 不再是证明者的一面之词。
+///
+/// **`sig` 字段刻意不在这里**：Ed25519 验签在**链下**由网关公钥完成（zkVM 内
+/// 验签代价高，取舍见 `docs/plan-p0p1p2.md` §P1-5）。serde 默认忽略未知字段，
+/// 所以带 `sig` 的 JSON 能正常反序列化 —— 而摘要不覆盖 `sig`，两边算出的
+/// 字节仍然一致。电路内验证的是链的**结构**（`verify_receipt_chain`）：
+/// 每条回执的摘要由它自己的内容重算，`seq` 连续、`prev` 逐条咬合。
+/// 「回执可信」的根源是签名，由验证方在链下核对。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct ToolCall {
-    pub name: String,
+pub struct ToolReceipt {
+    /// 序号（从 0 起）。
+    pub seq: u32,
+    pub tool: String,
+    /// 调用的**明文参数**。计划稿里写的是 `args_digest`，但摘要撑不起
+    /// `tool_arg_guard` —— 电路拿哈希无从判断参数里有没有 `password` 这个键。
+    /// 参数是证明的私有输入、不进公开值，放明文不额外泄露什么；保证它没被
+    /// 篡改的是网关签名。
     #[serde(default)]
     pub args: BTreeMap<String, String>,
+    /// 执行结果的承诺（结果可能很长，且没有任何规则去读它）。
+    #[serde(default)]
+    pub result_digest: String,
+    #[serde(default)]
+    pub ts: String,
+    /// 前一条回执的 `receipt_digest`；首条为 `"genesis"`。
+    #[serde(default = "trace_genesis")]
+    pub prev: String,
+    /// 签发者密钥标识（含方案前缀，如 `"ed25519:ab12…"`）。
+    #[serde(default)]
+    pub keyid: String,
+}
+
+fn trace_genesis() -> String {
+    String::from(TRACE_GENESIS)
+}
+
+/// 回执摘要与签名的域分隔前缀（对应 `policydsl.trace.TRACE_DOMAIN`）。
+pub const TRACE_DOMAIN: &[u8] = b"pop-trace-v1";
+/// 空链的链尾（对应 `policydsl.trace.GENESIS`）。
+pub const TRACE_GENESIS: &str = "genesis";
+
+/// 长度前缀：`u32_be(len) ‖ data`。没有它，「拼起来」就有歧义。
+fn push_lp(out: &mut Vec<u8>, data: &[u8]) {
+    out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+    out.extend_from_slice(data);
+}
+
+/// 回执的规范字节编码（**签名与摘要的共同原像**）。
+///
+/// `TRACE_DOMAIN ‖ u32_be(seq) ‖ lp(tool) ‖ u32_be(len(args)) ‖
+/// [lp(k) ‖ lp(v)]_按键升序 ‖ lp(result_digest) ‖ lp(ts) ‖ lp(prev) ‖ lp(keyid)`
+///
+/// 刻意**不用 JSON**：JSON 规范化（键序、数字格式、转义、空白）是个聊不完的
+/// 话题，而这里只需要一串**唯一**的字节。字段齐全、顺序写死、长度前缀防歧义 ——
+/// 必须与 `policydsl.trace.canonical_receipt_bytes` 逐字节一致
+/// （`tests/test_trace.py` 逐长度核对）。
+pub fn canonical_receipt_bytes(r: &ToolReceipt) -> Vec<u8> {
+    let mut out: Vec<u8> = Vec::new();
+    out.extend_from_slice(TRACE_DOMAIN);
+    out.extend_from_slice(&r.seq.to_be_bytes());
+    push_lp(&mut out, r.tool.as_bytes());
+    out.extend_from_slice(&(r.args.len() as u32).to_be_bytes());
+    // BTreeMap 迭代即按键升序，与 Python 的 sorted(args) 一致
+    for (k, v) in r.args.iter() {
+        push_lp(&mut out, k.as_bytes());
+        push_lp(&mut out, v.as_bytes());
+    }
+    push_lp(&mut out, r.result_digest.as_bytes());
+    push_lp(&mut out, r.ts.as_bytes());
+    push_lp(&mut out, r.prev.as_bytes());
+    push_lp(&mut out, r.keyid.as_bytes());
+    out
+}
+
+/// 单条回执的摘要（十六进制）—— 下一条回执的 `prev` 就是它。
+pub fn receipt_digest(r: &ToolReceipt) -> String {
+    hex(&Sha256::digest(canonical_receipt_bytes(r)))
+}
+
+/// 链尾摘要（空链 → `"genesis"`）—— 随证明一起进公开值。
+///
+/// 公开值里放**链尾**而不是整条链：链可能很长，而验证方手上本来就有网关发的
+/// 回执，它要的只是「这份证明绑定的是哪条链」这一个可离线核对的值 ——
+/// 与 `response_binding` 之于响应的作用完全对称。
+pub fn trace_root(receipts: &[ToolReceipt]) -> String {
+    match receipts.last() {
+        Some(r) => receipt_digest(r),
+        None => String::from(TRACE_GENESIS),
+    }
+}
+
+/// **结构**检查：`seq` 必须等于下标、`prev` 必须逐条咬合。
+///
+/// 这是电路内做的那一层：它只保证链自身自洽，**不**保证内容属实 —— 后者靠
+/// 签名，由验证方在链下核对（见 `ToolReceipt` 的说明）。空链是**合法**的
+/// （一次工具都没调用）。
+///
+/// 错误串与 `policydsl.trace.chain_ok` 逐字符一致：它会作为违规证据进证书，
+/// 两边不一致就等于证书里写着一条链上算不出来的证据。
+pub fn verify_receipt_chain(receipts: &[ToolReceipt]) -> Result<(), String> {
+    for (i, r) in receipts.iter().enumerate() {
+        if r.seq as usize != i {
+            return Err(format!("receipt {}: seq={} != {}", i, r.seq, i));
+        }
+        let expected = if i == 0 {
+            String::from(TRACE_GENESIS)
+        } else {
+            receipt_digest(&receipts[i - 1])
+        };
+        if r.prev != expected {
+            return Err(format!("receipt {}: prev mismatch", i));
+        }
+    }
+    Ok(())
+}
+
+/// 该字节是否算分词空白 —— **取死**的六个字节，与
+/// `policydsl.trace.TOKEN_SPACE` 一致。刻意不用 Unicode White_Space：
+/// 那份定义会随 Unicode 版本漂移，而电路与参考实现必须永远给出同一个数。
+pub fn is_token_space(b: u8) -> bool {
+    matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+}
+
+/// 响应的确定性 token 数：按固定空白集合切分后的 run 个数。
+///
+/// 这不是任何真实 LLM 的分词器 —— 它**不假装是**。选它的理由只有一条：
+/// 电路内能廉价、确定地算出来，从而 `budget_bound(unit="tokens")` 的输入不再
+/// 是证明者的一面之词（P1-5 的语义变更，见论文 §4.2）。
+pub fn token_count(text: &str) -> u32 {
+    let mut n: u32 = 0;
+    let mut in_run = false;
+    for b in text.as_bytes() {
+        if is_token_space(*b) {
+            in_run = false;
+        } else if !in_run {
+            in_run = true;
+            n += 1;
+        }
+    }
+    n
 }
 
 /// `format_check` 声明的响应格式。
@@ -157,9 +297,16 @@ pub const SEMANTIC_AND: &str = "and";
 /// 换个用途（如将来绑定工具轨迹）就用另一段前缀，两个域的哈希永不碰撞。
 pub const BIND_DOMAIN: &[u8] = b"pop-bind-v1";
 
-/// prover 的输入：agent 响应、规范策略字节、以及工具调用轨迹
+/// prover 的输入：agent 响应、规范策略字节、以及**工具回执链**
 /// （供 tool_arg_guard / budget_bound 使用）。
+///
+/// **为什么标 `deny_unknown_fields`**：P1-5 移除了 `tool_calls` /
+/// `token_count` 这两个「证明者自填」的字段。若不拒绝未知字段，拿旧向量出证会
+/// **静默**变成「零次工具调用 ⇒ tool_arg_guard 通过」—— 旧路径看起来仍然能用，
+/// 实际上 P1-5 一点没生效。标上之后，旧向量在反序列化这一步就失败
+/// （guest panic ⇒ 产不出证明），这正是想要的 fail-closed。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ProofRequest {
     /// 策略的规范 JSON 文本（`policydsl.compile.canonical_spec_bytes` 产出）。
     /// 唯一真相源：既用于派生 `policy_hash`，也用于解析要判定的约束。
@@ -169,10 +316,9 @@ pub struct ProofRequest {
     /// 「绑定到空挑战」的承诺（格式统一，见 `response_binding`）。
     #[serde(default)]
     pub nonce: Vec<u8>,
+    /// 工具回执链（P1-5）。空链 = 一次工具都没调用，合法。
     #[serde(default)]
-    pub tool_calls: Vec<ToolCall>,
-    #[serde(default)]
-    pub token_count: Option<u32>,
+    pub receipts: Vec<ToolReceipt>,
 }
 
 /// 一条被违反的规则（仅在未通过时非空）。
@@ -196,6 +342,17 @@ pub struct ProofOutput {
     /// `response_binding`）。持 T 与 nonce 者可**离线**核对「被证明的就是送达的
     /// 那条响应」，无需在公开值里泄露 T。
     pub response_binding: String,
+    /// 工具回执链的链尾摘要（`trace_root`；空链为 `"genesis"`）。
+    ///
+    /// 与 `response_binding` 同一个用途，只是对象换成了**轨迹**：公开值里放它，
+    /// 是为了让「这份证明绑定的到底是哪条工具链」可被离线核对 —— 验证方拿网关
+    /// 发给它的回执重算一遍链尾即可。没有这一项，证明里的 `receipts` 就只是
+    /// 又一串「证明者说它是这样」的私有输入。
+    ///
+    /// **边界**（论文 §4.2 如实标注）：电路内只验证这条链的**结构**
+    /// （`verify_receipt_chain`），Ed25519 验签在链下完成。因此本字段说明的是
+    /// 「证明绑定了一条自洽的链」，而不是「这条链里的签名已被电路验证过」。
+    pub trace_root: String,
     pub passed: bool,
     pub violations: Vec<Violation>,
 }
@@ -372,7 +529,12 @@ pub fn parse_json_ok(s: &str) -> bool {
 /// 依据约束判定一个响应（六类规则全部入电路）：
 /// keyword_block（ASCII 不区分大小写子串）、length_bound（码点长度）、
 /// pattern_block（通过编译后 NFA 的子串正则）、format_check（规范解析子集）、
-/// tool_arg_guard（工具参数被禁键）、budget_bound（calls / tokens）。
+/// tool_arg_guard（**回执**参数里的被禁键）、budget_bound（回执条数 / **电路内
+/// 自算**的 token 数）。
+///
+/// `receipts` 是工具网关签发的回执链（P1-5）。电路内只验证链的**结构**
+/// （见 `verify_receipt_chain`），签名由验证方在链下核对；链尾摘要进公开值，
+/// 供验证方与手上的网关回执比对。
 ///
 /// `policy_hash` 由调用方（`run_job`）从**同一段规范字节**派生后传入，
 /// 保证公开值里的策略哈希与实际参与判定的约束同源、不可分离。同理，
@@ -383,10 +545,15 @@ pub fn evaluate(
     constraints: &[SpecConstraint],
     response: &str,
     nonce: &[u8],
-    tool_calls: &[ToolCall],
-    token_count: Option<u32>,
+    receipts: &[ToolReceipt],
 ) -> ProofOutput {
     let mut violations: Vec<Violation> = Vec::new();
+
+    // 回执链的**结构**校验，只做一次（tool_arg_guard / budget_bound/calls
+    // 都要用）。空链合法 —— 一次工具都没调用是正常情形，不是「链坏了」。
+    let chain: Result<(), String> = verify_receipt_chain(receipts);
+    // token 数在电路内自算（P1-5）：不再接受证明者自填的值。
+    let tokens: u32 = token_count(response);
 
     for c in constraints {
         match c {
@@ -445,26 +612,46 @@ pub fn evaluate(
                 }
             }
             SpecConstraint::ToolArgGuard { name, tools, forbidden_fields } => {
-                // 工具参数防护：检查（可选白名单限定后的）调用参数是否含被禁字段
-                for call in tool_calls {
-                    if !tools.is_empty() && !tools.contains(&call.name) {
+                // 工具参数防护：检查（可选白名单限定后的）**回执**参数是否含被禁字段。
+                // 链不自洽 ⇒ fail-closed：一条规则都不放行，而不是「链读不出来就
+                // 当作没有调用」—— 那样伪造一条坏链就能让规则静默失效。
+                if let Err(why) = &chain {
+                    violations.push(Violation {
+                        rule: name.clone(),
+                        kind: "trace_unbound".into(),
+                        evidence: why.clone(),
+                    });
+                    continue;
+                }
+                for r in receipts {
+                    if !tools.is_empty() && !tools.contains(&r.tool) {
                         continue;
                     }
-                    if let Some(f) = forbidden_fields.iter().find(|f| call.args.contains_key(*f)) {
+                    if let Some(f) = forbidden_fields.iter().find(|f| r.args.contains_key(*f)) {
                         violations.push(Violation {
                             rule: name.clone(),
                             kind: "tool_arg_guard".into(),
-                            evidence: format!("{}:{}", call.name, f),
+                            evidence: format!("{}:{}", r.tool, f),
                         });
                         break; // 每个工具调用至多记一条违规
                     }
                 }
             }
             SpecConstraint::BudgetBound { name, budget, unit } => {
-                // 预算边界：按 calls 计调用次数，按 tokens 计 token_count
+                // 预算边界：按 calls 计回执条数，按 tokens 计**电路内自算**的 token 数
                 let total: u32 = match unit {
-                    BudgetUnit::Calls => tool_calls.len() as u32,
-                    BudgetUnit::Tokens => token_count.unwrap_or(0),
+                    BudgetUnit::Tokens => tokens,
+                    BudgetUnit::Calls => {
+                        if let Err(why) = &chain {
+                            violations.push(Violation {
+                                rule: name.clone(),
+                                kind: "trace_unbound".into(),
+                                evidence: why.clone(),
+                            });
+                            continue;
+                        }
+                        receipts.len() as u32
+                    }
                 };
                 if total > *budget {
                     violations.push(Violation {
@@ -477,9 +664,23 @@ pub fn evaluate(
         }
     }
 
+    // 坏链即使没有任何工具规则「接住」它也要记一笔：否则一条只有内容规则的策略
+    // 会带着一条明显自相矛盾的回执链出证，而证书上什么都看不出来。
+    // 规则名用带尖括号的占位符，与策略里的规则名（标识符）不可能撞车。
+    if let Err(why) = &chain {
+        if !violations.iter().any(|v| v.kind == "trace_unbound") {
+            violations.push(Violation {
+                rule: "<trace>".into(),
+                kind: "trace_unbound".into(),
+                evidence: why.clone(),
+            });
+        }
+    }
+
     ProofOutput {
         policy_hash: String::from(policy_hash),
         response_binding: response_binding(nonce, response),
+        trace_root: trace_root(receipts),
         passed: violations.is_empty(),
         violations,
     }
@@ -558,6 +759,7 @@ pub struct RedactionProof {
 /// 私有模式输入。`mask` 是允许不同（置为 `*`）的字符下标；`redacted` 是要
 /// 验证的候选脱敏串（可选）；`spans` 是证明这些位置为真实匹配的见证字符区间。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PrivateRequest {
     /// 策略的规范 JSON 文本（与 `ProofRequest::spec_canonical` 同义，唯一真相源）。
     pub spec_canonical: String,
@@ -571,10 +773,9 @@ pub struct PrivateRequest {
     pub redacted: Option<String>,
     #[serde(default)]
     pub spans: Vec<(u32, u32)>,
+    /// 工具回执链（与 `ProofRequest::receipts` 同义）。
     #[serde(default)]
-    pub tool_calls: Vec<ToolCall>,
-    #[serde(default)]
-    pub token_count: Option<u32>,
+    pub receipts: Vec<ToolReceipt>,
 }
 
 /// 私有模式公开输出：不含响应明文，只有其承诺与逐违规的证据承诺
@@ -589,6 +790,9 @@ pub struct PrivateOutput {
     /// 响应本身的承诺 SHA256(T)。它只说明「某个 T 通过了」，不说「哪个 T」；
     /// 要把它拴到一次具体会话上，靠的是上面那条 `response_binding`。
     pub response_commitment: String,
+    /// 工具回执链的链尾摘要（见 `ProofOutput::trace_root`）。私有模式下回执链
+    /// 本身不进公开值，验证方拿到的是这一个摘要。
+    pub trace_root: String,
     pub passed: bool,
     pub violations: Vec<PrivateViolation>,
     pub redaction: Option<RedactionProof>,
@@ -623,6 +827,7 @@ pub fn outcome_value(out: &Outcome) -> serde_json::Value {
             "mode": "public",
             "policy_hash": o.policy_hash,
             "response_binding": o.response_binding,
+            "trace_root": o.trace_root,
             "passed": o.passed,
             "violations": o.violations,
         }),
@@ -630,6 +835,7 @@ pub fn outcome_value(out: &Outcome) -> serde_json::Value {
             "mode": "private",
             "policy_hash": o.policy_hash,
             "response_binding": o.response_binding,
+            "trace_root": o.trace_root,
             "passed": o.passed,
             "response_commitment": o.response_commitment,
             "violations": o.violations,
@@ -726,7 +932,7 @@ fn mask_within_spans(mask: &[u32], spans: &[(u32, u32)]) -> bool {
 pub fn evaluate_private(req: &PrivateRequest, policy_hash: &str,
                         constraints: &[SpecConstraint]) -> PrivateOutput {
     let public = evaluate(policy_hash, constraints, &req.response, &req.nonce,
-                          &req.tool_calls, req.token_count);
+                          &req.receipts);
     let violations = public
         .violations
         .iter()
@@ -751,6 +957,7 @@ pub fn evaluate_private(req: &PrivateRequest, policy_hash: &str,
         policy_hash: public.policy_hash.clone(),
         response_binding: public.response_binding.clone(),
         response_commitment: sha256_hex(&req.response),
+        trace_root: public.trace_root.clone(),
         passed: public.passed,
         violations,
         redaction,
@@ -800,7 +1007,7 @@ pub fn run_job(job: &Job) -> Outcome {
         Job::Public(r) => {
             let (hash, spec) = parse_spec(&r.spec_canonical);
             Outcome::Public(evaluate(&hash, &spec.constraints, &r.response, &r.nonce,
-                                     &r.tool_calls, r.token_count))
+                                     &r.receipts))
         }
         Job::Private(r) => {
             let (hash, spec) = parse_spec(&r.spec_canonical);

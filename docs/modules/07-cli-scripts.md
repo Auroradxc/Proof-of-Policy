@@ -125,6 +125,7 @@ python3 scripts/issue_cert.py --pack P --response R --out-dir D \
 ```bash
 python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] \
     [--response T.txt] [--nonce HEX] [--keyring key.json|pub.hex|pub.pem] \
+    [--receipts receipts.json [--gateway-key gw.pub.hex]] \
     [--rpc URL --contract 0x…]
 ```
 
@@ -135,6 +136,8 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 | `signature` | DSSE 信封签名（**Ed25519**，用 `--keyring` 给的公钥；缺省读证书同目录 `key.json`）。P0-3 之前的 `demo-hmac-sha256` 信封会被**结构性拒绝** |
 | `policy_hash` | **重新编译**策略包并比对（不是从证书里读） |
 | `response_binding` | P0-2：证书 `challenge` 块 / `outcome` 内嵌 / 证明公开值 / **由送达的 `--response` 现场重算** 四者比对（≥2 来源才算过） |
+| `trace_binding` | P1-5：证书 `outcome` 内嵌 / 证明公开值 / **由 `--receipts` 给的网关侧回执链现场重算** 的 `trace_root` 三者比对。链长不必塞进公开值 —— 验证方本来就持有网关发给它的回执 |
+| `receipt_chain`（可选） | P1-5：对 `--receipts` 的链**逐条 Ed25519 验签**（链下那一关）。只给 `--receipts` 不给 `--gateway-key` 时如实记「未给 --gateway-key，回执签名未验」，**不假装验过** |
 | `anchor` | 账本链完整 + 摘要存在于账本 |
 | `anchor_on_chain`（可选） | 链上 `anchoredAt` 读回，且与本地 meta 的 `chain_ts` 一致 |
 | `proof_mode` | P0-4：证书自称的 `binding.proof_mode` 与**工件自报的模式**（边车 `*.verify.json` / `*.meta.json` / 验证器输出）比对，多来源必须指向同一档。没有工件的证书只能标 `unproven` —— 自称 `core` 却拿不出证明即判 FAIL；P0-4 之前的旧证书（无此字段）**如实跳过**，不倒过来判它失败 |
@@ -154,6 +157,21 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 唯一一处「证明的 T」与「送达的 T′」被真正对上的地方（P0-2 要解决的正是这个）。
 不给也能跑：此时只做证书内部两个来源的自洽比对，报告里**不会**声称已核对送达内容。
 `--nonce` 是给演示重放用的覆盖项（比如故意拿另一个 nonce 去重算，看它被拒）。
+
+`--receipts` 是**你（验证方）手上那条工具回执链**（网关发给你的 JSON 数组），
+与 `--response` 完全对称：给了它，验证方就现场重算链尾摘要并与证书/公开值比对，
+于是「这张证明绑的是**我手上这条轨迹**」被真正验证 —— 而不再是「出证方自己前后自洽」。
+`--gateway-key` 再往前一步，对整条链**逐条验签**（网关公钥，形式同 `--keyring`）。
+两者**不可互相替代**：摘要比对回答「送检的链与证明绑的是不是同一条」，验签回答
+「这条链是不是网关签的」。
+
+电路内只校验链的**结构**（`seq` 连续、`prev` 咬合），所以改动**链尾**那条回执的
+内容不破坏结构；当送检的链与证书正是**同一份被改过的链**时，摘要照样对得上 ——
+此时 `trace_binding` 会 PASS 而 `receipt_chain` 判 FAIL。这正是「一致性 ≠ 来源」
+的实例，也是为什么两道关都要跑。刻意留出的这个边界被写成了显式用例
+（`tests/test_trace.py::TestTraceInCircuit::test_in_circuit_blind_to_last_element_forgery`
+与 `TestVerifyCertTraceBinding::test_forged_last_element_caught_by_gateway_key`），
+详见 [`security-model.md`](../security-model.md) §5。
 
 ### 2.6 `demo_e2e.py` —— 一键真实会话
 
@@ -177,8 +195,12 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 私钥不落盘、也不进会话包 —— 第三方拿到的是**只能验、不能签**的公钥。
 
 产出 `session.json`（含 `signers` 公钥记录、`certificates` 列表、`summary`
-（多一项 `challenge_bound` 与 `zk_proof_mode`）、顶层的 `challenge` 记录、
+（多一项 `challenge_bound`、`zk_proof_mode` 与 `tool_trace`）、顶层的 `challenge` 记录、
 以及有链时的 `chain` 坐标），
+
+> `summary.tool_trace`（P1-5）= `{receipts, trace_root, gateway_keyid, gateway_public_hex}`：
+> 链长、链尾摘要与工具网关公钥。三者都是**公开坐标** —— 验证方拿网关侧收到的回执重算
+> 最后一条的 `SHA256`，即可核对「这份证明绑的是哪条链」，与 `challenge` 之于响应完全对称。
 末尾提示用 `verify_session.py` 验证。**这是「12 张证书」的来源**。
 
 ### 2.7 `verify_session.py` —— 第三方验证整个会话
@@ -291,6 +313,7 @@ bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 | 第三方复核一张证书 | `verify_cert.py --cert … --pack … --ledger … --keyring <公钥> [--proof …]` |
 | 复核整个会话 | `verify_session.py --session session.json [--keyring <公钥>]`（公钥通常已在 `signers` 里） |
 | **核对送达的 T′ 就是被证明的 T** | 上一条再加 `--response T′.txt`（P0-2，见 §2.5） |
+| **核对被证明的轨迹就是我手上这条链** | 上一条再加 `--receipts receipts.json [--gateway-key gw.pub.hex]`（P1-5，见 §2.5） |
 | 全链路最小复现 | `bash scripts/anchor_e2e.sh` |
 | 生成论文/文档用的截图 | `python3 scripts/make_shots.py --run-demo` |
 
@@ -319,6 +342,7 @@ bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 | `tests/test_verifier_only.py` | `verify_cert.py` / `verify_session.py` 的快路径判定 |
 | `tests/test_demo_e2e.py` | `demo_e2e.py` 的会话产物结构 |
 | `tests/test_binding.py::TestChallengedCertificateEndToEnd` | `issue_cert.py --nonce` → `verify_cert.py --response` 的完整闭环（含失败分支） |
+| `tests/test_trace.py::TestVerifyCertTraceBinding` | P1-5 的第三方核对闭环：`verify_cert.py --receipts [--gateway-key]` 的 `trace_binding` / `receipt_chain`（含换链 / 重排 / 伪造链尾 / 缺公钥四个分支） |
 | `tests/test_anchor_chain.py::TestAnvilEndToEnd` | `deploy_anchor.py` 的部署与读回 |
 | （间接）`tests/test_rules_incircuit.py` | `cross_validate.py` 所用路径的单元版 |
 
