@@ -11,16 +11,27 @@
   3b. 证明（真实证明，全部向量）：pop-script          → guest ProofOutput
   4. 断言两种模式下 passed + 违规规则集合都与 golden 一致。
 
+**真实证明为什么要分块**（``--chunk``）：SP1 core 证明的峰值 RSS 本就 ~10.3 GB，
+且**每证完一个还会缓慢累加**。在本机（11.9 GB RAM + 3 GB swap）上实测：把 14 个
+向量交给**一个** ``pop-script`` 进程，会分别在第 6 / 第 7 个证明处被内核
+OOM-kill（峰值 10.65 / 10.82 GB，``SIGKILL 9``）——而每次单独出证都是好的。
+所以默认每 4 个向量起一个干净的进程（峰值回到 ~10.3 GB），再把结果按原序合并；
+大内存机器可用 ``--chunk 0`` 恢复「一个进程跑完」。
+
 从仓库根运行：
   SP1_PROVER=cpu python3 scripts/cross_validate.py
+  SP1_PROVER=cpu python3 scripts/cross_validate.py --chunk 4   # 默认
+  SP1_PROVER=cpu python3 scripts/cross_validate.py --chunk 0   # 单进程（需 ≥16 GB）
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
@@ -37,6 +48,26 @@ POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 # Python Violation.evidence_kind -> guest 规则类型字符串
 KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block",
             "format": "format_check", "tool_arg": "tool_arg_guard", "budget": "budget_bound"}
+
+#: 真实证明时每个 pop-script 进程处理的向量数（见模块 docstring 的 OOM 说明）。
+DEFAULT_CHUNK = 4
+
+
+def chunked(items: list, n: int) -> list[list]:
+    """把 items 切成每组最多 n 个；``n <= 0`` 表示不切（一组装完）。"""
+    if n <= 0:
+        return [list(items)] if items else []
+    return [list(items[i:i + n]) for i in range(0, len(items), n)]
+
+
+def parse_chunk(argv: list[str]) -> int:
+    """从命令行读 ``--chunk N`` / ``--chunk=N``（缺省 :data:`DEFAULT_CHUNK`）。"""
+    for i, a in enumerate(argv):
+        if a == "--chunk" and i + 1 < len(argv):
+            return int(argv[i + 1])
+        if a.startswith("--chunk="):
+            return int(a.split("=", 1)[1])
+    return DEFAULT_CHUNK
 
 
 def vectors() -> list[tuple]:
@@ -125,6 +156,25 @@ def run_pop(mode: str, vectors_path: Path, out_path: Path) -> None:
     subprocess.run(args, env=env, check=True, cwd=str(REPO))
 
 
+def run_pop_prove_chunked(vectors_payload: dict, out_path: Path, chunk: int,
+                          work_dir: Path) -> None:
+    """分块生成真实证明，把各块结果按原序合并写入 ``out_path``。
+
+    分块只是**进程隔离**，不改变交给电路的输入：每块拿到的是原向量的连续子序列，
+    合并后的顺序与单进程跑完全一致 —— 因此下游比对逻辑无需知道分块存在。
+    """
+    parts = chunked(vectors_payload["vectors"], chunk)
+    merged: list = []
+    for i, part in enumerate(parts, start=1):
+        vp = work_dir / f"vectors_{i}.json"
+        rp = work_dir / f"results_{i}.json"
+        vp.write_text(json.dumps({"vectors": part}, indent=2))
+        print(f"    chunk {i}/{len(parts)}: {len(part)} vector(s) -> {vp.name}", flush=True)
+        run_pop("prove", vp, rp)
+        merged.extend(json.loads(rp.read_text()))
+    out_path.write_text(json.dumps(merged, indent=2))
+
+
 def compare(results: list, expected: list) -> tuple[int, list[str]]:
     """逐向量比对 SP1 结果与 golden，返回 (匹配数, 明细)。"""
     ok_flags, detail = [], []
@@ -181,8 +231,20 @@ def main() -> int:
         n2 = n1
         d2 = d1
     else:
-        print("--- real proofs (SP1 guest) ---")
-        run_pop("prove", vectors_path, results_prove)
+        chunk = parse_chunk(sys.argv)
+        shape = ("single process" if chunk <= 0
+                 else f"{len(chunked(payload['vectors'], chunk))} chunk(s) of {chunk}")
+        print(f"--- real proofs (SP1 guest, {shape}) ---")
+        # 先把上一轮的 results_prove.json 删掉：中途 OOM 被 kill 时不该留下一份
+        # **上一次**的结果冒充本次结论（本文件只会跑完全部块才写）。
+        results_prove.unlink(missing_ok=True)
+        work_dir = Path(tempfile.mkdtemp(prefix="pop-crossvalidate-"))
+        try:
+            run_pop_prove_chunked(payload, results_prove, chunk, work_dir)
+        finally:
+            # 中间产物是**逐块**的 vectors/results：删掉，免得和最终的
+            # results_prove.json 混在一起被误当成权威结果。
+            shutil.rmtree(work_dir, ignore_errors=True)
         rp = json.loads(results_prove.read_text())
         n2, d2 = compare(rp, expected)
         report("prove", [ok for _, ok, _, _ in d2], d2)

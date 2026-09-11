@@ -33,6 +33,43 @@ def sidecar_proof_mode(sidecar: Path) -> Optional[str]:
         return None
 
 
+def _str_field(obj: Any, key: str) -> Optional[str]:
+    """取一个非空字符串字段；缺失/类型不符一律返回 None。"""
+    v = obj.get(key) if isinstance(obj, dict) else None
+    return v if isinstance(v, str) and v else None
+
+
+def artifact_proof_modes(proof: Path,
+                         proof_result: Optional[Dict[str, Any]] = None) -> Dict[str, str]:
+    """一份证明工件**自报的**证明模式，按来源汇总（P0-4 标注核对用）。
+
+    三个来源，谁在就收谁：
+
+      - ``verifier``：``pop-verify`` 的验证输出（它会把边车里的模式带出来）；
+        ``pop-script --verify`` 的输出**没有**这个字段。
+      - ``sidecar``：``<proof>.verify.json``（生成时由 pop-script 写下）。
+      - ``meta``：``<proof>.meta.json``（同样由 pop-script 写下）。
+
+    **不做优先级取舍**：这些来源本就该一致，不一致本身就是发现 —— 这正是
+    P0-1 的教训（单一来源的「一致」是空洞的，多来源才有约束力）。
+    """
+    out: Dict[str, str] = {}
+    m = _str_field(proof_result or {}, "proof_mode")
+    if m:
+        out["verifier"] = m
+    m = sidecar_proof_mode(sidecar_path(proof))
+    if m:
+        out["sidecar"] = m
+    try:
+        meta = json.loads(Path(f"{proof}.meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        meta = None
+    m = _str_field(meta or {}, "proof_mode")
+    if m:
+        out["meta"] = m
+    return out
+
+
 def prefer_verifier_only(proof: Path, pop_verify: Path) -> bool:
     """是否用 `pop-verify`（免构造证明器）验证这份证明。
 

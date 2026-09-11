@@ -37,7 +37,8 @@ zk-policy/
 │   ├── pii.py                #   规范 PII 模式 + IBAN MOD-97 校验位
 │   ├── commit.py             #   私有模式原语（承诺 / 选择性披露 / 可证明脱敏 / 证据开示 / 挑战-响应绑定）
 │   ├── challenge.py          #   一次性挑战 nonce 的生成、编解码与重放记录
-│   ├── cert.py               #   合规证书（DSSE 风格信封 + HMAC 演示签名器）
+│   ├── cert.py               #   合规证书（DSSE 风格信封 + Ed25519 签名，按 keyid 前缀分发）
+│   ├── keys.py               #   签名密钥：定位/读写 PKCS#8、公钥导出与 keyring 装配（P0-3）
 │   ├── anchor.py             #   锚定后端：文件哈希链账本 / 链上 Anchor 合约
 │   ├── agent.py              #   框架无关钩子 AgentMonitor（生成路径 + 工具路径）
 │   ├── verifier.py           #   verifier-only 快路径判定（core 不能走快路径）
@@ -54,7 +55,7 @@ zk-policy/
 ├── contracts/                # Anchor.sol + 已编译 artifact（Anchor.json，免 solc 部署）
 ├── scripts/                  # 端到端脚本（demo / 交叉验证 / 出证 / 验证 / 安装）
 ├── bench/                    # 评测（cycl数矩阵 / 证明成本 / 验证成本 / 对标）
-├── tests/                    # 单测与集成测试（184 passed / 5 skip）
+├── tests/                    # 单测与集成测试（220 passed / 5 skip）
 ├── policy_packs/             # 示例策略包（EU AI Act / PII / 金融 / agent 内容与工具）
 └── docs/                     # 文档（本目录为分板块模块文档）
 ```
@@ -89,8 +90,8 @@ zk-policy/
        └────────── cross_validate.py 交叉验证 ────────┘
                        │
                        ▼
-⑤ 证书            cert.build_payload(...) → cert.sign_payload(payload, key)
-                       │  policy_hash / vkey_hash / proof_sha256 / outcome
+⑤ 证书            cert.build_payload(...) → cert.sign_payload(payload, signer)
+                       │  policy_hash / vkey_hash / proof_sha256 / proof_mode / outcome
                        │  challenge{nonce, response_binding}
                        ▼
 ⑥ 锚定            anchor.backend_from_env(ledger, rpc, contract)
@@ -113,7 +114,7 @@ zk-policy/
 | 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/types` `program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
 | 06 | [框架集成](06-frameworks.md) | `langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` | 把两个钩子接到真实 agent 框架上（含流式与飞行前拦截） |
 | 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/*` | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
-| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 184 个测试覆盖什么、评测数字怎么来的 |
+| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 220 个测试覆盖什么、评测数字怎么来的 |
 
 推荐阅读路径：
 
@@ -144,7 +145,7 @@ zk-policy/
 
 ```bash
 # 只跑参考层（秒级，无需 Rust）
-python3 -m unittest discover tests -v            # 184 passed / 5 skip
+python3 -m unittest discover tests -v            # 220 passed / 5 skip
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
 python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
 

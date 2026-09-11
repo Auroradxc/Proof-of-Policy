@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（17 个模块，184 个用例）与 `bench/`（3 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（18 个模块，220 个用例）与 `bench/`（3 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,7 +8,7 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover tests -v      # 期望 184 passed, 5 skipped
+python3 -m unittest discover tests -v      # 期望 220 passed, 5 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
@@ -18,19 +18,20 @@ python3 -m unittest discover tests -v      # 期望 184 passed, 5 skipped
 | `test_pii` | 8 | 四个 PII 模式的命中/漏报、IBAN MOD-97 校验位 |
 | `test_serialize` | 9 | serde 外部标签枚举形状、未知 kind 抛 `NotImplementedError`、`spec_canonical` 字节稳定 |
 | `test_commit` | 12 | 承诺、私有输出、掩码覆盖、脱敏、证据开示 |
-| `test_policy_binding` | 16 | **P0-1**：策略绑定三方比对；「空策略证明 + 真策略哈希」攻击回归；未入电路的 kind **fail-closed** |
+| `test_policy_binding` | 22 | **P0-1**：策略绑定三方比对；「空策略证明 + 真策略哈希」攻击回归；未入电路的 kind **fail-closed**；**P0-4**：夸大/低报证明模式的证书被判 FAIL（单证书层与会话层各一）、缺字段的旧证书如实跳过 |
 | `test_binding` | 19 | **P0-2**：挑战-响应绑定（①正确对通过 ②换 T 拒 ③换 nonce 拒 ④空 nonce 独立域）、`NonceStore` 重放、Python↔Rust 逐字节对齐、带挑战证书端到端 |
-| `test_cert` | 4 | 证书载荷、`cert_digest` 稳定性、签名与篡改拒绝 |
+| `test_cert` | 19 | 证书载荷、`cert_digest` 稳定性、签名与篡改拒绝；**P0-3**：按 keyid 方案前缀分发、旧 `demo-hmac-sha256` 结构性被拒、`load_keyring` 的三种公钥来源（路径拼错要报**真因**）；**P0-4**：`binding.proof_mode` 诚实标注与 `proof_hiding` 映射 |
+| `test_cross_validate` | 6 | 真实证明分块（`--chunk`）：切开后拼回去逐一相等、顺序不变、`--chunk 0` 等价单进程、默认值刻意保守 |
 | `test_agent` | 5 | `AgentMonitor` 两条路径、`mock_agent` 确定性、LangGraph 适配 |
-| `test_frameworks` | 26 | LangChain 回调（流式链/篡改/早停）、`guard_node`、`astream_events` |
-| `test_mcp` | 9 | 参数侧飞行前拦截、结果侧判定、文本提取 |
+| `test_frameworks` | 30 | LangChain 回调（流式链/篡改/早停）、`guard_node`、`astream_events`；**P0-4**：`proof_mode` 贯通到回调与 `guard_node` 出的证书 |
+| `test_mcp` | 11 | 参数侧飞行前拦截、结果侧判定、文本提取；**P0-4**：`proof_mode` 同时落到参数侧与结果侧证书 |
 | `test_anchor` | 4 | 账本读写、`verify_ledger`、篡改检出 |
 | `test_anchor_chain` | 22 | 合约 artifact、摘要编码、后端选择、RPC 后端离线（幂等/竞态）、cast 命令行、anvil 端到端 |
 | `test_rules_incircuit` | 8 | 六类规则在 `--check` 下与 Python golden 逐点对齐 |
 | `test_ablation` | 5 | pike ≡ naive（Python 与 Rust 两侧） |
-| `test_verifier_only` | 5 | `prefer_verifier_only` 三条件、core 不走近路 |
+| `test_verifier_only` | 8 | `prefer_verifier_only` 三条件、core 不走近路；**P0-4**：`artifact_proof_modes` 收齐多来源、缺失不编默认值、来源不一致如实暴露 |
 | `test_demo_e2e` | 2 | 端到端会话产物结构 |
-| **合计** | **184** | |
+| **合计** | **220** | |
 
 ### 5 个 skip（都是设计内的）
 
@@ -75,6 +76,7 @@ CI（`.github/workflows/ci.yml`）跑的是**最轻的一档**：Python 套件 +
 | Evidence unforgeability | `test_commit.py::TestEvidenceOpening`（篡改开示 → 失败） |
 | Provenance | `scripts/verify_cert.py` 的 `policy_hash`/`vkey`/`proof_sha256` 卡；`test_cert.py`；`test_policy_binding.py`（P0-1 攻击回归） |
 | Response binding (A6) | `scripts/verify_cert.py --response` 卡；`test_binding.py`（换 T′/换 nonce/域分离）；`demo_e2e` 的 challenge 实验 |
+| 证据档位诚实标注 (P0-4) | `scripts/verify_cert.py` 的 `proof_mode` 卡（与工件自报模式比对）；`verify_session.py` 的 `certificates_proof_mode`；`test_cert.py::TestProofModeLabeling`、`test_policy_binding.py::TestProofModeOverclaimRejected`（自称某档却无工件 ⇒ FAIL）、`test_verifier_only.py::TestArtifactProofModes` |
 | Ledger integrity | `test_anchor.py`（链篡改检出）、`verify_session.py::ledger_chain` |
 | Stream chain | `test_frameworks.py`（链路验证/篡改/早停） |
 | 链上锚定 | `test_anchor_chain.py`（离线 fake + anvil e2e）、`anchor_e2e.sh` 的 `chain_anchored` 与反例 |
@@ -202,7 +204,7 @@ SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **184 passed / 5 skip**、`cross_validate` host 14/14 + prove 14/14。
+  当前验收判据是 **220 passed / 5 skip**、`cross_validate` host 14/14 + prove 14/14。
 
 ---
 

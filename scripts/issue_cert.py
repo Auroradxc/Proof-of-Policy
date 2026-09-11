@@ -19,6 +19,10 @@
       --out-dir scripts/examples/out/cert_public [--mode public|private] [--no-prove] \
       [--nonce auto|<hex>|none]
 
+签名（P0-3）：用 Ed25519 私钥签名，**私钥不出出证方**。缺省在
+`.pop-keys/signing.key` 生成/复用一把（已被 gitignore），可用 `--key` 或环境变量
+`POP_SIGNING_KEY` 指定。公钥写到 `<out-dir>/key.json`，第三方验签只需要它。
+
 链上锚定（可选，需要一条 EVM 链 + 已部署的 contracts/Anchor.sol）：
   python3 scripts/issue_cert.py ... --rpc http://127.0.0.1:8545 --contract 0x...
   （也可用环境变量 POP_ANCHOR_RPC / POP_ANCHOR_CONTRACT；未配置则只写文件账本）
@@ -37,7 +41,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, challenge, commit
+from policydsl import anchor, cert, challenge, commit, keys
 from policydsl.compile import compile_policy
 from policydsl.model import Policy, Rule
 from policydsl.serialize import spec_canonical_text
@@ -92,6 +96,9 @@ def main() -> int:
     ap.add_argument("--rpc", default=None, help="EVM RPC：把证书摘要同时登记上链")
     ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
     ap.add_argument("--private-key", default=None, help="上链提交私钥（默认 Anvil #0）")
+    ap.add_argument("--key", type=Path, default=None,
+                    help="Ed25519 私钥文件（PKCS#8 PEM）。缺省读 $POP_SIGNING_KEY，"
+                         "都没有则在 .pop-keys/signing.key 生成一把新的")
     args = ap.parse_args()
 
     policy = load_policy(args.pack)
@@ -127,6 +134,9 @@ def main() -> int:
         vkey_hash = "unproven"
         proof_sha = None
         pv_sha = None
+        # 诚实标注（P0-4）：没有证明工件 ⇒ 只能记「未证明」，
+        # 绝不写成 core/compressed（那会声称一档并不存在的证据）。
+        proof_mode = cert.PROOF_MODE_UNPROVEN
     else:
         # 真实证明：产出 proof.bin + 元信息（含 vkey_hash）
         cmd = ["--vectors", str(vectors), "--out", str(results), "--proof-out", str(proof)]
@@ -135,6 +145,9 @@ def main() -> int:
         run_pop(cmd)
         meta = json.loads(Path(f"{proof}.meta.json").read_text())
         vkey_hash = meta["vkey_hash"]
+        # 证明模式取自 pop-script 写下的边车元信息（而不是命令行回显）——
+        # 证书要如实转述**实际产出的**证明是哪一档；读不到就退回命令行取值。
+        proof_mode = meta.get("proof_mode") or args.proof_mode
         proof_sha = sha256_file(proof)
         pv_file = Path(f"{proof}.pv")
         pv_sha = sha256_file(pv_file) if pv_file.exists() else None
@@ -151,10 +164,16 @@ def main() -> int:
                          "（P0-2 之后它必须出现；缺了就无法把证明绑到送达的响应上）")
     payload = cert.build_payload(policy.id, policy.version, spec, args.mode, outcome,
                                  vkey_hash, proof_sha, public_values_sha256=pv_sha,
-                                 challenge=challenge.challenge_block(nonce, binding))
-    env = cert.sign_payload(payload, cert.DEMO_KEY)
+                                 challenge=challenge.challenge_block(nonce, binding),
+                                 proof_mode=proof_mode)
+    # 签名（P0-3）：Ed25519，私钥留在出证方；公钥单独落盘供第三方验签。
+    signer = keys.signer_from_env(args.key)
+    env = cert.sign_payload(payload, signer)
     (out_dir / "cert.json").write_text(json.dumps(env, indent=2))
     (out_dir / "payload.json").write_text(json.dumps(payload, indent=2))
+    # 公钥不是秘密：把它放在证书旁边，验证方 `verify_cert.py` 缺省就会读它。
+    (out_dir / "key.json").write_text(json.dumps(
+        {"keyid": signer.keyid, "public_hex": signer.public_hex}, indent=2))
 
     # 锚定到账本（给了 --rpc/--contract 时同时上链，链上成功后回写本地 meta）
     digest = cert.cert_digest(payload)
@@ -166,18 +185,23 @@ def main() -> int:
 
     print(f"policy_hash : {spec['sha256']}")
     print(f"vkey_hash   : {vkey_hash}")
+    print(f"proof_mode  : {proof_mode} (hiding: {cert.proof_hiding(proof_mode)})")
     print(f"passed      : {outcome['passed']}")
     print(f"nonce       : {challenge.nonce_hex(nonce) or '(none — 未绑定挑战)'}")
     print(f"resp_binding: {binding}")
     print(f"cert_digest : {digest}")
+    print(f"signer      : {signer.keyid}")
     if entry.get("backend") == "rpc":
         print(f"anchor      : backend=rpc status={entry['status']} tx={str(entry.get('tx_hash'))[:18]}… "
               f"contract={entry['contract']} chain_ts={entry.get('chain_ts')}")
         print(f"              local ledger seq={entry.get('ledger', {}).get('seq')} ({args.ledger})")
     else:
         print(f"anchor      : seq={entry['seq']} hash={entry['hash'][:16]}… ledger={args.ledger}")
-    print(f"wrote       : {out_dir}/cert.json, payload.json, results.json" +
+    print(f"wrote       : {out_dir}/cert.json, payload.json, key.json, results.json" +
           ("" if args.no_prove else f", {proof.name}"))
+    print(f"verify with : python3 scripts/verify_cert.py --cert {out_dir}/cert.json \\\n"
+          f"                  --pack {args.pack} --ledger {args.ledger} \\\n"
+          f"                  --keyring {out_dir}/key.json")
     return 0
 
 

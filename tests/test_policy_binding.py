@@ -39,7 +39,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, verifier  # noqa: E402
+from policydsl import anchor, cert, keys, verifier  # noqa: E402  (keys: P0-3 公钥分发)
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.model import Policy, Rule  # noqa: E402
 from policydsl.serialize import spec_canonical_text  # noqa: E402
@@ -219,10 +219,11 @@ class TestThreeWayBinding(unittest.TestCase):
 class TestVerifierEndToEnd(unittest.TestCase):
     """端到端：对一张**签名有效**的伪造证书跑 verify_cert.py，必须 FAIL。
 
-    注意这里刻意用 ``cert.sign_payload`` 正常签名 —— 被测的不是「签名能不能
-    挡伪造」（demo 的 HMAC 共享密钥本来就不挡，那是 P0-3 的范围），而是
-    「一张格式完备、签名正确的证书，只要 policy_hash 对不上证明/策略包，
-    就必须被策略绑定检查拦下」。
+    注意这里刻意用 ``cert.sign_payload`` **正常签名**（P0-3 之后是 Ed25519，
+    公钥随证书一起交给验证方）—— 被测的不是「签名能不能挡伪造」，而是
+    「一张格式完备、签名**正确**的证书，只要 policy_hash 对不上证明/策略包，
+    仍必须被策略绑定检查拦下」。这两层是正交的：签名保证「谁说的」，
+    策略绑定保证「说的是不是这个策略」。
     """
 
     def _run(self, pack: Policy, claimed_hash: str, tmp: Path) -> subprocess.CompletedProcess:
@@ -231,7 +232,10 @@ class TestVerifierEndToEnd(unittest.TestCase):
         outcome = {"policy_hash": claimed_hash, "passed": True, "violations": []}
         payload = cert.build_payload(pack.id, pack.version, {"sha256": claimed_hash},
                                      "public", outcome, vkey_hash="deadbeef", ts="2026-01-01T00:00:00Z")
-        env = cert.sign_payload(payload, cert.DEMO_KEY)
+        # P0-3：用 Ed25519 正常签名，并把公钥写到证书旁边 —— 这样被测的是
+        # 「格式完备、签名正确但策略绑定对不上」，而不是签名本身挡没挡住。
+        signer = cert.Ed25519Signer.generate()
+        env = cert.sign_payload(payload, signer)
 
         pack_file = tmp / "pack.json"
         pack_file.write_text(json.dumps({
@@ -240,6 +244,7 @@ class TestVerifierEndToEnd(unittest.TestCase):
         }))
         cert_file = tmp / "cert.json"
         cert_file.write_text(json.dumps(env))
+        (tmp / "key.json").write_text(json.dumps(keys.public_record(signer.public_key)))
         ledger = tmp / "ledger.jsonl"
         anchor.append_anchor(ledger, cert.cert_digest(payload))
         self.assertEqual(spec["sha256"] is not None, True)
@@ -279,8 +284,10 @@ class TestVerifierEndToEnd(unittest.TestCase):
                                          {"policy_hash": _hash(EMPTY), "passed": True,
                                           "violations": []},
                                          vkey_hash="deadbeef")
+            signer = cert.Ed25519Signer.generate()
+            (tmp / "key.json").write_text(json.dumps(keys.public_record(signer.public_key)))
             cert_file = tmp / "cert.json"
-            cert_file.write_text(json.dumps(cert.sign_payload(payload, cert.DEMO_KEY)))
+            cert_file.write_text(json.dumps(cert.sign_payload(payload, signer)))
             ledger = tmp / "ledger.jsonl"
             anchor.append_anchor(ledger, cert.cert_digest(payload))
             proc = subprocess.run(
@@ -289,6 +296,133 @@ class TestVerifierEndToEnd(unittest.TestCase):
                 cwd=str(REPO), capture_output=True, text=True)
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("[FAIL] policy_hash", proc.stdout)
+
+
+class TestProofModeOverclaimRejected(unittest.TestCase):
+    """证明模式标注的诚实性（P0-4）：**不得声称一档并不存在的证据**。
+
+    一张没有任何证明工件的证书（``proof_sha256`` 为 ``null``）只有两种写法
+    是诚实的：标 ``unproven``，或者（P0-4 之前签发的）干脆没有这个字段。
+    若它自称 ``core`` —— 那等于告诉验证方「有零知识证明顶着」，而实测
+    ``core`` 的 STARK **恰恰不是零知识**（``docs/sp1-zk-audit.md``），
+    这种**过度声明**必须被 ``verify_cert.py`` 当场判 FAIL。
+    """
+
+    def _run(self, proof_mode, proof_sha, tmp: Path,
+             drop: bool = False) -> subprocess.CompletedProcess:
+        tmp = Path(tmp)
+        pack_file = tmp / "pack.json"
+        pack_file.write_text(json.dumps({
+            "id": REAL.id, "version": REAL.version,
+            "rules": [{"kind": r.kind, "name": r.name, "params": r.params} for r in REAL.rules]}))
+        payload = cert.build_payload(REAL.id, REAL.version, compile_policy(REAL),
+                                     "public", {"passed": True, "violations": []},
+                                     vkey_hash=("deadbeef" if proof_sha else "unproven"),
+                                     proof_sha256=proof_sha, ts="2026-01-01T00:00:00Z",
+                                     proof_mode=proof_mode)
+        if drop:
+            # 模拟 P0-4 之前签发的证书：`build_payload` 现在总会写上这个字段，
+            # 所以只能从载荷里手工抹掉 —— 那正是旧证书在验证方眼里的样子。
+            payload["binding"].pop("proof_mode", None)
+        signer = cert.Ed25519Signer.generate()
+        (tmp / "key.json").write_text(json.dumps(keys.public_record(signer.public_key)))
+        cert_file = tmp / "cert.json"
+        cert_file.write_text(json.dumps(cert.sign_payload(payload, signer)))
+        ledger = tmp / "ledger.jsonl"
+        anchor.append_anchor(ledger, cert.cert_digest(payload))
+        return subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+             "--cert", str(cert_file), "--pack", str(pack_file), "--ledger", str(ledger)],
+            cwd=str(REPO), capture_output=True, text=True)
+
+    def test_honest_unproven_certificate_passes(self):
+        # 非恒真对照：诚实标 unproven 的证书必须通过（否则下面的 FAIL 不说明问题）。
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._run(cert.PROOF_MODE_UNPROVEN, None, Path(tmp))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("[PASS] proof_mode", proc.stdout)
+
+    def test_overclaimed_mode_is_rejected(self):
+        # 过度声明：自称 core，却没有任何证明工件。
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._run("core", None, Path(tmp))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("[FAIL] proof_mode", proc.stdout)
+        self.assertIn("RESULT: FAIL", proc.stdout)
+
+    def test_missing_field_is_skipped_not_failed(self):
+        # P0-4 之前签发的证书没有这个字段：如实跳过，而不是倒过来判它失败
+        # （那会让旧证书"因为缺字段"而失败，掩盖它真正的问题）。
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._run(None, None, Path(tmp), drop=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("[PASS] proof_mode", proc.stdout)
+        self.assertIn("predate", proc.stdout)
+
+
+class TestSessionProofModeOverclaim(unittest.TestCase):
+    """会话级（`verify_session.py`）的证明模式核对（P0-4）。
+
+    单张证书那一层由 :class:`TestProofModeOverclaimRejected` 覆盖；这里补的是
+    **会话级**那条：它要求「标了某档模式」与「附了工件」互为充要条件
+    （`(proof_mode != unproven) == (proof_sha256 is not None)`），并把缺字段的
+    旧证书单独计数。没有这条，一张会话包里混进一张夸张的证书仍会全绿。
+    """
+
+    PACK = "policy_packs/eu_ai_act_v1.json"
+
+    def _session(self, tmp: Path, proof_mode: str, proof_sha) -> Path:
+        """造一个最小会话包：单张会话证书 + 账本 + 出证方公钥。"""
+        sys.path.insert(0, str(REPO / "scripts"))
+        from verify_session import load_policy  # 与验证脚本共用同一套加载逻辑
+
+        pack = load_policy(REPO / self.PACK)
+        payload = cert.build_payload(pack.id, pack.version, compile_policy(pack),
+                                     "public", {"passed": True, "violations": []},
+                                     "unproven", proof_sha, "2026-01-01T00:00:00Z",
+                                     proof_mode=proof_mode)
+        signer = cert.Ed25519Signer.generate()
+        ledger = tmp / "ledger.jsonl"
+        anchor.append_anchor(ledger, cert.cert_digest(payload))
+        session = {
+            "session_id": "t",
+            "ledger": ledger.name,
+            "packs": [self.PACK],
+            "signers": [keys.public_record(signer.public_key)],
+            "certificates": [{"kind": "llm", "policy_pack": self.PACK,
+                              "envelope": cert.sign_payload(payload, signer)}],
+            "summary": {},
+        }
+        path = tmp / "session.json"
+        path.write_text(json.dumps(session))
+        return path
+
+    def _verify(self, path: Path) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "verify_session.py"),
+             "--session", str(path)],
+            cwd=str(REPO), capture_output=True, text=True)
+
+    def test_honest_session_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._verify(self._session(Path(tmp), cert.PROOF_MODE_UNPROVEN, None))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("[PASS] certificates_proof_mode", proc.stdout)
+
+    def test_overclaimed_certificate_fails_the_session(self):
+        # 非恒真对照：同一份会话包，只把标注改成「有 core 证明」而工件仍是 None。
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._verify(self._session(Path(tmp), "core", None))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("[FAIL] certificates_proof_mode", proc.stdout)
+        self.assertIn("RESULT: FAIL", proc.stdout)
+
+    def test_underclaimed_certificate_also_fails(self):
+        # 反向也要拦：附了工件却标 unproven 是**低报**，同样让标注失去意义。
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._verify(self._session(Path(tmp), cert.PROOF_MODE_UNPROVEN, "aa" * 32))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("[FAIL] certificates_proof_mode", proc.stdout)
 
 
 @unittest.skipUnless(os.environ.get("POP_TEST_PROOF") == "1",
@@ -344,8 +478,10 @@ class TestProofLevelBinding(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
+            signer = cert.Ed25519Signer.generate()
+            (tmp / "key.json").write_text(json.dumps(keys.public_record(signer.public_key)))
             cert_file = tmp / "cert.json"
-            cert_file.write_text(json.dumps(cert.sign_payload(payload, cert.DEMO_KEY)))
+            cert_file.write_text(json.dumps(cert.sign_payload(payload, signer)))
             ledger = tmp / "ledger.jsonl"
             anchor.append_anchor(ledger, cert.cert_digest(payload))
             proc = self._verify(cert_file, ledger)

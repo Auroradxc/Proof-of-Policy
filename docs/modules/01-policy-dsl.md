@@ -38,7 +38,7 @@
 
 > 六类**全部入电路**（P7-b 之后）。两处边界见 `../security-model.md` §5：
 > ① `budget_bound/tokens` 依赖**证明者声明**的 `token_count`（电路内不做分词）；
-> ② agent 工具路径证书的 `zk:true` 表示「规则可证」，是否**附了证明**看 `binding.vkey_hash`（`unproven` = 仅链下判定）。
+> ② agent 工具路径证书的 `zk:true` 表示「规则可证」，是否**附了证明**看 `binding.vkey_hash`（`unproven` = 仅链下判定），而这一档证据隐藏程度看 `binding.proof_mode`（P0-4，见 [`03`](03-certificate.md) §2）。
 
 `params` 校验在 `Rule.validate()` 中**逐类型**进行，未知 kind 直接报错（防止拼写错误退化成空操作）：
 

@@ -145,8 +145,13 @@ response_commitment = SHA256(T)
       并显式写明它**不**防御对低熵 `T` 的离线枚举（§4 的互斥结论）。
       *已同步*：`security-model.md` §2/§5、`architecture.md`、`quadrant.md`、`bench/comparison_zkagent.md` §4.4、
       `modules/05-zk-circuits.md`、`plan-p0p1p2.md`（P0-4 行 + 风险登记册 + §9 进度）、`policydsl/commit.py` 文档串。
-- [ ] **证书诚实标注**：`binding` 增加 `proof_mode` 字段（`core`/`compressed`/`groth16`/`plonk`），
-      让第三方一眼看出该证明是否隐藏见证。`ai_act.art13` 的措辞随之收紧。
+- [x] **证书诚实标注**：`binding.proof_mode` 字段（`core`/`compressed`/`groth16`/`plonk`/`unproven`）
+      已写进载荷并进 `cert_digest`，`cert.proof_hiding()` 给出该档的隐藏程度（**未知模式返回
+      `"unknown"`，不猜**）。验证侧：`verify_cert.py` 逐证书与**工件自报的模式**（边车
+      `*.verify.json` / `*.meta.json` / 验证器输出）比对，无工件却自称某档即 `[FAIL] proof_mode`；
+      `verify_session.py` 再加一层会话级双条件核对。验收见
+      `tests/test_cert.py::TestProofModeLabeling` 与
+      `tests/test_policy_binding.py::TestProofModeOverclaimRejected`。
 - [x] **叙事收紧**：论文摘要/README 里「零知识合规证明」已限定为
       「**策略零知识**」（策略合规性可证而不暴露违规内容）+ 明确说明响应内容的隐藏上界。
       *已同步*：`README.md` 首段、`方向二_README.md`、`paper/proof-of-policy.md` 标题/摘要/§2.1/§5/§8.1、

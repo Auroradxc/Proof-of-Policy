@@ -29,6 +29,35 @@ def load_pack(name: str) -> Policy:
     return Policy(data["id"], data.get("version", "0.1.0"), rules=rules)
 
 
+def ring_of(*objs):
+    """把这些对象所用 monitor 的**公钥**收成一个验签 keyring（P0-3）。
+
+    测试也照第三方的规矩来：只拿公钥，拿不到私钥。能识别 AgentMonitor 本身、
+    callback handler（``monitor``）、MCP guard（``monitor``/``result_monitor``）、
+    LangGraph guard / event certifier（``monitor``/``tool_monitor``/``stream_handler``）。
+    """
+    kr = {}
+    for o in objs:
+        for m in _monitors_of(o):
+            kr.update(cert.keyring(m.signer.public_key))
+    return kr
+
+
+def _monitors_of(o):
+    """从一个对象上找出它持有的所有 AgentMonitor（浅一层）。"""
+    if hasattr(o, "signer"):          # 本身就是 AgentMonitor
+        return [o]
+    out = []
+    for attr in ("monitor", "tool_monitor", "args_monitor", "result_monitor"):
+        m = getattr(o, attr, None)
+        if m is not None and hasattr(m, "signer"):
+            out.append(m)
+    sh = getattr(o, "stream_handler", None)
+    if sh is not None:
+        out.extend(_monitors_of(sh))
+    return out
+
+
 def mcp_available() -> bool:
     """探测 mcp SDK 是否可导入，供 skipUnless 决定是否跑真实会话用例。"""
     try:
@@ -67,7 +96,7 @@ class TestMCPGuardOffline(unittest.TestCase):
         session = FakeSession()
         result, env = asyncio.run(guard.call_tool(session, "search_kb", {"query": "refund"}))
         self.assertEqual(len(session.calls), 1)
-        ok, payload = cert.verify_envelope(env, cert.DEMO_KEY)
+        ok, payload = cert.verify_envelope(env, ring_of(guard))
         self.assertTrue(ok)
         self.assertEqual(payload["mode"], "tool-call")
         self.assertTrue(payload["outcome"]["passed"])
@@ -81,7 +110,7 @@ class TestMCPGuardOffline(unittest.TestCase):
         self.assertEqual(len(session.calls), 0, "violating call must not reach the tool")
         self.assertEqual(ctx.exception.violations[0]["rule"], "no_secret_args")
         # 证书仍被签出：被拦下的尝试同样要留痕，而非静默丢弃
-        ok, payload = cert.verify_envelope(guard.certificates[0], cert.DEMO_KEY)
+        ok, payload = cert.verify_envelope(guard.certificates[0], ring_of(guard))
         self.assertTrue(ok)
         self.assertFalse(payload["outcome"]["passed"])
 
@@ -89,7 +118,7 @@ class TestMCPGuardOffline(unittest.TestCase):
     def test_check_without_calling(self):
         guard = MCPGuard(self.monitor)
         env = guard.check("search_kb", {"api_key": "k"})
-        _, payload = cert.verify_envelope(env, cert.DEMO_KEY)
+        _, payload = cert.verify_envelope(env, ring_of(guard))
         self.assertFalse(payload["outcome"]["passed"])
 
 
@@ -110,7 +139,7 @@ class TestMCPResultOffline(unittest.TestCase):
         result, env = asyncio.run(guard.call_tool(session, "dump_config", {}))
         self.assertEqual(len(session.calls), 1)
         self.assertEqual(len(guard.result_certificates), 1)
-        _, payload = cert.verify_envelope(guard.result_certificates[0], cert.DEMO_KEY)
+        _, payload = cert.verify_envelope(guard.result_certificates[0], ring_of(guard))
         self.assertFalse(payload["outcome"]["passed"])
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret")
         self.assertEqual(payload["tool"], {"name": "dump_config", "phase": "result"})
@@ -120,7 +149,7 @@ class TestMCPResultOffline(unittest.TestCase):
         guard = MCPGuard(self.args_monitor, result_monitor=self.result_monitor)
         session = FakeSession(result_text="ok:refund policy summary")
         asyncio.run(guard.call_tool(session, "search_kb", {"query": "refund"}))
-        _, payload = cert.verify_envelope(guard.result_certificates[0], cert.DEMO_KEY)
+        _, payload = cert.verify_envelope(guard.result_certificates[0], ring_of(guard))
         self.assertTrue(payload["outcome"]["passed"])
 
     # 开启结果侧拦截后：调用已发生，但违规结果被拒（phase 应为 result）
@@ -168,7 +197,7 @@ class TestRealMCP(unittest.TestCase):
 
         names, result, env = asyncio.run(run())
         self.assertIn("search_kb", names)
-        ok, payload = cert.verify_envelope(env, cert.DEMO_KEY)
+        ok, payload = cert.verify_envelope(env, ring_of(guard))
         self.assertTrue(ok)
         self.assertEqual(payload["mode"], "tool-call")
         self.assertFalse(payload["outcome"]["passed"])  # 'token' 属于禁用字段
@@ -193,10 +222,36 @@ class TestRealMCP(unittest.TestCase):
 
         result, env = asyncio.run(run())
         self.assertEqual(len(guard.result_certificates), 1)
-        ok, payload = cert.verify_envelope(guard.result_certificates[0], cert.DEMO_KEY)
+        ok, payload = cert.verify_envelope(guard.result_certificates[0], ring_of(guard))
         self.assertTrue(ok)
         self.assertFalse(payload["outcome"]["passed"])  # 服务器返回了 sk-… 密钥
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret")
+
+
+class TestMCPGuardProofMode(unittest.TestCase):
+    """MCP 守护把证据档位（P0-4）带到它签的两条路径：参数侧与结果侧。
+
+    与 `test_frameworks.py::TestProofModePlumbingOffline` 同构 —— 适配器只是载体，
+    校验只认载荷里的 `binding.proof_mode`，所以两处都得真的落下去。
+    """
+
+    def setUp(self):
+        self.tools = AgentMonitor(load_pack("agent_tool_v1.json"))
+        self.content = AgentMonitor(load_pack("agent_content_v1.json"))
+
+    def test_mode_reaches_args_and_result_certificates(self):
+        guard = MCPGuard(self.tools, result_monitor=self.content, proof_mode="core")
+        args_env = guard.check("search_kb", {"query": "refund"})
+        result_env = guard.judge_result("search_kb", "a safe tool output")
+        self.assertIsNotNone(result_env, "结果侧未出证，用例前提不成立")
+        for env in (args_env, result_env):
+            self.assertEqual(cert.envelope_payload(env)["binding"]["proof_mode"], "core")
+
+    def test_default_is_unproven(self):
+        guard = MCPGuard(self.tools)
+        env = guard.check("search_kb", {"query": "refund"})
+        self.assertEqual(cert.envelope_payload(env)["binding"]["proof_mode"],
+                         cert.PROOF_MODE_UNPROVEN)
 
 
 if __name__ == "__main__":

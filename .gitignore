@@ -18,5 +18,9 @@ contracts/cache/
 # anvil 端到端运行期产物
 scripts/examples/out/
 .anchor_deploy.json
+# Ed25519 签名私钥（P0-3）——**绝不允许入库**
+.pop-keys/
+*.key
+*.pub.hex
 .DS_Store
 *.log

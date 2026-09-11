@@ -85,10 +85,10 @@ def verify_chain(certs) -> bool      # 序号连续 + prev 链接
 
 | 名称 | 说明 |
 |---|---|
-| `PoPCallbackHandler(monitor, vkey_hash="unproven", proof_sha256=None, on_cert=None, stream_check=True, stream_every=1, on_stream_cert=None, stop_on_violation=False, on_early_stop=None)` | 回调处理器 |
+| `PoPCallbackHandler(monitor, vkey_hash="unproven", proof_sha256=None, on_cert=None, stream_check=True, stream_every=1, on_stream_cert=None, stop_on_violation=False, on_early_stop=None, proof_mode=None)` | 回调处理器 |
 | `handler.certificates` / `handler.stream_certificates` | 权威证书 / 流式（含早停）证书 |
 | `handler.stream_chain(run_id)` | 该 run 的流式证书链的载荷摘要列表 |
-| `verify_certificates(handler, key=DEMO_KEY)` | 截至目前所有**权威**证书都能验签 |
+| `verify_certificates(handler, keyring=None)` | 截至目前所有**权威**证书都能验签；`keyring` 缺省用 handler 自己的签名器（自验签），第三方验证传**公钥** |
 | `verify_chain(certs)` | 流式链完整性（序号 + prev） |
 | `langchain_available()` / `langgraph_available()` | 依赖探测 |
 
@@ -129,7 +129,7 @@ tool     = guard_node(monitor, my_tool_node,     kind="tool")
 
 ### 3.3 事件流认证
 
-`LangGraphEventCertifier(monitor, tool_monitor=None, vkey_hash="unproven", stream_handler=None)`
+`LangGraphEventCertifier(monitor, tool_monitor=None, vkey_hash="unproven", stream_handler=None, proof_mode=None)`
 通过消费 `astream_events` **为整次运行**签发证书：
 
 | 事件 | 动作 |
@@ -184,7 +184,7 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
 
 | 名称 | 说明 |
 |---|---|
-| `MCPGuard(monitor, vkey_hash, block_on_violation=False, on_cert=None, result_monitor=None, block_on_result_violation=False, on_result_cert=None)` | 守护 |
+| `MCPGuard(monitor, vkey_hash, block_on_violation=False, on_cert=None, result_monitor=None, block_on_result_violation=False, on_result_cert=None, proof_mode=None)` | 守护 |
 | `guard.check(name, args)` | 只判定参数并出证（不调用工具） |
 | `guard.judge_result(name, result)` | 只判定返回文本（未配 `result_monitor` 时返回 `None`） |
 | `guard.call_tool(session, name, args)` / `call_tool_sync(...)` | 完整流程，返回 `(result, args_cert)` |
@@ -218,6 +218,11 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
 3. **早停只影响「是否继续出证」**，不改变最终判定的健全性。
 4. **`vkey_hash` 默认 `"unproven"`**：框架路径签发的证书默认**不绑定证明**；
    附证明的证书由 `scripts/issue_cert.py` / `demo_e2e.py` 的 zk 路径产出。
+   `vkey_hash` 与 `proof_mode`（P0-4 的**证据档位诚实标注**）必须**成对**给出：
+   只说「绑了哪个程序」而不说「这档证据隐藏了什么」，第三方就无从判断
+   「响应内容被隐藏」是否成立。适配器把 `proof_mode` 作为构造参数（`guard_node`
+   则作为关键字参数）一路带给 `build_payload`，缺省 `None` ⇒ 载荷按「未附工件」
+   记 `unproven`。全部适配器的 `proof_mode` 语义见 [`03`](03-certificate.md) §2。
 5. **工具路径的 `zk: True` 是「规则可证」**，不是「这张证书附了证明」（见 `03` §6）。
 6. **缺失框架时的行为**：`PoPCallbackHandler` 回退到鸭子类型基类（可离线单测）；
    `require_langgraph()` 抛明确错误；`MCPGuard` 本身不 import mcp（对 fake 也适用）。

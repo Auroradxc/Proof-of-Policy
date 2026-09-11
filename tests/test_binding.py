@@ -40,7 +40,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, challenge, commit  # noqa: E402
+from policydsl import anchor, cert, challenge, commit, keys  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.model import Policy, Rule  # noqa: E402
 from policydsl.serialize import spec_canonical_text  # noqa: E402
@@ -219,7 +219,10 @@ class TestChallengedCertificateEndToEnd(unittest.TestCase):
             POLICY.id, POLICY.version, spec, "public", outcome, vkey_hash="unproven",
             ts="2026-01-01T00:00:00Z",
             challenge=challenge.challenge_block(nonce, outcome["response_binding"]))
-        (tmp / "cert.json").write_text(json.dumps(cert.sign_payload(payload, cert.DEMO_KEY)))
+        signer = cert.Ed25519Signer.generate()
+        # 公钥放进 key.json —— verify_cert.py 缺省就找它（P0-3）
+        (tmp / "key.json").write_text(json.dumps(keys.public_record(signer.public_key)))
+        (tmp / "cert.json").write_text(json.dumps(cert.sign_payload(payload, signer)))
         (tmp / "pack.json").write_text(json.dumps({
             "id": POLICY.id, "version": POLICY.version,
             "rules": [{"kind": r.kind, "name": r.name, "params": r.params}
@@ -287,7 +290,9 @@ class TestChallengedCertificateEndToEnd(unittest.TestCase):
                                          {"policy_hash": spec["sha256"], "passed": True,
                                           "violations": []},
                                          vkey_hash="unproven", ts="2026-01-01T00:00:00Z")
-            (tmp / "cert.json").write_text(json.dumps(cert.sign_payload(payload, cert.DEMO_KEY)))
+            signer = cert.Ed25519Signer.generate()
+            (tmp / "key.json").write_text(json.dumps(keys.public_record(signer.public_key)))
+            (tmp / "cert.json").write_text(json.dumps(cert.sign_payload(payload, signer)))
             (tmp / "pack.json").write_text(json.dumps({
                 "id": POLICY.id, "version": POLICY.version,
                 "rules": [{"kind": r.kind, "name": r.name, "params": r.params}

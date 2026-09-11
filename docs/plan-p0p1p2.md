@@ -15,7 +15,7 @@
 | 公开值 | **仅 `Outcome{passed, violations}`——不含策略、不含响应绑定、不含轨迹绑定** |
 | 本机 | 24 核 / **12 GB**（groth16/plonk 需 ≥32 GB → P1-7 的硬约束） |
 | 可用库 | `cryptography` 3.4.8 ✅（Ed25519 可用）；`ezkl`/`nacl`/`eth_account` ❌ |
-| 签名 | HMAC + **公开常量密钥** `DEMO_KEY`（`policydsl/cert.py:31`）→ 任何人可伪造 |
+| 签名 | ~~HMAC + **公开常量密钥** `DEMO_KEY` → 任何人可伪造~~ → **P0-3 ✅**：Ed25519，私钥留在出证方（`policydsl/keys.py`），旧信封被结构性拒绝 |
 
 ### 已确认的健全性破坏（P0-1 要修的）
 
@@ -251,7 +251,7 @@ def test_empty_policy_commits_empty_hash_not_real(self):
 >
 > **验收证据**（本机实跑）
 > ```
-> python3 -m unittest discover tests                     → Ran 184 tests, OK (skipped=5)
+> python3 -m unittest discover tests                     → Ran 220 tests, OK (skipped=5)
 > python3 -m unittest tests.test_binding -v              → Ran 19 tests, OK
 > python3 scripts/cross_validate.py --no-prove           → host 14/14  PASS
 > python3 scripts/private_demo.py                        → challenge (T',nonce)_opens=True
@@ -317,7 +317,7 @@ def new_nonce() -> bytes:   # 32 字节 CSPRNG，一次性
 
 ---
 
-### P0-3 Ed25519 替换 demo HMAC
+### P0-3 Ed25519 替换 demo HMAC ✅（2026-09-11 完成）
 
 ```python
 # policydsl/cert.py  签名器协议
@@ -331,13 +331,26 @@ class Ed25519Signer:   # 生产：cryptography.hazmat.primitives.asymmetric.ed25
 class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 ```
 
-- `verify_envelope(env, keyring)` 按 `keyid` 前缀**分发**；默认 keyring **不含** HMAC → 旧证书不再被接受。
-- `policydsl/keys.py`（新）：`load_or_create(path)`、`POP_SIGNING_KEY` 环境变量、PEM/PKCS8。
-- `scripts/gen_key.py`（新）：生成密钥对 + 指纹。
-- 改动调用点：`issue_cert.py`、`verify_cert.py`、`demo_e2e.py`、`verify_session.py`、`tests/test_cert.py`。
-- `scripts/demo_e2e.py` / `anchor_e2e.sh` 默认生成临时密钥对并打印公钥。
+- `verify_envelope(env, keyring)` 按 `keyid` 前缀**分发**（白名单只有 `ed25519` 与 `test-hmac-sha256`）。
+  `demo-hmac-sha256` 在**查表之前**就被否掉 —— 所以「把配对密钥放进 keyring」也没用，
+  拒绝是**结构性**的，不是配置疏漏。
+- `policydsl/keys.py`（新）：`load_or_create(path)` / `signer_from_env` / `ephemeral_signer`、
+  `POP_SIGNING_KEY`（+ `_PASSPHRASE`）环境变量、PKCS#8 PEM（`0600`、不覆盖）、
+  公钥导出（hex/PEM/keyid）与验证方入口 `load_keyring` / `public_record`。
+- `scripts/gen_key.py`（新）：生成密钥对 + 指纹；`--show` / `--pubkey` 只碰公钥。
+- 改动调用点：`agent.py`、`langchain_adapter.py`、`issue_cert.py`、`verify_cert.py`、
+  `verify_session.py`、`demo_e2e.py`、5 个测试文件。
+- `demo_e2e.py` 默认生成**临时**密钥对（不落盘），把**公钥**写进 `session.json` 的
+  `signers` 字段；`issue_cert.py` 把公钥写进 `<out-dir>/key.json`。
+- 失败语义收紧：`verify_envelope` 失败一律返回 `(False, None)`（此前返回载荷）——
+  调用方拿不到未经验签的载荷。与 `docs/modules/03-certificate.md` 的原文档一致。
 
-**验收**：① 错密钥签名被拒；② 篡改 payload 被拒；③ **负例**——用旧 `DEMO_KEY` 签出的信封**必须被拒**（证明这次替换不是恒真）。
+**验收**（全部通过，逐条对应测试与命令）：
+| # | 判据 | 证据 |
+|---|---|---|
+| ① | 错密钥签名被拒 | `test_cert.py::test_wrong_key_fails`；`verify_cert.py --keyring <别人的公钥>` → `[FAIL] signature` |
+| ② | 篡改 payload 被拒 | `test_cert.py::test_tampered_payload_fails`；CLI 复制 `cert.json` 改 `outcome.passed` → `[FAIL] signature` |
+| ③ | 旧 `DEMO_KEY` 信封必须被拒 | `test_cert.py::TestSchemeDispatch`（含「配对密钥在 ring 里仍被拒」+「`test-hmac-sha256` 同结构仍通过」证明**非恒真**）；CLI 旧信封 → `[FAIL] signature` |
 
 ---
 
@@ -349,7 +362,7 @@ class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 | `paper §6` | 「102 全绿(1 skip)」 | 实跑值（P0 后会变） |
 | `docs/security-model.md:65` | `host/prove 7/7` | ✅ 已改为 `14/14`（2026-09-10） |
 | `docs/eu-ai-act-mapping.md` | 工具路径「`zk:false`」 | 已入电路（P1-5 后语义再更新） |
-| **全仓库** | **未声明 ZK 性质** | ✅ **已查证（2026-09-11）**，结论见 [`sp1-zk-audit.md`](sp1-zk-audit.md)：**core/compressed 不满足零知识性**（两类独立证据：Succinct 安全模型明文 + 本机 SLOP 栈源码零盲化命中；另有实测佐证）；`groth16`/`plonk` 是唯一可能隐藏见证的模式（包装器层面声明、未被审计评估、非后量子、本机 12 GB 出不了证）；原生 ZK 的 `slop-veil` 已发布但未被任何证明路径依赖。**后果**：私有模式口径收紧为「公开值不泄露明文」，不再宣传「证明工件不泄露见证」；证书待加 `binding.proof_mode` 诚实标注（列为后续动作，非阻塞） |
+| **全仓库** | **未声明 ZK 性质** | ✅ **已查证（2026-09-11）**，结论见 [`sp1-zk-audit.md`](sp1-zk-audit.md)：**core/compressed 不满足零知识性**（两类独立证据：Succinct 安全模型明文 + 本机 SLOP 栈源码零盲化命中；另有实测佐证）；`groth16`/`plonk` 是唯一可能隐藏见证的模式（包装器层面声明、未被审计评估、非后量子、本机 12 GB 出不了证）；原生 ZK 的 `slop-veil` 已发布但未被任何证明路径依赖。**后果**：私有模式口径收紧为「公开值不泄露明文」，不再宣传「证明工件不泄露见证」；证书的 `binding.proof_mode` 诚实标注**已落地**（`verify_cert.py` 逐证书与工件自报模式比对，无工件只能标 `unproven`） |
 
 > P0-4 的最后一条是**调研任务**，不是文书任务，但它决定 §4.3（双隐私模式）能否成立，优先级等同 P0-1。
 > **已查证（2026-09-11）**：健全性成立；零知识性对 `core`/`compressed` **不成立**。
@@ -581,7 +594,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 | 风险 | 概率 | 影响 | 缓解 |
 |---|---|---|---|
 | P0-1 的 20 个调用点替换引入回归 | 中 | 高 | 一次性完成 + `cross_validate` 作为总闸门（改判定逻辑后第一件事） |
-| ~~SP1 core proof 非 ZK → 私有模式不成立~~ | **已查证** | **降级：中** | **已核实（2026-09-11）**：core/compressed 确实非 ZK（见 [`sp1-zk-audit.md`](sp1-zk-audit.md)），但**私有模式不因此不成立**——它本来成立的就是较弱的「承诺隐私」（公开值不含明文，Leak 实验可测），而非「见证隐藏」。风险从「致命」降为「叙事风险」：须收紧口径 + 证书加 `proof_mode` 标注。真正需要 groth16 的场景（对**高熵** `T` 的见证隐藏）本机无法验证，标注为未实测 |
+| ~~SP1 core proof 非 ZK → 私有模式不成立~~ | **已查证** | **降级：中** | **已核实（2026-09-11）**：core/compressed 确实非 ZK（见 [`sp1-zk-audit.md`](sp1-zk-audit.md)），但**私有模式不因此不成立**——它本来成立的就是较弱的「承诺隐私」（公开值不含明文，Leak 实验可测），而非「见证隐藏」。风险从「致命」降为「叙事风险」：须收紧口径 + 证书加 `proof_mode` 标注（**两项均已完成**：口径见 `security-model.md` §2/§5，标注见 `cert.py` / `verify_cert.py`）。真正需要 groth16 的场景（对**高熵** `T` 的见证隐藏）本机无法验证，标注为未实测 |
 | **ezkl 依赖栈调不通（D3 已选全量集成）** | **高** | **高** | §8.0 提前 W1 并行启动；离线 wheel 缓存；§9.1 的回退方案（特征在 SP1 内算，ezkl 只证 head）同样健全 |
 | **语义规则的「特征」被证明者声明** | 中 | **致命** | §9.0 的②：特征必须图内/电路内派生；`test_declared_features_rejected` 锁死 |
 | groth16 需 ≥64 GB，本机不可达 | 高 | 高 | D2 已定：云机一次性产出，结果入库 |
@@ -595,7 +608,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 | 阶段 | 判据 |
 |---|---|
-| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归 |
+| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（当前 **220 全绿 / 5 skip**） |
 | P1 | ① `test_trace.py` / `test_compose.py` / `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应 |
 | P2 | ① `test_semantic.py` **7 例全绿含 5 条反例**（§9.3）；② `test_session.py`；③ `test_multiparty.py`；④ `bench/results/` 新增三张表（含 ezkl 出证成本）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 L6 对接 |
 
@@ -720,12 +733,34 @@ verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 
 ## 9. 下一步
 
-**进度（2026-09-11）**：`P0-1` ✅ → `P0-2` ✅ → **`P0-4` 的 ZK 性质查证 ✅ 已完成**
-（结论见 [`sp1-zk-audit.md`](sp1-zk-audit.md)：健全性成立；`core`/`compressed` **非 ZK**；
-私有模式口径收紧为「承诺隐私」，`docs/security-model.md` §2/§5 已同步更新）。
+**进度（2026-09-11）**：`P0-1` ✅ → `P0-2` ✅ → `P0-3` ✅ → `P0-4` ✅（ZK 性质查证 + 口径改写）
+—— **P0 四项全部完成**。`P0-4` 结论见 [`sp1-zk-audit.md`](sp1-zk-audit.md)：
+健全性成立；`core`/`compressed` **非 ZK**；私有模式口径收紧为「承诺隐私」，
+对外表述统一为「策略零知识（合规性可证而不暴露违规内容）+ 响应内容隐藏有明确上界」，
+`docs/security-model.md` §2/§5、`paper` §2.1/§5/§8.1 已同步更新。
 
-下一步是 **`P0-3` Ed25519**（`cryptography` 已升到 50.0.1，随时可开工），
-随后 `P0-4` 剩余的口径一致项（`paper §4.2/§6` 数字）与证书 `binding.proof_mode` 标注。
+**P0 遗留的小项（`binding.proof_mode` 诚实标注）也已完成** —— 字段进载荷
+（`cert.PROOF_MODE_HIDING` / `proof_hiding()`，「未知模式返回 `unknown`，不猜」）、
+进 `cert_digest`、由 `issue_cert.py`/`demo_e2e.py` 从工件元信息如实填写、
+由 `verify_cert.py` 与 `verify_session.py` 与**工件自报的模式**交叉核对
+（无工件却自称 `core` ⇒ FAIL；P0-4 之前的旧证书如实跳过），
+验收见 `tests/test_cert.py::TestProofModeLabeling` 与
+`tests/test_policy_binding.py::TestProofModeOverclaimRejected`。
+至此 P0 无遗留项。
+
+**同日真实工件复验**（不是单测，是拿真证明跑）：
+
+| 复验项 | 命令 | 实测结果 |
+|---|---|---|
+| 标注与工件自报一致 | `verify_cert.py --cert <zk 证书> --proof <2.7 MiB 真证明> --keyring <公钥>` | `[PASS] proof_mode  cert=core (hiding: none); core[sidecar] == core[meta]`，连同签名/证明/三方策略绑定/响应绑定/锚定共 **9/9 PASS**（23 s） |
+| 真实证明全量对拍 | `SP1_PROVER=cpu cross_validate.py`（默认 `--chunk 4`） | **`RESULT: host 14/14  prove 14/14  PASS`**，14 个真实 core 证明，24:00 墙钟，峰值 10.97 GB |
+| guest ELF ↔ vkey 正向 | 上一条的每次 `--verify` 都会**从当前 ELF 重新 `setup` 推导 vkey** | 证书/工件里的 `0x00e314…` == 现 ELF 推导值 ⇒ 三者一致 |
+| guest ELF ↔ vkey 反向 | `pop-script --verify --proof <改 `types` 之前的旧证明>` | 被拒：`pc_start != vk.pc_start`，`EXIT=101` —— 旧 ELF 的证明**无法**在新 ELF 下验通 |
+
+> 顺带查出一个真实缺陷：把 14 个向量交给**一个** `pop-script` 进程会在第 6~7 个证明处被
+> OOM-kill（峰值 10.65→10.82 GB，内存逐证明累加不回落）。`cross_validate.py` 因此改为默认
+> 分块（`--chunk 4`），结果按原序合并；此前文档里写的「prove 14/14」在本机**跑不出来**，
+> 现在才是可复现的判据。
 
 原关键路径：`P0-1`（改动小、可验证、且直接产出论文的「绑定引理」）→ `P0-4`（ZK 性质查证，决定私有模式是否成立）
 → `P0-2` → `P0-3` → `P1-5` → …

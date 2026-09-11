@@ -35,8 +35,10 @@
 3. **证明公开值**解出来的 `policy_hash`（`pop-verify` 现在会解码公开值，而不只是哈希一遍）。
 
 只有两个来源时一律判**失败**（防止「三方比对」退化成恒真）。此外
-`binding.vkey_hash` 绑定程序（由 ELF 派生），`binding.proof_sha256` 绑定证明工件。
-任一被替换 ⇒ 验证失败。实验：`tests/test_policy_binding.py`（含「空策略证明 + 真策略哈希」
+`binding.vkey_hash` 绑定程序（由 ELF 派生），`binding.proof_sha256` 绑定证明工件，
+`binding.proof_mode`（P0-4）**诚实标注这一档证据的隐藏程度**（`core`/`compressed` 的
+STARK **不是零知识**，见 §5 的 ③）——三者任一被替换 ⇒ 验证失败，而「标了某档却拿不出
+工件」还会被 `verify_cert.py` 单独判 FAIL。实验：`tests/test_policy_binding.py`（含「空策略证明 + 真策略哈希」
 攻击回归，以及「真证明 + 假哈希必须被拒」的证明层测试）。
 
 **响应绑定 Response binding (A6).** 验证者（或客户端）在出证前出一个一次性挑战 `n`；电路把
@@ -130,10 +132,12 @@ zkVM 执行输出；确定性判定给出 `J(π,T).passed = false`，矛盾。�
    >   原生 ZK 的 `slop-veil`（eprint 2026/683）已发布但**未被任何证明路径依赖**。
    > ③因此**私有模式的准确定义是「公开值不泄露明文」**，不是「证明工件不泄露见证」，
    >   更不是「`T` 不可恢复」（后者对低熵 `T` 由 §2 的猜测—验证论证直接否证，与 SP1 无关）。
-   > **待办**：证书 `binding` 增加 `proof_mode` 字段诚实标注；论文/README 的「零知识」口径收紧为
+   > **已落地**：证书 `binding.proof_mode` 字段（`cert.PROOF_MODE_HIDING` / `proof_hiding()`；
+   > `verify_cert.py` 把它与**工件自报的模式**交叉核对，无工件只能标 `unproven`，未知模式
+   > 一律 `"unknown"` 而不猜）；论文/README 的「零知识」口径已收紧为
    > 「策略零知识 + 响应内容隐藏有明确上界」。
 2. **哈希假设**：SHA-256 抗碰撞/抗原像。
-3. **签名**：当前为 **HMAC-SHA256 demo signer**（`policydsl/cert.py`），仅演示完整性；生产应替换为 Ed25519/HSM（信封结构不变）。
+3. **签名**：**Ed25519**（`policydsl/cert.py` 的 `Ed25519Signer` + `policydsl/keys.py`）。私钥留在出证方，验证方只持公钥，因此**无法伪造**签名 —— 这是「证书可交第三方审计」的前提。P0-3 之前的 `DEMO_KEY` HMAC（对称，验证方也能伪造）已**结构性废弃**：`verify_envelope` 按 `keyid` 前缀分发，`demo-hmac-sha256` 不在白名单里，连配对密钥放进 keyring 也会被拒。**HSM/KMS 托管仍待补**（当前私钥是文件，口令可选）。
 4. **规则覆盖（P7-b 后更新）**：`keyword_block` / `length_bound` / `pattern_block` / **`format_check`（json/int/float 规范子集）**
    / **`tool_arg_guard`（工具参数，含 `tools` 限定）** / **`budget_bound`（calls；tokens 用请求携带的 `token_count`）**
    均已**入电路**（`pop-types::evaluate`），因此 §2 的健全性定义覆盖这 6 类。

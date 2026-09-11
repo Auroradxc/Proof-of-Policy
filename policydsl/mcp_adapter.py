@@ -68,9 +68,13 @@ class MCPGuard:
     def __init__(self, monitor: AgentMonitor, vkey_hash: str = "unproven",
                  block_on_violation: bool = False, on_cert=None,
                  result_monitor: Optional[AgentMonitor] = None,
-                 block_on_result_violation: bool = False, on_result_cert=None):
+                 block_on_result_violation: bool = False, on_result_cert=None,
+                 proof_mode: Optional[str] = None):
         self.monitor = monitor
         self.vkey_hash = vkey_hash
+        # 诚实标注（P0-4）：本 guard 签出的证书属于哪一档证明模式；
+        # None → build_payload 按「未附工件」记 unproven。
+        self.proof_mode = proof_mode
         self.block_on_violation = block_on_violation
         self.on_cert = on_cert
         self.certificates: List[Dict[str, Any]] = []
@@ -81,7 +85,8 @@ class MCPGuard:
 
     def check(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """判定参数并返回证书信封（不真正调用工具）。"""
-        env = self.monitor.on_tool_call(name, arguments or {}, vkey_hash=self.vkey_hash)
+        env = self.monitor.on_tool_call(name, arguments or {}, vkey_hash=self.vkey_hash,
+                                        proof_mode=self.proof_mode)
         self.certificates.append(env)
         if self.on_cert is not None:
             self.on_cert(env)
@@ -93,7 +98,7 @@ class MCPGuard:
             return None
         text = extract_result_text(result)
         env = self.result_monitor.on_generate(
-            text, vkey_hash=self.vkey_hash,
+            text, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode,
             extra={"tool": {"name": name, "phase": "result"}})
         self.result_certificates.append(env)
         if self.on_result_cert is not None:

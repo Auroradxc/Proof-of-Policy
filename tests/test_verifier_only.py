@@ -127,5 +127,53 @@ class TestVerifierOnlySelection(unittest.TestCase):
             self.assertFalse(prefer_verifier_only(proof, binary))
 
 
+class TestArtifactProofModes(unittest.TestCase):
+    """证明工件「自报的模式」有哪些来源（P0-4 的标注核对要用）。
+
+    三个来源：验证器输出（pop-verify 会带出来）、`<proof>.verify.json` 边车、
+    `<proof>.meta.json`。函数**不做优先级取舍** —— 它们本就该一致，不一致本身
+    就是要发现的东西（对照 P0-1 的教训：单一来源的「一致」是空洞的）。
+    """
+
+    def _mk(self, tmp: Path, sidecar_mode=None, meta_mode=None):
+        proof = tmp / "proof.bin"
+        proof.write_bytes(b"x")
+        if sidecar_mode is not None:
+            Path(str(proof) + ".verify.json").write_text(json.dumps({"proof_mode": sidecar_mode}))
+        if meta_mode is not None:
+            Path(str(proof) + ".meta.json").write_text(json.dumps({"proof_mode": meta_mode}))
+        return proof
+
+    def test_collects_every_available_source(self):
+        from policydsl import verifier
+
+        with tempfile.TemporaryDirectory() as tmp:
+            proof = self._mk(Path(tmp), sidecar_mode="core", meta_mode="core")
+            got = verifier.artifact_proof_modes(proof, {"proof_mode": "core"})
+            self.assertEqual(got, {"verifier": "core", "sidecar": "core", "meta": "core"})
+
+    def test_missing_sources_are_simply_absent(self):
+        # 没有边车/元信息时不报错、也不编一个默认值（编默认值 = 把未知说成已知）。
+        from policydsl import verifier
+
+        with tempfile.TemporaryDirectory() as tmp:
+            proof = self._mk(Path(tmp))
+            self.assertEqual(verifier.artifact_proof_modes(proof), {})
+            # 损坏的 JSON 同样只是「这一路来源缺失」
+            Path(str(proof) + ".meta.json").write_text("{not json")
+            self.assertEqual(verifier.artifact_proof_modes(proof), {})
+
+    def test_disagreement_is_surfaced_not_resolved(self):
+        # 边车说 core、元信息说 compressed：函数不做取舍，两个都留着，
+        # 由调用方（verify_cert）判定 MISMATCH。
+        from policydsl import verifier
+
+        with tempfile.TemporaryDirectory() as tmp:
+            proof = self._mk(Path(tmp), sidecar_mode="compressed", meta_mode="core")
+            got = verifier.artifact_proof_modes(proof)
+            self.assertEqual(got, {"sidecar": "compressed", "meta": "core"})
+            self.assertEqual(sorted(set(got.values())), ["compressed", "core"])
+
+
 if __name__ == "__main__":
     unittest.main()

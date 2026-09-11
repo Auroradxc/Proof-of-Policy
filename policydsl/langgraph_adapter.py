@@ -70,6 +70,7 @@ def attach(monitor: AgentMonitor, graph: Any = None, **handler_kwargs: Any) -> P
 def guard_node(monitor: AgentMonitor, node: Callable[..., Any], kind: str = "generate",
                key: str = "output", certs_key: str = "certificates",
                vkey_hash: str = "unproven", proof_sha256: Optional[str] = None,
+               proof_mode: Optional[str] = None,
                tool_name_key: str = "name", tool_args_key: str = "args") -> Callable[..., Dict[str, Any]]:
     """包装一个 LangGraph 节点，使其结果被判定并签发证书。
 
@@ -87,11 +88,13 @@ def guard_node(monitor: AgentMonitor, node: Callable[..., Any], kind: str = "gen
             raw = result.get(key, "")
             text = raw if isinstance(raw, str) else str(raw)
             certs.append(monitor.on_generate(text, vkey_hash=vkey_hash,
-                                             proof_sha256=proof_sha256))
+                                             proof_sha256=proof_sha256,
+                                             proof_mode=proof_mode))
         elif kind == "tool":
             name = str(result.get(tool_name_key, "tool"))
             targs = result.get(tool_args_key, {}) or {}
-            certs.append(monitor.on_tool_call(name, targs, vkey_hash=vkey_hash))
+            certs.append(monitor.on_tool_call(name, targs, vkey_hash=vkey_hash,
+                                              proof_mode=proof_mode))
         else:
             raise ValueError("kind must be 'generate' or 'tool'")
         out = dict(result)
@@ -128,10 +131,14 @@ class LangGraphEventCertifier:
 
     def __init__(self, monitor: AgentMonitor, tool_monitor: Optional[AgentMonitor] = None,
                  vkey_hash: str = "unproven",
-                 stream_handler: Optional[PoPCallbackHandler] = None):
+                 stream_handler: Optional[PoPCallbackHandler] = None,
+                 proof_mode: Optional[str] = None):
         self.monitor = monitor
         self.tool_monitor = tool_monitor or monitor
         self.vkey_hash = vkey_hash
+        # 未显式给出时，沿用流式 handler 的标注（两者本就是同一份证据）
+        self.proof_mode = (proof_mode if proof_mode is not None
+                           else getattr(stream_handler, "proof_mode", None))
         self.stream_handler = stream_handler
         self.certificates: List[Dict[str, Any]] = []
         self.events: List[str] = []
@@ -169,7 +176,8 @@ class LangGraphEventCertifier:
             # 模型完成：签发生成证书
             text = _extract_text(data.get("output")) or _content_text(data.get("output"))
             if text:
-                self.certificates.append(self.monitor.on_generate(text, vkey_hash=self.vkey_hash))
+                self.certificates.append(self.monitor.on_generate(
+                    text, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode))
         elif name == "on_tool_end":
             # 工具结束：签发工具证书
             tool = str(event.get("name") or "tool")
@@ -177,4 +185,5 @@ class LangGraphEventCertifier:
             if not isinstance(args, dict):
                 args = {"input": args}
             self.certificates.append(
-                self.tool_monitor.on_tool_call(tool, args, vkey_hash=self.vkey_hash))
+                self.tool_monitor.on_tool_call(tool, args, vkey_hash=self.vkey_hash,
+                                               proof_mode=self.proof_mode))

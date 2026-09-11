@@ -12,8 +12,9 @@
 |---|---|---|---|---|
 | `policydsl/__main__.py` | 编译策略 / 参考判定 | 否 | 否 | 毫秒 |
 | `prove_policy.py` | 单条响应 → 真实证明 + golden 比对 | `pop-script` | 是（可 `--no-prove`） | ~70 s |
-| `cross_validate.py` | 14 条向量 × (host + prove) 与 golden 对拍 | `pop-script` | 是（可 `--no-prove`） | 数分钟 |
+| `cross_validate.py` | 14 条向量 × (host + prove) 与 golden 对拍 | `pop-script` | 是（可 `--no-prove`） | host 秒级；prove ~24 分钟（分 4 块，每块峰值 ~10 GB） |
 | `private_demo.py` | 私有模式全链路实验（Leak/Binding/Evidence/证明） | `pop-script` | 是（可 `--no-prove`） | ~70 s |
+| `gen_key.py` | 生成/查看 Ed25519 出证密钥对（打印 keyid + 公钥） | 否 | 否 | 毫秒 |
 | `issue_cert.py` | 签发证书 + 锚定（可选上链） | `pop-script` | 是（可 `--no-prove`） | ~70 s |
 | `verify_cert.py` | **第三方**独立验证单张证书 | `pop-script` / `pop-verify` | 验证已有证明 | ~20 s |
 | `demo_e2e.py` | 一键真实会话（LangChain + MCP + zk + 锚定） | `pop-script` | 可 `--no-prove` | 秒级 / ~70 s |
@@ -65,6 +66,13 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
 比对方式：Python 的 `(rule.name, kind)` 集合 vs Rust 输出的 `(rule, kind)` 集合，加上 `passed`。
 期望输出 `RESULT: host 14/14  prove 14/14  PASS`。
 
+**真实证明默认分块跑**（`--chunk N`，缺省 4）：SP1 core 证明的峰值 RSS 本就 ~10.3 GB，
+且每证完一个还会缓慢累加 —— 本机实测把 14 个向量交给**一个** `pop-script` 进程，会在第
+6 / 第 7 个证明处被内核 OOM-kill（峰值 10.65 / 10.82 GB，`SIGKILL 9`），而逐个单独出证都是好的。
+分块只做**进程隔离**：每块是原向量的连续子序列，结果按原序合并，下游比对逻辑完全不知道分块存在。
+`--chunk 0` 恢复单进程（需 ≥16 GB）。分块逻辑本身有 `tests/test_cross_validate.py` 守住
+（切开后拼回去逐一相等）。
+
 > 这个脚本是**改判定逻辑后必须跑的第一件事**。它把「两侧不一致」变成一次红灯，而不是等到
 > 复现论文数字时才发现。
 
@@ -88,7 +96,7 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
 ```bash
 python3 scripts/issue_cert.py --pack P --response R --out-dir D \
     [--mode public|private] [--proof-mode core|compressed|groth16|plonk] \
-    [--nonce auto|none|<hex>] \
+    [--nonce auto|none|<hex>] [--key 私钥.pem] \
     [--no-prove] [--ledger L] [--rpc URL --contract 0x…] [--private-key KEY]
 ```
 
@@ -98,7 +106,8 @@ python3 scripts/issue_cert.py --pack P --response R --out-dir D \
 去**复现**某次会话。出证后会打印 `nonce` 与 `resp_binding` 两行，便于核对。
 
 产物：`vectors.json`、`results.json`、`proof.bin`（+ `.meta.json`/边车）、
-`cert.json`（信封）、`payload.json`（明文载荷，便于阅读）、`anchor.json`（锚定条目）。
+`cert.json`（信封）、`payload.json`（明文载荷，便于阅读）、`key.json`（出证方**公钥**）、
+`anchor.json`（锚定条目）。
 
 关键实现点：
 
@@ -107,27 +116,38 @@ python3 scripts/issue_cert.py --pack P --response R --out-dir D \
 - `outcome` 直接从 `results.json` 剥掉 `name`/`mode` 得到（**不重算**），保证证书里的结论 ==
   电路承诺的结论。
 - 锚定走 `anchor.backend_from_env(...)`：没给 `--rpc/--contract` 就写文件账本。
+- **签名（P0-3）**：`keys.signer_from_env(--key)` 取 Ed25519 私钥（缺省 `$POP_SIGNING_KEY`，
+  都没有就在 `.pop-keys/signing.key` **生成一把新的**，0600、已 gitignore）。公钥写进
+  `<out-dir>/key.json` —— 验证方只需要它。
 
 ### 2.5 `verify_cert.py` —— 第三方验证单张证书
 
 ```bash
 python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] \
-    [--response T.txt] [--nonce HEX] [--rpc URL --contract 0x…]
+    [--response T.txt] [--nonce HEX] [--keyring key.json|pub.hex|pub.pem] \
+    [--rpc URL --contract 0x…]
 ```
 
 检查项（逐行 PASS/FAIL）：
 
 | 检查 | 内容 |
 |---|---|
-| `signature` | DSSE 信封签名 |
+| `signature` | DSSE 信封签名（**Ed25519**，用 `--keyring` 给的公钥；缺省读证书同目录 `key.json`）。P0-3 之前的 `demo-hmac-sha256` 信封会被**结构性拒绝** |
 | `policy_hash` | **重新编译**策略包并比对（不是从证书里读） |
 | `response_binding` | P0-2：证书 `challenge` 块 / `outcome` 内嵌 / 证明公开值 / **由送达的 `--response` 现场重算** 四者比对（≥2 来源才算过） |
 | `anchor` | 账本链完整 + 摘要存在于账本 |
 | `anchor_on_chain`（可选） | 链上 `anchoredAt` 读回，且与本地 meta 的 `chain_ts` 一致 |
+| `proof_mode` | P0-4：证书自称的 `binding.proof_mode` 与**工件自报的模式**（边车 `*.verify.json` / `*.meta.json` / 验证器输出）比对，多来源必须指向同一档。没有工件的证书只能标 `unproven` —— 自称 `core` 却拿不出证明即判 FAIL；P0-4 之前的旧证书（无此字段）**如实跳过**，不倒过来判它失败 |
 | `proof_verify` / `proof_outcome` / `proof_vkey` / `proof_sha256` | 证明有效 + 承诺的 outcome/vkey/工件哈希都匹配 |
 | `verify_only` / `public_values` / `vkey_hash` | 走快路径时的对应三项 |
 
 签名失败会**提前返回**（`print_fail`），因为后面所有检查都建立在「载荷可信」之上。
+拿不到公钥时同样提前返回并提示用 `--keyring` 指明（**不会**静默降级为「跳过签名」）。
+
+`--keyring` 接受 `key.json`、`*.pub.hex`、`*.pub.pem` 或一段公钥十六进制。
+**验证方全程只需要公钥** —— 拿不到私钥，也就伪造不出签名。
+路径拼错会当场报「找不到公钥文件：…」并**连同路径一起打印**（而不是把它当公钥
+文本解析、回一句「不是合法十六进制」把真因盖掉）。
 
 `--response` 是**你手上真正收到的那条 T′**。给了它，验证器就现场重算
 `commit.response_binding(nonce, T′)` 并和解出来的绑定比 —— 这是整套流程里
@@ -146,24 +166,38 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 3. **zk 路径**：对一条响应真实出证（`zk_path`）——**走完整挑战流程**：客户端先出
    `nonce = challenge.new_nonce()`，把它喂进向量与证书 `challenge` 块（`--nonce` 可覆盖），
    出证后再用「送达的 T′」离线核对绑定（`challenge_experiment`：`T′` 能开、
-   篡改后的 `T′` 打不开、换 nonce 打不开），vkey 哈希与证明哈希绑进证书；
+   篡改后的 `T′` 打不开、换 nonce 打不开），vkey 哈希、证明哈希与**证明模式**
+   （`proof_mode`，取 pop-script 写的 `.meta.json`；`--no-prove` 时为 `unproven`）
+   一起绑进证书；
 4. **锚定**：每张证书的 `cert_digest` 入账本；给了 `--rpc/--contract` 就**同时上链**
    （成功后回写 `meta.on_chain`）。
 
-产出 `session.json`（含 `certificates` 列表、`summary`（多一项 `challenge_bound`）、
-顶层的 `challenge` 记录、以及有链时的 `chain` 坐标），
+每张证书都用 Ed25519 签名：demo 缺省生成一把**临时**密钥（`--key` 可换成落盘私钥），
+公钥写进 `session.json` 的 `signers` 字段并打印（`signer : ed25519:…` + `public_hex=…`）。
+私钥不落盘、也不进会话包 —— 第三方拿到的是**只能验、不能签**的公钥。
+
+产出 `session.json`（含 `signers` 公钥记录、`certificates` 列表、`summary`
+（多一项 `challenge_bound` 与 `zk_proof_mode`）、顶层的 `challenge` 记录、
+以及有链时的 `chain` 坐标），
 末尾提示用 `verify_session.py` 验证。**这是「12 张证书」的来源**。
 
 ### 2.7 `verify_session.py` —— 第三方验证整个会话
 
 ```bash
-python3 scripts/verify_session.py --session S [--rpc URL --contract 0x…] [--no-chain]
+python3 scripts/verify_session.py --session S [--keyring 公钥] \
+    [--rpc URL --contract 0x…] [--no-chain]
 ```
 
-五类检查：`ledger_chain` / `certificates_signature` / `certificates_policy_hash` /
-`certificates_anchored` / `stream_chains` / `zk_proof`（+ 可选 `chain_anchored`）。
+检查项：`keyring`（**P0-3 前置**：拿不到公钥就直接 FAIL，不静默跳过）/ `ledger_chain` /
+`certificates_signature` / `certificates_policy_hash` / `certificates_response_binding` /
+`certificates_proof_mode` / `certificates_anchored` / `stream_chains` / `zk_proof`
+（+ 可选 `chain_anchored`）。
 
 细节：
+
+- 公钥来源优先级：`--keyring` → `session.json` 的 `signers` 字段 → 同目录 `key.json`。
+  一条 `signers` 记录同时带 `keyid` 与 `public_hex`，装载时会**校验两者一致**
+  （否则「按 keyid 选密钥」就失效了）。
 
 - `policy_hash` 用 `spec_cache` 缓存，同一策略包只编译一次。
 - 流式链按 `chain.index == 0` **切分成多个 run**（一次会话可能有多次流式生成），逐个 `verify_chain`。
@@ -171,6 +205,10 @@ python3 scripts/verify_session.py --session S [--rpc URL --contract 0x…] [--no
 - **`chain_anchored` 的交叉核对**是本脚本最有价值的一段（见 [`04`](04-anchoring-audit.md) §4）：
   逐证书读链上 `anchoredAt`，并与本地账本 `meta.on_chain` 的 `chain_ts`/`block` 三方对上。
 - 未附证明的证书（`proof_sha256 is None`）会被正确地判为 `unproven (host-check only)`，不算失败。
+- `certificates_proof_mode` 是个**双条件**检查：标了某档模式就必须真有工件
+  （`proof_sha256` 非空），附了工件就不许标 `unproven`；缺字段的旧证书单独计数
+  （`N cert(s) labeled, M predate the field`）。`zk_proof` 那一步还会再拿
+  **工件自报的模式**核对一次（多来源必须一致）。
 
 ### 2.8 `deploy_anchor.py` / `make_shots.py`
 
@@ -181,6 +219,28 @@ python3 scripts/verify_session.py --session S [--rpc URL --contract 0x…] [--no
   `session_report.svg`、`session_summary.png`、`verify_result.png`。
 
 ---
+
+### 2.9 `gen_key.py` —— 出证方密钥对（P0-3）
+
+```bash
+python3 scripts/gen_key.py [--out-dir D] [--path P] [--name demo] [--force]
+python3 scripts/gen_key.py --show                     # 读已有私钥、只打印公钥，不写盘
+python3 scripts/gen_key.py --pubkey keys/demo.pub.hex # 只有公钥时算 keyid
+```
+
+产出 `<name>.key`（PKCS#8 PEM，`0600`，**已存在则拒绝覆盖**，要轮换请先删除或用 `--force`）、
+`<name>.pub.hex`、`<name>.pub.pem`，并打印 `keyid`（`ed25519:<sha256(原始公钥)>`）、
+公钥 hex 与 PEM。
+
+验证方只需要 `--pubkey` 那一路（**永远不读私钥**）：
+
+```bash
+python3 scripts/verify_cert.py --cert c.json --pack p.json --ledger l.jsonl \
+    --keyring keys/demo.pub.hex
+```
+
+私钥路径的解析顺序：`--path` > `$POP_SIGNING_KEY` > `.pop-keys/signing.key`（已 gitignore）。
+设 `$POP_SIGNING_KEY_PASSPHRASE` 则私钥以口令加密落盘；不设则为明文 PKCS#8，依赖文件权限。
 
 ## 3. Shell 脚本
 
@@ -228,7 +288,8 @@ bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 |---|---|
 | 快速验证一套改动没破坏一致性 | `python3 -m unittest discover tests` + `cross_validate.py --no-prove` |
 | 只看结论、不出证 | 给任意脚本加 `--no-prove`（走 `pop-script --check`） |
-| 第三方复核一张证书 | `verify_cert.py --cert … --pack … --ledger … [--proof …]` |
+| 第三方复核一张证书 | `verify_cert.py --cert … --pack … --ledger … --keyring <公钥> [--proof …]` |
+| 复核整个会话 | `verify_session.py --session session.json [--keyring <公钥>]`（公钥通常已在 `signers` 里） |
 | **核对送达的 T′ 就是被证明的 T** | 上一条再加 `--response T′.txt`（P0-2，见 §2.5） |
 | 全链路最小复现 | `bash scripts/anchor_e2e.sh` |
 | 生成论文/文档用的截图 | `python3 scripts/make_shots.py --run-demo` |

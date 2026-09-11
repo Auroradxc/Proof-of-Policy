@@ -28,7 +28,7 @@
 
 ```bash
 cd Proof-of-Policy/03_代码仓库/zk-policy     # 仓库根（目录曾名为“方向二”，已重命名）
-python3 -m unittest discover tests -v          # 期望 184 passed（5 skip：2 个 compressed fixture + 2 个 POP_TEST_PROOF 门控 + 1 设计内）
+python3 -m unittest discover tests -v          # 期望 220 passed（5 skip：2 个 compressed fixture + 2 个 POP_TEST_PROOF 门控 + 1 设计内）
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json | head    # 编译出 ConstraintSpec
 ```
 
@@ -63,6 +63,11 @@ RESULT: PASS
 SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 14/14 + prove 14/14
 ```
 
+> 真实证明默认**分块**（`--chunk 4`，共 4 个 `pop-script` 进程）。原因很实际：
+> 本机（11.9 GB RAM）把 14 个向量塞进一个进程时，会在第 6~7 个证明处被内核
+> OOM-kill（峰值 10.65 / 10.82 GB）。分块不改变交给电路的输入，只是让每个进程
+> 从干净状态开始；`--chunk 0` 可恢复单进程（需 ≥16 GB 机器）。
+
 ## 5. 复现：私有模式（承诺 + 选择性披露 + 证据开示）
 
 ```bash
@@ -81,7 +86,7 @@ SP1_PROVER=cpu python3 scripts/verify_cert.py \
   --cert scripts/examples/out/cert_public/cert.json --pack policy_packs/eu_ai_act_v1.json \
   --ledger scripts/examples/out/ledger.jsonl --proof scripts/examples/out/cert_public/proof.bin \
   --response scripts/examples/eu_agent_reply.txt      # ← 送达的 T′，用来核对响应绑定
-# 期望 8 项全 PASS（签名 / policy_hash / response_binding / 锚定 / SP1 证明 / outcome / vkey / proof_sha256）
+# 期望 9 项全 PASS（签名 / proof_mode / policy_hash / response_binding / 锚定 / SP1 证明 / outcome / vkey / proof_sha256）
 ```
 
 > **`--response` 是 P0-2 的验收点**：加上它，验证器会现场重算 `SHA256("pop-bind-v1"‖len‖nonce‖T′)`
@@ -175,8 +180,10 @@ python3 scripts/verify_session.py --session .../session.json \
 
 ## 验收判据（复现成功）
 
-- `python3 -m unittest discover tests` → **184 passed（5 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = 设计内「依赖已装」用例）；
-- `scripts/prove_policy.py` / `cross_validate.py` → **RESULT: PASS**（host 14/14；`--no-prove` 时跳过真实证明）；
+- `python3 -m unittest discover tests` → **220 passed（5 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = 设计内「依赖已装」用例）；
+- `scripts/prove_policy.py` → **RESULT: PASS**；
+- `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **RESULT: host 14/14  prove 14/14  PASS**
+  （真实证明分 4 块跑，见 §4 的说明；`--no-prove` 时跳过真实证明）；
 - `verify_cert.py`（带 `--response T′`）/ `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证与响应绑定核对）；
 - `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 12/12 + 反例对照，见 §10）。
 
@@ -185,6 +192,7 @@ python3 scripts/verify_session.py --session .../session.json \
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | 证明进程被杀、无输出 | 内存不足（WSL 默认 ~7.6GB） | 宿主 `C:\Users\<你>\.wslconfig` 设 `memory=12GB`，`wsl --shutdown` 后重启 |
+| `cross_validate --prove` 跑到第 6~7 个向量就被 kill | 单进程跑 14 个证明会累积内存（峰值 10.8 GB） | 用默认的 `--chunk 4`（本来就默认分块）；别改成 `--chunk 0` |
 | `cargo prove ... unreachable` | `SP1_PROVER=native` 非法 | 用 `SP1_PROVER=cpu` |
 | 出证报 “light prover cannot prove” | light 只能执行/验证 | 用 `cpu` |
 | sp1-prover 编译报 `no method named keep` | 上游 tempfile 3.x 无 `TempDir::keep()` | 勿删 `circuits/patches/tempfile` 与 `[patch.crates-io]` |
@@ -192,6 +200,7 @@ python3 scripts/verify_session.py --session .../session.json \
 | `protoc` 找不到 | 缺 protobuf-compiler | `sudo apt-get install -y protobuf-compiler` |
 | 缺少 `libsp1gnark.a` 构建失败 | 无 Go | 安装 Go ≥1.24 且设置 `GOPROXY` |
 
-> 安全/边界说明：证书签名当前为 **HMAC-SHA256 demo signer**（`policydsl/cert.py`），生产应换 Ed25519/HSM；
+> 安全/边界说明：证书签名为 **Ed25519**（`policydsl/cert.py` + `policydsl/keys.py`，P0-3）——验证方只持公钥、无法伪造；
+> 第三方验签用 `verify_cert.py --keyring <公钥>`（或证书同目录的 `key.json`）。**HSM/KMS 托管仍待补**；
 > 锚定默认走**文件账本**（离线可验），也可 `--rpc/--contract` 真上链（见 §10，本地 Anvil 端到端 PASS）；
 > 上链交易用明文私钥参数（demo 用 Anvil 公开测试键），生产应换 keystore/HSM。

@@ -8,6 +8,7 @@
 依赖 langchain/langgraph/mcp 框架，未安装时整体跳过（这些是演示层的可选依赖）。
 """
 
+import json
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,9 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
+
+from policydsl import cert  # noqa: E402
 
 
 def deps_available() -> bool:
@@ -57,6 +61,14 @@ class TestEndToEndDemo(unittest.TestCase):
             self.assertIn("stream", verify.stdout)
             self.assertIn("tool-result", verify.stdout)
             self.assertIn("zk_proof", verify.stdout)
+            # P0-4：每张证书都带证据档位标注，且 `--no-prove` 下只能是 unproven
+            # （0 predate = 没有靠「字段缺失」蒙混过去的证书）。
+            self.assertIn("[PASS] certificates_proof_mode", verify.stdout)
+            self.assertIn("unproven", verify.stdout)
+            session = json.loads(session.read_text())
+            modes = {cert.envelope_payload(e["envelope"])["binding"]["proof_mode"]
+                     for e in session["certificates"]}
+            self.assertEqual(modes, {"unproven"}, "host-check 演示不该出现声称有证据的证书")
 
     # 会话包之外还要产出可给人看的证据（HTML/SVG/PNG）：报告是审计交付物的一部分，
     # 缺文件即视为交付不完整。

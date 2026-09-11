@@ -31,6 +31,35 @@ def load_pack(name: str) -> Policy:
     return Policy(data["id"], data.get("version", "0.1.0"), rules=rules)
 
 
+def ring_of(*objs):
+    """把这些对象所用 monitor 的**公钥**收成一个验签 keyring（P0-3）。
+
+    测试也照第三方的规矩来：只拿公钥，拿不到私钥。能识别 AgentMonitor 本身、
+    callback handler（``monitor``）、MCP guard（``monitor``/``result_monitor``）、
+    LangGraph guard / event certifier（``monitor``/``tool_monitor``/``stream_handler``）。
+    """
+    kr = {}
+    for o in objs:
+        for m in _monitors_of(o):
+            kr.update(cert.keyring(m.signer.public_key))
+    return kr
+
+
+def _monitors_of(o):
+    """从一个对象上找出它持有的所有 AgentMonitor（浅一层）。"""
+    if hasattr(o, "signer"):          # 本身就是 AgentMonitor
+        return [o]
+    out = []
+    for attr in ("monitor", "tool_monitor", "args_monitor", "result_monitor"):
+        m = getattr(o, attr, None)
+        if m is not None and hasattr(m, "signer"):
+            out.append(m)
+    sh = getattr(o, "stream_handler", None)
+    if sh is not None:
+        out.extend(_monitors_of(sh))
+    return out
+
+
 def fake_llm_result(text: str):
     """伪造 LLMResult 的最小形状（generations -> [generation])，避免依赖真实框架。"""
     gen = types.SimpleNamespace(text=text)
@@ -49,7 +78,7 @@ class TestCallbackHandlerOffline(unittest.TestCase):
         h = PoPCallbackHandler(self.content, vkey_hash="vk1")
         h.on_llm_end(fake_llm_result("A safe, plain reply."), run_id="r1")
         self.assertEqual(len(h.certificates), 1)
-        ok, payload = cert.verify_envelope(h.certificates[0], cert.DEMO_KEY)
+        ok, payload = cert.verify_envelope(h.certificates[0], ring_of(h))
         self.assertTrue(ok)
         self.assertTrue(payload["outcome"]["passed"])
         self.assertTrue(verify_certificates(h))
@@ -58,7 +87,7 @@ class TestCallbackHandlerOffline(unittest.TestCase):
     def test_llm_end_detects_violation(self):
         h = PoPCallbackHandler(self.content)
         h.on_llm_end(fake_llm_result("Leak sk-abcdefghijklmnopqrstuvwxyz"), run_id="r1")
-        _, payload = cert.verify_envelope(h.certificates[0], cert.DEMO_KEY)
+        _, payload = cert.verify_envelope(h.certificates[0], ring_of(h))
         self.assertFalse(payload["outcome"]["passed"])
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret")
 
@@ -77,7 +106,7 @@ class TestCallbackHandlerOffline(unittest.TestCase):
         h.on_tool_start({"name": "search_kb"}, "{'q': 'x', 'token': 'secret'}", run_id="t1")
         h.on_tool_end("result", run_id="t1")
         self.assertEqual(len(h.certificates), 1)
-        _, payload = cert.verify_envelope(h.certificates[0], cert.DEMO_KEY)
+        _, payload = cert.verify_envelope(h.certificates[0], ring_of(h))
         self.assertEqual(payload["mode"], "tool-call")
         self.assertFalse(payload["outcome"]["passed"])
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret_args")
@@ -87,7 +116,7 @@ class TestCallbackHandlerOffline(unittest.TestCase):
         h = PoPCallbackHandler(self.tools)
         h.on_tool_start({"name": "search_kb"}, "{'q': 'refund'}", run_id="t1")
         h.on_tool_end("ok", run_id="t1")
-        _, payload = cert.verify_envelope(h.certificates[0], cert.DEMO_KEY)
+        _, payload = cert.verify_envelope(h.certificates[0], ring_of(h))
         self.assertTrue(payload["outcome"]["passed"])
 
     # on_cert 回调钩子：外部观察者应能在证书生成时立即收到（用于落库/上链等）
@@ -96,6 +125,42 @@ class TestCallbackHandlerOffline(unittest.TestCase):
         h = PoPCallbackHandler(self.content, on_cert=seen.append)
         h.on_llm_end(fake_llm_result("fine"), run_id="r1")
         self.assertEqual(len(seen), 1)
+
+
+class TestProofModePlumbingOffline(unittest.TestCase):
+    """适配器把证据档位（P0-4）一路带到载荷：构造参数 → 每条签发路径。
+
+    `proof_mode` 与 `vkey_hash` 是一对：只说「绑了哪个程序」而不说「这档证据
+    隐藏了什么」，第三方就无从判断「响应内容被隐藏」是否成立。因此每条适配器
+    路径都要能把它传下去 —— 这里逐条锁住（含流式证书，它是最容易漏的一条）。
+    """
+
+    def setUp(self):
+        self.content = AgentMonitor(load_pack("agent_content_v1.json"))
+        self.tools = AgentMonitor(load_pack("agent_tool_v1.json"))
+
+    def _mode_of(self, env) -> str:
+        return cert.envelope_payload(env)["binding"]["proof_mode"]
+
+    def test_handler_threads_mode_to_generate_and_tool_paths(self):
+        h = PoPCallbackHandler(self.content, proof_mode="core")
+        h.on_llm_end(fake_llm_result("A safe, plain reply."), run_id="r1")   # 权威证书
+        h.on_llm_new_token("A safe", run_id="r2")                            # 流式部分证书
+        assert h.stream_certificates, "流式路径未产出证书，用例前提不成立"
+
+        tools_h = PoPCallbackHandler(self.tools, proof_mode="compressed")
+        tools_h.on_tool_start({"name": "search_kb"}, "{'q': 'refund'}", run_id="t1")
+        tools_h.on_tool_end("ok", run_id="t1")
+
+        for env in h.certificates + h.stream_certificates:
+            self.assertEqual(self._mode_of(env), "core")
+        self.assertEqual(self._mode_of(tools_h.certificates[0]), "compressed")
+
+    def test_default_is_unproven_not_a_guess(self):
+        # 不给模式、也不给工件 ⇒ 只能标 unproven（而不是默默算成某一档证据）。
+        h = PoPCallbackHandler(self.content)
+        h.on_llm_end(fake_llm_result("fine"), run_id="r1")
+        self.assertEqual(self._mode_of(h.certificates[0]), cert.PROOF_MODE_UNPROVEN)
 
 
 class TestLangGraphHelpersOffline(unittest.TestCase):
@@ -113,7 +178,7 @@ class TestLangGraphHelpersOffline(unittest.TestCase):
         g = lg.guard_node(self.content, node, kind="generate", vkey_hash="vk1")
         out = g({})
         self.assertIn("certificates", out)
-        ok, payload = cert.verify_envelope(out["certificates"][0], cert.DEMO_KEY)
+        ok, payload = cert.verify_envelope(out["certificates"][0], ring_of(self.content))
         self.assertTrue(ok)
         self.assertTrue(payload["outcome"]["passed"])
 
@@ -124,7 +189,7 @@ class TestLangGraphHelpersOffline(unittest.TestCase):
 
         g = lg.guard_node(self.tools, node, kind="tool")
         out = g({})
-        _, payload = cert.verify_envelope(out["certificates"][0], cert.DEMO_KEY)
+        _, payload = cert.verify_envelope(out["certificates"][0], ring_of(self.tools))
         self.assertFalse(payload["outcome"]["passed"])
 
     # attach 是 LangGraph 侧推荐入口，返回的应是可传入 config 的回调处理器
@@ -138,6 +203,25 @@ class TestLangGraphHelpersOffline(unittest.TestCase):
         guard = lg.LangGraphGuard(self.content)
         n = guard.generate_node(lambda s: {"output": "ok"})
         self.assertIn("certificates", n({}))
+
+    def test_guard_node_threads_proof_mode(self):
+        # P0-4：guard_node 的 proof_mode 必须落到它签发的每张证书上（两条 kind 都验）。
+        gen = lg.guard_node(self.content, lambda s: {"output": "A safe reply."},
+                            kind="generate", proof_mode="groth16")(
+            {"certificates": []})
+        tool = lg.guard_node(self.tools,
+                             lambda s: {"name": "search_kb", "args": {"q": "refund"}},
+                             kind="tool", proof_mode="groth16")(
+            {"certificates": []})
+        for out in (gen, tool):
+            self.assertEqual(cert.envelope_payload(out["certificates"][-1])["binding"]["proof_mode"],
+                             "groth16")
+
+    def test_guard_node_default_is_unproven(self):
+        out = lg.guard_node(self.content, lambda s: {"output": "ok"}, kind="generate")(
+            {"certificates": []})
+        self.assertEqual(cert.envelope_payload(out["certificates"][-1])["binding"]["proof_mode"],
+                         cert.PROOF_MODE_UNPROVEN)
 
     # 缺少 langgraph 时 require_langgraph 必须显式报错，而不是让后续静默失效
     def test_require_langgraph_raises_without_dep(self):
@@ -159,7 +243,7 @@ class TestRealLangChain(unittest.TestCase):
         h = PoPCallbackHandler(monitor, vkey_hash="vk-real")
         h.on_llm_end(LLMResult(generations=[[Generation(text="A safe reply.")]]), run_id="r1")
         self.assertEqual(len(h.certificates), 1)
-        ok, payload = cert.verify_envelope(h.certificates[0], cert.DEMO_KEY)
+        ok, payload = cert.verify_envelope(h.certificates[0], ring_of(h))
         self.assertTrue(ok)
         self.assertTrue(payload["outcome"]["passed"])
 
@@ -175,7 +259,7 @@ class TestRealLangChain(unittest.TestCase):
         h = PoPCallbackHandler(monitor, vkey_hash="vk-e2e")
         self._fake_llm("A safe reply.").invoke("hi", config={"callbacks": [h]})
         self.assertEqual(len(h.certificates), 1)
-        ok, payload = cert.verify_envelope(h.certificates[0], cert.DEMO_KEY)
+        ok, payload = cert.verify_envelope(h.certificates[0], ring_of(h))
         self.assertTrue(ok)
         self.assertTrue(payload["outcome"]["passed"])
         self.assertEqual(payload["mode"], "public")
@@ -186,7 +270,7 @@ class TestRealLangChain(unittest.TestCase):
         h = PoPCallbackHandler(monitor)
         self._fake_llm("Leak sk-abcdefghijklmnopqrstuvwxyz").invoke(
             "hi", config={"callbacks": [h]})
-        _, payload = cert.verify_envelope(h.certificates[0], cert.DEMO_KEY)
+        _, payload = cert.verify_envelope(h.certificates[0], ring_of(h))
         self.assertFalse(payload["outcome"]["passed"])
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret")
 
@@ -206,7 +290,7 @@ class TestRealLangChain(unittest.TestCase):
         h = PoPCallbackHandler(monitor)
         search_kb.invoke({"query": "refund", "token": "secret"}, config={"callbacks": [h]})
         self.assertTrue(h.certificates, "tool callbacks did not fire")
-        _, payload = cert.verify_envelope(h.certificates[-1], cert.DEMO_KEY)
+        _, payload = cert.verify_envelope(h.certificates[-1], ring_of(h))
         self.assertEqual(payload["mode"], "tool-call")
         self.assertFalse(payload["outcome"]["passed"])
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret_args")
@@ -229,7 +313,7 @@ class TestStreamingOffline(unittest.TestCase):
         self._feed(h, "A safe reply")
         # 判定一直为 True -> 恰好一张增量证书（None -> True），不产生冗余
         self.assertEqual(len(h.stream_certificates), 1)
-        ok, payload = cert.verify_envelope(h.stream_certificates[0], cert.DEMO_KEY)
+        ok, payload = cert.verify_envelope(h.stream_certificates[0], ring_of(h))
         self.assertTrue(ok)
         self.assertTrue(payload["streaming"]["partial"])
         self.assertTrue(payload["outcome"]["passed"])
@@ -240,7 +324,7 @@ class TestStreamingOffline(unittest.TestCase):
         self._feed(h, "x sk-abcdefghijklmnopqrstuvwxyz")
         # None->True，随后密钥模式匹配完成时 True->False
         self.assertGreaterEqual(len(h.stream_certificates), 2)
-        _, last = cert.verify_envelope(h.stream_certificates[-1], cert.DEMO_KEY)
+        _, last = cert.verify_envelope(h.stream_certificates[-1], ring_of(h))
         self.assertFalse(last["outcome"]["passed"])
         self.assertEqual(last["outcome"]["violations"][0]["rule"], "no_secret")
         self.assertTrue(last["streaming"]["partial"])
@@ -295,7 +379,7 @@ class TestStreamingChain(unittest.TestCase):
         self._feed(h, "x sk-abcdefghijklmnopqrstuvwxyz MORE TOKENS IGNORED")
         # 已发出 stop 证书且流式判定被中止
         self.assertEqual(len(seen), 1)
-        _, stop = cert.verify_envelope(h.stream_certificates[-1], cert.DEMO_KEY)
+        _, stop = cert.verify_envelope(h.stream_certificates[-1], ring_of(h))
         self.assertFalse(stop["streaming"]["partial"])
         self.assertEqual(stop["streaming"]["stop"]["reason"], "violation")
         self.assertFalse(stop["outcome"]["passed"])
@@ -332,10 +416,10 @@ class TestRealStreaming(unittest.TestCase):
         # 流式过程中确实发出了增量证书
         self.assertGreaterEqual(len(h.stream_certificates), 1)
         for env in h.stream_certificates + h.certificates:
-            ok, _ = cert.verify_envelope(env, cert.DEMO_KEY)
+            ok, _ = cert.verify_envelope(env, ring_of(h))
             self.assertTrue(ok)
         # 最终（权威）证书标记了违规
-        _, final = cert.verify_envelope(h.certificates[-1], cert.DEMO_KEY)
+        _, final = cert.verify_envelope(h.certificates[-1], ring_of(h))
         self.assertFalse(final["outcome"]["passed"])
 
 
@@ -397,7 +481,7 @@ class TestRealLangGraph(unittest.TestCase):
         app = graph.compile()
         out = app.invoke({"output": "", "certificates": []})
         self.assertEqual(len(out["certificates"]), 1)
-        ok, _ = cert.verify_envelope(out["certificates"][0], cert.DEMO_KEY)
+        ok, _ = cert.verify_envelope(out["certificates"][0], ring_of(monitor))
         self.assertTrue(ok)
 
     # 最高层集成：借助 astream_events 同时捕获聊天模型与工具事件，两条路径都出证
@@ -411,7 +495,7 @@ class TestRealLangGraph(unittest.TestCase):
         self.assertTrue(certs, "no certificates from astream_events")
         modes = set()
         for env in certs:
-            ok, payload = cert.verify_envelope(env, cert.DEMO_KEY)
+            ok, payload = cert.verify_envelope(env, ring_of(certifier))
             self.assertTrue(ok)
             modes.add(payload["mode"])
         self.assertIn("public", modes)      # 聊天模型生成

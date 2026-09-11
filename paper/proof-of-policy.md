@@ -112,8 +112,8 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 
 ### 4.4 合规证书与锚定
 
-证书 payload：`{cert_version, policy{id,version}, policy_hash, mode, outcome, binding{vkey_hash, proof_sha256}, ai_act, ts}`，
-以 **DSSE 信封**签名（当前为 HMAC demo signer，可替换 Ed25519），`cert_digest` 写入**哈希链锚定账本**；
+证书 payload：`{cert_version, policy{id,version}, policy_hash, mode, outcome, binding{vkey_hash, proof_sha256, proof_mode}, ai_act, ts}`，
+以 **DSSE 信封**签名（Ed25519：私钥留在出证方，验证方只持公钥因而无法伪造；旧的共享密钥 HMAC demo signer 已被结构性拒绝），`cert_digest` 写入**哈希链锚定账本**；
 流式证书额外构成**流式链**（`streaming.chain={index,prev}`）并支持**早停**。
 
 锚定支持两种后端（`policydsl/anchor.py`，上层接口一致）：**文件账本**（默认，离线可验，
@@ -142,7 +142,7 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 ## 6. Implementation
 
 Python 参考层（DSL/编译/NFA/私密/证书/锚定/框架适配）+ Rust（SP1 v6 workspace：`types` 共享判定、`program` guest、`script` 驱动）。
-单测 + 集成测试 **184 全绿（5 skip 均为设计内）**；`scripts/` 提供交叉验证、demo、证书签发/验证、截图；`docs/reproduce.md` 复现指南。
+单测 + 集成测试 **220 全绿（5 skip 均为设计内）**；`scripts/` 提供交叉验证、demo、证书签发/验证、截图；`docs/reproduce.md` 复现指南。
 
 ## 7. Evaluation
 

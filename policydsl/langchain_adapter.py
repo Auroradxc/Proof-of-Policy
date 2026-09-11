@@ -112,11 +112,14 @@ class PoPCallbackHandler(BaseCallbackHandler):
                  proof_sha256: Optional[str] = None, on_cert=None,
                  stream_check: bool = True, stream_every: int = 1,
                  on_stream_cert=None, stop_on_violation: bool = False,
-                 on_early_stop=None):
+                 on_early_stop=None, proof_mode: Optional[str] = None):
         super().__init__()
         self.monitor = monitor
         self.vkey_hash = vkey_hash
         self.proof_sha256 = proof_sha256
+        # 诚实标注（P0-4）：这张 handler 签出的证书，证据属于哪一档证明模式。
+        # 默认 None → build_payload 按「没附工件」记 unproven。
+        self.proof_mode = proof_mode
         self.on_cert = on_cert
         self.certificates: List[Dict[str, Any]] = []
         self._tool_starts: Dict[str, Dict[str, Any]] = {}
@@ -155,6 +158,7 @@ class PoPCallbackHandler(BaseCallbackHandler):
         stream.update(extra_stream)
         env = self.monitor.on_generate(text, vkey_hash=self.vkey_hash,
                                        proof_sha256=self.proof_sha256,
+                                       proof_mode=self.proof_mode,
                                        extra={"streaming": stream})
         chain.append(_cert_digest(env))
         return env
@@ -205,7 +209,8 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self._sstopped.pop(run_id, None)
         if text:
             self._emit(self.monitor.on_generate(text, vkey_hash=self.vkey_hash,
-                                                proof_sha256=self.proof_sha256))
+                                                proof_sha256=self.proof_sha256,
+                                                proof_mode=self.proof_mode))
 
     # -- 工具（工具调用路径） --
     def on_tool_start(self, serialized: Any, input_str: Any, **kwargs: Any) -> None:
@@ -219,12 +224,19 @@ class PoPCallbackHandler(BaseCallbackHandler):
         run_id = str(kwargs.get("run_id") or "")
         rec = self._tool_starts.pop(run_id, None) or {"name": _tool_name(None, kwargs), "args": {}}
         self._emit(self.monitor.on_tool_call(rec["name"], rec["args"],
-                                             vkey_hash=self.vkey_hash))
+                                             vkey_hash=self.vkey_hash,
+                                             proof_mode=self.proof_mode))
 
 
-def verify_certificates(handler: "PoPCallbackHandler", key: bytes = _cert.DEMO_KEY) -> bool:
-    """截至目前签发的所有证书都能用 ``key`` 验证通过。"""
-    return all(_cert.verify_envelope(env, key)[0] for env in handler.certificates)
+def verify_certificates(handler: "PoPCallbackHandler", keyring: Any = None) -> bool:
+    """截至目前签发的所有证书都能验证通过。
+
+    ``keyring`` 可以是 ``Signer`` / 公钥 / ``{keyid: 验签器}`` / 裸 ``bytes``
+    （旧式 HMAC，仅测试）。**缺省用 handler 自己的签名器**——那是「自验签」，
+    对 demo/测试够用；第三方验证必须传入**公钥**，见 ``policydsl.keys``。
+    """
+    kr = keyring if keyring is not None else handler.monitor.signer
+    return all(_cert.verify_envelope(env, kr)[0] for env in handler.certificates)
 
 
 def _cert_digest(env: Dict[str, Any]) -> str:

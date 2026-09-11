@@ -2,8 +2,11 @@
 """阶段五：独立验证一张 Proof-of-Policy 合规证书。
 
 第三方仅持有公开工件，检查：
-  1. DSSE 信封签名（完整性/真实性）；
+  1. DSSE 信封签名（完整性/真实性）—— 用**出证方公钥**（P0-3：Ed25519，非对称，
+     验证方无法伪造；缺省读证书同目录的 key.json，或用 --keyring 显式给出）；
   2. （带 --proof 时）SP1 证明做密码学验证，其承诺的 outcome + vkey 哈希与证书一致；
+     并核对证书自称的 `binding.proof_mode` 与工件自报的模式（边车/元信息）一致
+     —— core/compressed 的 STARK 并非零知识，这一档必须如实标注（P0-4）；
   3. 策略绑定**三方比对**：证书声明的 policy_hash == 由策略包现场重编译的 sha256
      == 证明公开值承诺的 policy_hash（三者必须同时成立，见 policydsl.verifier）；
   3b. 响应绑定（P0-2）：证书 challenge 块声明的 response_binding == outcome 内嵌的
@@ -24,6 +27,7 @@
       --ledger scripts/examples/out/ledger.jsonl \
       [--proof scripts/examples/out/cert_public/proof.bin] \
       [--response scripts/examples/eu_agent_reply.txt] [--nonce <hex>] \
+      [--keyring scripts/examples/out/cert_public/key.json] \
       [--rpc http://127.0.0.1:8545 --contract 0x...]
 """
 
@@ -40,7 +44,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, challenge, commit, verifier
+from policydsl import anchor, cert, challenge, commit, keys, verifier
 from policydsl.compile import compile_policy
 from policydsl.model import Policy, Rule
 
@@ -72,14 +76,32 @@ def main() -> int:
                     help="覆盖证书里的挑战值（十六进制）；用于验证重放/换 nonce 会被拒")
     ap.add_argument("--rpc", default=None, help="EVM RPC 端点（链上锚定核对）")
     ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
+    ap.add_argument("--keyring", default=None,
+                    help="出证方公钥：key.json / *.pub.hex / *.pub.pem / hex 文本。"
+                         "缺省读证书同目录的 key.json")
     args = ap.parse_args()
 
     env = json.loads(args.cert.read_text(encoding="utf-8"))
     results = []
 
-    # 1) 签名校验
-    ok_sig, payload = cert.verify_envelope(env, cert.DEMO_KEY)
-    results.append(("signature", ok_sig, "HMAC-SHA256 envelope verified" if ok_sig else "bad signature"))
+    # 1) 签名校验（P0-3）：非对称 —— 验证方只拿公钥，无法伪造签名。
+    try:
+        keyring = keys.load_keyring(args.keyring) if args.keyring else keys.load_keyring(
+            args.cert.parent / "key.json")
+    except (OSError, ValueError, TypeError) as exc:
+        print(f"  [FAIL] keyring        无法获得出证方公钥：{exc}\n"
+              f"         请用 --keyring 指定（见 scripts/gen_key.py --pubkey）")
+        print("\nRESULT: FAIL")
+        return 1
+    if not keyring:
+        print("  [FAIL] keyring        公钥 ring 为空，无法验签")
+        print("\nRESULT: FAIL")
+        return 1
+    ok_sig, payload = cert.verify_envelope(env, keyring)
+    scheme = cert.envelope_scheme(env)
+    results.append(("signature", ok_sig,
+                    f"{scheme or 'no-signature'} envelope verified [{cert.envelope_keyid(env) or '-'}]"
+                    if ok_sig else "bad signature (or unknown/revoked scheme)"))
     if not ok_sig or payload is None:
         print_fail(results)
         return 1
@@ -128,6 +150,39 @@ def main() -> int:
         results.append(("proof", True, "certificate is unproven (host-check only) — skipped"))
     else:
         results.append(("proof", False, "certificate claims a proof but --proof not given"))
+
+    # 2b) 证明模式标注（P0-4）：证书自称的那一档，要与**工件自报的**一致。
+    #
+    #     core/compressed 的 STARK **不是零知识**证明（见 docs/sp1-zk-audit.md），
+    #     所以「这张证书到底是哪一档证据」不能只由出证方一句话决定 —— 工件的
+    #     边车与元信息都自报模式，三者必须指向同一档。没有工件的证书则只允许
+    #     标 unproven：声称 core/compressed 却拿不出证明，是**过度声明**。
+    declared_mode = (payload.get("binding") or {}).get("proof_mode")
+    has_artifact = args.proof is not None and args.proof.exists()
+    observed = verifier.artifact_proof_modes(args.proof, proof_result) if has_artifact else {}
+    if declared_mode is None:
+        # P0-4 之前签发的证书没有这个字段：如实跳过，而不是当成通过。
+        results.append(("proof_mode", True, "certificate predates the field — skipped"))
+    elif observed:
+        modes = sorted(set(observed.values()))
+        agree = len(modes) == 1 and modes[0] == declared_mode
+        srcs = " == ".join(f"{m}[{s}]" for s, m in observed.items())
+        results.append(("proof_mode", agree,
+                        f"cert={declared_mode} (hiding: {cert.proof_hiding(declared_mode)}); {srcs}"
+                        if agree else f"MISMATCH: cert={declared_mode} vs {srcs}"))
+    elif has_artifact:
+        results.append(("proof_mode", True,
+                        f"cert={declared_mode} — 工件未自报模式，无法核对 (skipped)"))
+    elif (payload.get("binding") or {}).get("proof_sha256") is None:
+        # 没有证明工件：唯一诚实的标注就是 unproven。
+        ok_unproven = declared_mode == cert.PROOF_MODE_UNPROVEN
+        results.append(("proof_mode", ok_unproven,
+                        f"{declared_mode} (hiding: {cert.proof_hiding(declared_mode)})"
+                        + ("" if ok_unproven else
+                           " — 未附证明的证书只能标注 unproven，不得声称某档证据")))
+    else:
+        results.append(("proof_mode", True,
+                        f"cert={declared_mode} — no --proof given, 无法核对 (skipped)"))
 
     # 3) 策略绑定（三方比对）：
     #      a. 证书载荷声明的 policy_hash

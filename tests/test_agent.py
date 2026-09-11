@@ -36,13 +36,13 @@ class TestGeneratePath(unittest.TestCase):
     def test_public_certificate_pass_and_fail(self):
         m = agent.AgentMonitor(self.policy, mode="public")
         ok_env = m.on_generate("A plain, safe reply.", ts="T", vkey_hash="vk1")
-        ok, payload = cert.verify_envelope(ok_env, m.key)
+        ok, payload = cert.verify_envelope(ok_env, m.signer.public_key)
         self.assertTrue(ok)
         self.assertTrue(payload["outcome"]["passed"])
         self.assertEqual(payload["policy_hash"], compile_policy(self.policy)["sha256"])
 
         bad_env = m.on_generate("Leak sk-abcdefghijklmnopqrstuvwxyz now", ts="T")
-        _, bad = cert.verify_envelope(bad_env, m.key)
+        _, bad = cert.verify_envelope(bad_env, m.signer.public_key)
         self.assertFalse(bad["outcome"]["passed"])
         self.assertEqual(bad["outcome"]["violations"][0]["rule"], "no_secret")
 
@@ -50,7 +50,7 @@ class TestGeneratePath(unittest.TestCase):
     def test_private_certificate_hides_content(self):
         m = agent.AgentMonitor(self.policy, mode="private")
         env = m.on_generate("Leak sk-abcdefghijklmnopqrstuvwxyz now", ts="T")
-        _, payload = cert.verify_envelope(env, m.key)
+        _, payload = cert.verify_envelope(env, m.signer.public_key)
         self.assertEqual(payload["mode"], "private")
         out = payload["outcome"]
         self.assertIn("response_commitment", out)
@@ -67,7 +67,7 @@ class TestToolPath(unittest.TestCase):
     def test_forbidden_field_and_clean(self):
         m = agent.AgentMonitor(self.policy)
         env = m.on_tool_call("search_kb", {"q": "x", "token": "secret"}, ts="T")
-        _, payload = cert.verify_envelope(env, m.key)
+        _, payload = cert.verify_envelope(env, m.signer.public_key)
         self.assertEqual(payload["mode"], "tool-call")
         self.assertFalse(payload["outcome"]["passed"])
         # 工具规则现已是电路内（in-circuit）规则；是否附带*证明*另由
@@ -84,8 +84,9 @@ class TestMockSession(unittest.TestCase):
 
     # 走 mock_agent() 的事件流，确认两条路径的证书都使用默认密钥且验证通过
     def test_session_produces_verifiable_certificates(self):
-        content = agent.AgentMonitor(load_pack("agent_content_v1.json"))
-        tools = agent.AgentMonitor(load_pack("agent_tool_v1.json"))
+        signer = cert.Ed25519Signer.generate()   # 两条路径共用一把出证方密钥
+        content = agent.AgentMonitor(load_pack("agent_content_v1.json"), signer=signer)
+        tools = agent.AgentMonitor(load_pack("agent_tool_v1.json"), signer=signer)
         certs = []
         for kind, payload in agent.mock_agent():
             if kind == "generate":
@@ -94,10 +95,13 @@ class TestMockSession(unittest.TestCase):
                 name, args = payload
                 certs.append(tools.on_tool_call(name, args, ts="T"))
         self.assertEqual(len(certs), 2)
-        # 每张证书都应对默认密钥验签通过
+        # 每张证书都应对**出证方公钥**验签通过（P0-3：验证方只有公钥）
+        ring = cert.keyring(signer.public_key)
         for env in certs:
-            ok, _ = cert.verify_envelope(env, agent.DEFAULT_KEY)
+            ok, _ = cert.verify_envelope(env, ring)
             self.assertTrue(ok)
+        # 反面：换成别的公钥就必须失败 —— 否则上面的断言是恒真的
+        self.assertFalse(cert.verify_envelope(certs[0], cert.Ed25519Signer.generate().public_key)[0])
 
 
 class TestLangGraphAdapter(unittest.TestCase):

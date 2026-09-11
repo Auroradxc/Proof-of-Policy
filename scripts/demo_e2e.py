@@ -9,16 +9,21 @@
   2. 工具路径，针对**真实 MCP 服务器**（stdio）：参数被认证（含飞行前拦截），
      工具的**结果**也被认证（结果侧）；
   3. zk 层：为一条响应生成真实 SP1 证明（除非 --no-prove），通过 vkey 哈希 +
+     `binding.proof_mode` 如实标注证据档位（core/compressed 的 STARK 并非零知识）+
      证明哈希绑定进证书；并走一次**真实的挑战流程**（P0-2）：客户端先出题
      （一次性 nonce），证明方把 (nonce, T) 一起承诺进公开值，最后用**送达的
      响应 T′** 与 nonce 离线核对 —— 演示里还会故意送错一条 T′ 来看它被拒；
   4. 每张证书都锚定进一个仅追加、防篡改的账本；给了 `--rpc/--contract` 时
      **同时登记到 Anchor 合约**（链上存在性 + 时间戳，链上成功后回写本地 meta）。
 
+每张证书都用 **Ed25519** 签名（P0-3）：demo 缺省生成一把**临时**密钥（不落盘），
+把**公钥**写进 `session.json` 的 `signers` 字段。于是第三方只凭公开的 session.json
+就能独立验签 —— 而 demo 自己手里那把私钥，验证方拿不到、也就伪造不了。
+
 之后用 `python3 scripts/verify_session.py ...` 独立验证这一切。
 
 用法：
-  SP1_PROVER=cpu python3 scripts/demo_e2e.py [--out-dir DIR] [--no-prove] [--nonce auto|<hex>|none]
+  SP1_PROVER=cpu python3 scripts/demo_e2e.py [--out-dir DIR] [--no-prove] [--nonce auto|<hex>|none] [--key <私钥.pem>]
   # 链上锚定（另开终端跑 `anvil`，先部署合约：python3 scripts/deploy_anchor.py）
   SP1_PROVER=cpu python3 scripts/demo_e2e.py --no-prove \
       --rpc http://127.0.0.1:8545 --contract 0x5FbDB2315678afecb367f032d93F642f64180aa3
@@ -36,7 +41,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
-from policydsl import anchor, cert, challenge  # noqa: E402
+from policydsl import anchor, cert, challenge, keys  # noqa: E402
 from policydsl.agent import AgentMonitor  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.langchain_adapter import PoPCallbackHandler  # noqa: E402
@@ -91,11 +96,13 @@ async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str) -> lis
 
 
 def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
-            nonce: bytes = b"", proof_mode: str = "core"):
+            nonce: bytes = b"", proof_mode: str = "core",
+            signer: "cert.Signer" = None):
     """为一条响应生成真实 SP1 证明（或宿主校验），并签发绑定它的证书。
 
     ``nonce`` 是客户端事先出的挑战值（P0-2）：它随响应一起进电路，产出
     ``response_binding``，证书的 ``challenge`` 块把它公开出来。
+    ``signer`` 是出证方的 Ed25519 签名器（缺省临时生成一把）。
     """
     policy = ic.load_policy(REPO / CONTENT_PACK)
     spec = compile_policy(policy)
@@ -112,6 +119,8 @@ def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
         # 仅宿主校验，不生成证明
         ic.run_pop(["--check", "--vectors", str(vectors), "--out", str(results)])
         vkey_hash, proof_sha, proof_rel, pv_sha = "unproven", None, None, None
+        # 诚实标注（P0-4）：没有工件 ⇒ 只能记 unproven
+        proof_mode = cert.PROOF_MODE_UNPROVEN
     else:
         # 真实证明 + 元信息（vkey_hash）+ 证明哈希绑定
         cmd = ["--vectors", str(vectors), "--out", str(results), "--proof-out", str(proof)]
@@ -120,6 +129,8 @@ def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
         ic.run_pop(cmd)
         meta = json.loads(Path(f"{proof}.meta.json").read_text())
         vkey_hash = meta["vkey_hash"]
+        # 模式取 pop-script 写下的边车元信息 —— 证书如实转述**实际产出的**那一档
+        proof_mode = meta.get("proof_mode") or proof_mode
         proof_sha = ic.sha256_file(proof)
         proof_rel = str(proof.relative_to(out_dir))
         pv_file = Path(f"{proof}.pv")
@@ -129,9 +140,10 @@ def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
     payload = cert.build_payload(policy.id, policy.version, spec, "public", outcome,
                                  vkey_hash, proof_sha, public_values_sha256=pv_sha,
                                  challenge=challenge.challenge_block(
-                                     nonce, outcome["response_binding"]))
-    env = cert.sign_payload(payload, cert.DEMO_KEY)
-    return env, policy.id, proof_rel, outcome["passed"]
+                                     nonce, outcome["response_binding"]),
+                                 proof_mode=proof_mode)
+    env = cert.sign_payload(payload, signer or keys.ephemeral_signer())
+    return env, policy.id, proof_rel, outcome["passed"], proof_mode
 
 
 def challenge_experiment(env: dict, delivered: str) -> bool:
@@ -171,6 +183,9 @@ def main() -> int:
     ap.add_argument("--rpc", default=None, help="EVM RPC：把每张证书摘要同时登记上链")
     ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
     ap.add_argument("--private-key", default=None, help="上链提交私钥（默认 Anvil #0）")
+    ap.add_argument("--key", type=Path, default=None,
+                    help="Ed25519 私钥文件。缺省生成**临时**密钥对（不落盘），"
+                         "公钥以 keyid + hex 打印并写进 session.json")
     args = ap.parse_args()
 
     out_dir: Path = args.out_dir
@@ -179,8 +194,13 @@ def main() -> int:
     vkey = "demo"
     session_entries = []
 
+    # ---- 0) 出证方签名密钥（P0-3）：Ed25519。验证方只需公钥 ----
+    # 缺省用**进程内临时**密钥：demo 不往仓库里留私钥文件；公钥随 session.json
+    # 交给验证方，所以事后仍能独立验签（见 verify_session.py）。
+    signer = keys.signer_from_env(args.key) if args.key else keys.ephemeral_signer()
+
     # ---- 1) LLM 流式路径（哈希链 + 早停） ----
-    content = AgentMonitor(ic.load_policy(REPO / CONTENT_PACK))
+    content = AgentMonitor(ic.load_policy(REPO / CONTENT_PACK), signer=signer)
     handler = PoPCallbackHandler(content, vkey_hash=vkey, stop_on_violation=True)
     llm_stream_path(content, handler)
     for env in handler.stream_certificates:
@@ -189,7 +209,7 @@ def main() -> int:
         session_entries.append({"kind": "llm", "policy_pack": CONTENT_PACK, "envelope": env})
 
     # ---- 2) MCP 工具路径（参数 + 结果） ----
-    tools = AgentMonitor(ic.load_policy(REPO / TOOL_PACK))
+    tools = AgentMonitor(ic.load_policy(REPO / TOOL_PACK), signer=signer)
     guard = asyncio.run(mcp_path(tools, content, vkey))
     for env in guard.certificates:
         session_entries.append({"kind": "tool-args", "policy_pack": TOOL_PACK, "envelope": env})
@@ -200,8 +220,9 @@ def main() -> int:
     # 挑战由**客户端**（这里是扮演该角色的 demo）先出，证明方只能照做 ——
     # 这正是 P0-2 想表达的信任方向：出题权在验证方手里。
     nonce = ic.resolve_nonce(args.nonce)
-    zk_env, zk_policy, proof_rel, zk_passed = zk_path(out_dir, CLEAN_REPLY, vkey,
-                                                      args.no_prove, nonce, args.proof_mode)
+    zk_env, zk_policy, proof_rel, zk_passed, zk_mode = zk_path(out_dir, CLEAN_REPLY, vkey,
+                                                               args.no_prove, nonce,
+                                                               args.proof_mode, signer)
     entry = {"kind": "zk", "policy_pack": CONTENT_PACK, "envelope": zk_env}
     if proof_rel:
         entry["proof"] = proof_rel
@@ -228,12 +249,17 @@ def main() -> int:
         "session_id": out_dir.name,
         "ledger": ledger.name,
         "packs": sorted({e["policy_pack"] for e in session_entries}),
+        # 出证方公钥（P0-3）：第三方**只需要这一条**就能独立验签全部证书。
+        # 私钥从头到尾没有离开出证方。
+        "signers": [keys.public_record(signer.public_key)],
         "certificates": session_entries,
         "summary": {
             "certificates": len(session_entries),
             "stream_certs": sum(1 for e in session_entries if e["kind"] == "stream"),
             "blocked_tool_calls": getattr(guard, "_blocked", []),
             "zk_passed": zk_passed,
+            # 诚实标注（P0-4）：这张 zk 证书到底附了哪一档证据
+            "zk_proof_mode": zk_mode,
             "challenge_bound": ok_challenge,
             "ledger_ok": ok_chain,
             "on_chain": on_chain["n"],
@@ -253,10 +279,13 @@ def main() -> int:
     (out_dir / "session.json").write_text(json.dumps(session, indent=2))
 
     print(f"session     : {out_dir / 'session.json'}")
+    print(f"signer      : {signer.keyid}")
+    print(f"              public_hex={signer.public_hex}")
     print(f"certificates: {session['summary']['certificates']} "
           f"(stream={session['summary']['stream_certs']})")
     print(f"blocked tool calls: {session['summary']['blocked_tool_calls']}")
     print(f"zk proof    : {proof_rel or '(skipped: --no-prove)'}  passed={zk_passed}")
+    print(f"proof_mode  : {zk_mode} (hiding: {cert.proof_hiding(zk_mode)})")
     if zk_ch:
         print(f"challenge   : nonce={zk_ch['nonce'][:16]}… "
               f"response_bound={ok_challenge}")
