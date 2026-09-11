@@ -541,6 +541,7 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 
 | # | 子任务 | 交付 | 验收 |
 |---|---|---|---|
+| **9.0** | **EVM 验证器接口**（原 T2 阻塞）—— ✅ **已完成（2026-09-11）** | `policydsl/ezkl_evm.py` + `tests/test_ezkl_evm.py` | 裸调用抛错已定位并绕开；一次性/可复用验证器与 VK artifact 均产出，10 例全绿 |
 | **9.1** | **依赖栈打通**：恢复 pip（§8.0）→ `torch`/`onnx`/`ezkl`（halo2 后端）；锁定版本写进 `requirements-ezkl.txt`；**离线 wheel 缓存入库** | 可复现的 `scripts/install_ezkl.sh` | `import ezkl` + 一次自带示例的 prove/verify 通过 |
 | **9.2** | **模型与特征**：`semantic/train.py`（数据 + 训练 + 导出 ONNX）；权重与 ONNX 入库，`semantic/MODEL.sha256` | `semantic/model.onnx` + 训练脚本 | ONNX 导出**逐位确定**（同权重两次导出 sha256 相同） |
 | **9.3** | **ezkl 编译与出证**：`scripts/ezkl_prove.py` —— `gen_settings → compile → setup → prove → verify`；产出 `vk` + `proof` | `semantic/artifacts/{vk.json,proof.json}` | `ezkl verify` 通过；记录**出证时间/大小/内存**（进 `bench/`） |
@@ -548,6 +549,27 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 | **9.5** | **组合与绑定**：ezkl 公开输入塞入 `response_binding`；PoP 证书引用 `{ezkl_vk, ezkl_proof_sha256, onnx_sha256}`；验证方核对三者一致 | 扩展 `policydsl/cert.py` + `verify_cert.py` | 见 9.7 反例 |
 | **9.6** | **信任边界论证**：`docs/design-semantic-rules.md` —— 为什么权重必须承诺、为什么特征必须图内、与 zkML 工作的关系 | 设计文档 | 与 §P1-8 的形式化模型对接（新增引理 L6） |
 | **9.7** | **验收 + 反例** | `tests/test_semantic.py` | 见下 |
+
+> **9.0 记要（T2 的结论，2026-09-11）** —— 原文把这件事记成「先试 ezkl 12.x；或绕开该 API
+> 手写 Solidity verifier」，两条**都不需要**。真因是**调用方式**，不是版本也不是依赖：
+>
+> ezkl 23.0.5 的 `create_evm_verifier()` / `create_evm_vka()` 是 pyo3 的 `#[pyfunction]`，
+> 签名里全是 `str`/`bool`、`__doc__` 也只见 "you will need solc installed"，**看起来完全同步**；
+> 但内部走 `pyo3-async-runtimes`，调用时**立刻**向 Python 事件循环注册回调并返回
+> `asyncio.Future`。没有运行中的事件循环时，它内部的 `pyo3_async_runtimes::get_running_loop()`
+> 转发到 CPython 的 `asyncio.get_running_loop()`，于是抛
+> `RuntimeError: no running event loop`。
+>
+> 该报错把人引向"缺组件"是**必然**的 —— 那个字符串来自 CPython 的 asyncio，
+> **不在** `ezkl.abi3.so` 里（`strings | grep` 零命中）；二进制里能查到的真调用点是
+> `pyo3_async_runtimes::get_running_loop`。解法只有一种：**在事件循环内调用并 await 那个
+> Future**，`policydsl/ezkl_evm.py::run` 把它包成同步调用。
+>
+> 顺带纠正两处：① **这条路径不需要 solc** —— docstring 那么写，实测（含把 `PATH` 剥空）
+> 都不调用它，只是把 Halo2 模板常量填好写文件，~0.1 s；② **`reusable=True` 对电路规模敏感**
+> —— 实测 logrows=12 时 ezkl 内部 panic（`ezkl-verifier/src/codegen/pcs.rs: The bit counter for
+> the pairing input computations exceeds 256 bits`），17 通过；`create_evm_vka` 产出的
+> `vka.json` **不是 JSON**（bincode 序列化的 VkArtifact），部署时别 `json.load`。
 
 #### 9.3 验收测试（每条都必须有反例 —— 正向检查容易写成恒真）
 
