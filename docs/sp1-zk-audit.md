@@ -147,8 +147,10 @@ response_commitment = SHA256(T)
       `modules/05-zk-circuits.md`、`plan-p0p1p2.md`（P0-4 行 + 风险登记册 + §9 进度）、`policydsl/commit.py` 文档串。
 - [ ] **证书诚实标注**：`binding` 增加 `proof_mode` 字段（`core`/`compressed`/`groth16`/`plonk`），
       让第三方一眼看出该证明是否隐藏见证。`ai_act.art13` 的措辞随之收紧。
-- [ ] **叙事收紧**：论文摘要/README 里「零知识合规证明」需限定为
+- [x] **叙事收紧**：论文摘要/README 里「零知识合规证明」已限定为
       「**策略零知识**」（策略合规性可证而不暴露违规内容）+ 明确说明响应内容的隐藏上界。
+      *已同步*：`README.md` 首段、`方向二_README.md`、`paper/proof-of-policy.md` 标题/摘要/§2.1/§5/§8.1、
+      `docs/plan-p0p1p2.md` §3 标题。
       *注：这其实正是本系统真正成立的强项——`policy_hash` 三方绑定 + 违规只暴露证据承诺。*
 - [ ] **可选强化**（非阻塞）：若要真正的见证隐藏，需在 ≥16 GB 机器上用 `groth16` 模式出证并回归；
       同时**分离两个承诺**：`response_binding`（无盐、可重算、用于绑定）与

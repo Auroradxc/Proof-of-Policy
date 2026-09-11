@@ -1,7 +1,12 @@
-# Proof-of-Policy: Zero-Knowledge Compliance Certificates for LLM Agent Responses without Trusted Hardware
+# Proof-of-Policy: Policy-Zero-Knowledge Compliance Certificates for LLM Agent Responses without Trusted Hardware
 
 > 论文初稿（Phase 6 / W8）。目标投稿：CCS / USENIX Security / S&P / NDSS（系统安全），退而 PoPETs / 领域会议 / 中文学报。
 > 仓库：`zk-policy`（开源，含复现指南 `docs/reproduce.md`）。
+
+> **标题口径说明（2026-09-11 核查后收紧）**：「Zero-Knowledge」在本系统中限定为**策略零知识
+> （policy-zero-knowledge）** —— 合规性可被证明而**违规内容不泄露**（违规只以证据承诺披露，证据开示为选择性）。
+> **这不等于响应内容不可恢复**：私有模式保证「公开值不含明文」，但公开的响应承诺可被离线枚举猜测-验证；
+> 且底层 SP1 `core`/`compressed` 证明本身并非零知识。完整核查见 §8.1 与仓库 `docs/sp1-zk-audit.md`。
 
 ## Abstract
 
@@ -16,7 +21,7 @@ PoP 以**通用策略 DSL**（黑名单/长度/格式/正则-PII/工具参数/�
 对抗输入上避免二次退化（99×）。PoP 与 LangChain/LangGraph/MCP 集成，可对生成路径与工具调用（参数与响应侧）逐次出证。
 与同期 **zkAgent**（证「provider 执行了声明的模型与工具轨迹」，ePrint 2026/199）**正交且可组合**：zkAgent 证明推理完整性、
 PoP 证明策略合规，二者组合得到全栈可验证 agent；对标显示 PoP 在**低一个数量级的硬件**（24 核/12 GB vs 32 核/512 GB）上
-达到同量级证明时间，证明大小 2.7 MiB 与 zkAgent(LogUp) 的 3.1 MiB 相当、远小于 zkAgent(Shout) 的 ~96 MiB，并额外提供内容隐私。
+达到同量级证明时间，证明大小 2.7 MiB 与 zkAgent(LogUp) 的 3.1 MiB 相当、远小于 zkAgent(Shout) 的 ~96 MiB，并额外提供承诺式隐私（口径见 §8.1）。
 
 ## 1. Introduction
 
@@ -35,7 +40,7 @@ LLM 智能体正在执行越来越敏感的动作（客服答复、工具调用�
 本文贡献：
 1. **PoP 系统**：首个通用策略 DSL → ZK 判定 → 双隐私模式 → 合规证书的开源实现（§5）；
 2. **可序列化 NFA 契约**：正则子集编译为跨层（Python 参考 ↔ zkVM）一致的 NFA，含 fail-fast 语法子集与 Pike VM 判定（§5.2）；
-3. **形式化安全模型**：健全性/内容隐私/不可伪造/绑定/记录完整性，并给出对应可复现实验（§6）；
+3. **形式化安全模型**：健全性/承诺式隐私（§8.1）/不可伪造/绑定/记录完整性，并给出对应可复现实验（§6）；
 4. **评测**：zkVM 周期数矩阵（长度×规则数）、**NFA 消融**（pike vs naive，含对抗二次退化证据）、真实证明时间/大小，
    以及信任-成本四象限对比（§8）。
 
@@ -63,7 +68,7 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 | 组合 | 推理层证明 | **策略层证明**；`zkAgent ⊕ PoP` = 全栈可验证 agent |
 
 因此我们**不主张**“更快”，而是主张：*对“合规”这一义务，PoP 在不涉模型的前提下以同量级时间、更小内存、可比的证明大小完成，
-并补上 zkAgent 未覆盖的策略合规与内容隐私；二者组合覆盖“推理执行 + 策略合规”的完整义务*（对应我们计划中的 M1）。
+并补上 zkAgent 未覆盖的策略合规与承诺式隐私；二者组合覆盖“推理执行 + 策略合规”的完整义务*（对应我们计划中的 M1）。
 详细对标数据见仓库 `bench/comparison_zkagent.md`。
 
 ## 3. Threat Model & Goals
@@ -88,7 +93,10 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 
 ### 4.2 策略 DSL 与 NFA 契约
 
-规则子集：`keyword_block` / `length_bound` / `pattern_block`（入电路）；`format_check` / `tool_arg_guard` / `budget_bound`（链下参考）。
+规则子集（**6 类全部入电路**）：`keyword_block` / `length_bound` / `pattern_block` / `format_check`（json/int/float 规范子集）/
+`tool_arg_guard`（含 `tools` 限定）/ `budget_bound`（calls；tokens 用请求携带的 `token_count`）。
+> ⚠️ 语义边界：`tool_arg_guard` / `budget_bound` 的**规则**已入电路（可证），但 `tool_calls` / `token_count`
+> 仍是证明者自填的**私有输入**，不是被证明的事实 —— 「规则可证」≠「轨迹为真」（P1-5 工具回执链待补）。
 正则编译为 **Thompson NFA**（可序列化：states/eps/edges/ranges），受支持子集 + ASCII 语义，**不支持即 fail-fast**
 （锚点/反向引用/环视）。判定用 **Pike VM** 单趟状态并集（unanchored 存在性，对齐 `re.search`）。
 
@@ -123,16 +131,18 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 ## 5. Security Model（摘要；详见仓库 `docs/security-model.md`）
 
 - **Soundness**：**全部 6 类规则入电路**（keyword/length/pattern/format/tool-arg/budget）后，`pub` 等于 zkVM 确定性执行输出 `J(π,T)`；伪造需攻破 zkVM 或哈希。
-- **Privacy**：验证者视图仅含承诺；Leak 实验验证无明文泄露。
+- **Privacy（承诺式）**：验证者视图仅含承诺；Leak 实验验证无明文泄露。**上界见 §8.1**——
+  公开可重算的承诺对低熵 `T` 构成猜测-验证 oracle，且底层 SP1 `core` 证明并非零知识。
 - **Redaction soundness**：`redaction_ok ∧ mask_covered` ⇒ 只遮蔽真实命中内容。
 - **Unforgeability/binding**：证据开示需 `SHA256(f)=e`；策略/电路/证明哈希绑定并在验证时**重算**。
 - **Integrity**：账本与流式链的篡改/重排可检出。
-- **边界**：链下规则（format/tool/budget、MCP 工具路径）证书标 `zk:false`，不主张 zk 健全性。
+- **边界**：`tool_calls` / `token_count` 为证明者声明的私有输入，故 `tool_arg_guard`/`budget_bound` 的**轨迹真实性**
+  不在健全性定义内（规则本身已入电路）；工具路径证书的 `zk:true` 意指「规则可证」，是否附证明看 `binding.vkey_hash`（P1-5）。
 
 ## 6. Implementation
 
 Python 参考层（DSL/编译/NFA/私密/证书/锚定/框架适配）+ Rust（SP1 v6 workspace：`types` 共享判定、`program` guest、`script` 驱动）。
-单测 + 集成测试 **102 全绿（1 skip 为设计内）**；`scripts/` 提供交叉验证、demo、证书签发/验证、截图；`docs/reproduce.md` 复现指南。
+单测 + 集成测试 **184 全绿（5 skip 均为设计内）**；`scripts/` 提供交叉验证、demo、证书签发/验证、截图；`docs/reproduce.md` 复现指南。
 
 ## 7. Evaluation
 
@@ -181,16 +191,16 @@ zkAgent 证明「provider 执行了声明的模型与工具轨迹」（推理完
 | 验证时间 | 0.42 s | **0.038 s** | **~0.090 s** |
 | 证明大小 | ~96 MiB | **3.1 MiB** | **~2.7 MiB** |
 | 硬件 | 32 核 / 512 GB | 同左 | **24 核 / 12 GB** |
-| 内容隐私 | ❌ | ❌ | ✅ 双模式 |
+| 内容隐私 | ❌ | ❌ | ⚠️ 承诺式双模式（口径见 §8.1） |
 | 依赖模型 | ✅ | ✅ | ❌ |
 
 **可比性声明**：二者证明义务不同，**不可宣称“PoP 更快”**。正确结论是：*对“合规”义务，PoP 在不涉模型的前提下，
-以同量级证明时间、**低一个数量级的硬件**、与 LogUp 相当的证明/验证规模完成，并补上 zkAgent 未覆盖的**内容隐私**；
+以同量级证明时间、**低一个数量级的硬件**、与 LogUp 相当的证明/验证规模完成，并补上 zkAgent 未覆盖的**承诺式隐私**（§8.1）；
 `zkAgent ⊕ PoP` 则覆盖“推理执行 + 策略合规”的完整义务（成本 ≈ 推理证明 + 合规证明，由前者主导）*。详见 `bench/comparison_zkagent.md`。
 
 ### 7.5 信任-成本四象限（实现 vs TEE/形式验证/hash-chain）
 
-见 `docs/quadrant.md`：PoP 落在「密码学健全 + 证性质」象限，代价由「硬件延迟」变为「证明时间」，换取**无硬件信任 + 内容隐私**。
+见 `docs/quadrant.md`：PoP 落在「密码学健全 + 证性质」象限，代价由「硬件延迟」变为「证明时间」，换取**无硬件信任 + 承诺式隐私**（口径见 §8.1）。
 
 ### 7.6 端到端与审计
 
