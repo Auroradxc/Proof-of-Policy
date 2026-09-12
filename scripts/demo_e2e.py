@@ -124,17 +124,28 @@ async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str,
                      gateway=gateway)
     params = StdioServerParameters(command=sys.executable, args=[str(SERVER)])
     blocked = []
+    discovered: list = []
+    missing: list = []
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            await guard.call_tool(session, "search_kb", {"query": "refund"})   # 干净
-            await guard.call_tool(session, "dump_config", {})                  # 秘密结果
-            try:
-                # 带 secret token 的调用 → 飞行前拦截
-                await guard.call_tool(session, "search_kb", {"query": "x", "token": "s"})
-            except MCPBlocked as exc:
-                blocked.append(exc.phase)
+            # 工具清单**问服务器要**，不写死：写死的名字在服务器改名之后不会报错，
+            # 只会静默地跑成另一次调用。发现之后，未声明的工具会在执行前被拦。
+            discovered = await guard.discover_tools(session)
+            for name in ("search_kb", "dump_config"):
+                if name not in discovered:
+                    missing.append(name)
+            if not missing:
+                await guard.call_tool(session, "search_kb", {"query": "refund"})  # 干净
+                await guard.call_tool(session, "dump_config", {})                 # 秘密结果
+                try:
+                    # 带 secret token 的调用 → 飞行前拦截
+                    await guard.call_tool(session, "search_kb", {"query": "x", "token": "s"})
+                except MCPBlocked as exc:
+                    blocked.append(exc.phase)
     guard._blocked = blocked  # type: ignore[attr-defined]
+    guard._discovered = discovered  # type: ignore[attr-defined]
+    guard._missing = missing  # type: ignore[attr-defined]
     return guard
 
 
@@ -466,6 +477,10 @@ def main() -> int:
             # 它必须是 False，否则「早停」就只是句口号。
             "early_stop": early_stop,
             "blocked_tool_calls": getattr(guard, "_blocked", []),
+            # 工具清单是**问服务器要的**（`tools/list`），不是写死的；`missing`
+            # 非空说明这次演示少跑了一段（服务器改名了），要看得见。
+            "mcp_tools": getattr(guard, "_discovered", []),
+            "mcp_tools_missing": getattr(guard, "_missing", []),
             # 工具轨迹（P1-5）：网关签发的回执链。链尾摘要 + 网关公钥都是**公开**
             # 坐标 —— 验证方拿网关侧收到的回执重算最后一条的 SHA256，即可独立核对
             # 「这份证明绑的是哪条链」，无需相信出证方的转述。
@@ -512,6 +527,11 @@ def main() -> int:
           f"leak_delivered={es['leak_delivered']}  "
           f"（违规处真掐断；干净那条跑完了={es['clean_completed']}）")
     print(f"blocked tool calls: {session['summary']['blocked_tool_calls']}")
+    mt = session["summary"]["mcp_tools"]
+    print(f"mcp tools   : {len(mt)} discovered from server "
+          f"({' '.join(mt) or '(none)'})"
+          + (f"  ⚠️ 服务器未声明 {' '.join(session['summary']['mcp_tools_missing'])}"
+             " —— 那段演示已跳过" if session["summary"]["mcp_tools_missing"] else ""))
     tt = session["summary"]["tool_trace"]
     print(f"tool trace  : {tt['receipts']} receipt(s), "
           f"trace_root={tt['trace_root'][:16]}… (gateway {tt['gateway_keyid']})")

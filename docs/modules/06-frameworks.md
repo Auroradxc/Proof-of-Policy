@@ -243,6 +243,7 @@ guard = MCPGuard(tools_monitor, vkey_hash=vkey,
                  result_monitor=content_monitor,   # 工具返回文本的独立策略
                  block_on_result_violation=False,
                  gateway=gateway)
+await guard.discover_tools(session)               # 工具清单**问服务器要**，不写死
 result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refund"})
 
 # 生成路径**必须**接同一把 —— 否则两条链各指一条 trace_root，会话被劈成两条
@@ -252,6 +253,7 @@ handler = PoPCallbackHandler(content_monitor, gateway=gateway)
 `call_tool` 的顺序是刻意的（**P1-5** 起工具**执行后**多一步「网关签发回执」）：
 
 ```
+⓪ tool_names 检查            → 服务器没声明这个工具？存证为空、直接抛 MCPUnknownTool
 ① _screen(name, args)        → 飞行前筛查（**预览回执**，未签名、未入链）
 ② block_on_violation?        → 违规则存证 + 抛 MCPBlocked(phase="args")，工具根本没被调用
 ③ await session.call_tool()  → 真正执行
@@ -260,6 +262,9 @@ handler = PoPCallbackHandler(content_monitor, gateway=gateway)
 ⑥ judge_result(name, result) → 结果证书（内容策略，tool-result 路径）
 ⑦ block_on_result_violation? → 违规则抛 MCPBlocked(phase="result")
 ```
+
+第 ⓪ 步在策略筛查**之前**：一个不存在的工具，判它参数合不合规没有意义 —— 该报的是
+「这次调用根本不存在」（`phase="unknown-tool"`），不是「这次调用不合规」。
 
 要点：
 
@@ -279,7 +284,18 @@ handler = PoPCallbackHandler(content_monitor, gateway=gateway)
 - **结果侧证书是独立的**：`result_monitor` 是**另一个** `AgentMonitor`（内容策略包），
   `on_generate(..., extra={"tool": {"name": ..., "phase": "result"}})`，
   保证「工具的返回文本」也被内容策略判定。
-- **对任何鸭子类型的会话都适用**：只要暴露 `async call_tool(name, args)`，
+- **工具清单问服务器要，不写死**（dev-plan §5.1.2 第 5 条）：`await guard.discover_tools(session)`
+  走 MCP 的 `tools/list`，把名字排序后存进 `guard.tool_names`。写死的工具名在服务器改名之后
+  **不会报错**，只会静默地跑成另一次调用 —— 那正是这个项目最反对的失败模式。
+  注意清单**不是判定输入**（判定用的是策略包，与工具叫什么无关），它是「这次调用打不打得中」的前提。
+  没问过服务器（`tool_names is None`）就**不做**存在性检查：把「还没问」当成「一个都没有」
+  会把所有调用都拦掉，那是把缺省值当成了事实。
+- **未声明的工具拦在执行之前，且不出证**：`MCPUnknownTool`（`phase="unknown-tool"`，继承
+  `MCPBlocked` 以免改变调用方的 `except` 语义）在 `_screen` 之前就抛出，工具没被调用、
+  `certificates` 里也不留东西 —— 拦的是一次**不存在**的调用，为它签一张「调用不合规」的证书
+  是答非所问。
+- **对任何鸭子类型的会话都适用**：只要暴露 `async call_tool(name, args)`
+  （发现清单则要 `async list_tools()`，返回带 `.name` 的对象列表 —— 同真实 SDK 形状），
   真实 `mcp.ClientSession` 或测试 fake 都行。`call_tool_sync` 提供同步封装（内部 `asyncio.run`）。
 
 `extract_result_text(result)` 从 `CallToolResult` / content 列表 / 普通值里提取文本，
@@ -291,12 +307,15 @@ handler = PoPCallbackHandler(content_monitor, gateway=gateway)
 |---|---|
 | `MCPGuard(monitor, vkey_hash, block_on_violation=False, on_cert=None, result_monitor=None, block_on_result_violation=False, on_result_cert=None, proof_mode=None, gateway=None)` | 守护（`gateway` 缺省用进程内临时 Ed25519 钥的工具网关） |
 | `guard.receipts` / `guard.gateway.seal()` | 当前回执链 / 会话末端承诺（P1-5b）。交给生成路径出证：`trace_root` 进 `outcome`、`seal` 进载荷顶层 `trace_seal` |
+| `guard.discover_tools(session)` | 取服务器声明的工具名（`tools/list`），排序后存入 `guard.tool_names`；此后未声明的工具在执行前被拦 |
+| `guard.tool_names` | 已发现的工具名；`None` = 还没问过 ⇒ 不做存在性检查 |
 | `guard.check(name, args)` | 只判定参数并出证（不调用工具） |
 | `guard.judge_result(name, result)` | 只判定返回文本（未配 `result_monitor` 时返回 `None`） |
 | `guard.call_tool(session, name, args)` / `call_tool_sync(...)` | 完整流程，返回 `(result, args_cert)` |
 | `guard.certificates` / `guard.result_certificates` | 参数证书 / 结果证书 |
 | `extract_result_text(result)` | 结果文本提取 |
 | `MCPBlocked(tool, violations, phase)` | 拦截异常（`phase ∈ {"args", "result"}`） |
+| `MCPUnknownTool(tool, known)` | 调用了服务器**没声明**的工具（`phase="unknown-tool"`，`known` 为已知名单） |
 
 ---
 
@@ -358,7 +377,7 @@ handler = PoPCallbackHandler(content_monitor, gateway=gateway)
 |---|---|---|
 | `tests/test_agent.py` | `AgentMonitor` 两条路径 + `mock_agent` | 无依赖 |
 | `tests/test_frameworks.py` | `PoPCallbackHandler`（含流式链/篡改/早停/`hard_stop`）、`guard_node`、`attach`、`LangGraphEventCertifier` | 离线用 duck-typed fake；已装框架时跑真实 LangChain/LangGraph（`TestRealHardStop` 证明流**确实**被掐断） |
-| `tests/test_mcp.py` | `MCPGuard` 参数侧拦截、结果侧判定、`extract_result_text` | 离线用 `FakeSession`；已装 mcp 时跑真实 stdio（`tests/mcp_echo_server.py`） |
+| `tests/test_mcp.py` | `MCPGuard` 参数侧拦截、结果侧判定、`extract_result_text`、工具清单发现与未声明工具拦截 | 离线用 `FakeSession`；已装 mcp 时跑真实 stdio（`tests/mcp_echo_server.py`，`discover_tools` 也跑在真实 SDK 返回形状上） |
 | `tests/test_demo_e2e.py` | 端到端会话（依赖齐全时才跑全部） | — |
 | `scripts/demo_e2e.py` | 真实 LangChain 流式 + 真实 MCP stdio 的一键演示 | — |
 

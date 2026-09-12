@@ -362,7 +362,11 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
    「先调工具拿材料，再写答复」，而且这样内容证书的 `trace_seal` 覆盖的正是
    **会话终态**那条链（seal 是签发那一刻的末端承诺，晚签才盖得全）；
 1. **MCP 工具路径**：真实 `stdio_client` 起 `tests/mcp_echo_server.py`，
-   调用 `search_kb`（干净）、`dump_config`（秘密结果）、带 `token` 参数的调用（**飞行前拦截**）；
+   调用 `search_kb`（干净）、`dump_config`（秘密结果）、带 `token` 参数的调用（**飞行前拦截**）。
+   **工具清单问服务器要**（`await guard.discover_tools(session)`，即 MCP 的 `tools/list`），
+   不写死 —— 打出来的 `mcp tools : N discovered from server (…)` 就是服务器当场报的名单；
+   脚本还会核对 `search_kb`/`dump_config` 确实在里面，缺了就把名字记进
+   `summary.mcp_tools_missing`（写死的名字在服务器改名之后不会报错，只会静默地跑成另一次调用）；
 2. **LLM 流式路径**：LangChain `GenericFakeChatModel` 流式两次 —— 一次干净、一次
    中途泄露 `sk-…` 触发**真早停**（`hard_stop=True`，流被 `EarlyStop` 掐断，
    实测在 5/38 字符处，密钥**没有**到达调用方）与链式证书；
@@ -416,8 +420,9 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
 私钥不落盘、也不进会话包 —— 第三方拿到的是**只能验、不能签**的公钥。
 
 产出 `session.json`（含 `signers` 公钥记录、`certificates` 列表、`summary`
-（多一项 `challenge_bound`、`zk_proof_mode`、`mode_contrast`、`tool_trace` 与
-早停实测 `early_stop`）、顶层的 `challenge` 记录、以及有链时的 `chain` 坐标），
+（多一项 `challenge_bound`、`zk_proof_mode`、`mode_contrast`、`tool_trace`、
+工具清单 `mcp_tools`/`mcp_tools_missing` 与早停实测 `early_stop`）、
+顶层的 `challenge` 记录、以及有链时的 `chain` 坐标），
 
 > `summary.tool_trace`（P1-5）= `{receipts, trace_root, gateway_keyid, gateway_public_hex, seal}`：
 > 链长、链尾摘要、工具网关公钥与**会话末端承诺**（`seal`，P1-5b）。前四项都是**公开坐标** ——

@@ -9,15 +9,18 @@
   每次调用产出一张证书；
 - 当 ``block_on_violation=True`` 时，违规调用会在到达服务器**之前**被拒绝
   （飞行前守护），并抛出 ``MCPBlocked``；
-- 该类对任何暴露 ``async call_tool(name, args)`` 的对象都适用
-  （真实的 ``mcp.ClientSession`` 或测试里的 fake）。
+- 先用 ``await guard.discover_tools(session)`` 问服务器要工具清单（``tools/list``），
+  未声明的工具会在执行前被拦下（``MCPUnknownTool``）—— 写死的工具名在服务器改名
+  之后不会报错，只会静默地跑成另一次调用；
+- 该类对任何暴露 ``async call_tool(name, args)``（及可选的 ``async list_tools()``）
+  的对象都适用（真实的 ``mcp.ClientSession`` 或测试里的 fake）。
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from .agent import AgentMonitor
 from .trace import ToolGateway, ToolReceipt
@@ -31,6 +34,25 @@ class MCPBlocked(Exception):
         self.tool = tool
         self.violations = violations
         self.phase = phase
+
+
+class MCPUnknownTool(MCPBlocked):
+    """调用了服务器**没有声明**的工具 —— 在执行之前就被拦下。
+
+    与策略违规分列，是因为它拦的是另一件事：不是「这次调用不合规」，而是
+    「这次调用根本不存在」。真 agent 面对的是会变的服务器，写死的工具名
+    在服务器改名之后不会报错，只会静默地跑成另一次调用。
+
+    继承 ``MCPBlocked`` 是为了不改变调用方的 ``except`` 语义 —— ``phase``
+    字段（``"unknown-tool"``）足以把两者分开。
+    """
+
+    def __init__(self, tool: str, known: "Sequence[str]"):
+        self.known = sorted(known)
+        super().__init__(tool, [], phase="unknown-tool")
+        self.args = (
+            f"tool '{tool}' is not advertised by the server "
+            f"(known: {', '.join(self.known) or '(none)'})",)
 
 
 #: 从 MCP CallToolResult / content 列表 / 普通值里尽力提取文本。
@@ -68,11 +90,31 @@ class MCPGuard:
         # 工具网关（P1-5）：回执由它签发。缺省用进程内临时 Ed25519 钥；
         # 要跨进程/跨方验证回执链，请显式传入持有真实钥的网关。
         self.gateway = gateway if gateway is not None else ToolGateway()
+        #: 服务器声明的工具名单（``discover_tools`` 之后才有）。None = 还没问过
+        #: ⇒ 不做存在性检查；一旦问过，调用未声明的工具就在执行前被拦下。
+        #: 不设缺省空集：那会把「没发现」读成「一个工具都没有」而全部拦掉。
+        self.tool_names: Optional[List[str]] = None
 
     @property
     def receipts(self) -> List[ToolReceipt]:
         """本 guard 到目前为止签发的回执链（交给生成路径一并出证）。"""
         return self.gateway.receipts
+
+    async def discover_tools(self, session: Any) -> List[str]:
+        """从服务器动态取工具清单（MCP 的 ``tools/list``）。
+
+        清单**不是判定输入**（判定用的是策略包，与工具叫什么无关），它是
+        「这次调用打不打得中」的前提。写死工具名的演示在服务器改名之后不会
+        报错，只会静默地跑成另一次调用 —— 那正是这个项目最反对的失败模式。
+
+        对任何暴露 ``async list_tools()`` 的对象都适用（与 ``call_tool`` 同样的
+        鸭子类型约定）；返回排好序的名字，并存进 :attr:`tool_names` 供
+        :meth:`call_tool` 做执行前检查。
+        """
+        listed = await session.list_tools()
+        names = sorted(str(getattr(t, "name", t)) for t in getattr(listed, "tools", listed))
+        self.tool_names = names
+        return names
 
     def check(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """**飞行前**筛一遍参数，返回证书信封（不真正调用工具）。
@@ -142,6 +184,10 @@ class MCPGuard:
         ``self.result_certificates`` 里。
         """
         args = arguments or {}
+        # 0) 飞行前：这个工具服务器到底有没有？（问过才查；见 discover_tools）
+        #    顺序在策略筛查**之前**：一个不存在的工具，判它参数合不合规没有意义。
+        if self.tool_names is not None and name not in self.tool_names:
+            raise MCPUnknownTool(name, self.tool_names)
         # 1) 飞行前：违规就地拦住 —— 此时**回执还没签发、工具还没执行**，
         #    所以网关的链里不会留下一次「被拒绝的调用」（链只记录真的发生过的事）。
         #    但尝试本身要留痕：把这张筛查证书存进 certificates 再抛，

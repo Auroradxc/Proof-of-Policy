@@ -8,6 +8,7 @@
 import asyncio
 import json
 import sys
+import types
 import unittest
 from pathlib import Path
 
@@ -69,19 +70,27 @@ def mcp_available() -> bool:
 
 
 class FakeSession:
-    """鸭子类型的假 MCP 会话：只实现 ``async call_tool``，并记录收到的调用。
+    """鸭子类型的假 MCP 会话：实现 ``async call_tool`` 与 ``async list_tools``，
+    并记录收到的调用。
 
     有了 calls 列表，就能断言拦截确实发生在「到达工具之前」。
     """
 
-    def __init__(self, result_text: str = None):
+    def __init__(self, result_text: str = None, tools: "list" = None):
         self.calls = []
         self.result_text = result_text
+        #: ``list_tools()`` 要报的工具名。缺省给两个 —— 让「发现」有东西可发现。
+        self.tools = ["search_kb", "dump_config"] if tools is None else tools
 
     async def call_tool(self, name, arguments=None):
         self.calls.append((name, arguments))
         text = self.result_text if self.result_text is not None else f"ok:{name}"
         return {"content": [{"type": "text", "text": text}]}
+
+    async def list_tools(self):
+        """鸭子类型的 ``tools/list``：返回带 ``.name`` 的对象列表（同真实 SDK 形状）。"""
+        return types.SimpleNamespace(
+            tools=[types.SimpleNamespace(name=n) for n in self.tools])
 
 
 class TestMCPGuardOffline(unittest.TestCase):
@@ -120,6 +129,54 @@ class TestMCPGuardOffline(unittest.TestCase):
         env = guard.check("search_kb", {"api_key": "k"})
         _, payload = cert.verify_envelope(env, ring_of(guard))
         self.assertFalse(payload["outcome"]["passed"])
+
+
+class TestMCPToolDiscovery(unittest.TestCase):
+    """工具清单**问服务器要**（``tools/list``），不写死（dev-plan §5.1.2 第 5 条）。
+
+    写死的名字在服务器改名之后不会报错，只会静默地跑成另一次调用 —— 这个项目
+    最反对的就是「看起来通过了」。发现之后，未声明的工具在执行前被拦下。
+    """
+
+    def setUp(self):
+        self.monitor = AgentMonitor(load_pack("agent_tool_v1.json"))
+
+    def test_discover_lists_sorted_names(self):
+        guard = MCPGuard(self.monitor)
+        session = FakeSession(tools=["dump_config", "search_kb"])
+        names = asyncio.run(guard.discover_tools(session))
+        self.assertEqual(names, ["dump_config", "search_kb"])
+        self.assertEqual(guard.tool_names, names)
+
+    def test_unknown_tool_is_blocked_before_execution(self):
+        guard = MCPGuard(self.monitor, block_on_violation=True)
+        session = FakeSession(tools=["search_kb"])
+        asyncio.run(guard.discover_tools(session))
+        with self.assertRaises(MCPBlocked) as ctx:
+            asyncio.run(guard.call_tool(session, "dump_config", {}))
+        self.assertEqual(ctx.exception.phase, "unknown-tool")
+        self.assertEqual(len(session.calls), 0, "不存在的工具绝不能到达服务器")
+        # 与「策略违规」分开报：这条不是「调用不合规」，是「调用不存在」
+        self.assertIn("is not advertised", str(ctx.exception))
+        self.assertEqual(guard.certificates, [], "拦的是不存在的调用，不该为它出证")
+
+    def test_known_tool_still_passes(self):
+        # 非恒真对照：发现之后，**声明过**的工具照常放行 —— 否则上面那条只是在说
+        # 「发现之后什么都拦」，跟存在性检查没关系。
+        guard = MCPGuard(self.monitor, block_on_violation=True)
+        session = FakeSession(tools=["search_kb"])
+        asyncio.run(guard.discover_tools(session))
+        asyncio.run(guard.call_tool(session, "search_kb", {"query": "refund"}))
+        self.assertEqual(len(session.calls), 1)
+        self.assertEqual(len(guard.certificates), 1)
+
+    def test_no_discovery_means_no_existence_check(self):
+        # 没问过服务器就不做存在性检查 —— 把「还没问」当成「一个都没有」会把
+        # 所有调用都拦掉，那是把缺省值当成了事实。
+        guard = MCPGuard(self.monitor)
+        session = FakeSession(tools=["search_kb"])
+        asyncio.run(guard.call_tool(session, "whatever", {"query": "refund"}))
+        self.assertEqual(len(session.calls), 1)
 
 
 class TestMCPResultOffline(unittest.TestCase):
@@ -189,14 +246,16 @@ class TestRealMCP(unittest.TestCase):
             async with stdio_client(params) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-                    tools = await session.list_tools()
-                    names = [t.name for t in tools.tools]
+                    # 走 guard 自己的发现路径（而不是手抄一遍 list_tools）：
+                    # 这样「真实 SDK 的返回形状喂得进 discover_tools」也被验到了
+                    names = await guard.discover_tools(session)
                     result, env = await guard.call_tool(
                         session, "search_kb", {"query": "refund", "token": "secret"})
                     return names, result, env
 
         names, result, env = asyncio.run(run())
-        self.assertIn("search_kb", names)
+        # 名单来自服务器，不是写死的：echo server 声明的两个工具都得在里面
+        self.assertEqual(set(names), {"search_kb", "dump_config"})
         ok, payload = cert.verify_envelope(env, ring_of(guard))
         self.assertTrue(ok)
         self.assertEqual(payload["mode"], "tool-call")
