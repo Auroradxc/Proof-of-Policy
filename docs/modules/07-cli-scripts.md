@@ -18,7 +18,7 @@
 | `gen_key.py` | 生成/查看 Ed25519 出证密钥对（打印 keyid + 公钥） | 否 | 否 | 毫秒 |
 | `issue_cert.py` | 签发证书 + 锚定（可选上链） | `pop-script` | 是（可 `--no-prove`） | ~70 s |
 | `verify_cert.py` | **第三方**独立验证单张证书 | `pop-script` / `pop-verify` | 验证已有证明 | ~20 s |
-| `demo_e2e.py` | 一键真实会话（LangChain + MCP + zk + **公私对比** + 锚定） | `pop-script` | 可 `--no-prove` / `--no-contrast` | host 秒级；出证 **~2.5 分钟**（1 份证明 —— 对比那 2 张默认只做宿主校验） |
+| `demo_e2e.py` | 一键真实会话（LangChain + MCP + zk + **公私对比** + 锚定） | `pop-script` | 可 `--no-prove` / `--no-contrast` / `--model`（真模型） | host 秒级；出证 **~2.5 分钟**（1 份证明 —— 对比那 2 张默认只做宿主校验） |
 | `verify_session.py` | **第三方**独立验证整个会话包 | 同上 | 验证已有证明 | 秒级 |
 | `ezkl_prove.py` | 语义规则（`semantic_bound`）的 ezkl 出证/验证/自检 | 否（需 ezkl+torch） | 否（ezkl 自己的证明） | setup ~48 s / prove ~77 s |
 | `compose_proof.py` | **组合证明**（P1-6）：策略半 + 推理半各出一份 → 合成 → 联合验证 | `pop-script` | 是（可 `--no-prove` / `--reuse-proofs`） | 两次出证，各 ~2 分钟 |
@@ -354,7 +354,20 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
 
 ### 2.10 `demo_e2e.py` —— 一键真实会话
 
-五段，全部用**真实**组件（`--no-prove` 只跳过 SP1 证明）：
+五段，除**生成那一段缺省用离线桩**外，其余都用**真实**组件（`--no-prove` 只跳过
+SP1 证明）。生成那段要真模型得显式给 `--model`：
+
+```bash
+python3 scripts/demo_e2e.py --model openai:gpt-4o-mini        # 裸名按 openai 处理
+OPENAI_BASE_URL=http://127.0.0.1:8000/v1 python3 scripts/demo_e2e.py --model openai:<m>
+python3 scripts/demo_e2e.py --model anthropic:claude-sonnet-5 # 需 ANTHROPIC_API_KEY
+```
+
+**缺省不传真模型**，因为 CI 与 `demo_all.sh` 不该依赖网络与 key。规格由
+`policydsl/llm.py` 解析：未知 provider、空模型名、缺 key 都在**构造时**报错并
+说清是哪一个环境变量（`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`），**绝不静默退回
+桩** —— 静默退回会让一份「真模型演示」的产物其实来自写死的字符串，而且没人看
+得出来。终端那行 `llm model : …` 就是这件事的如实交代，它**永远**打印。
 
 0. **一次会话只有一条轨迹**：先建**唯一**那把 `trace.ToolGateway()`，注入下面的
    工具守护与内容 handler。此前两处各自缺省构造 ⇒ 内容链与工具链的 `trace_root`
@@ -367,9 +380,15 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
    不写死 —— 打出来的 `mcp tools : N discovered from server (…)` 就是服务器当场报的名单；
    脚本还会核对 `search_kb`/`dump_config` 确实在里面，缺了就把名字记进
    `summary.mcp_tools_missing`（写死的名字在服务器改名之后不会报错，只会静默地跑成另一次调用）；
-2. **LLM 流式路径**：LangChain `GenericFakeChatModel` 流式两次 —— 一次干净、一次
-   中途泄露 `sk-…` 触发**真早停**（`hard_stop=True`，流被 `EarlyStop` 掐断，
-   实测在 5/38 字符处，密钥**没有**到达调用方）与链式证书；
+2. **LLM 流式路径**：流式两次 —— 一次干净、一次中途泄露 `sk-…` 触发**真早停**
+   （`hard_stop=True`，流被 `EarlyStop` 掐断，离线桩上实测在 5/38 字符处，
+   密钥**没有**到达调用方）与链式证书。缺省用 `GenericFakeChatModel` 的离线桩；
+   `--model` 则换成真实模型，提示词随之改为「问一句正常问题」与「把这一行原样
+   回显」（主动请模型踩线，好让 `no_secret` 有条规则可命中）。
+   **触发与否是数据相关的**：真模型不照做是**正常结果**而非失败，`aborted` 实测
+   值如实落盘 —— 任何「模型一定会违规」的断言都是在赌 provider 的服从性。
+   真模型下 `full_len` 是 `null`（不是「暂时未知」而是**不可知** —— 量全长就得先
+   让它写完，那等于取消这次早停），改报 `canary_len`（请它回显的那行有多长）；
 3. **zk 路径**：对一条响应真实出证（`zk_path`）——**走完整挑战流程**：客户端先出
    `nonce = challenge.new_nonce()`，把它喂进向量与证书 `challenge` 块（`--nonce` 可覆盖），
    出证后再用「送达的 T′」离线核对绑定（`challenge_experiment`：`T′` 能开、
@@ -438,7 +457,9 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
 > `streaming.stop` 的停止证书（带 `reason: violation` 与链头指针）。
 > 「被掐断的生成没有最终结论证书」是**如实**的 —— 它的结论就是那张停止证书。
 > 早停实测随会话一起落盘：`summary.early_stop`（`aborted` / `delivered_len` /
-> `full_len` / `leak_delivered`）。`leak_delivered` 是那条硬指标，它必须是 `false`。
+> `full_len`（真模型下为 `null`，见上）/ `canary_len` / `leak_delivered` /
+> `clean_aborted` / `clean_len` / `model` / `model_spec`）。
+> `leak_delivered` 是那条硬指标，它必须是 `false`。
 
 ### 2.11 `verify_session.py` —— 第三方验证整个会话
 
@@ -549,7 +570,8 @@ bash scripts/demo_all.sh --list       # 只列支路，不跑
 
 报告末尾**现推**三条最容易被误读的结论（从合约 ABI、demo 源码、安全模型原文里读，
 所以不会随文档更新漂移）：① 链上只锚定证书摘要，没有 `anchorWithProof`；
-② 流式路径的「LLM」是 `GenericFakeChatModel`；③ 组合证明里的「推理」是 stand-in。
+② 流式路径的「LLM」**缺省**是 `GenericFakeChatModel`（`--model` 可换真模型，终端会
+如实打出当前用的是哪个）；③ 组合证明里的「推理」是 stand-in。
 细节见 [`../../README.md`](../../README.md) 的「8 条端到端支路」。
 
 > ⚠️ **fast 模式下的 `PASS` 不是「已出证」** —— 各驱动在 `--no-prove` 下只做

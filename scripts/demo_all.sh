@@ -249,13 +249,17 @@ else
   emit "① ${YEL}链上只锚定「证书摘要」，不验证证明${RST}（未找到 $ABI，未能现推函数表）。"
 fi
 
-# ② 流式那半用的是不是真模型：从 demo 源码里读它 import 了什么。
+# ② 流式那半用的是不是真模型：从 demo 源码里读它有没有 --model 那条路。
 FAKE=$(grep -o "GenericFakeChatModel" scripts/demo_e2e.py | head -1)
-if [ -n "$FAKE" ]; then
-  emit "② ${YEL}流式路径的「LLM」是假的。${RST}"
-  emit "   实测 scripts/demo_e2e.py 用的是 LangChain 的 $FAKE（响应写死）。"
-  emit "   → 真实的是 **callback 管线**（PoPCallbackHandler 确实跑在 LangChain 流式管线上），"
-  emit "     不是模型。接真 LLM 后还会多出两个接口问题：流式分片的切分口径、早停时半截响应的界定。"
+REAL=$(grep -o '\-\-model' scripts/demo_e2e.py | head -1)
+if [ -n "$FAKE" ] && [ -n "$REAL" ]; then
+  emit "② ${YEL}流式路径**缺省**用离线桩，不是真模型。${RST}"
+  emit "   实测 scripts/demo_e2e.py 缺省走 LangChain 的 $FAKE（响应写死）；终端会如实打出"
+  emit "   \`llm model : fake (offline)\`。要真模型得显式给 --model（走真 langchain_openai 客户端）："
+  emit "     python3 scripts/demo_e2e.py --model openai:<model>"
+  emit "   → 始终真实的是 **callback 管线**（PoPCallbackHandler 跑在 LangChain 流式管线上）。"
+  emit "     接真 LLM 后仍有一个未解的口径问题：流式分片的切分口径跨 provider 不可比"
+  emit "     （同一句话在两家 provider 下切出不同的部分证书序列，见 docs/dev-plan.md §5.1.1 第 5 条）。"
 fi
 
 # ③ 推理半是不是「某真实 LLM 跑过」的证据：从安全模型里摘它自己的话。

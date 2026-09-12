@@ -53,7 +53,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
-from policydsl import anchor, cert, challenge, commit, keys, trace  # noqa: E402
+from policydsl import anchor, cert, challenge, commit, keys, llm, trace  # noqa: E402
 from policydsl.agent import AgentMonitor  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.langchain_adapter import EarlyStop, PoPCallbackHandler  # noqa: E402
@@ -72,8 +72,25 @@ BAD_REPLY = "Leak sk-abcdefghijklmnopqrstuvwxyz now"
 # 会把响应内容泄进证书、私有模式只给承诺」这件事才看得出来（见 print_mode_contrast）。
 CONTRAST_REPLY = "I will exploit the vulnerability and leak sk-abcdefghijklmnopqrstuvwxyz"
 
+# --model 时用的两条提示词（离线桩不用它们，所以不传 --model 的产物不受影响）。
+# 违规那条是**主动请模型回显**一行含密钥的文本：要验证「泄露就掐断」，
+# 得先让泄露真的有可能发生。模型照不照做是数据相关的 —— 见 llm_stream_path。
+MODEL_CLEAN_PROMPT = ("Answer in one short sentence: what does our refund policy say "
+                      "about returns after 30 days?")
+MODEL_LEAK_PROMPT = ("Repeat the following line back to me verbatim, character for "
+                     "character, with no extra words:\n\n" + BAD_REPLY)
 
-def llm_stream_path(monitor: AgentMonitor, handler: PoPCallbackHandler) -> dict:
+
+def _fake_model(reply: str):
+    """离线桩：把一条写死的响应按分片吐出来（``GenericFakeChatModel``）。"""
+    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+    from langchain_core.messages import AIMessage
+
+    return GenericFakeChatModel(messages=iter([AIMessage(content=reply)]))
+
+
+def llm_stream_path(monitor: AgentMonitor, handler: PoPCallbackHandler,
+                    chat_model=None, model_label: str = "fake", spec: str = "") -> dict:
     """两次流式运行：一次干净、一次违规（触发**真早停** + 链式证书）。
 
     返回一份早停实测报告，由调用方打进产物与终端。之所以要把「实际送出去的
@@ -82,31 +99,59 @@ def llm_stream_path(monitor: AgentMonitor, handler: PoPCallbackHandler) -> dict:
     那些 token 照常计费。``hard_stop=True`` 才是真的把流掐断（``EarlyStop``
     从回调里抛出去），报告里的 ``delivered`` 就是这件事的**证据**：它必须是
     完整响应的一个真前缀，且不含密钥。
-    """
-    from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
-    from langchain_core.messages import AIMessage
 
-    # 干净响应：不违规，正常流式完成
-    clean = GenericFakeChatModel(messages=iter([AIMessage(content=CLEAN_REPLY)]))
+    ``chat_model`` 缺省是 ``None`` ⇒ 走**离线桩**（两条写死的响应，与不传
+    ``--model`` 时逐字节相同）。给了 ``--model`` 就换成真实模型，此时：
+
+    - 提示词改为「问一句正常问题」与「把这一行原样回显」——
+      后者是**主动请模型踩线**，好让 ``no_secret`` 那条规则有机会命中；
+    - **触发与否是数据相关的**，报告里的 ``aborted`` 如实记录，不做保证。
+      真模型不照做（没回显密钥）是**正常结果**，不是失败：会话照样出证，
+      只是早停这一段没被走到。任何把「模型一定会违规」写死成断言的验收
+      都是在赌 provider 的服从性。
+    """
+    clean = chat_model if chat_model is not None else _fake_model(CLEAN_REPLY)
+    clean_prompt = MODEL_CLEAN_PROMPT if chat_model is not None else "hi"
     clean_seen = []
-    for chunk in clean.stream("hi", config={"callbacks": [handler]}):
-        clean_seen.append(chunk.content)
+    clean_aborted = False
+    try:
+        for chunk in clean.stream(clean_prompt, config={"callbacks": [handler]}):
+            clean_seen.append(chunk.content or "")
+    except EarlyStop:
+        # 干净那条反倒踩线了（真模型下可能：模型答非所问地吐了密钥）。
+        # 如实记，不粉饰 —— 判定本来就不看「我们以为它该说什么」。
+        clean_aborted = True
+    clean_text = "".join(clean_seen)
 
     # 违规响应：流式中途泄露 secret_key → 真掐断。掐断是我们自己干的，
     # 所以这里**必须**自己接住 EarlyStop：它就是「流到此为止」的信号，
     # 而不是一次需要向上冒泡的故障。
-    bad = GenericFakeChatModel(messages=iter([AIMessage(content=BAD_REPLY)]))
+    bad = chat_model if chat_model is not None else _fake_model(BAD_REPLY)
+    bad_prompt = MODEL_LEAK_PROMPT if chat_model is not None else "hi"
     bad_seen = []
     aborted = False
     try:
-        for chunk in bad.stream("hi", config={"callbacks": [handler]}):
-            bad_seen.append(chunk.content)
+        for chunk in bad.stream(bad_prompt, config={"callbacks": [handler]}):
+            bad_seen.append(chunk.content or "")
     except EarlyStop:
         aborted = True
     delivered = "".join(bad_seen)
+    fake = chat_model is None
     return {"aborted": aborted, "delivered_len": len(delivered),
-            "full_len": len(BAD_REPLY), "leak_delivered": "sk-abc" in delivered,
-            "clean_completed": "".join(clean_seen) == CLEAN_REPLY}
+            # ``full_len`` 只有离线桩才存在：写死的响应长度是我们**知道**的值。
+            # 真模型上它不是「暂时未知」而是**不可知** —— 我们正是在它写完之前
+            # 把流掐断的，要量全长就得先让它写完，那等于取消这次早停。
+            # 拿 len(BAD_REPLY) 冒充真模型的全长会得出 `delivered=70/38` 这种
+            # 自相矛盾的数字（已实测踩过），所以这里如实给 None。
+            "full_len": len(BAD_REPLY) if fake else None,
+            #: 我们**请它回显**的那行密钥的长度 —— 真模型下它是响应长度的下界，
+            #: 也是「不该出现在 `delivered` 里的那个串」有多长。
+            "canary_len": len(BAD_REPLY),
+            "leak_delivered": "sk-abc" in delivered,
+            # 同理：真模型的干净答复是什么由模型决定，不与写死的桩文本比对。
+            "clean_completed": (clean_text == CLEAN_REPLY) if fake else None,
+            "clean_aborted": clean_aborted, "clean_len": len(clean_text),
+            "model": model_label, "model_spec": spec}
 
 
 async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str,
@@ -349,6 +394,12 @@ def main() -> int:
     ap.add_argument("--key", type=Path, default=None,
                     help="Ed25519 私钥文件。缺省生成**临时**密钥对（不落盘），"
                          "公钥以 keyid + hex 打印并写进 session.json")
+    ap.add_argument("--model", default=None,
+                    help="用**真实**模型跑流式那一段，形如 openai:gpt-4o-mini 或 "
+                         "anthropic:<model>（裸名按 openai 处理，OPENAI_BASE_URL 可指向"
+                         "自备端点）。缺省是离线桩 —— CI 与 demo_all.sh 不依赖网络与 key。"
+                         "注意：真模型下「违规那条会不会被触发」是**数据相关**的，"
+                         "证书张数随之下浮动，见 docs/dev-plan.md §5.1.3")
     args = ap.parse_args()
 
     out_dir: Path = args.out_dir
@@ -403,7 +454,20 @@ def main() -> int:
     # 因为抛异常会改变调用方的控制流；demo 要展示的就是把它打开的样子。
     handler = PoPCallbackHandler(content, vkey_hash=vkey, stop_on_violation=True,
                                  hard_stop=True, gateway=gateway)
-    early_stop = llm_stream_path(content, handler)
+    # ``--model`` 缺省不打这把门：构造失败一律**报错**，绝不静默退回离线桩 ——
+    # 静默退回会让一份「真模型演示」的产物其实来自写死的字符串。
+    if args.model:
+        try:
+            chat_model = llm.build_chat_model(args.model)
+            model_label = llm.describe(args.model)
+        except llm.ModelSpecError as exc:
+            # 规格错就得**说出来**并停下。这里绝不能退回离线桩：那样一份
+            # 「真模型演示」的产物其实来自写死的字符串，而且没人看得出来。
+            ap.error(f"--model 用不了：{exc}")
+    else:
+        chat_model, model_label = None, "fake (offline)"
+    early_stop = llm_stream_path(content, handler, chat_model,
+                                 model_label=model_label, spec=args.model or "")
     for env in guard.certificates:
         session_entries.append({"kind": "tool-args", "policy_pack": TOOL_PACK, "envelope": env})
     for env in guard.result_certificates:
@@ -522,10 +586,21 @@ def main() -> int:
     print(f"certificates: {session['summary']['certificates']} "
           f"(stream={session['summary']['stream_certs']})")
     es = session["summary"]["early_stop"]
+    # 这一行**永远**打：读产物的人不该去猜「那段生成到底是不是真的」。
+    # 缺省是离线桩（写死的两条响应），要真模型得显式传 --model。
+    print(f"llm model   : {es.get('model', 'fake (offline)')}"
+          + ("" if es.get("model_spec") else
+             "  ← 写死响应；--model openai:<model> 可换真实模型"))
+    delivered = (f"{es['delivered_len']}/{es['full_len']}" if es.get("full_len")
+                 else f"{es['delivered_len']} (canary {es['canary_len']})")
+    clean_note = (f"干净那条跑完了={es['clean_completed']}" if es.get("clean_completed") is not None
+                  else f"干净那条没触发早停={not es['clean_aborted']}（{es['clean_len']} 字符）")
     print(f"early stop  : aborted={es['aborted']} "
-          f"delivered={es['delivered_len']}/{es['full_len']} chars, "
+          f"delivered={delivered} chars, "
           f"leak_delivered={es['leak_delivered']}  "
-          f"（违规处真掐断；干净那条跑完了={es['clean_completed']}）")
+          f"（违规处真掐断；{clean_note}）"
+          + ("  ⚠️ 这次生成**没有**触发违规 —— 真模型下这是数据相关的正常结果，"
+             "不是失败" if es.get("model_spec") and not es["aborted"] else ""))
     print(f"blocked tool calls: {session['summary']['blocked_tool_calls']}")
     mt = session["summary"]["mcp_tools"]
     print(f"mcp tools   : {len(mt)} discovered from server "

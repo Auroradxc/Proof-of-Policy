@@ -75,8 +75,9 @@ bash scripts/demo_all.sh --list     # 只列支路
 > **跑完最该记住的三件事**（`demo_all.sh` 每次都会把它从产物/源码里**现推**出来打印，
 > 所以它们不会随文档更新而漂移）：① 链上只锚定**证书摘要**，合约里没有 `anchorWithProof`
 > —— 「链上可验证」目前是过度声明（见 `docs/plan-p0p1p2.md` §P1-7）；② 流式路径的「LLM」
-> 是 LangChain 的 `GenericFakeChatModel`，真的是 **callback 管线**而不是模型；③ 组合证明里
-> 的「推理」是 **stand-in**（确定性 MLP 前向），验收的是组合机制而非推理本身。
+> **缺省**是 LangChain 的 `GenericFakeChatModel`（终端会如实打出 `llm model : fake (offline)`）；
+> `--model openai:<model>` 可换成真实模型，始终真实的是 **callback 管线**而不是模型；
+> ③ 组合证明里的「推理」是 **stand-in**（确定性 MLP 前向），验收的是组合机制而非推理本身。
 
 ## 快速开始（无需 Rust）
 

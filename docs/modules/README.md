@@ -49,7 +49,8 @@ zk-policy/
 │   ├── verifier.py           #   verifier-only 快路径判定（core 不能走快路径）
 │   ├── langchain_adapter.py  #   LangChain/LangGraph 回调（含流式证书与早停）
 │   ├── langgraph_adapter.py  #   LangGraph 节点包装 / astream_events 事件认证
-│   ├── mcp_adapter.py        #   MCP 工具守护（参数侧 + 结果侧，可飞行前拦截）
+│   ├── mcp_adapter.py        #   MCP 工具守护（参数侧 + 结果侧 + 工具清单发现，可飞行前拦截）
+│   ├── llm.py                #   --model 规格解析与真实模型构造（缺依赖/缺 key 当场说清）
 │   └── __main__.py           #   CLI：compile / check
 ├── circuits/                 # Rust + SP1 证明层（workspace）
 │   ├── types/                #   共享判定逻辑（no_std）：evaluate / evaluate_private / NFA
@@ -63,7 +64,7 @@ zk-policy/
 ├── contracts/                # Anchor.sol + 已编译 artifact（Anchor.json，免 solc 部署）
 ├── scripts/                  # 端到端脚本（demo / 交叉验证 / 出证 / 验证 / 安装）
 ├── bench/                    # 评测（周期数矩阵 / 证明成本 / 验证成本 / ezkl / 组合 / 对标）
-├── tests/                    # 单测与集成测试（469 passed / 13 skip）
+├── tests/                    # 单测与集成测试（515 passed / 14 skip）
 ├── policy_packs/             # 示例策略包（EU AI Act / PII / 金融 / agent 内容与工具）
 └── docs/                     # 文档（本目录为分板块模块文档）
 ```
@@ -120,9 +121,9 @@ zk-policy/
 | 03 | [合规证书](03-certificate.md) | `cert.py` `agent.py` | 把一次判定包成可签名、可重算哈希的 DSSE 信封 |
 | 04 | [锚定与审计](04-anchoring-audit.md) | `anchor.py` `contracts/` `verifier.py` | 防篡改记录：本地哈希链账本 + 链上存在性证明 |
 | 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/types` `program` `infer-program` `session-program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证；**三个 guest 的键分离**（P1-6 / P2-10）（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
-| 06 | [框架集成](06-frameworks.md) | `langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` | 把两个钩子接到真实 agent 框架上（含流式与飞行前拦截） |
+| 06 | [框架集成](06-frameworks.md) | `langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` `llm.py` | 把两个钩子接到真实 agent 框架上（含流式、真早停、飞行前拦截与工具清单发现） |
 | 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/*` | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
-| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 469 个测试覆盖什么、评测数字怎么来的 |
+| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 515 个测试覆盖什么、评测数字怎么来的 |
 
 三条**不在本目录**但同样属于实现层的线（各自有独立文档，故未拆成板块）：
 
@@ -162,7 +163,7 @@ zk-policy/
 
 ```bash
 # 只跑参考层（秒级，无需 Rust）
-python3 -m unittest discover tests -v            # 469 passed / 13 skip
+python3 -m unittest discover tests -v            # 515 passed / 14 skip
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
 python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
 

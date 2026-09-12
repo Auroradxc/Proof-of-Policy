@@ -1,8 +1,14 @@
 # 06 · 框架集成
 
-> 覆盖 `policydsl/langchain_adapter.py`、`langgraph_adapter.py`、`mcp_adapter.py`，
-> 以及被它们共同驱动的 `policydsl/agent.py`（钩子定义见 [`03-certificate.md`](03-certificate.md) §6）。
+> 覆盖 `policydsl/langchain_adapter.py`、`langgraph_adapter.py`、`mcp_adapter.py`、
+> `llm.py`，以及被它们共同驱动的 `policydsl/agent.py`
+> （钩子定义见 [`03-certificate.md`](03-certificate.md) §6）。
 > 这一板块回答：**怎么把「判定 → 出证」挂到真实的 agent 框架上，且不要求改写框架。**
+>
+> 换个模型**只动这一层**：证书绑的是**一条具体的响应 `T`**，
+> `ZK` / 证书 / 锚定 / 验证链一行都不用改。`llm.py` 是这句话的落地 ——
+> 它只做「规格 → 一个 LangChain `BaseChatModel`」，
+> 适配器与 `AgentMonitor` 都不知道对面是桩还是真模型。
 
 ---
 
@@ -319,6 +325,50 @@ handler = PoPCallbackHandler(content_monitor, gateway=gateway)
 
 ---
 
+## 4b. 真模型（`llm.py`）与 `demo_e2e.py --model`
+
+**这一层唯一做的事**是把一个规格字符串变成一个 LangChain `BaseChatModel`：
+
+```python
+model = llm.build_chat_model("openai:gpt-4o-mini")   # 裸名按 openai
+for chunk in model.stream(prompt, config={"callbacks": [handler]}):
+    ...                                              # 回调层完全不知情
+```
+
+**回调层与 `AgentMonitor` 一行都不用改** —— `BaseChatModel.stream()` 会逐 chunk
+派发 `on_llm_new_token`，与 `GenericFakeChatModel` 走的是同一条路。这是「换模型只动
+适配器层」这句话的实测依据，而不是推断。
+
+三个刻意的设计：
+
+- **缺省不是真模型**：不传 `--model` 就走离线桩，因为 CI 与 `demo_all.sh` 不该依赖
+  网络与 key。桩的那条路一行没动。
+- **规格错就报错，绝不静默退回桩**：网络抖动退回桩还情有可原，**规格写错**退回桩
+  则会让一份「真模型演示」的产物其实来自写死的字符串 —— 而且没人看得出来。
+  未知 provider 也直接拒（猜一个 provider 比拒绝更糟，会把请求发到别处）。
+- **不认 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL`**：那是 Claude Code 自己的
+  凭据。真模型调用该用使用者显式配的 key。
+
+终端那行 `llm model : …` **永远**打印 —— 读产物的人不该去猜那段生成是不是真的。
+
+### 离线怎么验「真客户端 + 真早停」
+
+`tests/openai_sse_stub.py` 用标准库实现了 OpenAI 的**协议**（`/v1/chat/completions`
++ `text/event-stream`），于是**真的** `ChatOpenAI` 客户端能对着 `127.0.0.1:<port>/v1`
+说话。验的是客户端与回调层的代码，不是某家 provider 的脾气 —— 所以这一段
+**不需要网络与真 key，默认就跑**。
+
+证据由**服务器侧**给出：桩数自己**真的写出去了**几片。客户端因 `EarlyStop` 提前
+断开后，再写就会 `BrokenPipeError`，所以「写出去的片数 < 计划写的片数」证明切断
+发生在**传输层**，而不是「我们这边不再往列表里 append 了」—— 这两件事的差别正是
+早停在 Python 循环里"截断"与真的断开连接的区别。对照组是关掉 `hard_stop` 后每一片
+都被写出去。
+
+> 真 provider 那一条（`POP_TEST_LLM=1`）**只断言结构**（干净生成产出可验签的证书），
+> **不**断言模型一定会违规 —— 那是赌 provider 的服从性。
+
+---
+
 ## 5. 三者的证书形态对照
 
 | 适配器 | 路径 | 证书 `mode` | `kind`（demo_e2e 里） | `trace_seal`（P1-5b） |
@@ -378,7 +428,8 @@ handler = PoPCallbackHandler(content_monitor, gateway=gateway)
 | `tests/test_agent.py` | `AgentMonitor` 两条路径 + `mock_agent` | 无依赖 |
 | `tests/test_frameworks.py` | `PoPCallbackHandler`（含流式链/篡改/早停/`hard_stop`）、`guard_node`、`attach`、`LangGraphEventCertifier` | 离线用 duck-typed fake；已装框架时跑真实 LangChain/LangGraph（`TestRealHardStop` 证明流**确实**被掐断） |
 | `tests/test_mcp.py` | `MCPGuard` 参数侧拦截、结果侧判定、`extract_result_text`、工具清单发现与未声明工具拦截 | 离线用 `FakeSession`；已装 mcp 时跑真实 stdio（`tests/mcp_echo_server.py`，`discover_tools` 也跑在真实 SDK 返回形状上） |
-| `tests/test_demo_e2e.py` | 端到端会话（依赖齐全时才跑全部） | — |
+| `tests/test_real_llm.py` | `llm.parse_spec`/`build_chat_model` 的报错路径；**真实 `ChatOpenAI` 客户端 + 本地 SSE 桩**（`tests/openai_sse_stub.py`）下的真早停 —— 由服务器侧数它写出去了几片来证明**传输层**真的断了 | 规格与报错用例无依赖；客户端用例要 `langchain_openai`（已装则默认跑）；真 provider 用例由 `POP_TEST_LLM=1` 门控 |
+| `tests/test_demo_e2e.py` | 端到端会话（依赖齐全时才跑全部）；`--model` 产物与离线桩**同形** | — |
 | `scripts/demo_e2e.py` | 真实 LangChain 流式 + 真实 MCP stdio 的一键演示 | — |
 
 安装框架：`bash scripts/install_frameworks.sh`（独立 venv + 镜像源；

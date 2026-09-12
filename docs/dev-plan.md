@@ -143,7 +143,7 @@
   —— ⚠️ **初稿已由 LaTeX 版取代**：权威源是 `paper/proof-of-policy.tex`（xelatex + ctex），
   `.md` 只是阅读镜像且已落后（缺 L8/L9）。以 `.tex` 为准。
 - [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；
-  测试 **469 全绿 / 13 skip**（2026-09-12 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
+  测试 **515 全绿 / 14 skip**（2026-09-13 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
 - [x] **待办（延伸）—— 三项均已完成**（此前误记为待办，2026-09-12 订正）：
   verifier-only 二进制（`pop-verify`，见 Phase P7-a）；链上锚定 RPC 后端（`RpcAnchorBackend`，见 P7-c）；
   format/budget/tool 规则入电路（见 P7-b）
@@ -178,7 +178,7 @@ P0 ─► P1 ─► P2 ─► P3(透明MVP★)
 
 ## 5. 延伸路线：接真 agent + 证明服务（2026-09-13 立）
 
-> **前置**：Phase 0–6 与 P7 全部收尾，测试 **469 全绿 / 13 skip**，
+> **前置**：Phase 0–6 与 P7 全部收尾，测试 **515 全绿 / 14 skip**，
 > `scripts/demo_all.sh` 8 条支路全通。本节是**交付之后**的两步 ——
 > 与仍在外部排队的 **T1**（≥64 GB 云机，见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9）
 > **互不阻塞**，也**不能**靠 T1 替代：T1 补的是链上/云机那一格，这两步补的是
@@ -194,7 +194,7 @@ P0 ─► P1 ─► P2 ─► P3(透明MVP★)
 
 | # | 现象 | 位置 | 后果 |
 |---|---|---|---|
-| 1 | LLM 侧仍是假模型 | `demo_e2e.py` 用 `GenericFakeChatModel`，响应写死 `CLEAN_REPLY`/`BAD_REPLY` | 演示能自洽，但**没有一条真实模型输出**进过证书链；「换真 agent 只动适配器层」目前是**推断**而非实测 |
+| 1 | ~~LLM 侧仍是假模型~~ **已修（#98）** | ~~`demo_e2e.py` 用 `GenericFakeChatModel`，响应写死 `CLEAN_REPLY`/`BAD_REPLY`~~ | ~~演示能自洽，但**没有一条真实模型输出**进过证书链；「换真 agent 只动适配器层」目前是**推断**而非实测~~。**现在**：`--model openai:<model>` 走真实客户端；缺省仍是离线桩（CI 不依赖网络），但**终端会如实打出当前用的是哪个** |
 | 2 | 没有任何服务化层 | 全仓只有一次性 CLI 进程 | 无法被别人调用；论文里的「可验证 agent」缺一个可对接的入口 |
 
 > **MCP 侧其实已经是真的**：`tests/mcp_echo_server.py` 起的是**真实 stdio MCP
@@ -242,11 +242,18 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
    > `verify_cert.py` 的 `trace_seal` 卡会对它们报 FAIL（那条规则假定会话里
    > 每张证书都参与轨迹）。要消除它得把回执链喂进 zk 向量（改电路与 cycle），
    > 另开一条。
-2. **装真模型依赖**：`langchain_openai` / `langchain_anthropic`
-   （走 `scripts/install_frameworks.sh` 同一套镜像方案），
-   加 `--model` 参数，形如 `--model openai:gpt-4o-mini`（OpenAI 兼容端点，
-   含 `OPENAI_BASE_URL` ⇒ 可接自备端点）。**缺省仍是 fake** ——
-   CI 与 `demo_all.sh` 不依赖网络，这条不能破。
+2. ~~**装真模型依赖**：加 `--model` 参数，形如 `--model openai:gpt-4o-mini`。~~
+   **已做（#98）**：新增 `policydsl/llm.py`（规格解析 + 构造，**刻意不认**
+   `ANTHROPIC_AUTH_TOKEN` —— 那是 Claude Code 自己的凭据），`demo_e2e.py --model`。
+   **缺省仍是 fake**（CI 与 `demo_all.sh` 不依赖网络，这条没破）；**规格写错一律
+   报错，绝不静默退回桩** —— 静默退回会让一份「真模型演示」的产物其实来自写死的
+   字符串，而且没人看得出来。
+   验收落在两处：`tests/test_real_llm.py` 用**本地 SSE 桩**
+   （`tests/openai_sse_stub.py`，实现 OpenAI 的协议）把**真的** `langchain_openai`
+   客户端接进回调层 —— 不需要网络与真 key，所以这一段**默认就跑**；证据由
+   **服务器侧**给出（它数自己写出去了几片，少于计划写出的即「传输层真的断了」，
+   对照组是关掉 `hard_stop` 后每一片都写出去）。`tests/test_demo_e2e.py` 再比
+   **两份会话的形状**（fake 一份、桩一份）逐条相同。
 3. ~~**实现 `on_llm_error`**：错误也出一张证书，带异常类型摘要（**不带**异常
    全文，避免把 prompt / 密钥泄进证书）。~~ **已做（#96）**：`error_block()`
    产出载荷**顶层**的 `error` 块（`scope` 固定 `"partial-prefix"` —— 判的是截断
@@ -277,12 +284,24 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
    放行」）+ 真实 stdio 用例改走 `guard.discover_tools(session)` ——
    真实 SDK 的 `list_tools()` 返回形状喂得进发现路径，也被实测验到了。
 
-#### 5.1.3 验收
+#### 5.1.3 验收（#98 落地后的如实版本）
 
-- `demo_e2e.py --model openai:<model>` 端到端跑通，产物与 fake 路径**同构**
-  （同样 13 张证书、同样三条被拦截路径、`verify_session.py` 全 PASS）；
-- **默认（不传 `--model`）行为逐字节不变**（有 diff 级别的对照用例）；
-- 真模型用例进 `POP_TEST_LLM=1` 门控（需要真 key + 网络，不能进 CI）。
+- `demo_e2e.py --model <spec>` 端到端跑通，`verify_session.py` 全 PASS；
+- 产物与 fake 路径**同构** —— 但「同构」比的是**形状**（证书次序 / `kind` /
+  `passed` / 违规条数逐条相同），**不是**张数。原先把「同样 13 张」写成判据是
+  错的：真模型的干净那条答什么由模型决定，被判出几条部分流式证书随之浮动。
+  写死的数字在假路径改动之后不会报错，只会静默地变成另一件事。
+  **验收用的是「两份会话现场比对」**（`TestDemoWithRealModelClient`），
+  不是那张数字表；
+- **触发与否是数据相关的**：违规那条靠「请模型原样回显一行含密钥的文本」去
+  制造机会，模型不照做是**正常结果**，不是失败 —— 提示词、`aborted` 实测值都
+  随会话一起落盘（`summary.early_stop`）。任何「模型一定会违规」的断言都是在赌
+  provider 的服从性；
+- **默认（不传 `--model`）走的仍是离线桩**：证书集与判定不变（有对照用例断言
+  `summary.early_stop.model == "fake (offline)"`）。终端多一行 `llm model :`——
+  这是刻意的：读产物的人不该去猜那段生成到底是不是真的；
+- 真 provider 用例进 `POP_TEST_LLM=1` 门控，且**只断言结构**（真 key + 网络，
+  不能进 CI）；而「真实客户端接进回调层」那一层用本地 SSE 桩，**默认就跑**。
 
 ### 5.2 第二步 · 证明服务（把出证能力服务化）
 
