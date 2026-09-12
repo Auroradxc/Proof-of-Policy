@@ -11,7 +11,7 @@
 | 项 | 要求 | 备注 |
 |---|---|---|
 | OS | Ubuntu/WSL2 x86_64 | 本项目在 WSL2 验证 |
-| 内存 | **≥12GB**（CPU Core 证明峰值 ~9–10GB） | 7.6GB 会 OOM（killer 日志：`Killed process fibonacci`） |
+| 内存 | **≥12GB**（CPU Core 证明的**固定地板 ~10.15 GiB**，见 [`bench/results/proofs.md`](../bench/results/proofs.md)） | 7.6GB 会 OOM（killer 日志：`Killed process fibonacci`）；**12GB 也只够证小策略**，边界见下方注 |
 | Rust + SP1 | Rust stable；`cargo-prove` **v6.7.0** + succinct 工具链 | `curl -L https://sp1.succinct.xyz \| bash` → `sp1up` → `sp1up` |
 | Go | ≥1.24（`sp1-sdk` 的 `native-gnark` 需要） | 走 `GOPROXY=https://goproxy.cn,direct` |
 | C/系统依赖 | `build-essential clang pkg-config libssl-dev cmake protobuf-compiler` | protoc 供 sp1-prover-types |
@@ -28,7 +28,7 @@
 
 ```bash
 cd Proof-of-Policy/03_代码仓库/zk-policy     # 仓库根（目录曾名为“方向二”，已重命名）
-python3 -m unittest discover tests -v          # 期望 425 passed（12 skip：2 个 compressed fixture + 2 个 POP_TEST_PROOF 门控 + 1 个 POP_TEST_EZKL 门控 + 5 个 POP_TEST_COMPOSE 门控 + 1 个 POP_TEST_SESSION 门控 + 1 设计内）
+python3 -m unittest discover tests -v          # 期望 469 passed（13 skip：2 个 compressed fixture + 2 个 POP_TEST_PROOF 门控 + 1 个 POP_TEST_EZKL 门控 + 5 个 POP_TEST_COMPOSE 门控 + 1 个 POP_TEST_SESSION 门控 + 1 个 POP_TEST_MULTIPARTY 门控 + 1 设计内）
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json | head    # 编译出 ConstraintSpec
 ```
 
@@ -60,13 +60,28 @@ RESULT: PASS
 ## 4. 复现：双端一致性（Python golden ↔ SP1）
 
 ```bash
-SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 19/19（prove 见下方注）
+SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 19/19 · prove 19/19（prove 约 45 min，见下方注）
 ```
 
 > 真实证明默认**分块**（`--chunk 4`，共 4 个 `pop-script` 进程）。原因很实际：
 > 本机（11.9 GB RAM）把 14 个向量塞进一个进程时，会在第 6~7 个证明处被内核
 > OOM-kill（峰值 10.65 / 10.82 GB）。分块不改变交给电路的输入，只是让每个进程
 > 从干净状态开始；`--chunk 0` 可恢复单进程（需 ≥16 GB 机器）。
+
+> ⚠️ **一台 12 GB 机器的证明侧天花板**（P2-12 实测，[`bench/results/proofs.md`](../bench/results/proofs.md)）：
+> 别指望换更大的策略再跑一遍 —— 峰值常驻的**固定地板就是 ~10.15 GiB**
+> （200 字符 × 1 条规则这种最小配置已经 10,389 MB），往上只剩很窄的一条缝：
+>
+> | 策略规模 | 能否出证 |
+> |---|---|
+> | 1 条规则，≤10k 字符 | ✅ |
+> | 2 条规则，~200 字符 | ✅ |
+> | 3 条规则及以上（含 `pattern_block`） | ❌ OOM |
+> | 1 条规则，20k 字符 | ❌ OOM |
+>
+> 卡的是**内存不是 CPU**：周期表（[`bench/results/cycles.md`](../bench/results/cycles.md)）
+> 能扫到 100k 字符 × 6 规则，因为那只跑 zkVM 执行不出证。想证更大的策略要么加内存，
+> 要么换证明模式（`compressed` 需 ≥16 GB，见 §11）。
 
 ## 5. 复现：私有模式（承诺 + 选择性披露 + 证据开示）
 
@@ -288,9 +303,9 @@ python3 scripts/verify_session.py --session .../session.json \
 
 ## 验收判据（复现成功）
 
-- `python3 -m unittest discover tests` → **425 passed（12 skip）**（2026-09-12 复跑；skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = `POP_TEST_SESSION` 门控的会话聚合证明端到端用例，1 = 设计内「依赖已装」用例）；
+- `python3 -m unittest discover tests` → **469 passed（13 skip）**（2026-09-12 复跑；skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = `POP_TEST_SESSION` 门控的会话聚合证明端到端用例，1 = `POP_TEST_MULTIPARTY` 门控的多证明者端到端用例（真出两份切片证明），1 = 设计内「依赖已装」用例）；
 - `scripts/prove_policy.py` → **RESULT: PASS**；
-- `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（**prove 未重跑**：向量 14 → 19 后只做过 host 全量 + `norm_homoglyph` 单条真实证明，整批 prove 须 `--chunk`，见 `modules/08-tests-bench.md` §5）
+- `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 **整批重跑**：19 条向量各出一份真 core 证明，`--chunk 2` 切到 10 个独立子进程，约 45 min，见 `modules/08-tests-bench.md` §5）
   （真实证明分 4 块跑，见 §4 的说明；`--no-prove` 时跳过真实证明）；
 - `verify_cert.py`（带 `--response T′`）/ `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证与响应绑定核对）；
 - `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 12/12 + 反例对照，见 §12）；
@@ -303,6 +318,7 @@ python3 scripts/verify_session.py --session .../session.json \
 |---|---|---|
 | 证明进程被杀、无输出 | 内存不足（WSL 默认 ~7.6GB） | 宿主 `C:\Users\<你>\.wslconfig` 设 `memory=12GB`，`wsl --shutdown` 后重启 |
 | `cross_validate --prove` 跑到第 6~7 个向量就被 kill | 单进程跑 14 个证明会累积内存（峰值 10.8 GB） | 用默认的 `--chunk 4`（本来就默认分块）；别改成 `--chunk 0` |
+| `bench_proofs.py` 的某个点被 kill（退出码 137） | 该点超出本机证明侧天花板（固定地板 ~10.15 GiB） | **这是结论不是故障**：脚本会把它如实记进 `rows[].error` 并继续后面的点；换更小的点（减规则数 / 减长度），边界见 [`bench/results/proofs.md`](../bench/results/proofs.md) |
 | `cargo prove ... unreachable` | `SP1_PROVER=native` 非法 | 用 `SP1_PROVER=cpu` |
 | 出证报 “light prover cannot prove” | light 只能执行/验证 | 用 `cpu` |
 | sp1-prover 编译报 `no method named keep` | 上游 tempfile 3.x 无 `TempDir::keep()` | 勿删 `circuits/patches/tempfile` 与 `[patch.crates-io]` |

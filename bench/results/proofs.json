@@ -1,26 +1,95 @@
-[
-  {
-    "length": 200,
-    "rules": 3,
-    "seconds": 127.44,
-    "proof_bytes": 2788540,
-    "peak_rss_mb": 10764.8,
-    "verified": true
+{
+  "corpus": {
+    "name": "demo",
+    "sources": [
+      "scripts/examples/out/cert_public/vectors.json/vectors[0]/response",
+      "scripts/examples/out/chain/zk/vectors.json/vectors[0]/response",
+      "scripts/examples/eu_agent_reply.txt"
+    ],
+    "excluded": [
+      {
+        "source": "scripts/examples/out/cert_private/vectors.json/vectors[0]/response",
+        "hits": [
+          "pat2: sk-[A-Za-z0-9]{16,}"
+        ]
+      },
+      {
+        "source": "scripts/examples/out/private/vectors.json/vectors[0]/response",
+        "hits": [
+          "kw: ['doxxing']",
+          "pat: [\\w.+-]+@[\\w-]+\\.[\\w.]+"
+        ]
+      },
+      {
+        "source": "scripts/examples/finance_agent_reply.txt",
+        "hits": [
+          "pat2: sk-[A-Za-z0-9]{16,}"
+        ]
+      }
+    ],
+    "chars": 372,
+    "sha256": "8381462c4240f292aca7f145ebbdfe6d3663ee051709e7e1b055d308c3e09959"
   },
-  {
-    "length": 200,
-    "rules": 6,
-    "seconds": 140.47,
-    "proof_bytes": 2792124,
-    "peak_rss_mb": 10862.4,
-    "verified": true
-  },
-  {
-    "length": 1000,
-    "rules": 1,
-    "seconds": 98.5,
-    "proof_bytes": 2778460,
-    "peak_rss_mb": 9826.3,
-    "verified": true
-  }
-]
+  "rows": [
+    {
+      "length": 200,
+      "rules": 1,
+      "trace_sha256": "304a436fa864a68a6b21984abd2d40936123fa0cf03d5eb9f3f9b23017fa5321",
+      "ok": true,
+      "seconds": 123.46,
+      "proof_bytes": 2781619,
+      "peak_rss_mb": 10389.4,
+      "verified": true,
+      "passed": true
+    },
+    {
+      "length": 200,
+      "rules": 2,
+      "trace_sha256": "304a436fa864a68a6b21984abd2d40936123fa0cf03d5eb9f3f9b23017fa5321",
+      "ok": true,
+      "seconds": 118.89,
+      "proof_bytes": 2782131,
+      "peak_rss_mb": 10438.4,
+      "verified": true,
+      "passed": true
+    },
+    {
+      "length": 2000,
+      "rules": 1,
+      "trace_sha256": "c3d2525cd45c492ae76632ec7b876599c0345cd52cae3d9859e22da3df7b5a71",
+      "ok": true,
+      "seconds": 138.11,
+      "proof_bytes": 2783883,
+      "peak_rss_mb": 10448.7,
+      "verified": true,
+      "passed": true
+    },
+    {
+      "length": 10000,
+      "rules": 1,
+      "trace_sha256": "3b33c0bd4b416531242d4cb784f758c95951e7af7e126185f34cd1c750eb3a02",
+      "ok": true,
+      "seconds": 172.5,
+      "proof_bytes": 2791995,
+      "peak_rss_mb": 10506.4,
+      "verified": true,
+      "passed": true
+    },
+    {
+      "length": 200,
+      "rules": 3,
+      "trace_sha256": "304a436fa864a68a6b21984abd2d40936123fa0cf03d5eb9f3f9b23017fa5321",
+      "ok": false,
+      "seconds": 87.2,
+      "error": "\u88ab SIGKILL \u6740\uff08\u672c\u673a\u5185\u5b58\u4e0d\u8db3\uff0cOOM\uff09"
+    },
+    {
+      "length": 20000,
+      "rules": 1,
+      "trace_sha256": "3cef24abefecb2eb30a41ce74eb13dd0343cb6065f74f9e79c5238857ac293f8",
+      "ok": false,
+      "seconds": 87.69,
+      "error": "\u88ab SIGKILL \u6740\uff08\u672c\u673a\u5185\u5b58\u4e0d\u8db3\uff0cOOM\uff09"
+    }
+  ]
+}

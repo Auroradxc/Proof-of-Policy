@@ -455,7 +455,7 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
 **验收**：`tests/test_compose.py` + `bench/results/compose.md`；**反例**——替换任一子证明必须被拒。
 **均已达**：`POP_TEST_COMPOSE=1 python3 -m unittest tests.test_compose` → **Ran 47 tests … OK**（563.5 s，
 无一 skip）；`bench/results/compose.{json,md}` 已跑出；全套 `python3 -m unittest discover -s tests -t .`
-→ **348 passed / 11 skipped**（P2-9 收尾时的快照；P2-10 再加 38 例后全量为 425/12，见 §4）。
+→ **348 passed / 11 skipped**（P2-9 收尾时的快照；P2-10 再加 38 例、P2-11 再加 44 例后全量为 469/13，见 §4）。
 反例的「替换任一子证明必须被拒」在真产物上单独跑过
 （`test_swapping_either_subproof_is_rejected`）。
 
@@ -605,7 +605,7 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 | **9.4** | **策略规则**：新增 `semantic_bound` kind，贯通 `model.py → compile.py → serialize.py → pop-types` | `Constraint::SemanticBound { name, model_vkey, onnx_sha256, threshold_bp, direction }` | `tests/test_semantic.py::test_compile_semantic`；契约哈希稳定 |
 | **9.5** | **组合与绑定** —— ✅ **已完成（2026-09-12）** | `policydsl/semantic.py::verify_companion/companion_entry`、`cert.build_payload(semantic=)`、`scripts/{issue_cert,verify_cert}.py` | 见 9.7 反例；**两处与原文不同，理由见 9.5 记要** |
 | **9.6** | **信任边界论证** —— ✅ **已完成（2026-09-12）** | [`design-semantic-rules.md`](design-semantic-rules.md) | 与 §P1-8 的形式化模型对接：新增**引理 L7**（**不是 L6 —— 那号已被 P1-6 占用**，见记要） |
-| **9.7** | **验收 + 反例** —— ✅ **已完成（2026-09-12）** | `tests/test_semantic.py`（29 例 / 6 条反例） | 见下；全套 **348 passed / 11 skipped**（P2-9 收尾时复跑；**当前全量为 425/12**，见 §4 P2-10） |
+| **9.7** | **验收 + 反例** —— ✅ **已完成（2026-09-12）** | `tests/test_semantic.py`（29 例 / 6 条反例） | 见下；全套 **348 passed / 11 skipped**（P2-9 收尾时复跑；**当前全量为 469/13**，见 §4 P2-10 / P2-11） |
 
 > **9.1–9.4 的完成状态补记（2026-09-12 审计）** —— 这四行此前没打勾，实物其实都在，逐条对账如下。
 > 其中 **9.1 有一处未按计划交付**，如实记下：
@@ -786,20 +786,142 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 `session.py` + guest + 测试）。理由很具体：会话层否则**没有命令行入口**
 （`pop-script --job session` 要手工拼 `vectors.json`），`docs/reproduce.md` 就没有可跑的命令。
 
-### P2-11 多证明者
+### P2-11 多证明者 —— ✅ **已完成（2026-09-12）**
 
 `policydsl/multiparty.py`：模型方 / 工具网关 / 部署方各自持钥、各证一段策略切片；
 输出 `CompositeCertificate`（N 签名 + 聚合证明）。基于 P1-5 的回执设施 + P1-6 的组合驱动。
 
 **验收**：缺任一角色签名 → 拒绝；单角色策略切片被换 → 拒绝。
 
-### P2-12 真实规模评测
+**实测（2026-09-12，本机 CPU，真出证明，不是 mock）**：
 
-- `bench_cycles.py`：长度扩到 `10k / 50k / 100k`；拟合成本模型 `cycles ≈ a·|T|·rules + b`（当前只有
-  「~4.2k cycles/字符」一个点）。
-- `bench_proofs.py`：加入 10k/50k 采样（每点 ~2 分钟 + ~10 GB，需 ≥32 GB 机器跑 groth16 变体）。
-- **真实轨迹**：从 `demo_e2e` 会话抓真实 agent 轨迹回放，替掉纯合成输入。
-- 重跑后**同步** `README.md`、`paper §7`、`docs/reproduce.md` 的硬编码数字。
+| 跑法 | 切片证明份数 | 墙钟 | 峰值 RSS | 结果 |
+|---|---:|---:|---:|:--|
+| `scripts/prove_multiparty.py --pack policy_packs/multiparty_demo_v1.json` | 2（模型方 + 网关；部署方空切片不出证） | **6:33**（393 s） | 10.71 GiB | `RESULT: PASS` |
+| `POP_TEST_MULTIPARTY=1 python3 -m unittest tests.test_multiparty.TestMultipartyEndToEnd` | 2 | **7:05**（425 s） | 10.72 GiB | 通过（exit 0） |
+
+两条都覆盖了现场造假演示（缺签名 / 换切片），也都跑在**真证明**上而非只在宿主判定上：
+换切片那一步拒的理由是「part 自述的 rules 与 plan 不一致」，且被换进去的证明本身**是真的** ——
+这正是要证明的东西：**证明为真 ≠ 证明的是这一段**。
+
+**怎么切**：不看规则条数，看**「谁手上才有那段证据」**。`keyword_block` /
+`normalized_keyword_block` / `pattern_block` / `format_check` / `length_bound` 只看响应文本 →
+**模型方**；`tool_arg_guard` / `budget_bound` 要读 P1-5 的回执链，而链只有**工具网关**有 →
+**网关**；`semantic_bound` 归**部署方**（它才持有模型与阈值）。8 个 kind = 7 入电路 + 1 委托，
+恰好铺满三个角色。切片**两两不交、并集是全策略**；空切片（比如示例里的部署方）**仍然要签名** ——
+「这一段我不负责」必须是**显式**的，不能靠「没出现」暗示。
+
+**交付物**：`policydsl/multiparty.py`（切分 + 编译 + 签名 + 装配 + 七步验证）+
+`policydsl/compile.py` 的 `compile_constraints` / `compile_slice_policy` 接缝 +
+`policy_packs/multiparty_demo_v1.json`（模型方与网关**都有**非空切片的示例包）+
+`scripts/prove_multiparty.py`（CLI，含两条验收判据的现场造假演示）+ `tests/test_multiparty.py`（44 例，其中 1 例 gated）。
+
+**三个设计要点**：
+
+1. **切片不需要动电路**。一段切片对 `pop-program` 而言就是一条**普通策略**，所以三个角色共享
+   同一个 guest/vkey，**在盘的旧证明全部继续有效**（重新出 ELF 会让它们全废）。代价必须说清：
+   三个角色各持一把键只是**责任划分**，「不同角色用不同电路」本仓库**没有做**。
+2. **「聚合证明」不是递归聚合**：是 N 份切片证明（同一个 vkey）**加**一份把它们拴在一起的证书 ——
+   证书携带共享的 `policy_hash`（整条策略）、共享的 `response_binding`（同一条 T）、共享的
+   `trace_root`（同一条回执链）、一份 `plan`（`角色 → {规则, slice_sha256}`）及其摘要，
+   外加每个角色对自己那部分的 Ed25519 签名。**验证成本 O(N)**，不主张做到了递归聚合。
+3. **角色密钥必须两两不同**（`compose` 的 L6 域分隔在角色层的对应物）：否则「这一段是谁证/谁签的」
+   无从判定 —— 一个角色可以顶两个名字。
+
+**「单角色切片被换」有三道独立的拦网**（验收②之所以成立的原因，逐条都有用例）：
+
+- ① part 自报的 `rules` / `slice_sha256` 与 `plan` 对不上 → 当场拒；
+- ② 改写 plan 会**破坏另外两个角色的签名**（它们签的 `plan_digest` 覆盖改前的 plan）；
+- ③ 于是只剩**三方合谋**能改得自洽 —— 三把键一起改 plan、一起重签，签名层是**完全自洽**的，
+  光看证书查不出来。**拦住它的唯一办法是拿 `policy_pack` 现场重编译**并与证书里的 `plan` 比对。
+  这条边界**如实记下并有用例钉住**（`test_colluding_roles_rewritten_plan_needs_the_pack`：
+  不带策略包时**会通过**，带上即被拒）。
+
+**如实边界（不要读过头）**：
+
+- **本模块不自己产生陪伴证明**：语义切片归部署方，而那段**不判定**它、只把它记进 `delegated`；
+  合规结论要另外合取 ezkl 陪伴证明（**L7**）。验证结果的 `satisfied` 因此是
+  「所有切片 `passed` **且** `delegated` 为空」—— 有一处委托就**不**声称合规。
+- **`ok` 与 `satisfied` 分开**（与 compose/session 同口径）：如实记下一次违规的证书**仍是真证书**，
+  只是不构成合规。把「证书为真」与「合规成立」混成一个布尔值，正是这类系统最容易出的错。
+- **回执链发给每一个切片**：否则 `trace_root` 的相等性没法机器核验。
+- **`require_covering_length_bound` 是整策不变式**，只在 `shard()` 里对**整条**策略查一次。
+  按切片查会让**每一个**含语义规则的策略结构性地无法分片（定长前提由模型方那段的
+  `length_bound` 提供）—— 所以有了 `compile_slice_policy` 这个唯一差别的接缝，而不是第二份编译器。
+
+**与计划不同的一处**：计划把输出叫 `CompositeCertificate`，实际落盘的类型是
+`MultipartyCertificate`（字段与计划一致：N 签名 + plan + 每段的证明引用）。改名是为了不与被
+P1-6 占用的「组合」一词撞车 —— 两者都叫 composite 会让「组合证明」在文档里指向两个东西。
+
+### P2-12 真实规模评测 —— ✅ **已完成（2026-09-12）**
+
+- `bench_cycles.py`：长度扩到 `10k / 20k / 50k / 100k`（原来是 `200 / 2k / 20k`）。
+- `bench_proofs.py`：采样点扩到 **10k 字符**（周期表同量程），并与 `bench_cycles`
+  **共用同一份语料**。⚠️ 计划里写的「推到 20k 字符 × 6 规则」**没做到**，原因是内存
+  而不是时间：`(20000,1)` 与 `(200,3)` 在本机各被 OOM 杀两次（见下）。所以这一节
+  交出来的不是一条更大的曲线，而是一条**边界** —— 哪一格能证、哪一格证不出来。
+- **真实轨迹**：默认语料改成从仓库里**真跑出来的**工件的 `response` 字段汇总去重
+  （`scripts/examples/out/**`），替掉纯合成的 `the quick brown fox jumps`。
+- 重跑后**同步**了 `README.md`、`paper §7`、`docs/reproduce.md`、`docs/modules/*` 的硬编码数字。
+
+**实测（2026-09-12，`bench/results/cycles.{json,md}` + `proofs.{json,md}`）**：
+
+* **固定策略时 cycles 对长度是精确线性的**（5 个规则集各自 6 个长度点，R² 全部 ≈ 1.0000）：
+
+  | 规则数 | keyword | pattern | 斜率 (cycles/字符) | 截距 |
+  |---:|---:|---:|---:|---:|
+  | 1 | 0 | 0 | 73.9 | 50,137 |
+  | 2 | 1 | 0 | 105.3 | 65,942 |
+  | 3 | 1 | 1 | 4,289.8 | 387,501 |
+  | 4 | 2 | 1 | 4,048.8 | 405,785 |
+  | 6 | 3 | 2 | 5,403.5 | 993,257 |
+
+  ⇒ 一条 keyword 规则的边际单价约 **+31.6 cycles/字符**（边际探针，L=100k）；一条
+  NFA 正则（email）的边际约 **+3,634 cycles/字符** —— **约为关键词规则的 115 倍**。
+  换个说法：含正则的规则集每字符斜率 4,289.8 是不含字符串规则的 73.9 的 **58 倍**。
+  扫描成本由 NFA 主导，不是由规则条数主导。
+
+* **计划里那条 `cycles ≈ a·|T|·rules + b` 被数据否掉了**（R² = 0.872，且截距为负）。
+  更细的按类拆开也**不成立**：拟合出的 keyword 单价是**负的**（−477 cycles/字符）。
+  这不是噪声，两条探针直接给出了机制：
+  - **顺序探针**（同一批规则、同一段文本，L=100k）：声明顺序 541,342,069 vs 逆序
+    570,736,989 ⇒ **+5.43%**；两者 `passed` 完全一致 —— **判定语义与顺序无关，成本不是**。
+  - **边际探针**（补上矩阵缺的「只有正则、没有关键词」那格，L=100k）：
+    关键词单独加 **+31.6 cycles/字符**；在已有正则的策略里、加在**正则之前**
+    **+585.6**，加在**正则之后** **−153.7**（355,434,642 − 370,804,820 → 反而更低）。
+    同一个「加一条 keyword 规则」，单价随位置在 **−154 ~ +586** 之间变号。
+
+  ⇒ 单价的正确读法是「**规则 + 上下文**」的属性，不是规则的属性。原因是 zkVM 内
+  `ascii_lower` 与 Pike VM 都要分配内存，**分配器状态依赖先前的分配**。
+  所以论文与文档里引用的是**按规则集的斜率**（上表，可直接引用的量），
+  而不是任何「单价 × 条数」的加式。
+  `bench_cycles.py` 因此改成了**两段式**拟合（先按规则集量斜率、再解释斜率），
+  并把残差与两条探针一起写进结果 —— 残差是结论，不是瑕疵。
+
+* **真实证明侧：天花板是内存，不是周期数**（`bench/results/proofs.{json,md}`，6 个点、
+  每点独立子进程、OOM 如实入表）：
+
+  | length | rules | time (s) | proof (KiB) | peak RSS (MiB) | 结论 |
+  |---:|---:|---:|---:|---:|:--|
+  | 200 | 1 | 123.46 | 2716.4 | 10389.4 | ✓ |
+  | 200 | 2 | 118.89 | 2716.9 | 10438.4 | ✓ |
+  | 2,000 | 1 | 138.11 | 2718.6 | 10448.7 | ✓ |
+  | 10,000 | 1 | 172.50 | 2726.6 | 10506.4 | ✓ |
+  | 200 | 3 | 87.2 | — | — | ✗ OOM |
+  | 20,000 | 1 | 87.69 | — | — | ✗ OOM |
+
+  ⇒ **固定地板 ~10.15 GiB**（最小配置 200×1 就已 10,389 MB，与 trace 几乎无关），
+  其上只有一条很窄的缝，且**两级台阶而非斜线**：1 条规则 ≤10k 字符可证、2 条规则
+  约 200 字符可证、**3 条及以上出不来**（第 3 条恰是 `pattern_block`，激活另一族
+  AIR chip ⇒ 规则数在 2→3 断崖；长度在 10k→20k 断崖）。
+  **卡的是内存不是 CPU** —— 周期表能扫到 100k 字符 × 6 规则，因为那只跑执行不出证。
+  墙的位置可复现（两个失败点各失败两次），**墙上的耗时不可复现**（±10% 抖动，
+  内存 ±1%），引用时给量级即可。
+
+**与计划不同的一处**：计划要求「拟合成本模型 `cycles ≈ a·|T|·rules + b`」。实测下来这条
+**不成立**（见上），所以没有把它当成结论发出去 —— 换成了「固定策略下精确线性 + 按规则集
+的斜率表 + 不可加性的两条证据」。这是**如实报告**，不是没做完：模型被自己的数据否掉，
+本身就是评测的产出。
 
 ---
 
@@ -822,9 +944,9 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 | 阶段 | 判据 |
 |---|---|
-| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（2026-09-12 复跑：**425 全绿 / 12 skip**，skip 见 §7 说明） |
+| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove **19/19** 仍绿（2026-09-12 整批 prove 重跑）；⑤ 全量测试无回归（2026-09-12 复跑：**469 全绿 / 13 skip**，skip 见 §7 说明） |
 | P1 | ① `test_trace.py` ✅（**P1-5 已完成**：39 例含四条验收 + P1-5b 的 seal/截尾，`cross_validate` host/prove 14/14）/ `test_compose.py` ✅（**P1-6 分支 A 已完成**：48 例含 5 组反例 + 四条驱动接线回归）/ `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应（**L6 已从「规划中」改为已证**） |
-| P2 | ① `test_semantic.py` **29 例全绿含 6 条反例**（§9.3；✅ 2026-09-12）；② `test_session.py` ✅（**P2-10 已完成（2026-09-12）**：38 例，含计划的两条验收判据 —— 混异策略与挖尾 —— 并对着真证明跑过；见 §4 P2-10 记要）；③ `test_multiparty.py`；④ `bench/results/` 新增表格（含 ezkl 出证成本 ✅ `semantic.md`）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 **L7** 对接（**L6 已被 P1-6 占用**，见 §9.2 记要） |
+| P2 | ① `test_semantic.py` **29 例全绿含 6 条反例**（§9.3；✅ 2026-09-12）；② `test_session.py` ✅（**P2-10 已完成（2026-09-12）**：38 例，含计划的两条验收判据 —— 混异策略与挖尾 —— 并对着真证明跑过；见 §4 P2-10 记要）；③ `test_multiparty.py` ✅（**P2-11 已完成（2026-09-12）**：44 例，含计划的两条验收判据 —— 缺角色签名与单角色切片被换 —— 并对着真证明跑过；见 §4 P2-11 记要）；④ `bench/results/` 新增表格（含 ezkl 出证成本 ✅ `semantic.md`）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 **L7** 对接（**L6 已被 P1-6 占用**，见 §9.2 记要） |
 
 ---
 

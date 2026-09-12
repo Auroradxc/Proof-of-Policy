@@ -129,10 +129,11 @@
 
 ### Phase 6 · 评测 + 安全模型 + 论文（W7–W8）✅
 - [x] **评测基础设施**：`pop-script --execute`（zkVM 执行、报周期数，不出证）；`PatternBlock.mode ∈ {pike,naive}` 消融开关（跨层一致，`tests/test_ablation.py`）
-- [x] **成本曲线**：`bench/bench_cycles.py`（20k 字符 × 6 规则 ≈ 1.12e8 周期；字符串规则 ≈ 4.2k 周期/字符）、`bench/bench_proofs.py`（真实证明：**98–141 s / 2.7 MiB / 峰值 ~10 GB**）、`bench/bench_verify.py`（**纯验证 89.8 ms**，vkey setup 1.6 s）
-- [x] **NFA 消融**：自然文本 pike ≈ 1.8× naive；**对抗输入**（a×n vs `a+b`）比值 24.5×→49.4×→99.1×（二次退化证据）
+- [x] **成本曲线**：`bench/bench_cycles.py`（长度推到 **100k 字符**，规则数 1–6；100k × 6 规则 ≈ 5.4e8 周期；固定规则集时对长度**精确线性** R²≈1.0000，含 NFA 正则 ≈ 4.3k 周期/字符）、`bench/bench_proofs.py`（真实证明：**118.9–172.5 s / 2.7 MiB / 峰值 ~10.4 GB**）、`bench/bench_verify.py`（**纯验证 89.8 ms**，vkey setup 1.6 s）
+- [x] **NFA 消融**：`bench/bench_ablation.py`（病理构造：模式 `a+b`、输入 `a`×n）。自然文本 pike ≈ 1.5–2.1× naive；**对抗输入**比值 19.2×→42.5×→90.1×（二次退化证据）
+- [x] **P2-12 真实规模评测**：周期侧扫到 100k 字符 × 6 规则；证明侧给出**天花板**——固定地板 ~10.15 GiB，1 条规则 ≤10k 字符可证、2 条规则约 200 字符可证、3 条及以上 OOM（`bench/results/{cycles,proofs,ablation}.md`）
 - [x] **信任-成本四象限**：`docs/quadrant.md`（ZK/TEE/形式验证/hash-chain）
-- [x] **对标 zkAgent（ePrint 2026/199）**：`bench/comparison_zkagent.md` —— 二者**正交可组合**；PoP 在**低一个数量级硬件**（24 核/12 GB vs 32 核/512 GB）下：证明时间同量级（98–141 s vs 99–194 s）、证明大小相当（2.7 MiB vs LogUp 3.1 MiB）、纯验证 ~90 ms（vs 38 ms–0.42 s），并额外提供**承诺式隐私**（口径见 `bench/comparison_zkagent.md` §4.4 —— 「不公开明文」，非「内容不可恢复」）
+- [x] **对标 zkAgent（ePrint 2026/199）**：`bench/comparison_zkagent.md` —— 二者**正交可组合**；PoP 在**低一个数量级硬件**（24 核/12 GB vs 32 核/512 GB）下：证明时间同量级（118.9–172.5 s vs 99–194 s）、证明大小相当（2.7 MiB vs LogUp 3.1 MiB）、纯验证 ~90 ms（vs 38 ms–0.42 s），并额外提供**承诺式隐私**（口径见 `bench/comparison_zkagent.md` §4.4 —— 「不公开明文」，非「内容不可恢复」）
 - [x] **安全模型**：`docs/security-model.md`（完备性/健全性/内容隐私/脱敏健全性/证据不可伪造/绑定/记录完整性 + 对应实验 + “为何违规轨迹无法通过验证”）
 - [x] **论文初稿**：`paper/proof-of-policy.md`（威胁模型/系统/安全模型/实验含对标/相关工作四派定位/局限）
 - [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；测试 **102+ 全绿（1 skip=设计内）**

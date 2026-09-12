@@ -534,16 +534,26 @@ pop-verify --meta <proof>.verify.json [--out result.json]
 | 缺 `protoc` | 构建失败 | `sudo apt-get install -y protobuf-compiler` |
 | 网络限流 | `cargo fetch` 卡住 | 用 rsproxy sparse 镜像（`~/.cargo/config.toml`） |
 
-**实测数字**（24 核 / 12 GB CPU）：
+**实测数字**（24 核 / 12 GB CPU，2026-09-12）：
 
-| 配置 | 证明时间 | 纯验证 | 证明大小 | 峰值内存 |
-|---|---:|---:|---:|---:|
-| 200 字符 × 3 规则 | 127.4 s | ~90 ms | 2.72 MiB | 10.76 GiB |
-| 200 字符 × 6 规则 | 140.5 s | ~90 ms | 2.72 MiB | 10.86 GiB |
-| 1000 字符 × 1 规则 | 98.5 s | ~90 ms | 2.71 MiB | 9.83 GiB |
+| 配置 | 证明时间 | 证明大小 | 峰值内存 | 结论 |
+|---|---:|---:|---:|---|
+| 200 字符 × 1 规则 | 123.5 s | 2716.4 KiB | 10,389 MB | ✅ |
+| 200 字符 × 2 规则 | 118.9 s | 2716.9 KiB | 10,438 MB | ✅ |
+| 2,000 字符 × 1 规则 | 138.1 s | 2718.6 KiB | 10,449 MB | ✅ |
+| 10,000 字符 × 1 规则 | 172.5 s | 2726.6 KiB | 10,506 MB | ✅ |
+| 200 字符 × 3 规则 | — | — | — | ❌ OOM |
+| 20,000 字符 × 1 规则 | — | — | — | ❌ OOM |
 
-证明时间由证明器**固定开销主导**（~100 s 量级），随长度/规则数的边际成本体现在 zkVM 周期数上
+证明时间由证明器**固定开销主导**，随长度/规则数的边际成本体现在 zkVM 周期数上
 （见 `08` 与 `bench/results/`）。
+
+⚠️ **但真正卡住规模的是内存，不是周期数**：峰值常驻有一条 **~10.15 GiB 的固定地板**
+（200 字符 × 1 条规则这种最小配置就已 10,389 MB，与 trace 几乎无关），其上只剩很窄的缝。
+本机的可行域是**两级台阶**：1 条规则 ≤10k 字符可证、2 条规则约 200 字符可证、
+**3 条及以上出不来**（第 3 条恰是 `pattern_block` —— 正则激活另一族 AIR chip）。
+周期表能扫到 100k 字符 × 6 规则，是因为那只跑执行不出证。边界表与复现口径见
+`bench/results/proofs.md` 与 `08` §3.3。
 
 ---
 
@@ -604,7 +614,7 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
 | `tests/test_verifier_only.py` | `pop-verify` 的调用与快路径判定 |
 | `bench/bench_cycles.py` | `--execute` 的 cycle 数矩阵（长度 × 规则数 × pike/naive） |
 | `bench/bench_proofs.py` / `bench_verify.py` | 证明时间/体积/内存；验证的冷启动 vs 纯验证 |
-| `scripts/cross_validate.py` | host 19/19（**I1 的总闸门**；prove 见 `08` §5） |
+| `scripts/cross_validate.py` | **host 19/19 · prove 19/19**（**I1 的总闸门**，2026-09-12 整批重跑；分块口径见 `08` §5） |
 
 ---
 

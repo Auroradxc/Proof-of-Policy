@@ -1,0 +1,66 @@
+{
+  "pattern": "a+b",
+  "input": "a \u00d7 n",
+  "rows": [
+    {
+      "n": 100,
+      "mode": "pike",
+      "cycles": 643894,
+      "passed": true
+    },
+    {
+      "n": 100,
+      "mode": "naive",
+      "cycles": 12382720,
+      "passed": true
+    },
+    {
+      "n": 200,
+      "mode": "pike",
+      "cycles": 1145209,
+      "passed": true
+    },
+    {
+      "n": 200,
+      "mode": "naive",
+      "cycles": 48638946,
+      "passed": true
+    },
+    {
+      "n": 400,
+      "mode": "pike",
+      "cycles": 2143617,
+      "passed": true
+    },
+    {
+      "n": 400,
+      "mode": "naive",
+      "cycles": 193207130,
+      "passed": true
+    }
+  ],
+  "ratios": [
+    {
+      "n_from": 100,
+      "n_to": 200,
+      "pike_per_char_from": 6438.94,
+      "pike_per_char_to": 5726.045,
+      "naive_per_char_from": 123827.2,
+      "naive_per_char_to": 243194.73,
+      "pike_change_pct": -11.07162048411694,
+      "naive_change_pct": 96.39847303338848,
+      "ratio": 42.47167634903323
+    },
+    {
+      "n_from": 200,
+      "n_to": 400,
+      "pike_per_char_from": 5726.045,
+      "pike_per_char_to": 5359.0425,
+      "naive_per_char_from": 243194.73,
+      "naive_per_char_to": 483017.825,
+      "pike_change_pct": -6.409354100430587,
+      "naive_change_pct": 98.61360688202411,
+      "ratio": 90.13136675068354
+    }
+  ]
+}

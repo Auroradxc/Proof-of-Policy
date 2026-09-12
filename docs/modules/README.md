@@ -63,7 +63,7 @@ zk-policy/
 ├── contracts/                # Anchor.sol + 已编译 artifact（Anchor.json，免 solc 部署）
 ├── scripts/                  # 端到端脚本（demo / 交叉验证 / 出证 / 验证 / 安装）
 ├── bench/                    # 评测（周期数矩阵 / 证明成本 / 验证成本 / ezkl / 组合 / 对标）
-├── tests/                    # 单测与集成测试（425 passed / 12 skip）
+├── tests/                    # 单测与集成测试（469 passed / 13 skip）
 ├── policy_packs/             # 示例策略包（EU AI Act / PII / 金融 / agent 内容与工具）
 └── docs/                     # 文档（本目录为分板块模块文档）
 ```
@@ -122,7 +122,7 @@ zk-policy/
 | 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/types` `program` `infer-program` `session-program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证；**三个 guest 的键分离**（P1-6 / P2-10）（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
 | 06 | [框架集成](06-frameworks.md) | `langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` | 把两个钩子接到真实 agent 框架上（含流式与飞行前拦截） |
 | 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/*` | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
-| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 425 个测试覆盖什么、评测数字怎么来的 |
+| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 469 个测试覆盖什么、评测数字怎么来的 |
 
 三条**不在本目录**但同样属于实现层的线（各自有独立文档，故未拆成板块）：
 
@@ -148,7 +148,7 @@ zk-policy/
 
 | # | 不变量 | 由什么保证 |
 |---|---|---|
-| I1 | **跨层判定一致**：同一 `ConstraintSpec` + 同一输入，Python golden 与 `pop-types` 结果逐字段相同 | `scripts/cross_validate.py`（host 19/19；prove 见 `08` §5）、`tests/test_rules_incircuit.py` |
+| I1 | **跨层判定一致**：同一 `ConstraintSpec` + 同一输入，Python golden 与 `pop-types` 结果逐字段相同 | `scripts/cross_validate.py`（**host 19/19 · prove 19/19**，2026-09-12 整批重跑；分块口径见 `08` §5）、`tests/test_rules_incircuit.py` |
 | I2 | **契约哈希稳定**：语义相同 ⇒ `spec["sha256"]` 相同（键排序、紧凑分隔符、字符串排序去重小写化） | `compile._canonical_hash`、`cert.canonical` |
 | I3 | **ASCII 语义**：关键词大小写折叠、NFA 的 `\w\d\s` 都只在 ASCII 上定义，避免 Python `str.lower()` 与 Rust 的差异 | `commit._ascii_lower`、`types::ascii_lower`、`nfa.py` 模块注释 |
 | I4 | **不出电路就无法证明**：一个规则类型要么两侧都实现，要么**根本产不出证明**，绝不静默跳过 | `compile.py` 把未知 kind 原样写进规范字节 → guest 的 serde 解析失败即 panic（fail-closed）；`tests/test_policy_binding.TestFailsClosed` 锁死 |
@@ -162,12 +162,12 @@ zk-policy/
 
 ```bash
 # 只跑参考层（秒级，无需 Rust）
-python3 -m unittest discover tests -v            # 425 passed / 12 skip
+python3 -m unittest discover tests -v            # 469 passed / 13 skip
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
 python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
 
 # 交叉验证（需要先构建 circuits，见 docs/reproduce.md §2）
-SP1_PROVER=cpu python3 scripts/cross_validate.py          # host 19/19（prove 见 08 §5）
+SP1_PROVER=cpu python3 scripts/cross_validate.py          # host 19/19 · prove 19/19（约 45 min，分块口径见 08 §5）
 
 # 一条命令跑通端到端（含链上锚定）
 bash scripts/anchor_e2e.sh                                # 秒级，--prove 加真实证明
