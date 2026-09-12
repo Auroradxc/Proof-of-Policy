@@ -166,6 +166,34 @@ SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附真实 Core 证明（�
 #   → [PASS] chain_anchored 14/14 digests on chain … (14 cross-checked) + 反例对照 anchoredAt=0
 ```
 
+### 证明服务（第二步：把出证做成一个常驻进程）
+
+上面每一条都是「跑一次、拿一份产物」。**服务化**把同一套出证能力变成两条接口，
+原因是这条链上两个阶段的时间尺度差 **4 个数量级**：宿主判定毫秒级、SP1 core 证明
+~2.5 分钟且峰值 ~10.2 GiB（`bench/results/proofs.md`）。只有一个接口的话，调用方
+要等 2.5 分钟才知道「合规/不合规」。
+
+```bash
+python3 scripts/proof_service.py --host-check   # 演示/边缘：秒级，证书如实标注 unproven
+SP1_PROVER=cpu python3 scripts/proof_service.py # 真证明：~2.5 分钟/次，峰值 ~10.2 GiB
+
+curl -s localhost:8787/v1/policies | python3 -m json.tool          # 已注册的策略（含 serviceable）
+curl -s -X POST localhost:8787/v1/check -H 'Content-Type: application/json' \
+  -d '{"policy_id":"agent-content-v1","response":"…"}'             # 在线段：毫秒级 + unproven 证书
+# 离线段：POST /v1/attest → {"job_id":…} → GET /v1/attest/{job} → done + verify_hint（可直接粘的一行命令）
+```
+
+- **两段不是「降级」关系**：`/v1/check` 的证书在一开始就写明它不是证明
+  （`proof_mode: unproven`、`vkey_hash: unproven`），没有「看起来验过了」的空间；
+  `/v1/attest` 把**同一条响应**升级成真证明（两段传同一个 `nonce` 时绑的是同一条 `T`）。
+- **并发上限是硬事实**：~10.15 GiB 是 SP1 core 证明的**固定地板**，12 GB 机器同时只能跑
+  一个证明器 —— 所以默认 `concurrency=1`，多出来的请求**排队**（队列满了返 `429`，
+  而不是收下之后 OOM）。
+- **不可出证的策略当场拒**：语义规则要 ezkl 陪伴证明，而它只在 `issue_cert.py` 那条
+  命令行路径里生成 —— 服务发一张 `delegated` 非空却没有 companion 的证书只会「看起来
+  验过了」，所以返 400，`GET /v1/policies` 里也如实标 `serviceable: false`。
+- 运维（依赖、参数、满载行为、换签名钥、已知边界、排查表）：[`docs/runbook-proof-service.md`](docs/runbook-proof-service.md)
+
 - 📚 **分板块模块文档（按功能读代码的入口）**：**`docs/modules/`** —— 总览 [`README.md`](docs/modules/README.md)，
   以及 01 策略 DSL / 02 隐私与承诺 / 03 合规证书 / 04 锚定与审计 / 05 ZK 电路 / 06 框架集成 / 07 CLI 与脚本 / 08 测试与评测
 - 📄 端到端复现指南（环境 → 一次合规证明 → 验证）：**`docs/reproduce.md`**

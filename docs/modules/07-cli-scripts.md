@@ -17,6 +17,7 @@
 | `private_demo.py` | 私有模式全链路实验（Leak/Binding/Evidence/证明） | `pop-script` | 是（可 `--no-prove`） | ~70 s |
 | `gen_key.py` | 生成/查看 Ed25519 出证密钥对（打印 keyid + 公钥） | 否 | 否 | 毫秒 |
 | `issue_cert.py` | 签发证书 + 锚定（可选上链） | `pop-script` | 是（可 `--no-prove`） | ~70 s |
+| `proof_service.py` | **证明服务**（第二步）：HTTP 两段接口 —— 宿主判定入证 + 出证队列 | `pop-script` | 是（`--host-check` 否） | check 毫秒级；attest ~2.5 分钟/作业（队列 1） |
 | `verify_cert.py` | **第三方**独立验证单张证书 | `pop-script` / `pop-verify` | 验证已有证明 | ~20 s |
 | `demo_e2e.py` | 一键真实会话（LangChain + MCP + zk + **公私对比** + 锚定） | `pop-script` | 可 `--no-prove` / `--no-contrast` / `--model`（真模型） | host 秒级；出证 **~2.5 分钟**（1 份证明 —— 对比那 2 张默认只做宿主校验） |
 | `verify_session.py` | **第三方**独立验证整个会话包 | 同上 | 验证已有证明 | 秒级 |
@@ -533,6 +534,67 @@ python3 scripts/verify_cert.py --cert c.json --pack p.json --ledger l.jsonl \
 
 私钥路径的解析顺序：`--path` > `$POP_SIGNING_KEY` > `.pop-keys/signing.key`（已 gitignore）。
 设 `$POP_SIGNING_KEY_PASSPHRASE` 则私钥以口令加密落盘；不设则为明文 PKCS#8，依赖文件权限。
+
+---
+
+### 2.14 `proof_service.py` —— 证明服务（第二步）
+
+```bash
+python3 scripts/proof_service.py --host-check      # 演示/边缘：作业几秒，证书标 unproven
+SP1_PROVER=cpu python3 scripts/proof_service.py    # 真证明：~2.5 分钟/作业，峰值 ~10.2 GiB
+```
+
+库在 `policydsl/service.py`，本脚本只做 HTTP（**纯标准库 `http.server`**，零新依赖）。
+**默认只绑 `127.0.0.1:8787`，且无鉴权** —— 运维细节、排查表、已知边界见
+[`docs/runbook-proof-service.md`](../runbook-proof-service.md)。
+
+两段接口（理由：宿主判定毫秒级、SP1 证明 ~2.5 分钟，差 4 个数量级）：
+
+| 方法 | 路径 | 干什么 |
+|---|---|---|
+| `POST` | `/v1/check` | 宿主判定（Python 参考评估器）+ **unproven** 证书，**毫秒级、不占队列** |
+| `POST` | `/v1/attest` | 入队，返 `202` + `job_id` + `queue_position` |
+| `GET` | `/v1/attest/{job}` | `queued` / `proving` / `done` / `failed` |
+| `GET` | `/v1/health` | 并发上限 / 队列深度 / 计数（运维看的） |
+| `GET` | `/v1/policies` | 已注册策略（含 `serviceable` 标注） |
+
+```bash
+curl -s localhost:8787/v1/check -H 'Content-Type: application/json' \
+  -d '{"policy_id":"agent-content-v1","response":"Leak sk-abcdefghijklmnopqrstuvwxyz now"}'
+# → 200，passed=false，proof_mode="unproven"，含 challenge nonce 与 verify_hint（可直接粘贴）
+
+curl -s -X POST localhost:8787/v1/attest -H 'Content-Type: application/json' \
+  -d '{"policy_id":"agent-content-v1","response":"...","nonce":"<上一步回的那个>"}'
+# → 202 {job_id, state:"queued", queue_position}
+```
+
+请求体可带 `receipts`（工具网关签发的回执，P1-5）：给了才判得了工具类规则，
+并且会落盘成 `receipts.json`，让 `verify_cert.py --receipts` 那条有第二个来源可比。
+
+**状态码的取法**：
+
+| 码 | 什么时候 | 为什么是这个码 |
+|---|---|---|
+| `429` | 队列满（`concurrency + max_queue`，缺省 9） | 该做的是**退避重试**；`503` 会被读成「服务坏了」，而队列满恰恰说明服务是好的，只是不想把活儿收下之后 OOM |
+| `404` | 策略 / 作业不存在 | 「这东西不存在」不是「你的请求体不合法」 |
+| `400` | 缺字段 / 策略含语义规则（见下） | 报错里说清楚是哪一条、怎么办 |
+| `413` | 请求体超 1 MiB（**不读正文**就回） | `http.server` 会把声明的字节全读进内存 |
+
+**一处刻意的能力边界**：含语义规则（`semantic_bound`）的策略**当场拒**（400）。
+陪伴证明只存在于 `issue_cert.py` 那条命令行路径，服务发一张 `delegated` 非空却没有
+`companion` 的证书只会「看起来验过了」。`GET /v1/policies` 里如实标
+`serviceable: false`，不等到调用时才说。
+
+**队列位是「预留-归还」的**：被拒的请求（未知策略 / 不可出证 / 参数错）**不占位**，
+作业无论成功失败都归还位 —— 否则一次参数错误会永久吃掉一个队列位，服务越跑越满
+且没有任何日志解释为什么。
+
+**失败要翻成人话**（`service.failure_reason`）：真证明在本机最常见的样子是
+`pop-script` 被 OOM killer 杀掉，而 `CalledProcessError` 的原样输出是**一屏临时路径**
+加 `<Signals.SIGKILL: 9>`，唯独没说原因。信号类失败因此被翻成「多半是内存不足 +
+~10.15 GiB 地板 + `dmesg | grep -i 'killed process'` 的核实法」，其他信号如实说
+信号号、不甩锅给内存。这条是**被真事逼出来的**：`POP_TEST_PROOF=1` 那条验收用例
+2026-09-13 在本机（12 GB）被 OOM 杀在 9.7 GiB 常驻。
 
 ## 3. Shell 脚本
 

@@ -143,7 +143,7 @@
   —— ⚠️ **初稿已由 LaTeX 版取代**：权威源是 `paper/proof-of-policy.tex`（xelatex + ctex），
   `.md` 只是阅读镜像且已落后（缺 L8/L9）。以 `.tex` 为准。
 - [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；
-  测试 **515 全绿 / 14 skip**（2026-09-13 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
+  测试 **550 全绿 / 15 skip**（2026-09-13 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
 - [x] **待办（延伸）—— 三项均已完成**（此前误记为待办，2026-09-12 订正）：
   verifier-only 二进制（`pop-verify`，见 Phase P7-a）；链上锚定 RPC 后端（`RpcAnchorBackend`，见 P7-c）；
   format/budget/tool 规则入电路（见 P7-b）
@@ -178,7 +178,7 @@ P0 ─► P1 ─► P2 ─► P3(透明MVP★)
 
 ## 5. 延伸路线：接真 agent + 证明服务（2026-09-13 立）
 
-> **前置**：Phase 0–6 与 P7 全部收尾，测试 **515 全绿 / 14 skip**，
+> **前置**：Phase 0–6 与 P7 全部收尾，测试 **550 全绿 / 15 skip**，
 > `scripts/demo_all.sh` 8 条支路全通。本节是**交付之后**的两步 ——
 > 与仍在外部排队的 **T1**（≥64 GB 云机，见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9）
 > **互不阻塞**，也**不能**靠 T1 替代：T1 补的是链上/云机那一格，这两步补的是
@@ -319,9 +319,11 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
 #### 5.2.2 接口（三段）
 
 ```
-POST /v1/check          {policy_id, response}          → 毫秒级：宿主判定 + unproven 证书（含 challenge nonce）
-POST /v1/attest         {policy_id, response, nonce}   → 入队，立即返回 job_id（队列深度 1 时即排位）
-GET  /v1/attest/{job}                                  → 轮询：queued | proving | done | failed
+POST /v1/check          {policy_id, response, nonce?, receipts?}  → 毫秒级：宿主判定 + unproven 证书（含 challenge nonce）
+POST /v1/attest         {policy_id, response, nonce?, receipts?}  → 入队，立即返回 job_id 与 queue_position
+GET  /v1/attest/{job}                                             → 轮询：queued | proving | done | failed
+GET  /v1/health                                                   → 并发上限 / 队列深度 / 策略数（运维看的）
+GET  /v1/policies                                                 → 已注册的策略（含 serviceable 标注）
 ```
 
 - **在线段 `/v1/check` 不需要证明器**，可以在小机器/边缘跑，产出的是诚实标注
@@ -333,13 +335,51 @@ GET  /v1/attest/{job}                                  → 轮询：queued | pro
   **证据链**，不是 web 框架；引入 FastAPI/uvicorn 会把注意力从证据挪到框架上。
 - 队列并发上限**从配置读、默认 1**，排队行为要有测试（第二个请求**排队而非 OOM**）。
 
+`nonce` / `receipts` 是相对原计划加的两个可选字段：`nonce` 缺省现场生成（两段式
+的正确用法是把 `/v1/check` 回的那个原样传给 `/v1/attest`，两段才绑同一条 T）；
+`receipts` 是工具网关签的回执（P1-5），给了才判得了工具类规则。
+
 #### 5.2.3 验收
 
 - `curl` 串起来：`/v1/check`（拿 unproven 证书）→ `/v1/attest` → 轮询 `done`
-  → **`verify_cert.py` 独立验通 9/9 PASS**（签名 / 策略绑定 / 响应绑定 / 锚定 /
-  真证明密码学验证）；
+  → **`verify_cert.py` 独立验通**（签名 / 策略绑定 / 响应绑定 / 锚定 / 真证明
+  密码学验证）。**卡数不写死**：`verify_cert.py` 的卡片集合会随功能增减（本节
+  初稿写的「9/9」在写下来的时候就已经不等于实际输出了），所以判据是
+  `RESULT: PASS` 且 `[PASS] proof` 那一行**确实打印了**（不是被某个 skip 掩盖）——
+  写死的分母会在改动之后静默地变成另一件事；
 - 并发第二个出证请求**排队而非 OOM**（有测试锁住）；
-- 部署文档进 `docs/`（单机 runbook：依赖、内存前提、并发上限、如何换签名钥）。
+- 部署文档进 `docs/`：[`runbook-proof-service.md`](runbook-proof-service.md)
+  （依赖、内存前提、并发上限、如何换签名钥、已知边界与排查表）。
+
+#### 5.2.4 落地情况（2026-09-13）
+
+| 组件 | 位置 |
+|---|---|
+| 库：策略注册表 + 作业队列 + 两段出证 | `policydsl/service.py` |
+| HTTP 驱动（纯标准库） | `scripts/proof_service.py` |
+| 测试（35 例；真 vkey 出证那条进 `POP_TEST_PROOF` 门控） | `tests/test_proof_service.py` |
+| 运维文档 | [`runbook-proof-service.md`](runbook-proof-service.md) |
+
+**过程中被 `verify_cert.py` 的 `trace_binding` 卡当场抓出的一个真 bug**：第一版
+`_write_vectors` 手抄向量字段名，抄漏了 `receipts` —— 电路于是按**空回执链**判定，
+证书的 `trace_root` 写着 `genesis`，而验证方拿调用方给的回执一重算就 MISMATCH，
+**证书却照样签得出来**。改用 `serialize.vector_entry` 后修掉，并把回执旁证一并
+落盘（`receipts.json`），让 `trace_binding` 有第二个来源可比。
+
+**一个在本机没跑过去的验收**：真 vkey 出证那条用例（`POP_TEST_PROOF=1`）被 OOM
+killer 杀在 9.7 GiB 常驻（`dmesg`：`Killed process … (pop-script) anon-rss:9931092kB`）。
+这不是代码问题 —— ~10.15 GiB 是 SP1 core 证明的**固定地板**（[`bench/results/proofs.md`](../bench/results/proofs.md)），
+本机 11.7 GiB 总内存还要装下 harness 自己。**但它暴露了一个真问题**：作业失败时
+`job.error` 记的是 `CalledProcessError: Command '[.../tmp/tmpidq5b550/jobs/…/vectors.json]'
+died with <Signals.SIGKILL: 9>` —— 一屏临时路径，唯独没说「内存不够」。于是新增
+`service.failure_reason()`：信号类失败被翻成一句运维能照着做的话（点名 ~10.15 GiB
+地板、给出 `dmesg | grep -i 'killed process'` 的核实法、并提醒调大 `--concurrency`
+只会更快 OOM），其他信号不甩锅给内存。有 4 例锁住。**换成 ≥16 GB 的机器再验收那一条。**
+
+**一处刻意的能力边界**：语义规则（`semantic_bound`）策略在服务里**当场拒**
+（400 + 说明 + 指路 `issue_cert.py`）。陪伴证明只存在于那条命令行路径，服务发一张
+`delegated` 非空却没有 `companion` 的证书只会「看起来验过了」。注册表里也如实标
+`serviceable: false`，不等到调用时才说。
 
 ### 5.3 顺带修掉的口径问题：`demo_e2e.py` 的魔法 `vkey = "demo"`
 

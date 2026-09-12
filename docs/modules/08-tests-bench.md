@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（26 个模块，515 个用例）与 `bench/`（5 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（27 个模块，550 个用例）与 `bench/`（5 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,7 +8,7 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 期望 515 passed, 14 skipped
+python3 -m unittest discover -s tests -t . -v   # 期望 550 passed, 15 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
@@ -39,9 +39,10 @@ python3 -m unittest discover -s tests -t . -v   # 期望 515 passed, 14 skipped
 | `test_compose` | 48 | **P1-6**：组合证明 `Compose = (推理完整性 ∧ 策略合规)`。三层 —— ① 参考实现逐位一致（`pop-script --check --job infer` ↔ `policydsl/infer.py`：模型哈希/响应绑定/输入绑定/输出）② 组合绑定的 **5 组反例**（换证明文件·缺失、同 vkey·非期望 vkey、换模型·换输入、两半绑不同 T·送达 T′ 不符、形状·模式·域·policy_hash 重编译）③ **四条驱动接线回归**（`--job` 旗标 ≠ part 的 kind；`part_from_proof` 得把旗标而不是 kind 传下去；验证结果的 `mode` 不能被当展示元信息剥掉；`pop-script --verify` 必须显式给 `--out`，否则在仓库根落一个 `results.json`）——这几条对应 2026-09-12 真端到端跑出来的真 bug，单测当时全绿。真·端到端 5 例由 `POP_TEST_COMPOSE=1` 打开 |
 | `test_session` | 38 | **P2-10**：跨证书一致性（`session` 域 = guest③）。三层 —— ① **Merkle 纯算术层**（单叶子即叶子本身；内部节点带 `pop-session-node-v1` 前缀；**奇数末位提升、绝不复制** ← 这条是「挖尾」防线的前提；n=1…9 的包含证明往返；篡改叶子与形状非法 fail-closed）② **两层对拍**（`pop-script --check --job session` ↔ `policydsl/session.py::run_session` 在链长 1/2/3/5/8 上**逐字段相等** —— 奇数链才会走到末位提升；Merkle 根跨层逐字节一致；nonce 改则 `session_binding` 改）③ **义务与反例**（混异策略 / 挖中间 / 换序 / 缺 `chain` / 缺 `seal` / 两条网关的 seal / 空集；验证侧的 happy path、**挖尾**、**整张换尾**、伪造根 / 伪造链尾承诺 / 伪造策略哈希、错域、现场重编译策略包、seal 签名与真回执）。**真·端到端 1 例**（`POP_TEST_SESSION=1`）对着真证明跑计划的两条验收判据（混异策略 + 挖尾），并核 `--nonce` 换一个即拒 |
 | `test_multiparty` | 44 | **P2-11**：多证明者（模型方 / 工具网关 / 部署方各证一段策略切片）。三层 —— ① **切分层**（8 个 kind 的归属普查：每条规则恰属一个角色、切片两两不交且并集为全策略、三个角色**恒存在**（空切片也要签名）、未知 kind 在两处被拒、同名规则拒绝、`require_covering_length_bound` 只在整条策略上查一次、切片与整策同一份编译器、内容寻址确定性）② **绑定层**（happy path；缺 keyring 时如实标注「未验签名」；语义切片真实但需陪伴证明；JSON 往返；`plan_digest` 绑进**每一份**签名；**验收 ①** 缺任一角色签名 / 空签名表 / 缺 part / 重复 part；**角色密钥分离**；**验收 ②** 单角色切片被换（含该角色拿自己键重签、把切片谎报为空、单独改 plan、改 `plan_digest`）与**三方合谋改 plan**（不带策略包时而通过、带上 `policy_pack` 即被拒 —— 如实记下这条边界）；证明文件被换 / 张冠李戴 / 空切片带证明 / 非空切片不带证明 / 非 public 模式 / vkey 混用 / 非期望 vkey；换 T / 两半绑不同 T / 不同 `trace_root`；违规切片是**真证书但未满足**）③ **构造层**（缺角色键、一把键当两个角色、空策略无法出证、构建期缺证明、构建期 part 与策略不符）。真·端到端 1 例由 `POP_TEST_MULTIPARTY=1` 打开 |
-| **合计** | **515** | |
+| `test_proof_service` | 35 | **第二步（服务化）**：策略注册表（同名不同内容拒收、坏包**报告**而不吞掉）、**两段同形**（`host_outcome` 的键集与电路公开值逐字段相同；`violations` 镜像 `pop-types::evaluate`；两套推导打架就**停证** `VerdictMismatch`）、队列（第二个请求**排队**而非被拒、满了 429 且被拒的不吃队列位、作业炸了不带走工作线程、`stop()` drain）、`/v1/check` 的证书**真的验得过**（`verify_cert.py` → `RESULT: PASS` 含 `[PASS] trace_binding`，且账本里每条锚定摘要磁盘上都还在）、OOM 杀进程要被翻成一句「内存不足」（含 10.15 GiB 地板与 `dmesg` 核实法）、HTTP 层分得清 400/404/413（**413 不读正文**）。**真 vkey 出证 1 例由 `POP_TEST_PROOF=1` 打开** |
+| **合计** | **550** | |
 
-### 14 个 skip（都是设计内的）
+### 15 个 skip（都是设计内的）
 
 | skip | 原因 | 怎么启用 |
 |---|---|---|
@@ -52,6 +53,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 515 passed, 14 skipped
 | `test_semantic` 中 1 例 | 「真·端到端」要出一份 ezkl 证明（~61 s、峰值 ~9 GiB） | `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic`（已实测通过） |
 | `test_compose` 中 5 例 | 「真·端到端」要出**两份** SP1 证明（各 ~2 分钟、峰值 ~10.5 GiB） | `POP_TEST_COMPOSE=1 python3 -m unittest tests.test_compose`（**已实测通过**：47 例全跑、无一 skip，563.5 s；加四条接线回归后共 48 例） |
 | `test_session` 中 1 例 | 「真·端到端」要出一份 SP1 **会话聚合证明**（3 张证书，~2.5 分钟、峰值 ~10 GiB） | `POP_TEST_SESSION=1 python3 -m unittest tests.test_session.TestSessionEndToEnd -v`（**已实测通过**：Ran 1 … OK，152.5 s —— 含一次出证、一次独立验证与**四条**拒绝路径：换组证书 / 尾截断 / 混入异策略证书 / 错 nonce） |
+| `test_proof_service` 中 1 例 | 「真 vkey 出证」要跑一次 SP1 core 证明（~2.5 分钟、峰值 ~10.2 GiB 的**固定地板**）。本机是 12 GB，这条**跑不过去不是代码问题，是内存**：2026-09-13 实测被 OOM killer 杀在 9.7 GiB 常驻（`dmesg` 有记录）。服务失败时会把这件事翻成一句人话，见下 | `POP_TEST_PROOF=1 python3 -m unittest tests.test_proof_service.TestRealProofAttest -v`。**换一台 ≥16 GB 的机器再跑**；本机上跑之前先让别的进程腾出内存 |
 | `test_real_llm` 中 1 例 | 「真 provider」要一个真 API key + 网络 —— CI 不该依赖它 | `POP_TEST_LLM=1 POP_TEST_MODEL=openai:<model> python3 -m unittest tests.test_real_llm`。**注意**：同模块里那 4 例真客户端的用例（本地 SSE 桩）**默认就跑** —— 桩实现的是 OpenAI 的协议，所以「真实客户端接进回调层后早停还能不能掐断」不需要网络与真 key |
 
 #### `test_semantic` 为什么敢把 ezkl 关在门外
@@ -374,7 +376,7 @@ P2-9 的语义规则走**另一套证明系统**（ezkl / halo2），代价必�
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **515 passed / 14 skip**（2026-09-13 复跑；CI 上更多 skip，见 §1）、
+  当前验收判据是 **550 passed / 15 skip**（2026-09-13 复跑；CI 上更多 skip，见 §1）、
   `cross_validate` **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 整批重跑，见下）。
 - **`cross_validate` 的 prove 侧怎么跑**：19 条向量各出一份真 core 证明，**必须**按
   `--chunk`（默认 4，实测 `--chunk 2` 更稳）切到**独立子进程**里跑 —— SP1 证明器的内存在同一进程内
