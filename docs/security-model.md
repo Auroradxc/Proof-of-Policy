@@ -335,8 +335,13 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 而确定性保证该输出唯一 = `J(π,T)`，故 `pub.passed` 必为 `false`。矛盾。
 要把 `T` 换成 `T′` 需要 L2（否则 §"设 `T ⊭ π`" 根本不适用，因为被证明的是**另一条**串）；
 要把 `π` 换成 `π′` 需要 L1；要让轨迹规则判在一条**假**链上，需要 L3 的签名层。
-**覆盖范围**：`keyword_block` / `length_bound` / `pattern_block` / `format_check` /
-`tool_arg_guard` / `budget_bound` 六类**均已入电路**（`pop-types::evaluate`，与 Python golden 交叉验证 14/14）。
+**覆盖范围**：`keyword_block` / `normalized_keyword_block` / `length_bound` / `pattern_block` /
+`format_check` / `tool_arg_guard` / `budget_bound` 七类**均已入电路**（`pop-types::evaluate`，
+与 Python golden 交叉验证 19/19）。
+其中 `normalized_keyword_block`（P2-9b）的**折叠表是约束的一部分**（`fold` 字段进规范字节、
+进 `policy_hash`）：证明者既不能把表换成「不折叠」，也不能让电路按别的表判 —— 换表就是换策略，
+指纹会变。电路另有一道结构校验（未知版本/表过大/替换值非 ASCII ⇒ panic），
+它防的是**手写** `ProofRequest` 绕过编译期检查的那种输入（见 `05` §2.3）。
 **另有一类不在上式的和里**：`semantic_bound`（P2-9）**不由本电路判定**，而是被
 **委托**给 ezkl 并由验证方合取 —— 它有自己的引理 **L7**，结论形式是
 `合规 = PASS`（**不是** `outcome.passed`）。把 L7 混进上式会掩盖它真正的失败形态：
@@ -444,10 +449,10 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 
 | 引理 / 性质 | 实现 | 测试 |
 |---|---|---|
-| 判定函数（golden ⇄ 电路） | `policydsl/evaluate.py` ⇄ `circuits/types/src/lib.rs::evaluate` | `tests/test_rules_incircuit.py`（9）、`cross_validate` host/prove 14/14 |
+| 判定函数（golden ⇄ 电路） | `policydsl/evaluate.py` ⇄ `circuits/types/src/lib.rs::evaluate` | `tests/test_rules_incircuit.py`（13）、`cross_validate` host 19/19 |
 | **L1** 策略绑定 | `circuits/program`（guest 内算）、`policydsl/verifier.py::check_policy_binding` | `tests/test_policy_binding.py`（22） |
 | **L2** 响应绑定 | `policydsl/commit.py::response_binding`、`policydsl/challenge.py` | `tests/test_binding.py`（19） |
-| **L3** 轨迹绑定 | `policydsl/trace.py`、`circuits/types::verify_receipt_chain`、`verify_cert.py` 3c | `tests/test_trace.py`（29） |
+| **L3** 轨迹绑定 | `policydsl/trace.py`、`circuits/types::verify_receipt_chain`、`verify_cert.py` 3c | `tests/test_trace.py`（39） |
 | **L4** 脱敏健全性 | `policydsl/commit.py`、`circuits` 内 `mask_covered` | `tests/test_commit.py`（12） |
 | **L5** 账本 + 锚定 | `policydsl/anchor.py`、`contracts/Anchor.sol` | `tests/test_anchor.py`（4）、`test_anchor_chain.py`（22） |
 | 证书签名（A3/A7） | `policydsl/cert.py::Ed25519Signer`、`policydsl/keys.py` | `tests/test_cert.py`（19） |
@@ -465,7 +470,7 @@ SP1 证明 —— 由 `POP_TEST_COMPOSE=1` 打开。两组均已单独实测通�
 
 | 定义/引理 | 对应实验 |
 |---|---|
-| Completeness | `scripts/prove_policy.py`、`cross_validate.py` host/prove 14/14 |
+| Completeness | `scripts/prove_policy.py`、`cross_validate.py` host 19/19 |
 | **G_Sound** | 违规向量出证得到 `passed=false`；「空策略证明 + 真策略哈希」攻击回归必须失败 |
 | **G_Bind_pol** | `verify_cert.py` 的 `policy_hash` 卡；`test_policy_binding.py`（含证明层 opt-in） |
 | **G_Bind_resp** | `verify_cert.py --response T′`（3b）；换 `T′`/换 `n`/域分离/空 nonce 四组反例 |

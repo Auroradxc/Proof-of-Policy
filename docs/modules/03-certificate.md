@@ -326,7 +326,7 @@ build_payload(policy_id, policy_version, spec, mode, outcome,
 
 - **`vkey_hash="unproven"` 是默认值**：表示这张证书**没有绑定真实证明**，只是链下判定。
   `verify_session` 会据此要求「证书也没声称有证明」（`proof_sha256 is None`）。
-- 工具路径的 outcome 里 `zk: True` 表示「**该规则类型可证**」（六类规则都已入电路），
+- 工具路径的 outcome 里 `zk: True` 表示「**该规则类型可证**」（除 `semantic_bound` 外的七类规则都已入电路），
   与「这张证书附了证明」是两件事 —— 后者看 `binding.vkey_hash`。
 - 工具路径的 `mode` 是 `"tool-call"`，生成路径是 `"public"`/`"private"`。这影响 `ai_act_claims` 的
   `mode` 字段取值。

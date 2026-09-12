@@ -10,6 +10,7 @@
 - 关键词匹配采用 ASCII 小写化（与电路内匹配器一致）。
 - 违规采用每种类型各自的「规范证据字符串」：
     keyword_block -> （第一个、按 spec 顺序）命中的关键词
+    normalized_keyword_block -> 同上（P2-9b；关键词已由编译期折叠，这里只折叠响应）
     length_bound  -> "len=<N>"
     pattern_block -> 命中的模式串
 - 脱敏（redaction）：码点长度相同；掩码位置填掩码字符（``*``），
@@ -22,7 +23,7 @@ import hashlib
 import hmac
 from typing import Dict, List, Optional, Tuple
 
-from . import nfa
+from . import nfa, normalize
 
 MASK_CHAR = "*"
 
@@ -43,13 +44,12 @@ BIND_DOMAIN = b"pop-bind-v1"
 BIND_SCHEME = "pop-bind-v1"
 
 
-def _ascii_lower(s: str) -> str:
-    """仅对 ASCII 大写字母做小写化（与电路内匹配器保持字节级一致）。
-
-    注意：这里不用 Python 的 str.lower()，因为它会把非 ASCII 字母也小写，
-    可能导致链下/链上对同一输入得出不同结果。
-    """
-    return "".join(chr(ord(c) + 32) if "A" <= c <= "Z" else c for c in s)
+#: 仅对 ASCII 大写字母做小写化（与电路内匹配器保持字节级一致）。
+#:
+#: 实现在 :mod:`policydsl.normalize`，这里只是别名 —— 全仓**只有一处**定义。
+#: 曾经这里有一份私有副本，P2-9b 加折叠规则时收敛到一处：大小写口径是
+#: 「链下/链上必须逐字节一致」的少数几个原语之一，留两份就等于留一个坑。
+_ascii_lower = normalize.ascii_lower
 
 
 def commitment(text: str) -> str:
@@ -123,6 +123,19 @@ def canonical_violations(spec: Dict, response: str,
             hit = next((kw for kw in c["keywords"] if kw in lower), None)
             if hit is not None:
                 out.append({"rule": name, "kind": "keyword_block", "evidence": hit})
+        elif kind == "normalized_keyword_block":
+            # 规范化关键词（P2-9b）：折叠表来自**约束**（不是模块常量），
+            # 因为电路侧也只执行约束带进来的那张表 —— 两边的表必须是同一份。
+            #
+            # 关键词也**直接用约束里的**，不再折叠一次：编译期已经把作者的
+            # 关键词折叠过了（``compile.canonical_keywords``），电路侧同样只折叠
+            # 响应。在这里重折一遍会让「折叠两次」与「折叠一次」在极端表下分叉
+            # （比如 map 里恰好写了 A→a、a→b），而电路不会有第二次折叠。
+            fold_spec = normalize.resolve_fold(c.get("fold", normalize.DEFAULT_PRESET))
+            hit = normalize.match_keywords(fold_spec, c["keywords"], response)
+            if hit is not None:
+                out.append({"rule": name, "kind": "normalized_keyword_block",
+                            "evidence": hit})
         elif kind == "length_bound":
             n = len(response)
             if not (c["min"] <= n <= c["max"]):

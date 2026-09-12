@@ -81,6 +81,8 @@ class TestRulesInCircuit(unittest.TestCase):
                                     {"budget": 2, "unit": "calls"})])
         self.tokens = spec_of([Rule("budget_bound", "token_budget",
                                     {"budget": 100, "unit": "tokens"})])
+        self.nkb = spec_of([Rule("normalized_keyword_block", "no_homoglyph",
+                                 {"keywords": ["weaponize"], "fold": "v1"})])
 
     # 对齐断言的核心：golden 与 Rust 两边的违规 kind 集合、以及 passed 都要相同。
     def _parity(self, spec, response, golden_kinds, extras=None):
@@ -159,6 +161,45 @@ class TestRulesInCircuit(unittest.TestCase):
         self._parity(self.tokens, " ".join(["w"] * 50), [])
         self._parity(self.tokens, " ".join(["w"] * 150), ["budget_bound"])
 
+    # ---- normalized_keyword_block（P2-9b）-------------------------------- #
+
+    def test_normalized_keyword_block(self):
+        """折叠后的判定必须两边一致 —— 三种绕过手段各测一次。
+
+        这一组同时也是**折叠真的在电路内发生**的证据：``self.nkb`` 的 ``fold``
+        表来自约束（不是链下先折好再喂给电路），所以下面每一条都要求 Rust 侧
+        独立算出同一个结论。若电路侧漏了折叠，``homo``/``zw``/``fw`` 三条都会
+        退化成「通过」，与 golden 的 ``["normalized_keyword_block"]`` 对不上。
+        """
+        self._parity(self.nkb, "weaponize now", ["normalized_keyword_block"])
+        self._parity(self.nkb, "wеaponize now", ["normalized_keyword_block"])  # 西里尔 е
+        self._parity(self.nkb, "wеаponize", ["normalized_keyword_block"])  # 两个同形字
+        self._parity(self.nkb, "wea​ponize now", ["normalized_keyword_block"])  # 零宽空格
+        self._parity(self.nkb, "ｗｅａponize", ["normalized_keyword_block"])  # 全角
+        # 判定口径与 keyword_block 完全相同：**子串**包含，不是词界匹配。
+        self._parity(self.nkb, "weaponized", ["normalized_keyword_block"])
+        # 差一个字符就放行 —— 折叠不是模糊匹配，它只把变体拉回同一个码点序列。
+        self._parity(self.nkb, "wеaponiz", [])
+        self._parity(self.nkb, "a totally fine reply", [])
+
+    def test_folded_keywords_are_lowercased_in_contract(self):
+        """作者写大写关键词也能命中 —— 折叠 + ASCII 小写化在编译期就落到契约里。"""
+        spec = spec_of([Rule("normalized_keyword_block", "n",
+                             {"keywords": ["Weaponize"], "fold": "v1"})])
+        obj = json.loads(spec_canonical_text(spec))
+        self.assertEqual(obj["constraints"][0]["keywords"], ["weaponize"])
+        self._parity(spec, "wеaponize", ["normalized_keyword_block"])
+
+    def test_no_length_bound_needed(self):
+        """本规则**不**要求配套的 length_bound（与语义规则不同）。
+
+        语义规则受定长图的约束才需要覆盖性长度上界；折叠规则是逐字符扫描，
+        长度只影响代价、不影响可判定性。这条钉住的是「别顺手把语义规则的前置
+        条件也加到这条规则上」—— 那会让本来能编的策略编不过。
+        """
+        self._parity(self.nkb, "x" * 500 + "wеaponize", ["normalized_keyword_block"])
+        self._parity(self.nkb, "x" * 500, [])
+
 
 @unittest.skipUnless(POP_SCRIPT.exists(), "pop-script not built")
 class TestEvidenceCommitmentParity(unittest.TestCase):
@@ -182,6 +223,31 @@ class TestEvidenceCommitmentParity(unittest.TestCase):
         got = run_check(vector)
 
         canon = commit.canonical_violations(spec, response, calls)
+        expected = sorted((v["rule"], v["kind"], commit.evidence_commitment(v["evidence"]))
+                          for v in canon)
+        seen = sorted((v["rule"], v["kind"], v["evidence_commitment"])
+                      for v in got["violations"])
+        self.assertEqual(seen, expected)
+        self.assertFalse(got["passed"])
+
+    def test_normalized_keyword_commitment(self):
+        """折叠规则的证据（命中的关键词）也要逐字节对齐。
+
+        这里特意用**同形异义文本**做输入：证据是折叠**后**的关键词（``weaponize``），
+        不是原文里的变体。两侧若有一边折了、一边没折，承诺就对不上 ——
+        这条测试因此同时是「私有模式也真的折叠了」的证据。
+        """
+        spec = compile_policy(Policy("t", "1", rules=[
+            Rule("normalized_keyword_block", "nkb",
+                 {"keywords": ["weaponize", "dеlegate"], "fold": "v1"}),
+        ]))
+        response = "please dеlegate this wеaponize task"
+        vector = {"name": "p", "response": response, "private": True,
+                  "spec_canonical": spec_canonical_text(spec)}
+        got = run_check(vector)
+
+        canon = commit.canonical_violations(spec, response, [])
+        self.assertEqual([v["evidence"] for v in canon], ["delegate"])
         expected = sorted((v["rule"], v["kind"], commit.evidence_commitment(v["evidence"]))
                           for v in canon)
         seen = sorted((v["rule"], v["kind"], v["evidence_commitment"])

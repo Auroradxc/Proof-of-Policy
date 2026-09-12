@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | `policydsl/__main__.py` | 编译策略 / 参考判定 | 否 | 否 | 毫秒 |
 | `prove_policy.py` | 单条响应 → 真实证明 + golden 比对 | `pop-script` | 是（可 `--no-prove`） | ~70 s |
-| `cross_validate.py` | 14 条向量 × (host + prove) 与 golden 对拍 | `pop-script` | 是（可 `--no-prove`） | host 秒级；prove ~24 分钟（分 4 块，每块峰值 ~10 GB） |
+| `cross_validate.py` | 19 条向量 × (host + prove) 与 golden 对拍 | `pop-script` | 是（可 `--no-prove`） | host 秒级；prove 约 2 分钟/条（默认分 4 块，每块峰值 ~10 GB） |
 | `private_demo.py` | 私有模式全链路实验（Leak/Binding/Evidence/证明） | `pop-script` | 是（可 `--no-prove`） | ~70 s |
 | `gen_key.py` | 生成/查看 Ed25519 出证密钥对（打印 keyid + 公钥） | 否 | 否 | 毫秒 |
 | `issue_cert.py` | 签发证书 + 锚定（可选上链） | `pop-script` | 是（可 `--no-prove`） | ~70 s |
@@ -55,7 +55,7 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
 
 ### 2.2 `cross_validate.py` —— I1 的总闸门
 
-14 条向量，覆盖六类规则各至少一条 pass + 一条 violate：
+19 条向量，覆盖各规则各至少一条 pass + 一条 violate：
 
 | 向量 | 规则类型 |
 |---|---|
@@ -64,12 +64,13 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
 | `format_ok` / `format_bad` | format_check |
 | `tool_arg_hit` / `tool_arg_clean` | tool_arg_guard |
 | `budget_over` / `budget_ok` / `token_over` | budget_bound（calls / tokens） |
+| `norm_homoglyph` / `norm_zero_width` / `norm_fullwidth` / `norm_ascii` / `norm_clean` | normalized_keyword_block（P2-9b：三种绕过 + ASCII 正例 + 干净对照） |
 
 比对方式：Python 的 `(rule.name, kind)` 集合 vs Rust 输出的 `(rule, kind)` 集合，加上 `passed`。
 期望输出 `RESULT: host 14/14  prove 14/14  PASS`。
 
 **真实证明默认分块跑**（`--chunk N`，缺省 4）：SP1 core 证明的峰值 RSS 本就 ~10.3 GB，
-且每证完一个还会缓慢累加 —— 本机实测把 14 个向量交给**一个** `pop-script` 进程，会在第
+且每证完一个还会缓慢累加 —— 本机实测把（当时的）14 个向量交给**一个** `pop-script` 进程，会在第
 6 / 第 7 个证明处被内核 OOM-kill（峰值 10.65 / 10.82 GB，`SIGKILL 9`），而逐个单独出证都是好的。
 分块只做**进程隔离**：每块是原向量的连续子序列，结果按原序合并，下游比对逻辑完全不知道分块存在。
 `--chunk 0` 恢复单进程（需 ≥16 GB）。分块逻辑本身有 `tests/test_cross_validate.py` 守住

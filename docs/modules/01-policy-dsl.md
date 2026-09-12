@@ -1,7 +1,7 @@
 # 01 · 策略 DSL 与编译
 
-> 覆盖 `policydsl/model.py`、`compile.py`、`evaluate.py`、`serialize.py`、`nfa.py`、`pii.py`、
-> `__init__.py`、`__main__.py`。
+> 覆盖 `policydsl/model.py`、`compile.py`、`evaluate.py`、`serialize.py`、`normalize.py`、
+> `nfa.py`、`pii.py`、`__init__.py`、`__main__.py`。
 > 这一板块回答：**策略长什么样 → 编译成什么 → 谁怎么判定它**。
 
 ---
@@ -13,6 +13,7 @@
 | `model.py` | 领域模型与**编译期校验**（`PolicyError` 快速失败） | ✅ |
 | `compile.py` | `Policy` → `ConstraintSpec`（**唯一跨层契约** + `sha256` 绑定哈希） | ✅ |
 | `nfa.py` | 正则子集 → **可序列化 NFA**（Thompson 构造）+ Pike VM + 匹配区间计算 | ✅ |
+| `normalize.py` | **同形异义折叠**（P2-9b）：折叠表的构造/校验/展开 + 单遍折叠 + ASCII 小写化 | ✅ |
 | `evaluate.py` | **参考判定器（golden）**：自由文本或结构化轨迹 → `CheckResult` | ✅ |
 | `serialize.py` | `ConstraintSpec` → serde **外部标签枚举** JSON（喂给 Rust） | ✅ |
 | `pii.py` | 规范 PII 正则（NFA 子集内）+ IBAN MOD-97 校验位 | ✅ |
@@ -23,13 +24,14 @@
 
 ---
 
-## 2. 七种规则类型
+## 2. 八种规则类型
 
 规则是 `Rule(kind, name, params)`。`kind` 决定语义与参数 schema，`name` 是**证书与违规记录里的稳定标识**。
 
 | kind | params | 判定对象 | 电路内？ | 语义 |
 |---|---|---|---|---|
 | `keyword_block` | `keywords: [str]`（非空） | `response` | ✅ | 响应**不得包含**任一关键词（ASCII 不区分大小写） |
+| `normalized_keyword_block` | `keywords: [str]`（非空），可选 `fold: "v1" \| 显式折叠表`（缺省 `"v1"`） | `response` | ✅ **P2-9b** | 先按折叠表把响应规范化（同形异义字→ASCII、删零宽字符、全角→半角），再做与 `keyword_block` 相同的子串判定 |
 | `length_bound` | `min:int, max:int`，`0 ≤ min ≤ max` | `response` | ✅ | 码点长度须落在 `[min, max]` |
 | `pattern_block` | `patterns: [str]`（非空），可选 `match_mode: pike\|naive` | `response` | ✅ | 响应**不得匹配**任一正则（子串存在性） |
 | `format_check` | `format: json\|int\|float` | `response` | ✅ | 响应整体须能按规范子集解析 |
@@ -37,11 +39,23 @@
 | `budget_bound` | `budget:int ≥ 0`，`unit: calls\|tokens` | `receipts`（calls）/ `response`（tokens，电路内自算） | ✅ | 累计量不得超过 `budget` |
 | `semantic_bound` | `threshold_bp: int ∈ [0,10000]`，`direction: le\|ge` | `response`（经模型前向） | ❌ **委托**（P2-9） | 模型给出的分数须 `<＝`/`>＝` 阈值；由 ezkl 陪伴证明判定，电路只登记进公开值 `delegated` |
 
-> 前六类**全部入电路**（P7-b 之后）；第七类 `semantic_bound`（P2-9）**不在电路内判定**，
-> 而是**委托**给 ezkl/halo2 伴侣证明 —— 见 [`../design-semantic-rules.md`](../design-semantic-rules.md)
-> 与 [`05`](05-zk-circuits.md) §2.3b。两条它独有的编译期约束：① 策略必须自带一条
-> `max ≤ MAX_CHARS` 的 `length_bound`（否则长响应会**静默截断**，尾部逃过判定）；
-> ② 含语义规则的策略**只能走公开模式**（`encode(T)` 必须进 ezkl 公开实例，与私密模式不相容）。
+> 上表除 `semantic_bound` 外的**七类全部入电路**（P7-b / P2-9b 之后）；`semantic_bound`（P2-9）
+> **不在电路内判定**，而是**委托**给 ezkl/halo2 伴侣证明 —— 见
+> [`../design-semantic-rules.md`](../design-semantic-rules.md) 与 [`05`](05-zk-circuits.md) §2.3b。
+> 两条它独有的编译期约束：① 策略必须自带一条 `max ≤ MAX_CHARS` 的 `length_bound`（否则长响应会
+> **静默截断**，尾部逃过判定）；② 含语义规则的策略**只能走公开模式**（`encode(T)` 必须进 ezkl
+> 公开实例，与私密模式不相容）。
+>
+> **`normalized_keyword_block` 与 `semantic_bound` 都能拦下 `wеaponize`，但两者不可互相替代**：
+> 前者是**符号**判定（命中即违规，可复现、可解释、不依赖模型），后者是**统计**判定（换模型/换阈值
+> 就可能漏）。而且两层覆盖并不是包含关系 —— 实测有 6 个同形字（大写西里尔 `Ѕ А Е О Т`、小写 `п`）
+> 只出现在数据生成器的清单里、**没进模型词表**，即模型从没见过它们：`WЕAPONIZE` 那种大写变体
+> 统计层很可能是漏的，折叠规则照样折得回来。见 `policydsl/normalize.py` 与
+> `tests/test_normalize.py::TestVocabConsistency`。
+>
+> 折叠表（`fold`）**随约束走**，是 `policy_hash` 的一部分：改表 = 换策略，验证方能在策略字节里
+> 读到「西里尔 е 折成 e」。`compile.py` 会把 `"v1"` 展开成显式表，电路不解释短名的含义、只执行
+> 带进来的表 —— 跨层漂移因此在结构上不可能。未知版本一律 fail-closed（两侧同一白名单）。
 >
 > 两点见 `../security-model.md` §5：
 > ① `budget_bound/tokens` 的口径自 P1-5 起改为**电路内自算**（响应按固定空白字节集切分的 run 数，
@@ -264,10 +278,11 @@ python3 -m policydsl check <response.txt> --policy <policy.json>
 
 | 文件 | 覆盖 |
 |---|---|
-| `tests/test_dsl.py` | 模型与校验、六类规则的通过/违规矩阵、`PolicyError` 路径 |
+| `tests/test_dsl.py` | 模型与校验、各类规则的通过/违规矩阵、`PolicyError` 路径 |
+| `tests/test_normalize.py` | **折叠表**（P2-9b）：预设展开/往返/合法性与非法表的拒绝、单遍不链式、验收对（折叠前放行 → 折叠后拦下）、表进 `policy_hash`、与 `semantic` 两张同形字清单的同源性 |
 | `tests/test_nfa.py` | 解析器、NFA 构造、`match_search` 与 Python `re` 的行为对照、不支持语法的 fail-fast |
 | `tests/test_pii.py` | 四个 PII 模式的命中/漏报、IBAN 校验位 |
-| `tests/test_serialize.py` | **契约字节**的性质：确定性/键排序/紧凑、纯 ASCII、`sha256(字节) == spec["sha256"]` 恒等式、六类 kind 与编译后 NFA 都在字节里、未知 kind 原样携带 |
+| `tests/test_serialize.py` | **契约字节**的性质：确定性/键排序/紧凑、纯 ASCII、`sha256(字节) == spec["sha256"]` 恒等式、各类 kind 与编译后 NFA / 折叠表都在字节里、未知 kind 原样携带 |
 | `tests/test_policy_binding.py` | 策略绑定：攻击回归（空策略证明 + 真策略哈希）、fail-closed、三方比对、伪造证书必须被拒 |
 | `tests/test_ablation.py` | `match_search` ≡ `match_search_naive`（pike/naive 语义等价） |
 | `tests/test_rules_incircuit.py` + `scripts/cross_validate.py` | Python golden ↔ SP1 逐向量一致（I1） |
@@ -276,15 +291,20 @@ python3 -m policydsl check <response.txt> --policy <policy.json>
 
 ## 7. 扩展指引：新增一种规则类型
 
-必须**同时**改动下面 5 处，缺一不可（否则违反 I1/I4）：
+必须**同时**改动下面 6 处，缺一不可（否则违反 I1/I4）：
 
 1. `model.py::Rule.validate` —— 新 kind 的参数校验分支。
 2. `compile.py::compile_policy` —— 归一化后写入 `constraints`。
 3. `evaluate.py::check` —— golden 判定分支（决定 `evidence_kind` 与 `evidence` 形状）。
 4. `circuits/types/src/lib.rs` —— `SpecConstraint` 新变体（内部标签 `kind`）+
    `evaluate` 分支（**必须与第 3 步逐字段一致**）。
-5. `tests/` + `scripts/cross_validate.py` —— 至少一条 pass、一条 violate 向量，
-   跑 `cross_validate` 确认 host/prove 都对上。
+5. `commit.py::canonical_violations` —— **私有模式**的镜像分支，且证据串必须与
+   Rust 侧逐字节相同（它是要被承诺的值）。漏了这步的症状很隐蔽：公开模式一切正常，
+   一旦走私密模式就 `NotImplementedError`（P2-9b 之前的指引漏了这条，是因为当时
+   还没有规则是「先加公开、后补私密」的顺序；现在补上）。
+6. `tests/` + `scripts/cross_validate.py` —— 至少一条 pass、一条 violate 向量，
+   跑 `cross_validate` 确认 host/prove 都对上；私有模式另需一条证据承诺对齐用例
+   （`tests/test_rules_incircuit.py::TestEvidenceCommitmentParity`）。
 
 若该规则只打算**链下**支持（不打算证），则**不要**加第 2 步：让未知 kind 原样进规范
 字节，电路侧解析失败即产不出证明（fail-closed）。这是刻意设计，不要改成静默跳过。

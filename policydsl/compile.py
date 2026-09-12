@@ -11,6 +11,10 @@ ConstraintSpec 结构::
       "policy_id": "...", "policy_version": "...", "semantic": "and",
       "constraints": [
         {"kind": "keyword_block", "name": "...", "keywords": ["a", "b", ...]},
+        {"kind": "normalized_keyword_block", "name": "...",
+         "keywords": ["a", "b", ...],          # 已「折叠 + 小写化」
+         "fold": {"version": "pop-fold-v1",    # 显式折叠表，随策略一起被哈希
+                  "map": [[1077, "e"], ...], "drop": [8203, ...]}},
         {"kind": "length_bound",  "name": "...", "min": 1, "max": 2000},
         {"kind": "pattern_block", "name": "...", "patterns": [...], "nfa": {...}},
         ...
@@ -26,6 +30,7 @@ import json
 from typing import Any, Dict
 
 from . import nfa
+from . import normalize
 from .model import Policy, PolicyError, Rule
 
 SPEC_VERSION = "v1"
@@ -169,6 +174,23 @@ def compile_policy(policy: Policy) -> Dict[str, Any]:
                 "kind": "keyword_block",
                 "name": rule.name,
                 "keywords": sorted({str(w).lower() for w in rule.params["keywords"]}),
+            })
+        elif rule.kind == "normalized_keyword_block":
+            # 规范化关键词（P2-9b）：「折叠 + ASCII 小写化」后的关键词表 +
+            # **显式**折叠表。两者都随约束走，因而都进 policy_hash。
+            #
+            # 关键词在编译期折叠一次，判定时只折叠**响应** —— 两边落在同一个
+            # 规范化空间里比较（在电路内）。表以显式形式写进契约，电路不解释
+            # 预设名，只执行带进来的表：跨层漂移在结构上不可能。
+            try:
+                fold_spec, keywords = normalize.canonical_keywords(rule.params)
+            except normalize.FoldError as exc:
+                raise PolicyError(f"rule '{rule.name}': bad 'fold': {exc}") from exc
+            constraints.append({
+                "kind": "normalized_keyword_block",
+                "name": rule.name,
+                "keywords": keywords,
+                "fold": fold_spec.spec,
             })
         elif rule.kind == "length_bound":
             # 长度边界：直接转 int（策略 JSON 里可能混入字符串形式的数字）

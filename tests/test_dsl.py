@@ -70,6 +70,41 @@ class TestPatternBlock(unittest.TestCase):
         self.assertTrue(check(p, "no secrets here").passed)
 
 
+class TestNormalizedKeywordBlock(unittest.TestCase):
+    """normalized_keyword_block（P2-9b）：折叠后再做与 keyword_block 相同的子串判定。
+
+    与 ``tests/test_normalize.py`` 的分工：那边测折叠表与算法，这边只钉**规则层**
+    的接口 —— 参数校验、缺省 fold、与 keyword_block 并存时的行为。
+    """
+
+    def test_missing_keywords(self):
+        with self.assertRaises(PolicyError):
+            Policy("p", "1", rules=[Rule("normalized_keyword_block", "n",
+                                         {"keywords": []})]).validate()
+
+    def test_non_string_keyword(self):
+        with self.assertRaises(PolicyError):
+            Policy("p", "1", rules=[Rule("normalized_keyword_block", "n",
+                                         {"keywords": [1]})]).validate()
+
+    def test_fold_defaults_to_v1(self):
+        # 不写 fold 等价于写 "v1"（缺省是有语义的，不是「不折叠」）。
+        p = Policy("p", "1", rules=[Rule("normalized_keyword_block", "n",
+                                         {"keywords": ["weaponize"]})])
+        self.assertFalse(check(p, Transcript(response="wеaponize")).passed)
+
+    def test_bad_fold_rejected_before_evaluation(self):
+        # 表非法必须在**编译/校验**期炸掉，而不是出证之后才发现语义没定下来。
+        with self.assertRaises(PolicyError):
+            Policy("p", "1", rules=[Rule("normalized_keyword_block", "n",
+                                         {"keywords": ["a"], "fold": {"version": "v9"}})]).validate()
+
+    def test_independent_from_keyword_block(self):
+        # 两条规则互不影响：不折叠的那条对同形异义文本依然放行（这正是 P2-9b 的动机）。
+        p = Policy("p", "1", rules=[Rule("keyword_block", "kb", {"keywords": ["weaponize"]})])
+        self.assertTrue(check(p, Transcript(response="wеaponize")).passed)
+
+
 class TestAndSemantics(unittest.TestCase):
     """一条策略内多条规则是「与」语义：全部通过才算整条策略通过。"""
 

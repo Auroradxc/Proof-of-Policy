@@ -96,6 +96,30 @@ class TestContractCarriesConstraints(unittest.TestCase):
         self.assertTrue(pat["nfa"]["compiled"])
         self.assertGreaterEqual(len(pat["nfa"]["compiled"][0]["states"]), 2)
 
+    def test_normalized_keyword_block_carries_its_fold_table(self):
+        """折叠规则（P2-9b）的关键跨层字段：**折叠表本身**。
+
+        表必须出现在电路将要解析的那段字节里 —— 电路不解释 ``"v1"`` 是什么意思，
+        它只执行带进来的表。若表只存在于 Python 的模块常量里，跨层漂移就成了
+        「两边各改各的、谁也不知道对方改了」的静默故障。
+        """
+        spec = compile_policy(Policy("t", "1", rules=[
+            Rule("normalized_keyword_block", "nkb",
+                 {"keywords": ["Weaponize"], "fold": "v1"})]))
+        c = json.loads(spec_canonical_text(spec))["constraints"][0]
+        self.assertEqual(c["kind"], "normalized_keyword_block")
+        self.assertEqual(c["keywords"], ["weaponize"])          # 编译期已折叠 + 小写化
+        self.assertEqual(c["fold"]["version"], "pop-fold-v1")
+        self.assertIn([ord("е"), "e"], c["fold"]["map"])        # 西里尔 е → e
+        self.assertIn(0x200B, c["fold"]["drop"])                # 零宽空格：删除
+        # 表是**确定有序**的（按源码点升序）：同一策略两次编译必须逐字节相同，
+        # 否则「同一份策略」会有两个 policy_hash。
+        cps = [cp for cp, _ in c["fold"]["map"]]
+        self.assertEqual(cps, sorted(cps))
+        self.assertEqual(spec_canonical_text(spec), spec_canonical_text(compile_policy(
+            Policy("t", "1", rules=[Rule("normalized_keyword_block", "nkb",
+                                         {"keywords": ["Weaponize"], "fold": "v1"})]))))
+
     def test_unknown_kind_carried_verbatim(self):
         # 未支持的 kind 必须**原样带进契约**，而不是在 Python 侧被丢弃或改写成
         # 别的东西：电路侧解析失败会 fail-closed（产不出证明），比静默跳过安全。

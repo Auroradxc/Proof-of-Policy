@@ -146,7 +146,7 @@ zk-policy/
 
 | # | 不变量 | 由什么保证 |
 |---|---|---|
-| I1 | **跨层判定一致**：同一 `ConstraintSpec` + 同一输入，Python golden 与 `pop-types` 结果逐字段相同 | `scripts/cross_validate.py`（host 14/14 + prove 14/14）、`tests/test_rules_incircuit.py` |
+| I1 | **跨层判定一致**：同一 `ConstraintSpec` + 同一输入，Python golden 与 `pop-types` 结果逐字段相同 | `scripts/cross_validate.py`（host 19/19；prove 见 `08` §5）、`tests/test_rules_incircuit.py` |
 | I2 | **契约哈希稳定**：语义相同 ⇒ `spec["sha256"]` 相同（键排序、紧凑分隔符、字符串排序去重小写化） | `compile._canonical_hash`、`cert.canonical` |
 | I3 | **ASCII 语义**：关键词大小写折叠、NFA 的 `\w\d\s` 都只在 ASCII 上定义，避免 Python `str.lower()` 与 Rust 的差异 | `commit._ascii_lower`、`types::ascii_lower`、`nfa.py` 模块注释 |
 | I4 | **不出电路就无法证明**：一个规则类型要么两侧都实现，要么**根本产不出证明**，绝不静默跳过 | `compile.py` 把未知 kind 原样写进规范字节 → guest 的 serde 解析失败即 panic（fail-closed）；`tests/test_policy_binding.TestFailsClosed` 锁死 |
@@ -165,7 +165,7 @@ python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
 python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
 
 # 交叉验证（需要先构建 circuits，见 docs/reproduce.md §2）
-SP1_PROVER=cpu python3 scripts/cross_validate.py          # host / prove 各 14/14
+SP1_PROVER=cpu python3 scripts/cross_validate.py          # host 19/19（prove 见 08 §5）
 
 # 一条命令跑通端到端（含链上锚定）
 bash scripts/anchor_e2e.sh                                # 秒级，--prove 加真实证明

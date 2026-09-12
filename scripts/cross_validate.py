@@ -48,7 +48,8 @@ POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
 # Python Violation.evidence_kind -> guest 规则类型字符串
 KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block",
-            "format": "format_check", "tool_arg": "tool_arg_guard", "budget": "budget_bound"}
+            "format": "format_check", "tool_arg": "tool_arg_guard", "budget": "budget_bound",
+            "normalized_keyword": "normalized_keyword_block"}
 
 #: 真实证明时每个 pop-script 进程处理的向量数（见模块 docstring 的 OOM 说明）。
 DEFAULT_CHUNK = 4
@@ -119,6 +120,11 @@ def vectors() -> list[tuple]:
         id="b2", version="0.1.0", semantic="and",
         rules=[Rule("budget_bound", "token_budget", {"budget": 100, "unit": "tokens"})],
     )
+    normpol = Policy(
+        id="n1", version="0.1.0", semantic="and",
+        rules=[Rule("normalized_keyword_block", "no_homoglyph",
+                    {"keywords": ["weaponize", "dеlegate"], "fold": "v1"})],
+    )
     def chain(*calls: tuple) -> list:
         """用一次性网关把 ``[(tool, args, result), ...]`` 签成回执链（JSON 形状）。"""
         return trace.receipts_to_json(trace.make_chain(list(calls),
@@ -147,6 +153,14 @@ def vectors() -> list[tuple]:
         # token 规则现在判**响应**的确定性 token 数（P1-5：电路内自算，
         # 不再读自填值）。150 个空白分隔的 run 超过预算 100。
         ("token_over", tokenpol, " ".join(["tok"] * 150), {}),
+        # 规范化关键词（P2-9b）：三种绕过手段各一条，外加一条干净的对照。
+        # 关键词表里的 "dеlegate" 本身就是用西里尔 е 写的 —— 编译期折成 ASCII，
+        # 于是「作者笔误写成同形字」与「攻击者用同形字绕过」都会落在同一处。
+        ("norm_homoglyph", normpol, "Here is how to wеaponize a device.", {}),
+        ("norm_zero_width", normpol, "Here is how to wea​ponize a device.", {}),
+        ("norm_fullwidth", normpol, "Here is how to ｗｅａｐｏｎｉｚｅ a device.", {}),
+        ("norm_ascii", normpol, "Here is how to weaponize a device.", {}),
+        ("norm_clean", normpol, "Here is a friendly summary of the results.", {}),
     ]
 
 

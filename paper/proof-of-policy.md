@@ -98,8 +98,15 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 
 ### 4.2 策略 DSL 与 NFA 契约
 
-规则子集（**6 类全部入电路**）：`keyword_block` / `length_bound` / `pattern_block` / `format_check`（json/int/float 规范子集）/
-`tool_arg_guard`（含 `tools` 限定）/ `budget_bound`（calls / tokens）。
+规则子集共 **8 类：7 类在电路内判定，1 类委托给陪伴证明**。
+
+- **电路内**（`pop-types::evaluate`）：`keyword_block` / `normalized_keyword_block`（先按**随约束走的**折叠表
+  把响应规范化——同形异义字 → ASCII、删零宽字符、全角 → 半角——再做与前者相同的子串判定；表进
+  `policy_hash`，故可审计且跨层漂移在结构上不可能，P2-9b）/ `length_bound` / `pattern_block`（编译后 NFA）/
+  `format_check`（json/int/float 规范子集）/ `tool_arg_guard`（含 `tools` 限定）/ `budget_bound`（calls / tokens）。
+- **委托**（P2-9）：`semantic_bound`（「有害概率 ≤ 阈值」这类**学不出形式证明**的规则）**不在电路内判定**，
+  电路只把「这条被委托了」登记进公开值 `delegated`；验证方必须**合取** ezkl/halo2 陪伴证明 ——
+  **只验 SP1 一侧不等于合规**。
 
 #### 4.2.1 轨迹绑定：工具回执链（P1-5）
 
@@ -179,7 +186,10 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 
 ## 5. Security Model（摘要；详见仓库 `docs/security-model.md`）
 
-- **Soundness**：**全部 6 类规则入电路**（keyword/length/pattern/format/tool-arg/budget）后，`pub` 等于 zkVM 确定性执行输出 `J(π,T)`；伪造需攻破 zkVM 或哈希。
+- **Soundness**：**8 类规则中 7 类在电路内判定**（keyword / normalized-keyword / length / pattern / format /
+  tool-arg / budget）后，`pub` 等于 zkVM 确定性执行输出 `J(π,T)`；第 8 类 `semantic_bound` 不在电路内判定，
+  电路只承诺「它被委托了」（公开值 `delegated`），该部分的健全性由验证方**合取** ezkl/halo2 陪伴证明承担
+  —— **只验 SP1 一侧不等于合规**。伪造需攻破 zkVM 或哈希（或陪伴证明系统）。
 - **Privacy（承诺式）**：验证者视图仅含承诺；Leak 实验验证无明文泄露。**上界见 §8.1**——
   公开可重算的承诺对低熵 `T` 构成猜测-验证 oracle，且底层 SP1 `core` 证明并非零知识。
 - **Redaction soundness**：`redaction_ok ∧ mask_covered` ⇒ 只遮蔽真实命中内容。

@@ -693,16 +693,40 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 ---
 
-### P2-9b 同形异义折叠（顺带交付，全电路内）
+### P2-9b 同形异义折叠（顺带交付，全电路内）—— ✅ **已完成（2026-09-12）**
 
 即使 ezkl 全量集成完成，**易混淆字符折叠仍值得作为独立的原生规则**：它零依赖、成本极低、
 全电路内可证，且能覆盖 ezkl 模型可能漏掉的确定性绕过。
 
-- 新增 `Constraint::NormalizedKeywordBlock { name, keywords, fold: FoldingSpec }`
+- 新增 `SpecConstraint::NormalizedKeywordBlock { name, keywords, fold: FoldingSpec }`
 - `policydsl/normalize.py`：西里尔/希腊同形字映射、全角→半角、去零宽字符（`U+200B/200C/200D/FEFF`）
-- 电路内先折叠再匹配；`tests/test_semantic.py::test_homoglyph_bypass_now_blocked` 覆盖
+- 电路内先折叠再匹配
 
 **验收**：折叠前 `passed=True`、折叠后 `passed=False`（证明修复非恒真）。
+
+**交付记录与偏差**（三处刻意偏离计划原文，均已落到实现与文档里）：
+
+1. **验收测试换名换位**：计划写的是 `tests/test_semantic.py::test_homoglyph_bypass_now_blocked`，
+   但那个名字**已经被 P2-9 的语义规则占了**（它断言的是「语义规则拦下同形异义文本」）。
+   P2-9b 的验收对改放在新的 `tests/test_normalize.py::TestNormalizedKeyword::test_acceptance_bypass_then_blocked`：
+   同一条文本「折叠前放行、折叠后拦下」，且额外断言 **ASCII 版两边都拦**（否则「折叠后拦下」
+   可能只是规则恒真，测试就什么都没证明）。
+2. **折叠表放在约束里**（`fold: FoldingSpec` 是**显式**的 `map`/`drop`，不是两侧各硬编码一份常量）：
+   表因此进规范字节、进 `policy_hash`，改表 = 换策略且可审计；跨层漂移在结构上不可能。
+   代价是策略 JSON 长了约 1.5 KB（v1 表 129 条）。`"fold": "v1"` 是编译期的书写便利，
+   展开后仍然是显式表；未知版本两侧同一白名单、一律 fail-closed。
+3. **`commit.py` 也要改**：`01-policy-dsl.md` §7 的新增规则指引原先只列了 5 处，漏了私有模式
+   的镜像分支 —— 已补成 6 处（漏了它的症状是「公开模式全绿、一走私密模式就
+   `NotImplementedError`」）。
+
+**顺带查出的两件事**（都不在计划里）：
+
+- `scripts/ezkl_prove.py info` 一直在 `KeyError: 'settings_version'` 崩（清单字段在**顶层**而非
+  `settings` 块内），是给 `install_ezkl.sh` 加冒烟步骤时撞上的；已修 + `TestProveCliInfo` 钉住。
+- `semantic/dataset.py` 的注释称 `HOMOGLYPH_PAIRS` 全部来自 `features.VOCAB`，**实测有 6 个字符不满足**
+  （大写西里尔 `Ѕ А Е О Т`、小写 `п`）——即模型没训过它们。所以「语义规则 ⊇ 折叠规则」不成立：
+  `WЕAPONIZE` 这类大写变体很可能只有折叠规则拦得住。已写进 `normalize.py` 与
+  `design-semantic-rules.md` §10，并由 `tests/test_normalize.py::TestVocabConsistency` 钉住两张表的包含关系。
 
 ### P2-10 跨证书策略一致性
 

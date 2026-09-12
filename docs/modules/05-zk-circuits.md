@@ -124,6 +124,7 @@ guest 读到的 `spec_canonical` 是一段**规范 JSON 字节**（`compile.cano
 | 变体 | 判定 | 证据字符串 |
 |---|---|---|
 | `KeywordBlock` | `ascii_lower(response).contains(kw)`，取第一个命中 | 命中的关键词 |
+| `NormalizedKeywordBlock` | **先折叠**（`folded_text`，表来自约束）再 `ascii_lower(..).contains(kw)`；先做 `validate_folding_spec` 结构校验（未知版本/表过大/非 ASCII 替换值 ⇒ panic，fail-closed） | 命中的关键词（**折叠后**的形式） |
 | `LengthBound` | `response.chars().count()` 是否在 `[min,max]` | `"len=<N>"` |
 | `PatternBlock` | 按 `specs` 顺序匹配，命中即记并 `break` | 命中的模式串 |
 | `FormatCheck` | `parse_json_ok` / `parse_int_ok` / `parse_float_ok` | 格式名 |
@@ -479,7 +480,7 @@ pop-verify --meta <proof>.verify.json [--out result.json]
 | `SP1_PROVER=native` | `unreachable` 崩溃 | 用 `SP1_PROVER=cpu`（合法值：cpu/cuda/mock/light/network） |
 | `SP1_PROVER=light` | “light prover cannot prove” | light 只能执行/验证 |
 | 内存不足 | 进程被 OOM killer 杀、无输出 | Core 需 ~10 GB（本机上限定 12 GB）；compressed/groth16 需 ≥16 GB |
-| **一个进程连出多证** | 前面几个都成功、第 6~7 个被 `SIGKILL 9` 杀，峰值 10.65→10.82 GB | 每个证明后内存**缓慢累加**（不回落），单进程跑不完 14 条向量；`cross_validate.py` 因此默认 `--chunk 4`（每块一个干净进程，结果按原序合并） |
+| **一个进程连出多证** | 前面几个都成功、第 6~7 个被 `SIGKILL 9` 杀，峰值 10.65→10.82 GB | 每个证明后内存**缓慢累加**（不回落），单进程跑不完全部向量（当时 14 条）；`cross_validate.py` 因此默认 `--chunk 4`（每块一个干净进程，结果按原序合并） |
 | `no method named keep` | `sp1-prover` 编译失败 | 上游 `tempfile` 3.x 无 `TempDir::keep()` → 保留 `circuits/patches/tempfile` 与 `[patch.crates-io]` |
 | 缺 `libsp1gnark.a` | 构建失败 | 需 Go ≥1.24 + `GOPROXY=https://goproxy.cn,direct` |
 | 缺 `protoc` | 构建失败 | `sudo apt-get install -y protobuf-compiler` |
@@ -545,7 +546,7 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
 
 | 测试 | 覆盖 |
 |---|---|
-| `tests/test_rules_incircuit.py` | 六类规则在 `--check` 下与 Python golden 逐点对齐（含规范化证据串） |
+| `tests/test_rules_incircuit.py` | 各电路内规则在 `--check` 下与 Python golden 逐点对齐（含规范化证据串）；P2-9b 另覆盖「折叠真的发生在电路内」（五种绕过/近邻文本） |
 | `tests/test_semantic.py`（P2-9） | `delegated` 的登记与合取：真实语义规则的陪伴证明绑定（换 onnx/vk/阈值/方向一律 FAIL）、私有模式 panic、公开实例与送达响应一致性、缺材料 fail-closed |
 | `tests/test_trace.py` | P1-5 四条验收（完整链通过 / 删·换·重排失败 / 伪造回执验签失败 / 旧向量被拒），并实测 `trace_root` 与 Python 逐字节一致 |
 | `tests/test_compose.py`（P1-6） | 代理推理的参考实现逐位一致（`--check --job infer`）、组合绑定的 5 组反例、域分离（两个 guest 互相拒绝对方的向量）、驱动接线（`job` 旗标 / `mode` 不被剥掉） |
@@ -554,7 +555,7 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
 | `tests/test_verifier_only.py` | `pop-verify` 的调用与快路径判定 |
 | `bench/bench_cycles.py` | `--execute` 的 cycle 数矩阵（长度 × 规则数 × pike/naive） |
 | `bench/bench_proofs.py` / `bench_verify.py` | 证明时间/体积/内存；验证的冷启动 vs 纯验证 |
-| `scripts/cross_validate.py` | host 14/14 + prove 14/14（**I1 的总闸门**） |
+| `scripts/cross_validate.py` | host 19/19（**I1 的总闸门**；prove 见 `08` §5） |
 
 ---
 

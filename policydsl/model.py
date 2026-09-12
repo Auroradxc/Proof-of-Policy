@@ -18,6 +18,10 @@
   semantic_bound: 语义规则（P2-9）—— 响应经**确定性特征图 + 训练好的 head**
                   算出的分数必须越过/低于阈值。**由 ezkl 承担证明**，SP1 电路
                   只登记委托（见 ``docs/design-semantic-rules.md``）
+  normalized_keyword_block : keyword_block 的规范化版本（P2-9b）—— 先按约束里
+                  **自带**的折叠表把响应折叠（同形异义字 → ASCII、删零宽字符、
+                  全角 → 半角），再做同样的子串判定。折叠在电路内完成，见
+                  ``policydsl/normalize.py``
 
 Python 层是「参考语义」（reference semantics）：单测与 SP1 程序都以它为目标。
 ``compile()`` 把 Policy 编译成 ConstraintSpec（JSON），后者是与电路内 prover
@@ -33,6 +37,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+from . import normalize  # 只用标准库，无循环导入风险（见 normalize 模块 docstring）
 
 if TYPE_CHECKING:  # 只用于类型标注：避免 model ↔ trace 的循环导入
     from .trace import ToolReceipt
@@ -71,6 +77,27 @@ class Rule:
                 raise PolicyError(f"rule '{self.name}': keyword_block needs non-empty 'keywords'")
             if not all(isinstance(w, str) for w in words):
                 raise PolicyError(f"rule '{self.name}': keywords must be strings")
+        elif self.kind == "normalized_keyword_block":
+            # 规范化关键词规则（P2-9b）：关键词与 keyword_block 同形，
+            # 外加一个 fold 声明（预设名，或显式折叠表）。
+            #
+            # 校验放在**这里**而不是只放在 compile 里：Rule.validate 是策略包的
+            # 入口闸门，手写的 Policy（测试、脚本）也走它。折叠表非法 = 语义未定，
+            # 必须编译期快速失败，绝不能带着一张「读不懂的表」出证。
+            words = self.params.get("keywords")
+            if not isinstance(words, list) or not words:
+                raise PolicyError(
+                    f"rule '{self.name}': normalized_keyword_block needs non-empty 'keywords'")
+            if not all(isinstance(w, str) for w in words):
+                raise PolicyError(f"rule '{self.name}': keywords must be strings")
+            if not all(words):
+                raise PolicyError(
+                    f"rule '{self.name}': keywords must be non-empty strings"
+                    f"（空串是任意文本的子串，该规则会恒真命中）")
+            try:
+                normalize.resolve_fold(self.params.get("fold", normalize.DEFAULT_PRESET))
+            except normalize.FoldError as exc:
+                raise PolicyError(f"rule '{self.name}': bad 'fold': {exc}") from exc
         elif self.kind == "length_bound":
             # 长度规则：min/max 必须是整数，且 0 <= min <= max
             lo, hi = self.params.get("min"), self.params.get("max")

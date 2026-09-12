@@ -25,7 +25,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Union
 
-from . import nfa, trace
+from . import nfa, normalize, trace
 from .model import (
     CheckResult, DelegatedConstraint, Policy, PolicyError, Transcript, Violation,
 )
@@ -123,6 +123,26 @@ def check(policy: Policy, target: Target) -> CheckResult:
             hits = [w for w in rule.params["keywords"] if str(w).lower() in text]
             if hits:
                 violations.append(Violation(rule, "keyword", hits))
+
+        elif rule.kind == "normalized_keyword_block":
+            # 规范化关键词（P2-9b）：先把响应按**约束自带的表**折叠，再做子串判定。
+            #
+            # 与 keyword_block 的两处刻意差异：
+            #   ① 小写化用 ``ascii_lower`` 而不是 ``str.lower()`` —— 后者会把非
+            #      ASCII 字母也小写，电路侧的 ``ascii_lower`` 不会；
+            #   ② 关键词取自 ``canonical_keywords``（折叠 + 排序去重）—— 与
+            #      compile 写进契约的是**同一个函数**，证据顺序不会分叉。
+            if tx.response is None:
+                raise PolicyError(
+                    f"rule '{rule.name}' (normalized_keyword_block) needs a transcript response")
+            try:
+                fold_spec, keywords = normalize.canonical_keywords(rule.params)
+            except normalize.FoldError as exc:
+                raise PolicyError(f"rule '{rule.name}': bad 'fold': {exc}") from exc
+            folded = normalize.ascii_lower(fold_spec.apply(tx.response))
+            hits = [kw for kw in keywords if kw in folded]
+            if hits:
+                violations.append(Violation(rule, "normalized_keyword", hits))
 
         elif rule.kind == "length_bound":
             # 长度边界：len(response) 必须落在 [min, max]

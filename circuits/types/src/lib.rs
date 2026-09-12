@@ -229,6 +229,42 @@ pub enum PatternMode {
     Naive,
 }
 
+/// 折叠表的语义版本白名单（P2-9b）—— 与 `policydsl/normalize.py::FOLD_VERSIONS`
+/// 必须逐字一致。不在白名单里的版本**拒绝执行**（fail-closed）：不能拿旧代码去
+/// 解释一套没见过的折叠语义。
+pub const FOLD_VERSIONS: &[&str] = &["pop-fold-v1"];
+
+/// 表大小上限 —— 与 `policydsl/normalize.py::MAX_MAP / MAX_DROP` 一致。
+/// 电路内是逐字符查表，必须有界，否则一条手工构造的巨型表就能把 cycle 数拉爆。
+pub const MAX_FOLD_MAP: usize = 512;
+pub const MAX_FOLD_DROP: usize = 64;
+
+/// 同形异义折叠表（P2-9b）—— **随约束走**，见
+/// `SpecConstraint::NormalizedKeywordBlock`。
+///
+/// 形状直接对应 `policydsl/normalize.py::build_v1_spec()` 的 JSON::
+///
+/// ```json
+/// {"version": "pop-fold-v1", "map": [[1077, "e"], ...], "drop": [8203, ...]}
+/// ```
+///
+/// `map` 用「二元组数组」而不是 JSON 对象：数组有顺序、可排序，也不存在
+/// 「整数键被序列化成字符串」这类跨语言歧义。
+///
+/// 标 `deny_unknown_fields`：多出来的键意味着写的人以为是**另一套**折叠语义，
+/// 猜错就等于静默换语义（链下 `normalize._resolve` 同样拒绝）。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FoldingSpec {
+    pub version: String,
+    /// 码点 → 单个 ASCII 字符。
+    #[serde(default)]
+    pub map: Vec<(u32, String)>,
+    /// 要删除的码点（零宽字符）。
+    #[serde(default)]
+    pub drop: Vec<u32>,
+}
+
 /// 来自 ConstraintSpec 的一条约束 —— **直接映射 `policydsl/compile.py` 产出的
 /// 规范 JSON 形状**（内部标签 `"kind"`，值取 snake_case 变体名）。
 ///
@@ -239,6 +275,18 @@ pub enum PatternMode {
 pub enum SpecConstraint {
     /// 响应不得包含 `keywords` 中任意关键词（不区分大小写，ASCII）。
     KeywordBlock { name: String, keywords: Vec<String> },
+    /// **规范化**关键词（P2-9b）：先按 `fold` 折叠响应（同形异义字 → ASCII、
+    /// 删零宽字符、全角 → 半角），再做与 `KeywordBlock` 相同的子串判定。
+    ///
+    /// 折叠表随约束走，**不是**电路里的常量：表是 `policy_hash` 的一部分，
+    /// 因而可审计（策略字节里就写着「西里尔 е 折成 e」），跨层漂移也在结构上
+    /// 不可能 —— 电路不解释版本号的含义，只执行带进来的表。`keywords` 已在
+    /// 编译期折叠过（`policydsl/compile.py`），这里**只折叠响应**。
+    NormalizedKeywordBlock {
+        name: String,
+        keywords: Vec<String>,
+        fold: FoldingSpec,
+    },
     /// 响应长度（码点数）必须满足 `min <= len <= max`。
     LengthBound { name: String, min: u32, max: u32 },
     /// 响应不得匹配任意编译后的模式（子串匹配，`patterns[i]` 的正则
@@ -545,9 +593,92 @@ pub fn nfa_match(spec: &NfaSpec, text: &str) -> bool {
 // 对电路内规则类型镜像 policydsl.evaluate.check。
 // --------------------------------------------------------------------------- //
 
-/// 仅对 ASCII 做小写化（与链下 `_ascii_lower` 保持字节级一致）。
+/// 仅对 ASCII 做小写化（与链下 `normalize.ascii_lower` 保持字节级一致）。
 fn ascii_lower(s: &str) -> String {
     s.chars().map(|c| c.to_ascii_lowercase()).collect()
+}
+
+/// 折叠表的结构校验（fail-closed）。
+///
+/// 这些字段（版本白名单、表大小、码点范围、替换值形状）**编译器已经保证过**
+/// —— `policy_hash` 把规范字节绑死了，证明者换不掉表。电路里再查一遍，防的是
+/// 手写的 `ProofRequest`：那种输入绕不过编译期检查，但也不该被**静默**地按
+/// 另一套语义解释（尤其「当作没有折叠」——那正是攻击者要的分支）。
+///
+/// **刻意没查**「`from` 是否重复」：那是 O(n²)（n 可达 512），而重复项只出现在
+/// 编译器拒绝、且不可能与任何真实 `policy_hash` 相符的输入里 —— 为一种不可达的
+/// 输入付二次方的代价不划算。参见 `folded_text` 的说明。
+fn validate_folding_spec(spec: &FoldingSpec) {
+    assert!(
+        FOLD_VERSIONS.contains(&spec.version.as_str()),
+        "未知的折叠语义版本 {:?}（电路只认识 {:?}）",
+        spec.version,
+        FOLD_VERSIONS
+    );
+    assert!(
+        spec.map.len() <= MAX_FOLD_MAP,
+        "折叠表过大：map {} > {}",
+        spec.map.len(),
+        MAX_FOLD_MAP
+    );
+    assert!(
+        spec.drop.len() <= MAX_FOLD_DROP,
+        "折叠表过大：drop {} > {}",
+        spec.drop.len(),
+        MAX_FOLD_DROP
+    );
+    for (from, to) in &spec.map {
+        assert!(
+            *from <= 0x10FFFF && !(0xD800..=0xDFFF).contains(from),
+            "折叠表的源码点非法：U+{:04X}",
+            from
+        );
+        let mut chars = to.chars();
+        let ch = chars.next().expect("折叠表的替换值不能是空串");
+        assert!(chars.next().is_none(), "折叠表的替换值必须是单个字符：{:?}", to);
+        assert!(ch.is_ascii(), "折叠表的替换值必须是 ASCII：{:?}", to);
+    }
+    for cp in &spec.drop {
+        assert!(
+            *cp <= 0x10FFFF && !(0xD800..=0xDFFF).contains(cp),
+            "折叠表要删除的码点非法：U+{:04X}",
+            cp
+        );
+    }
+}
+
+/// 按表折叠文本（P2-9b）—— 与 `policydsl/normalize.py::Fold.apply` 逐字符对应。
+///
+/// 规则是**单遍、从左到右、逐码点**的：命中 `map` 即替换成那个 ASCII 字符，
+/// 命中 `drop` 即删除，其余原样保留。**不做不动点迭代** —— 于是折叠不会链式
+/// 放大（`a→b`、`b→c` 不会把 `a` 变成 `c`），`map` 的顺序也就无关紧要。
+///
+/// 表先按源码点排序、再二分查找：逐字符线性扫 500 条表在长响应上是 O(n·m)，
+/// 而响应长度由策略侧的 `length_bound` 之外的因素决定不了（本规则**不要求**有
+/// `length_bound`），所以这里主动把代价压到 O(n·log m)。
+fn folded_text(text: &str, spec: &FoldingSpec) -> String {
+    let mut table: Vec<(&u32, &str)> =
+        spec.map.iter().map(|(from, to)| (from, to.as_str())).collect();
+    table.sort_by_key(|(from, _)| **from);
+    // 重复的源码点只会出现在编译器拒绝的输入里（`normalize._resolve` 报错）。
+    // 真出现时这里留的是排序后的第一个；链下用字典（后者覆盖前者）—— 两者在
+    // 这种不可达输入上可能不同，但那种 spec 与任何真实 policy_hash 都对不上，
+    // 验证方在 policy_hash 比对那一步就会拒。
+    table.dedup_by_key(|(from, _)| **from);
+
+    let mut out = String::with_capacity(text.len());
+    for ch in text.chars() {
+        let cp = ch as u32;
+        match table.binary_search_by_key(&cp, |(from, _)| **from) {
+            Ok(i) => out.push_str(table[i].1),
+            Err(_) => {
+                if !spec.drop.contains(&cp) {
+                    out.push(ch);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// FormatKind → 字符串名。
@@ -594,8 +725,9 @@ pub fn parse_json_ok(s: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(s).is_ok()
 }
 
-/// 依据约束判定一个响应（六类规则全部入电路）：
-/// keyword_block（ASCII 不区分大小写子串）、length_bound（码点长度）、
+/// 依据约束判定一个响应（七类规则全部入电路）：
+/// keyword_block（ASCII 不区分大小写子串）、normalized_keyword_block（同形异义
+/// 折叠后再做同样的子串匹配）、length_bound（码点长度）、
 /// pattern_block（通过编译后 NFA 的子串正则）、format_check（规范解析子集）、
 /// tool_arg_guard（**回执**参数里的被禁键）、budget_bound（回执条数 / **电路内
 /// 自算**的 token 数）。
@@ -635,6 +767,20 @@ pub fn evaluate(
                     violations.push(Violation {
                         rule: name.clone(),
                         kind: "keyword_block".into(),
+                        evidence: hit.clone(),
+                    });
+                }
+            }
+            SpecConstraint::NormalizedKeywordBlock { name, keywords, fold } => {
+                // 规范化关键词（P2-9b）：折叠响应后再做与 KeywordBlock 相同的
+                // 子串判定。关键词本身**不再折叠** —— 编译期已经折过了，链下
+                // （`commit.canonical_violations`）也只折响应，两边口径一致。
+                validate_folding_spec(fold);
+                let text = ascii_lower(&folded_text(response, fold));
+                if let Some(hit) = keywords.iter().find(|kw| text.contains(kw.as_str())) {
+                    violations.push(Violation {
+                        rule: name.clone(),
+                        kind: "normalized_keyword_block".into(),
                         evidence: hit.clone(),
                     });
                 }

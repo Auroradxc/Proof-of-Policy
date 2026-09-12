@@ -60,7 +60,7 @@ RESULT: PASS
 ## 4. 复现：双端一致性（Python golden ↔ SP1）
 
 ```bash
-SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 14/14 + prove 14/14
+SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 19/19（prove 见下方注）
 ```
 
 > 真实证明默认**分块**（`--chunk 4`，共 4 个 `pop-script` 进程）。原因很实际：
@@ -121,7 +121,7 @@ SP1_PROVER=cpu python3 scripts/compose_proof.py \
 
 ## 8. 复现：语义规则（P2-9，可选，重依赖）
 
-第七类规则 `semantic_bound`（「回复的有害概率不得高于阈值」这类**学不出形式证明**的规则）
+`semantic_bound`（「回复的有害概率不得高于阈值」这类**学不出形式证明**的规则）
 **不在 SP1 电路内判定**：电路只把「这条被委托了」登记进公开值 `delegated[]`，
 判定由一条 **ezkl/halo2 陪伴证明**补上，验证方必须**合取**二者。因此这一段是**独立的一条链**，
 需要 `requirements-ezkl.txt` 里的那套依赖（torch / onnx / ezkl），且 `semantic/artifacts/` 会占 ~3 GB
@@ -149,6 +149,16 @@ POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic   # 真·端到端一例
 
 > 最值得跑的一条是 `selftest`：它先演示现有 `keyword_block` 被同形异义字（`wеaponize` 的西里尔 `е`）
 > **绕过**，再展示语义规则把同一句拦下 —— 这是论文里那条绕过实验的可复现版本。
+>
+> 那条绕过**现在还有第二个解法**，而且不需要 ezkl/torch：`normalized_keyword_block`（P2-9b）在
+> **SP1 电路内**先把响应折叠回 ASCII 再做同样的子串判定，秒级、零额外依赖。两者的取舍见
+> [`modules/01`](modules/01-policy-dsl.md) §2：一个管「字面变体」（确定性、可解释），
+> 一个管「改写」（统计、需要模型）。跑这一条不需要本节的重依赖：
+>
+> ```bash
+> python3 -m unittest tests.test_normalize tests.test_rules_incircuit   # 后者需先编 pop-script
+> python3 scripts/cross_validate.py --no-prove                          # 19 条向量里 5 条是折叠规则
+> ```
 
 ---
 
@@ -238,7 +248,7 @@ python3 scripts/verify_session.py --session .../session.json \
 
 - `python3 -m unittest discover tests` → **348 passed（11 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = 设计内「依赖已装」用例）；
 - `scripts/prove_policy.py` → **RESULT: PASS**；
-- `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **RESULT: host 14/14  prove 14/14  PASS**
+- `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（**prove 未重跑**：向量 14 → 19 后只做过 host 全量 + `norm_homoglyph` 单条真实证明，整批 prove 须 `--chunk`，见 `modules/08-tests-bench.md` §5）
   （真实证明分 4 块跑，见 §4 的说明；`--no-prove` 时跳过真实证明）；
 - `verify_cert.py`（带 `--response T′`）/ `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证与响应绑定核对）；
 - `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 12/12 + 反例对照，见 §12）；
