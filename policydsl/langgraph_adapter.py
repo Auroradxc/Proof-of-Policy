@@ -118,19 +118,30 @@ def guard_node(monitor: AgentMonitor, node: Callable[..., Any], kind: str = "gen
 
 
 class LangGraphGuard:
-    """便捷包装器：把一个 monitor 绑定到节点工厂。"""
+    """便捷包装器：把一个 monitor 绑定到节点工厂。
 
-    def __init__(self, monitor: AgentMonitor, **handler_kwargs: Any):
+    **一次会话只有一条轨迹**：本包装器持有**一把** :class:`ToolGateway`，回调与
+    节点都从它取（见 ``dev-plan.md`` §5.1.2 第 1 条）。缺省各建一把的话，
+    ``callbacks()`` 与 ``tool_node()`` 签出的证书会绑到**两条不同的链**上 ——
+    与 ``demo_e2e.py`` 里那处曾经存在的缝是同一个。要接入外层已有的网关
+    （例如 ``MCPGuard`` 那一把），传 ``gateway=`` 即可。
+    """
+
+    def __init__(self, monitor: AgentMonitor, gateway: Optional[ToolGateway] = None,
+                 **handler_kwargs: Any):
         self.monitor = monitor
+        self.gateway = gateway if gateway is not None else ToolGateway()
         self._handler_kwargs = handler_kwargs
 
     def callbacks(self) -> PoPCallbackHandler:
-        return attach(self.monitor, **self._handler_kwargs)
+        return attach(self.monitor, gateway=self.gateway, **self._handler_kwargs)
 
     def generate_node(self, node: Callable[..., Any], **kw: Any) -> Callable[..., Dict[str, Any]]:
+        kw.setdefault("gateway", self.gateway)
         return guard_node(self.monitor, node, kind="generate", **kw)
 
     def tool_node(self, node: Callable[..., Any], **kw: Any) -> Callable[..., Dict[str, Any]]:
+        kw.setdefault("gateway", self.gateway)
         return guard_node(self.monitor, node, kind="tool", **kw)
 
 

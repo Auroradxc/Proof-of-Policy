@@ -24,6 +24,7 @@ Rust 实现（``pop-script --check``，即 ``pop_types::evaluate``）。二者�
   免得读者以为电路内已经把篡改全堵死了。
 """
 
+import asyncio
 import dataclasses
 import json
 import subprocess
@@ -36,8 +37,11 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from policydsl import anchor, cert, keys, trace  # noqa: E402
+from policydsl.agent import AgentMonitor  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.evaluate import check  # noqa: E402
+from policydsl.langchain_adapter import PoPCallbackHandler  # noqa: E402
+from policydsl.mcp_adapter import MCPGuard  # noqa: E402
 from policydsl.model import Policy, Rule, Transcript  # noqa: E402
 from policydsl.serialize import spec_canonical_text  # noqa: E402
 
@@ -798,6 +802,99 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
         self.assertIn("回执签名未验", proc.stdout)
         self.assertIn("seal 签名未验", proc.stdout)
         self.assertNotIn("[FAIL]", proc.stdout)
+
+
+def _tool_policy() -> Policy:
+    """工具路径策略：禁用 password/token/api_key（与 agent_tool_v1.json 同形）。"""
+    return Policy("agent-tool-v1", "0.1.0", rules=[
+        Rule("tool_arg_guard", "no_secret_args",
+             {"forbidden_fields": ["password", "token", "api_key"]}),
+        Rule("budget_bound", "call_budget", {"budget": 5, "unit": "calls"})])
+
+
+def _content_policy() -> Policy:
+    """内容路径策略：一条最容易判的关键词规则（与 agent_content_v1.json 同形）。"""
+    return Policy("agent-content-v1", "0.1.0", rules=[
+        Rule("keyword_block", "no_bad_topics", {"keywords": ["exploit", "weaponize"]})])
+
+
+class _FakeSession:
+    """鸭子类型的假 MCP 会话：只实现 ``async call_tool``。"""
+
+    async def call_tool(self, name, arguments=None):
+        return {"content": [{"type": "text", "text": f"ok:{name}"}]}
+
+
+class TestUnifiedGatewayIdentity(unittest.TestCase):
+    """**一次会话只有一条轨迹**：内容链与工具链必须共用同一把网关。
+
+    这道缝原先一直开着：``PoPCallbackHandler`` 与 ``MCPGuard`` 各自
+    ``ToolGateway()`` 缺省构造 ⇒ 同一次会话里，LLM 生成证书与工具调用证书绑的
+    是**两条不同的链**（``trace_root`` 各指一条，``trace_seal`` 各封各的）。
+    demoe 恰好先跑生成、后跑工具，看上去没事；真 agent 两条链交替走，立刻显形。
+
+    验收按 ``docs/dev-plan.md`` §5.1.2 第 1 条：``len(chain) == seal.count`` 且
+    ``trace_root(chain) == seal.trace_root`` —— **并且**有一条反例证明它不是恒真的。
+    """
+
+    def _session(self, shared: bool):
+        """跑一次「先工具、后生成」的会话，返回 (内容证书, 工具链网关, 链长, guard)。
+
+        ``shared=False`` 时内容 handler 用它**自己**的缺省网关 —— 即修复前的样子。
+        返回的网关是**工具链所在**的那把：未共用时它就与内容 handler 无关了。
+        """
+        tools = AgentMonitor(_tool_policy())
+        content = AgentMonitor(_content_policy())
+        gw = trace.ToolGateway(ts=GW_TS)
+        guard = MCPGuard(tools, vkey_hash="unproven", block_on_violation=True,
+                         gateway=gw if shared else None)
+        # 两次工具调用（都干净：参数不碰 forbidden_fields，预算 5 也用不完）
+        session = _FakeSession()
+        asyncio.run(guard.call_tool(session, "search_kb", {"query": "refund"}))
+        asyncio.run(guard.call_tool(session, "search_kb", {"query": "policy"}))
+        if not shared:
+            gw = guard.gateway          # 未共用时，工具链在 guard 自己那把网关上
+        chain_size = len(gw.receipts)
+        # 生成：内容证书必须绑同一条链（用真 handler，走的就是 agent 的接线方式）
+        handler = PoPCallbackHandler(content, vkey_hash="unproven",
+                                     gateway=gw if shared else None)
+        env = handler.monitor.on_generate("A safe reply about the refund policy.",
+                                          receipts=handler.gateway.receipts,
+                                          seal=handler.gateway.seal())
+        return env, gw, chain_size, guard
+
+    def test_content_cert_seals_the_same_chain_as_the_tools(self):
+        env, gw, size, guard = self._session(shared=True)
+        payload = cert.envelope_payload(env)
+        seal = trace.seal_from_json(payload["trace_seal"])
+        self.assertIsNotNone(seal, "共用网关后，内容证书必须带上这条链的末端承诺")
+        # 验收的两项，逐字照写
+        self.assertEqual(len(gw.receipts), seal.count)
+        self.assertEqual(trace.trace_root(gw.receipts), seal.trace_root)
+        # 只拿网关公钥（第三方的规矩）也核得动
+        ring = cert.keyring(gw.signer.public_key)
+        ok, why = trace.verify_seal(seal, ring, gw.receipts)
+        self.assertTrue(ok, why)
+        # 内容证书与工具证书签的是**同一把**网关 —— 这才是「同一条会话」
+        tool_seal = cert.envelope_payload(guard.certificates[-1])["trace_seal"]
+        self.assertEqual(seal.keyid, tool_seal["keyid"])
+        self.assertEqual(seal.keyid, gw.signer.keyid)
+        self.assertEqual(payload["outcome"]["trace_root"], trace.trace_root(gw.receipts))
+        self.assertEqual(size, 2)
+
+    def test_separate_gateways_do_not_seal_the_same_chain(self):
+        # 非恒真对照：不共用网关时，上面那组断言**必须**不成立 —— 否则用例
+        # 只是在复述「网关会给自己的链盖章」，跟「两条链是不是同一条」无关。
+        env, gw, size, _ = self._session(shared=False)
+        payload = cert.envelope_payload(env)
+        self.assertEqual(size, 2, "工具链确实有 2 条回执")
+        seal = trace.seal_from_json(payload["trace_seal"])
+        self.assertIsNotNone(seal, "各用各的网关时，内容证书盖的仍是**自己**那条空链")
+        self.assertEqual(seal.count, 0)
+        self.assertNotEqual(len(gw.receipts), seal.count)
+        ok, why = trace.verify_seal(seal, None, gw.receipts)
+        self.assertFalse(ok, why)
+        self.assertIn("截尾", why)
 
 
 if __name__ == "__main__":

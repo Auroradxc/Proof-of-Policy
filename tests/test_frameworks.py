@@ -413,6 +413,35 @@ class TestLangGraphHelpersOffline(unittest.TestCase):
         n = guard.generate_node(lambda s: {"output": "ok"})
         self.assertIn("certificates", n({}))
 
+    def test_guard_class_shares_one_gateway(self):
+        """回调与节点必须绑**同一条**轨迹（dev-plan §5.1.2 第 1 条）。
+
+        缺省各建一把网关时，`callbacks()` 出的内容证书与 `tool_node()` 出的工具
+        证书会落在两条不同的链上 —— 与 `demo_e2e.py` 里那处缝是同一个。
+        """
+        # 用**工具策略**的 monitor：它同时判得动工具回执与生成文本，所以
+        # 「一次会话走两条链」这件事能在同一个 guard 上真的跑一遍。
+        guard = lg.LangGraphGuard(self.tools)
+        h = guard.callbacks()
+        self.assertIs(h.gateway, guard.gateway)
+        tool = guard.tool_node(lambda s: {"name": "search_kb", "args": {"q": "refund"}})
+        tool({"certificates": []})
+        gen = guard.generate_node(lambda s: {"output": "A safe reply."})
+        out = gen({"certificates": []})
+        # 两次调用后链上有了那条工具回执，内容证书必须封在同一条链上
+        seal = cert.envelope_payload(out["certificates"][-1])["trace_seal"]
+        self.assertEqual(seal["keyid"], guard.gateway.signer.keyid)
+        self.assertEqual(seal["count"], len(guard.gateway.receipts))
+        self.assertEqual(seal["trace_root"], guard.gateway.trace_root)
+
+    def test_guard_class_accepts_an_outer_gateway(self):
+        # 要接进外层已有的会话（例如 MCPGuard 那把），必须能注入而不是被迫新建
+        from policydsl.trace import ToolGateway
+        outer = ToolGateway()
+        guard = lg.LangGraphGuard(self.content, gateway=outer)
+        self.assertIs(guard.gateway, outer)
+        self.assertIs(guard.callbacks().gateway, outer)
+
     def test_guard_node_threads_proof_mode(self):
         # P0-4：guard_node 的 proof_mode 必须落到它签发的每张证书上（两条 kind 都验）。
         gen = lg.guard_node(self.content, lambda s: {"output": "A safe reply."},

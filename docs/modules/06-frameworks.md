@@ -206,8 +206,11 @@ tool     = guard_node(monitor, my_tool_node,     kind="tool")
 
 其他 `kind` 抛 `ValueError`。
 
-`LangGraphGuard(monitor, **kw)` 是把上述工厂绑到一起的便捷包装：
+`LangGraphGuard(monitor, gateway=None, **kw)` 是把上述工厂绑到一起的便捷包装：
 `guard.callbacks()` / `guard.generate_node(node)` / `guard.tool_node(node)`。
+它持有**一把** `ToolGateway`（`guard.gateway`）并同时喂给三者 —— 不这样，
+`callbacks()` 与 `tool_node()` 签出的证书会绑到两条不同的链上（#99）。
+要接进外层已有的会话（例如 `MCPGuard` 那把），传 `gateway=`。
 
 ### 3.3 事件流认证
 
@@ -234,11 +237,16 @@ tool     = guard_node(monitor, my_tool_node,     kind="tool")
 MCP（Model Context Protocol）的工具调用是**最重要的一道闸门**：参数侧可以在工具**执行前**拦截。
 
 ```python
+gateway = trace.ToolGateway()                     # 一次会话**唯一**的那把（#99）
 guard = MCPGuard(tools_monitor, vkey_hash=vkey,
                  block_on_violation=True,          # 参数违规 → 飞行前拦截
                  result_monitor=content_monitor,   # 工具返回文本的独立策略
-                 block_on_result_violation=False)
+                 block_on_result_violation=False,
+                 gateway=gateway)
 result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refund"})
+
+# 生成路径**必须**接同一把 —— 否则两条链各指一条 trace_root，会话被劈成两条
+handler = PoPCallbackHandler(content_monitor, gateway=gateway)
 ```
 
 `call_tool` 的顺序是刻意的（**P1-5** 起工具**执行后**多一步「网关签发回执」）：
@@ -323,6 +331,12 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
    `seal=gateway.seal()` —— 一张写着 `trace_root` 却没有 seal 的证书，验证方无从排除
    「链尾（乃至整条链）被删」。代价是内容证书的 `passed` 也**涵盖整条链**：脏轨迹上不会再
    出现 `passed=true` 的内容证书（与工具路径同一口径）。
+4b. **一次会话只有一条轨迹（#99）**：内容链与工具链共用**同一把** `ToolGateway`，靠显式
+   注入（`gateway=`）而不是各自缺省构造 —— 缺省构造会让每处各拿一把，`trace_root`
+   各指一条链、`seal` 各封各的，会话被劈成两条。`LangGraphGuard` 持有一把并同时喂给
+   `callbacks()` 与 `*_node()`（它此前每次调用都新建一把）。
+   `zk_path` 的 zk 证书**不在此列**：它证的是「`T` 满足 `π`」，**不主张**工具轨迹，
+   所以没有 `trace_seal` 是**如实**而非漏签（见 `dev-plan.md` §5.1.2 第 1 条）。
 5. **`vkey_hash` 默认 `"unproven"`**：框架路径签发的证书默认**不绑定证明**；
    附证明的证书由 `scripts/issue_cert.py` / `demo_e2e.py` 的 zk 路径产出。
    `vkey_hash` 与 `proof_mode`（P0-4 的**证据档位诚实标注**）必须**成对**给出：

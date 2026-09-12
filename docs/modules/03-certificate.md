@@ -119,6 +119,18 @@
 此时 3d 如实记 `PASS + 「截尾不可排除」(skipped)`；给了网关公钥却**没有** `trace_seal` 的
 证书判 FAIL。详细边界与信任假设见 [`../security-model.md`](../security-model.md) §5.3。
 
+> **一次会话只有一条轨迹（#99）**：内容链（LLM 生成）与工具链（MCP 调用）必须共用
+> 同**一把** `ToolGateway`。缺省各建一把的话，两边的 `trace_root` 各指一条链、
+> `trace_seal` 各封各的 —— 会话被劈成两条，`seal` 也就无从回答「链尾有没有被删」。
+> 接线方式是把网关**显式注入**：`PoPCallbackHandler(gateway=gw)`、
+> `MCPGuard(gateway=gw)`、`LangGraphGuard(monitor, gateway=gw)`。
+> 见 `docs/dev-plan.md` §5.1.2 第 1 条与 `tests/test_trace.py` 的
+> `TestUnifiedGatewayIdentity`（含「不共用网关必须失败」的反例）。
+>
+> **顺序会影响 seal 覆盖到哪儿**：seal 是**签发那一刻**的链末端承诺。先工具后生成
+> （`demo_e2e.py` 的次序）时，内容证书盖的就是会话终态那条链；反过来的话它盖的是
+> 「当时还空着」的前缀 —— 链仍是同一条，但读的人得自己分辨 `count`。
+
 ### 语义规则的委托块（`semantic` + `outcome.delegated`）—— P2-9
 
 学习型规则（`semantic_bound`）**不由 SP1 电路判定**：它的判定要跑一张 ONNX 前向，

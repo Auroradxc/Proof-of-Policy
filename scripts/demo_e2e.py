@@ -4,10 +4,14 @@
 真实 agent 会话 → 证书 → 锚定账本 →（可选）真实 SP1 证明。
 
 它演练的是：
-  1. LLM 生成路径（LangChain 流式），带**流式证书**（形成哈希链）与**早停**
-     （首个违规即停）；
-  2. 工具路径，针对**真实 MCP 服务器**（stdio）：参数被认证（含飞行前拦截），
+  0. **一次会话只有一条轨迹**：工具链（MCP）与内容链（LLM 生成）共用同**一把**
+     工具网关，所以两边的证书绑的是同一个 `trace_root`、封在同一条 `trace_seal`
+     下。顺序是先工具后生成 —— 真实 agent 就是「先调工具拿材料，再写答复」，
+     这样内容证书盖的正是会话终态那条链；
+  1. 工具路径，针对**真实 MCP 服务器**（stdio）：参数被认证（含飞行前拦截），
      工具的**结果**也被认证（结果侧）；
+  2. LLM 生成路径（LangChain 流式），带**流式证书**（形成哈希链）与**早停**
+     （首个违规即**真掐断**，见 `hard_stop`）；
   3. zk 层：为一条响应生成真实 SP1 证明（除非 --no-prove），通过 vkey 哈希 +
      `binding.proof_mode` 如实标注证据档位（core/compressed 的 STARK 并非零知识）+
      证明哈希绑定进证书；并走一次**真实的挑战流程**（P0-2）：客户端先出题
@@ -49,7 +53,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
-from policydsl import anchor, cert, challenge, commit, keys  # noqa: E402
+from policydsl import anchor, cert, challenge, commit, keys, trace  # noqa: E402
 from policydsl.agent import AgentMonitor  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.langchain_adapter import EarlyStop, PoPCallbackHandler  # noqa: E402
@@ -105,13 +109,19 @@ def llm_stream_path(monitor: AgentMonitor, handler: PoPCallbackHandler) -> dict:
             "clean_completed": "".join(clean_seen) == CLEAN_REPLY}
 
 
-async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str) -> list:
-    """通过守护调用真实 MCP 服务器（参数 + 结果认证）。"""
+async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str,
+                   gateway: "trace.ToolGateway" = None) -> list:
+    """通过守护调用真实 MCP 服务器（参数 + 结果认证）。
+
+    ``gateway`` 是**会话唯一**的那把工具网关（见 ``main`` 的 0b）：
+    工具证书与内容证书必须签在同一条轨迹上，否则 `trace_root` 各指一条链。
+    """
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
     guard = MCPGuard(tools, vkey_hash=vkey, block_on_violation=True,
-                     result_monitor=content, block_on_result_violation=False)
+                     result_monitor=content, block_on_result_violation=False,
+                     gateway=gateway)
     params = StdioServerParameters(command=sys.executable, args=[str(SERVER)])
     blocked = []
     async with stdio_client(params) as (read, write):
@@ -357,26 +367,40 @@ def main() -> int:
     # 交给验证方，所以事后仍能独立验签（见 verify_session.py）。
     signer = keys.signer_from_env(args.key) if args.key else keys.ephemeral_signer()
 
-    # ---- 1) LLM 流式路径（哈希链 + 早停） ----
+    # ---- 0b) 会话唯一的那把工具网关（P1-5） ----
+    # **一次会话只有一条轨迹**：内容链（LLM 生成）与工具链（MCP 调用）必须共用同
+    # 一把网关。此前两处各自缺省构造 `ToolGateway()` ⇒ 两条链的 `trace_root` 是
+    # 两个不同会话，`trace_seal` 各封各的 —— 缝在那里，只是 demo 恰好先跑生成、
+    # 后跑工具，看不出来。真 agent 两条链交替走，立刻显形。
+    # 共用之后，`summary.tool_trace` 报的就是**全部**证书绑定的那条链。
+    gateway = trace.ToolGateway()
+
+    # ---- 0c) 两个策略监控器（内容 / 工具），都持出证方那把签名密钥 ----
     content = AgentMonitor(ic.load_policy(REPO / CONTENT_PACK), signer=signer)
+    tools = AgentMonitor(ic.load_policy(REPO / TOOL_PACK), signer=signer)
+
+    # ---- 1) MCP 工具路径（参数 + 结果） ----
+    # 先工具、后生成：真实 agent 就是「先调工具拿材料，再写答复」，而且这样内容
+    # 证书签发时链已完整，它们的 seal 覆盖的正是会话终态那条链 —— 与工具证书的
+    # 是**同一条**。顺序反过来的话，内容证书盖的是「当时还空着」的前缀，链虽然
+    # 仍是一条，但 seal 与最终链长对不上，读的人得自己去分辨。
+    guard = asyncio.run(mcp_path(tools, content, vkey, gateway))
+
+    # ---- 2) LLM 流式路径（哈希链 + 早停） ----
     # ``hard_stop=True``：违规时真的把流掐断（EarlyStop 抛出），而不是只做到
     # 「后续 token 不再出证」—— 后者对流式真模型等于继续烧钱。这一档默认关，
     # 因为抛异常会改变调用方的控制流；demo 要展示的就是把它打开的样子。
     handler = PoPCallbackHandler(content, vkey_hash=vkey, stop_on_violation=True,
-                                 hard_stop=True)
+                                 hard_stop=True, gateway=gateway)
     early_stop = llm_stream_path(content, handler)
-    for env in handler.stream_certificates:
-        session_entries.append({"kind": "stream", "policy_pack": CONTENT_PACK, "envelope": env})
-    for env in handler.certificates:
-        session_entries.append({"kind": "llm", "policy_pack": CONTENT_PACK, "envelope": env})
-
-    # ---- 2) MCP 工具路径（参数 + 结果） ----
-    tools = AgentMonitor(ic.load_policy(REPO / TOOL_PACK), signer=signer)
-    guard = asyncio.run(mcp_path(tools, content, vkey))
     for env in guard.certificates:
         session_entries.append({"kind": "tool-args", "policy_pack": TOOL_PACK, "envelope": env})
     for env in guard.result_certificates:
         session_entries.append({"kind": "tool-result", "policy_pack": CONTENT_PACK, "envelope": env})
+    for env in handler.stream_certificates:
+        session_entries.append({"kind": "stream", "policy_pack": CONTENT_PACK, "envelope": env})
+    for env in handler.certificates:
+        session_entries.append({"kind": "llm", "policy_pack": CONTENT_PACK, "envelope": env})
 
     # ---- 3) zk 路径（真实 SP1 证明 + 真实挑战流程） ----
     # 挑战由**客户端**（这里是扮演该角色的 demo）先出，证明方只能照做 ——

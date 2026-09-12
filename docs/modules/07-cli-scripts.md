@@ -356,10 +356,16 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
 
 五段，全部用**真实**组件（`--no-prove` 只跳过 SP1 证明）：
 
-1. **LLM 流式路径**：LangChain `GenericFakeChatModel` 流式两次 —— 一次干净、一次
-   中途泄露 `sk-…` 触发**早停**与链式证书；
-2. **MCP 工具路径**：真实 `stdio_client` 起 `tests/mcp_echo_server.py`，
+0. **一次会话只有一条轨迹**：先建**唯一**那把 `trace.ToolGateway()`，注入下面的
+   工具守护与内容 handler。此前两处各自缺省构造 ⇒ 内容链与工具链的 `trace_root`
+   指向两条不同的链（#99 修的缝）。次序是**先工具、后生成** —— 真实 agent 就是
+   「先调工具拿材料，再写答复」，而且这样内容证书的 `trace_seal` 覆盖的正是
+   **会话终态**那条链（seal 是签发那一刻的末端承诺，晚签才盖得全）；
+1. **MCP 工具路径**：真实 `stdio_client` 起 `tests/mcp_echo_server.py`，
    调用 `search_kb`（干净）、`dump_config`（秘密结果）、带 `token` 参数的调用（**飞行前拦截**）；
+2. **LLM 流式路径**：LangChain `GenericFakeChatModel` 流式两次 —— 一次干净、一次
+   中途泄露 `sk-…` 触发**真早停**（`hard_stop=True`，流被 `EarlyStop` 掐断，
+   实测在 5/38 字符处，密钥**没有**到达调用方）与链式证书；
 3. **zk 路径**：对一条响应真实出证（`zk_path`）——**走完整挑战流程**：客户端先出
    `nonce = challenge.new_nonce()`，把它喂进向量与证书 `challenge` 块（`--nonce` 可覆盖），
    出证后再用「送达的 T′」离线核对绑定（`challenge_experiment`：`T′` 能开、
@@ -410,8 +416,8 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
 私钥不落盘、也不进会话包 —— 第三方拿到的是**只能验、不能签**的公钥。
 
 产出 `session.json`（含 `signers` 公钥记录、`certificates` 列表、`summary`
-（多一项 `challenge_bound`、`zk_proof_mode`、`mode_contrast` 与 `tool_trace`）、
-顶层的 `challenge` 记录、以及有链时的 `chain` 坐标），
+（多一项 `challenge_bound`、`zk_proof_mode`、`mode_contrast`、`tool_trace` 与
+早停实测 `early_stop`）、顶层的 `challenge` 记录、以及有链时的 `chain` 坐标），
 
 > `summary.tool_trace`（P1-5）= `{receipts, trace_root, gateway_keyid, gateway_public_hex, seal}`：
 > 链长、链尾摘要、工具网关公钥与**会话末端承诺**（`seal`，P1-5b）。前四项都是**公开坐标** ——

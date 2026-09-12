@@ -213,7 +213,7 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
 
 | # | 缺口 | 现状（代码位置） | 真模型下的后果 |
 |---|---|---|---|
-| 1 | **两条链各持一把网关** | `langchain_adapter.py:122` 与 `mcp_adapter.py:70` 各自 `ToolGateway()` 缺省构造；`demo_e2e.py` 的 handler 与 guard 因此拿到**两把不同的网关** | 内容链与工具链的 `trace_root` 是**两个不同会话**，`trace_seal` 各封各的。真 agent 同时走两条链，这个缝立刻显形 —— 且它**与真模型无关，是既有正确性问题** |
+| 1 | ~~**两条链各持一把网关**~~ **已修（#99）** | ~~`langchain_adapter.py` 与 `mcp_adapter.py` 各自 `ToolGateway()` 缺省构造；`demo_e2e.py` 的 handler 与 guard 因此拿到**两把不同的网关**~~ | ~~内容链与工具链的 `trace_root` 是**两个不同会话**，`trace_seal` 各封各的。真 agent 同时走两条链，这个缝立刻显形 —— 且它**与真模型无关，是既有正确性问题**~~ |
 | 2 | ~~**没有 `on_llm_error`**~~ **已修（#96）** | ~~`langchain_adapter.py` 只实现 `on_llm_new_token`/`on_llm_end`/`on_tool_start`/`on_tool_end`~~ | ~~模型超时 / 限流 / 内容拦截（真模型最常见的三件事）**不留任何产物**。「会话无证书」与「会话干净」在输出上无法区分 —— 正是 P0-4 要消灭的那类歧义~~ |
 | 3 | ~~**早停不是真停**~~ **已修（#97）** | ~~`stop_on_violation` 只做到「后续 token 不再出证」~~ | ~~流**继续把违规内容吐完**。真模型下这还意味着**继续计费** —— 早停本应是最直接的省钱手段~~ |
 | 4 | **工具清单硬编码** | 演示里手写工具名 | 真 MCP 服务器要动态发现 |
@@ -222,12 +222,26 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
 
 #### 5.1.2 子任务（按此顺序）
 
-1. **统一网关身份**（先做，纯正确性，与真模型无关）
-   `AgentMonitor` 的两条链显式共用一把 `ToolGateway(signer=…)`；
-   `demo_e2e.py` 里 `content` 与 `tools` 注入同一把。
-   **验收**：新增用例断言「同一次会话里，内容链与工具链的回执在**同一个 seal**
-   下可核对」（`len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root`）；
-   反例：不共用网关时该断言**必须失败**（否则用例是恒真的）。
+1. ~~**统一网关身份**（先做，纯正确性，与真模型无关）~~ **已做（#99）**
+   两处各自缺省构造的网关改为**显式注入**：`demo_e2e.py` 建一把 `ToolGateway`，
+   `PoPCallbackHandler(gateway=…)` 与 `MCPGuard(gateway=…)` 共用它；
+   `LangGraphGuard` 也**持有一把**并同时喂给 `callbacks()` 与 `*_node()`
+   （它此前每次调用都新建一把 —— `callbacks()` 调两次就是两条链）。
+   `LangGraphEventCertifier` 本就复用 `stream_handler.gateway`，未动。
+   **顺带调整了 demo 的次序**（先工具、后生成）：真实 agent 就是「先调工具拿
+   材料，再写答复」，而且这样内容证书盖的正是**会话终态**那条链。
+   验收用例：`TestUnifiedGatewayIdentity`（`tests/test_trace.py`）——
+   `len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root` 逐字照写；
+   **反例**是 `test_separate_gateways_do_not_seal_the_same_chain`：不共用时
+   内容证书盖的是自己的空链（`seal.count=0`），`verify_seal` 报「截尾」——
+   证明前一条不是恒真的。另有 `test_guard_class_shares_one_gateway`。
+
+   > **没顺手做的一件事（如实记）**：`zk_path` 出的 3 张 zk 证书**不绑轨迹**
+   > （`trace_seal` 为 `null`）。它证的是「`T` 满足 `π`」，**不主张**工具轨迹，
+   > 所以这是**如实**而不是漏签。代价是：验证方若给了 `--gateway-key`，
+   > `verify_cert.py` 的 `trace_seal` 卡会对它们报 FAIL（那条规则假定会话里
+   > 每张证书都参与轨迹）。要消除它得把回执链喂进 zk 向量（改电路与 cycle），
+   > 另开一条。
 2. **装真模型依赖**：`langchain_openai` / `langchain_anthropic`
    （走 `scripts/install_frameworks.sh` 同一套镜像方案），
    加 `--model` 参数，形如 `--model openai:gpt-4o-mini`（OpenAI 兼容端点，
