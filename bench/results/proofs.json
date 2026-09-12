@@ -1,4 +1,12 @@
 {
+  "host": {
+    "hostname": "dxq",
+    "cpu_model": "Intel(R) Core(TM) i7-14650HX",
+    "cpu_count": 24,
+    "mem_total_mb": 11958,
+    "platform": "x86_64"
+  },
+  "proof_mode": "core",
   "corpus": {
     "name": "demo",
     "sources": [
@@ -40,7 +48,8 @@
       "proof_bytes": 2781619,
       "peak_rss_mb": 10389.4,
       "verified": true,
-      "passed": true
+      "passed": true,
+      "proof_mode": "core"
     },
     {
       "length": 200,
@@ -51,7 +60,8 @@
       "proof_bytes": 2782131,
       "peak_rss_mb": 10438.4,
       "verified": true,
-      "passed": true
+      "passed": true,
+      "proof_mode": "core"
     },
     {
       "length": 2000,
@@ -62,7 +72,8 @@
       "proof_bytes": 2783883,
       "peak_rss_mb": 10448.7,
       "verified": true,
-      "passed": true
+      "passed": true,
+      "proof_mode": "core"
     },
     {
       "length": 10000,
@@ -73,7 +84,8 @@
       "proof_bytes": 2791995,
       "peak_rss_mb": 10506.4,
       "verified": true,
-      "passed": true
+      "passed": true,
+      "proof_mode": "core"
     },
     {
       "length": 200,
@@ -81,7 +93,8 @@
       "trace_sha256": "304a436fa864a68a6b21984abd2d40936123fa0cf03d5eb9f3f9b23017fa5321",
       "ok": false,
       "seconds": 87.2,
-      "error": "\u88ab SIGKILL \u6740\uff08\u672c\u673a\u5185\u5b58\u4e0d\u8db3\uff0cOOM\uff09"
+      "error": "\u88ab SIGKILL \u6740\uff08\u672c\u673a\u5185\u5b58\u4e0d\u8db3\uff0cOOM\uff09",
+      "proof_mode": "core"
     },
     {
       "length": 20000,
@@ -89,7 +102,8 @@
       "trace_sha256": "3cef24abefecb2eb30a41ce74eb13dd0343cb6065f74f9e79c5238857ac293f8",
       "ok": false,
       "seconds": 87.69,
-      "error": "\u88ab SIGKILL \u6740\uff08\u672c\u673a\u5185\u5b58\u4e0d\u8db3\uff0cOOM\uff09"
+      "error": "\u88ab SIGKILL \u6740\uff08\u672c\u673a\u5185\u5b58\u4e0d\u8db3\uff0cOOM\uff09",
+      "proof_mode": "core"
     }
   ]
 }

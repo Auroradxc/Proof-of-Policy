@@ -257,6 +257,15 @@ P2-12 把这一节从「三个点」扩成「一条边界」：不只量**能证
 > **墙上的耗时不可复现**（同一组点单跑复核，时间有 ±10% 抖动，内存只有 ±1%）。
 > 引用时间时给量级，不要给到小数位。
 
+> **口径绑定（2026-09-12 起）**：上表是 **12 GB / 24 核本机 + SP1 `core`** 的表，
+> 两条轴都随机器走 —— 耗时随 CPU 核数与型号，可行域随内存。所以 `bench_proofs.py`
+> 现在把**核数 / CPU 型号 / 内存 / hostname** 与 `proof_mode` 一并写进 `proofs.json`、
+> 并在 `proofs.md` 顶部打印；换机器（如待办 T1 的云机）重跑时**另存
+> `proofs-cloud*.json` 并列呈现，不要覆盖本机这张表**。本机够不着的那半张矩阵
+> （20k/50k/100k × 1/2/3/6）就是挂在 T1 租机窗口里做的 —— 它不是 T1 的阻塞项，
+> 命令与跨机口径见 [`../reproduce.md`](../reproduce.md) §4½、排期见
+> [`../plan-p0p1p2.md`](../plan-p0p1p2.md) §9 待办 T1。
+
 ### 3.4 验证成本（`bench/results/verify.md`）
 
 | proof | cold CLI (s) | vkey setup (s) | pure verify (ms) |

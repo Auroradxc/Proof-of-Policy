@@ -82,6 +82,67 @@ SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 19/19 · pro
 > 卡的是**内存不是 CPU**：周期表（[`bench/results/cycles.md`](../bench/results/cycles.md)）
 > 能扫到 100k 字符 × 6 规则，因为那只跑 zkVM 执行不出证。想证更大的策略要么加内存，
 > 要么换证明模式（`compressed` 需 ≥16 GB，见 §11）。
+>
+> **换机器就能把这张表拉长** —— 具体怎么跑见下面 §4½。
+
+## 4½. 云机 runbook：P1-7 的 groth16 + P2-12 的全矩阵
+
+本机够不着的两件事共用**同一次租机窗口**（登记见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9 待办 **T1**）。
+一台机器、两个用途，但**内存需求差一个量级**：
+
+| 用途 | 内存 | 性质 |
+|---|---|---|
+| **P1-7** groth16 出证 + 验证合约测通 | **≥64 GB** | **硬需求、实测**（本机 12 GB 上 compressed/groth16 分别峰值 11.0 / 11.07 GB 被 OOM 杀，递归包装的固定开销就超了） |
+| **P2-12** core 全矩阵 | ~16 GB（**粗估，未实测**） | **顺带**，不阻塞任何东西；做不完不影响 P1 段收尾 |
+
+**到机后按此顺序做**（前一件做完再做后一件）：
+
+**① P1-7：groth16 证明 + 链上验证**（唯一的硬需求，先做）
+
+```bash
+cd contracts && forge build && cd ..          # solc 0.8.24 已在 ~/.svm 缓存，可离线编译
+SP1_PROVER=cpu ./scripts/anchor_e2e.sh --onchain-verify
+```
+
+**② P2-12 全矩阵（`core`）**：`20k / 50k / 100k` × `1 / 2 / 3 / 6` 规则，
+**再把本机那 6 个点用同一套参数重跑一遍**，两张表才拼得起来。
+
+```bash
+# 新补的 12 格（本机全部 OOM 的那一半）
+SP1_PROVER=cpu python3 bench/bench_proofs.py \
+  --out bench/results/proofs-cloud.json \
+  --points "20000,1 20000,2 20000,3 20000,6 50000,1 50000,2 50000,3 50000,6 100000,1 100000,2 100000,3 100000,6"
+
+# 本机那 6 格，同参数复核（注意 --out 仍指向 proofs-cloud.json，别覆盖本机的表）
+SP1_PROVER=cpu python3 bench/bench_proofs.py \
+  --out bench/results/proofs-cloud.json \
+  --points "200,1 200,2 2000,1 10000,1 200,3 20000,1"
+```
+
+**③ `compressed` 对照**：这是本机**完全量不到**的一格，也是 [`security-model.md`](security-model.md)
+里「groth16/plonk 是唯一可能隐藏见证的模式，本机未实测」那句话的补测。只在少数点上跑：
+
+```bash
+SP1_PROVER=cpu python3 bench/bench_proofs.py \
+  --out bench/results/proofs-cloud-compressed.json \
+  --proof-mode compressed --points "200,1 2000,1"
+```
+
+⚠️ **跨机口径（入库前必读）**：
+
+1. **云机的数字不能与本机 12 GB 那张表并列读数。** SP1 的证明耗时随 CPU 核数与型号走、
+   可行域随内存走 —— 同一组采样点换台机器就是**另一张表**。所以：
+   - 结果**另存**为 `proofs-cloud*.json/.md`，与本机的 `proofs.{json,md}` **并列呈现，不合并**；
+   - `bench_proofs.py` 从 2026-09-12 起会把**核数 / CPU 型号 / 内存 / hostname** 与
+     `proof_mode` 一并写进 JSON、并在 `.md` 顶部打出来 —— 云机结果因此**自带硬件标注**，
+     这正是为这批数字加的（否则入库后无从解释）；
+   - 论文/文档里引用跨机数字时**连着机器一起引**（形如「本机 12 GB / 24 核」vs「云机 N GB / M 核」）。
+2. **`--proof-mode` 之间同样不可比。** 递归包装的固定开销差很多，`compressed`/`groth16` 在
+   本机必然 OOM；云机上 core 与 compressed 的耗时/内存/体积要分成两张表读，别混行。
+3. **多个采样点要引号包住整体**：`--points "200,1 200,2"`。`--points` 只吃一个参数，
+   点之间用空格或 `;` 分隔；不加引号时第二个点会被 argparse 判为多余的位置参数而报错。
+4. **出证必须串行**：同一台机器上不要并行跑两个 `bench_proofs.py` / `cross_validate.py` ——
+   每个进程的固定地板就是 ~10.15 GiB，并行只会互相把对方推向 OOM，并污染峰值内存的读数。
 
 ## 5. 复现：私有模式（承诺 + 选择性披露 + 证据开示）
 
