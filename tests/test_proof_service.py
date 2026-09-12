@@ -214,6 +214,37 @@ def _backend(tmp):
     return anchor.FileLedgerBackend(Path(tmp) / "ledger.jsonl")
 
 
+class TestFailureReason(unittest.TestCase):
+    """失败必须翻成一句运维能照着做的话。
+
+    这一条是**被真事逼出来的**：本机跑 ``POP_TEST_PROOF=1`` 的验收用例时，
+    ``pop-script`` 被 OOM killer 杀了，作业记下的原文是
+    ``CalledProcessError: Command '[.../tmp/tmpidq5b550/jobs/job-b3ba.../vectors.json]'
+    died with <Signals.SIGKILL: 9>`` —— 一屏临时路径，唯独没说「内存不够」。
+    """
+
+    def _killed(self, sig):
+        return subprocess.CalledProcessError(-sig, ["pop-script", "--out", "/tmp/x"])
+
+    def test_sigkill_names_the_memory_ceiling(self):
+        msg = service.failure_reason(self._killed(9))
+        self.assertIn("SIGKILL", msg)
+        self.assertIn("内存", msg)
+        # 给出可核实的方法与已知的地板数字，而不是一句「失败了」
+        self.assertIn("dmesg", msg)
+        self.assertIn("10.15 GiB", msg)
+
+    def test_other_signals_do_not_claim_memory(self):
+        """别的信号不许甩锅给内存 —— 诊断说错方向比不说更费时间。"""
+        msg = service.failure_reason(self._killed(15))
+        self.assertIn("15", msg)
+        self.assertNotIn("10.15 GiB", msg)
+
+    def test_ordinary_failure_is_unchanged(self):
+        self.assertEqual(service.failure_reason(RuntimeError("prover exploded")),
+                         "RuntimeError: prover exploded")
+
+
 @unittest.skipUnless(POP_SCRIPT.exists(), "pop-script not built（宿主校验本身就要它）")
 class TestServiceQueue(unittest.TestCase):
     """队列：排队而非 OOM、失败不带走工作线程、拒绝不吃队列位。"""
@@ -288,6 +319,18 @@ class TestServiceQueue(unittest.TestCase):
         done2 = _wait_for(lambda: self.svc.get(good.job_id),
                           lambda j: j.state in service.STATE_TERMINAL_STATES)
         self.assertEqual(done2.state, service.STATE_DONE, done2.error)
+
+    def test_oom_kill_reaches_the_operator_as_a_sentence(self):
+        """证明器被 OOM 杀时，``job.error`` 要能直接被读到，而不是一屏命令行。"""
+        self.svc.start()
+        boom = subprocess.CalledProcessError(-9, ["pop-script", "--vectors", "/tmp/x.json"])
+        with mock.patch.object(service, "issue_certificate", side_effect=boom):
+            job = self.svc.submit("agent-content-v1", CLEAN)
+            done = _wait_for(lambda: self.svc.get(job.job_id),
+                             lambda j: j.state in service.STATE_TERMINAL_STATES)
+        self.assertEqual(done.state, service.STATE_FAILED)
+        self.assertIn("内存", done.error)
+        self.assertEqual(done.public()["error"], done.error)   # HTTP 层原样透出
 
     def test_stop_drains_pending_jobs(self):
         """``stop()`` 缺省把手上的活干完 —— 停在 queued 等于判了个永不执行的刑。"""

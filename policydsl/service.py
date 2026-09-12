@@ -37,6 +37,7 @@ import hashlib
 import json
 import os
 import queue
+import signal
 import subprocess
 import sys
 import threading
@@ -375,6 +376,32 @@ def run_pop(args: Sequence[str]) -> None:
     subprocess.run([str(verifier.POP_SCRIPT), *args],
                    env=dict(os.environ, SP1_PROVER="cpu"),
                    check=True, cwd=str(verifier.REPO))
+
+
+def failure_reason(exc: BaseException) -> str:
+    """把作业失败翻译成一句**运维能照着做**的话。
+
+    为什么不能只写 ``f"{type(exc).__name__}: {exc}"``：真证明失败最常见的样子是
+    ``CalledProcessError: Command '[...]' died with <Signals.SIGKILL: 9>`` ——
+    它把整条命令行（含一个只存活几秒的临时路径）印出来，却**不说**原因。本机
+    12 GB、SP1 core 证明的固定地板 ~10.15 GiB（``bench/results/proofs.md``），
+    SIGKILL 几乎总是 OOM killer。说不出这一句，读到它的人会去翻 ``pop-script``
+    的代码，而问题在内存。
+
+    仍然是**如实**而不是断言：SIGKILL 也可能是别人 ``kill -9``，所以说「多半」
+    并给出核实方法。
+    """
+    if (isinstance(exc, subprocess.CalledProcessError)
+            and exc.returncode is not None and exc.returncode < 0):
+        sig = -exc.returncode
+        if sig == signal.SIGKILL:
+            return (f"{type(exc).__name__}: 证明器被 SIGKILL 杀死（signal 9）—— "
+                    f"多半是内存不足：SP1 core 证明的固定地板 ~10.15 GiB，"
+                    f"见 bench/results/proofs.md。核实：dmesg | grep -i 'killed process'；"
+                    f"缓解：出证时不要让别的进程占内存（`free -g` 看当时还剩多少），"
+                    f"或换一台内存更大的机器 —— 调大 --concurrency 只会更快 OOM")
+        return f"{type(exc).__name__}: 证明器被 signal {sig} 杀死（{exc}）"
+    return f"{type(exc).__name__}: {exc}"
 
 
 def sha256_file(path: Path) -> str:
@@ -729,7 +756,7 @@ class ProofService:
             # 工作线程里漏出去的异常会**静默杀死线程**（其余作业继续跑，而这个
             # job 永远停在 proving）。所以这里兜住一切，把它写进作业记录。
             with self._lock:
-                job.state, job.error = STATE_FAILED, f"{type(exc).__name__}: {exc}"
+                job.state, job.error = STATE_FAILED, failure_reason(exc)
                 job.proved = False
             print(f"[proof-service] job {job_id} failed: {job.error}", file=sys.stderr)
         finally:
