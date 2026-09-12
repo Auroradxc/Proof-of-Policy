@@ -13,7 +13,14 @@
      证明哈希绑定进证书；并走一次**真实的挑战流程**（P0-2）：客户端先出题
      （一次性 nonce），证明方把 (nonce, T) 一起承诺进公开值，最后用**送达的
      响应 T′** 与 nonce 离线核对 —— 演示里还会故意送错一条 T′ 来看它被拒；
-  4. 每张证书都锚定进一个仅追加、防篡改的账本；给了 `--rpc/--contract` 时
+  4. **公私模式对比**：同一条响应、同一条策略，公开模式与私有模式各出一张证书
+     （都进同一个会话，verify_session 一并验），并把「验证方在这两张证书里分别
+     看得见什么」**现读**出来并排打印 —— 公开模式的违规证据是明文（关键词规则
+     会把命中的那个词本身写进证书），私有模式只有承诺 + 可选择性开示的证据。
+     ⚠️ 这两张证书**默认只做宿主校验**（标 `unproven`）：本 demo 这条策略的
+     **私有模式证明在本机证不了**（见 `mode_contrast` 的 docstring）。
+     `--no-contrast` 整步跳过；`--contrast-prove`（≥16 GB）才给它们出真证明；
+  5. 每张证书都锚定进一个仅追加、防篡改的账本；给了 `--rpc/--contract` 时
      **同时登记到 Anchor 合约**（链上存在性 + 时间戳，链上成功后回写本地 meta）。
 
 每张证书都用 **Ed25519** 签名（P0-3）：demo 缺省生成一把**临时**密钥（不落盘），
@@ -35,13 +42,14 @@ import argparse
 import asyncio
 import json
 import sys
+import unicodedata
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
-from policydsl import anchor, cert, challenge, keys  # noqa: E402
+from policydsl import anchor, cert, challenge, commit, keys  # noqa: E402
 from policydsl.agent import AgentMonitor  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
 from policydsl.langchain_adapter import PoPCallbackHandler  # noqa: E402
@@ -55,6 +63,10 @@ TOOL_PACK = "policy_packs/agent_tool_v1.json"
 SERVER = REPO / "tests" / "mcp_echo_server.py"
 CLEAN_REPLY = "A safe reply about the refund policy."
 BAD_REPLY = "Leak sk-abcdefghijklmnopqrstuvwxyz now"
+# 公私模式对比专用的响应：同一句话**同时踩中** keyword 与 pattern 两条规则。
+# 踩 keyword 是要紧的 —— 它的公开证据是**命中的那个词本身**，于是「公开模式
+# 会把响应内容泄进证书、私有模式只给承诺」这件事才看得出来（见 print_mode_contrast）。
+CONTRAST_REPLY = "I will exploit the vulnerability and leak sk-abcdefghijklmnopqrstuvwxyz"
 
 
 def llm_stream_path(monitor: AgentMonitor, handler: PoPCallbackHandler) -> None:
@@ -97,22 +109,37 @@ async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str) -> lis
 
 def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
             nonce: bytes = b"", proof_mode: str = "core",
-            signer: "cert.Signer" = None):
+            signer: "cert.Signer" = None, tag: str = "", mode: str = "public"):
     """为一条响应生成真实 SP1 证明（或宿主校验），并签发绑定它的证书。
 
     ``nonce`` 是客户端事先出的挑战值（P0-2）：它随响应一起进电路，产出
     ``response_binding``，证书的 ``challenge`` 块把它公开出来。
     ``signer`` 是出证方的 Ed25519 签名器（缺省临时生成一把）。
+    ``tag`` 区分同一次会话里的多份证明（各自一个子目录，避免互相覆盖）。
+    ``mode`` 是 ``public`` / ``private``：私有模式要多带掩码、脱敏文本与见证区间
+    （与 ``issue_cert.py --mode private`` 同一套构造），电路据此走
+    ``evaluate_private``，公开值里只有承诺。
     """
     policy = ic.load_policy(REPO / CONTENT_PACK)
     spec = compile_policy(policy)
-    zk_dir = out_dir / "zk"
+    zk_dir = out_dir / f"zk{tag}"
     zk_dir.mkdir(parents=True, exist_ok=True)
     vectors = zk_dir / "vectors.json"
-    vectors.write_text(json.dumps({"vectors": [{
+    vector = {
         "name": policy.id, "response": response,
         "spec_canonical": spec_canonical_text(spec),
-        "nonce": list(nonce)}]}, indent=2))
+        "nonce": list(nonce)}
+    if mode == "private":
+        # 私有模式的见证：掩码 / 脱敏文本 / 见证区间（与 issue_cert.py --mode private
+        # 同一套构造）。掩码来自策略里的 pattern_block —— 内容包只有「密钥」那一条，
+        # 所以掩码覆盖的正是响应里那段密钥（mask_count 会如实反映长度）。
+        patterns = [p for c in spec["constraints"] if c["kind"] == "pattern_block"
+                    for p in c["patterns"]]
+        mask = commit.mask_from_patterns(patterns, response) if patterns else []
+        spans = commit.spec_spans(spec, response) if patterns else []
+        vector.update({"private": True, "mask": mask,
+                       "redacted": commit.redact(response, mask), "spans": spans})
+    vectors.write_text(json.dumps({"vectors": [vector]}, indent=2))
     results = zk_dir / "results.json"
     proof = zk_dir / "proof.bin"
     if no_prove:
@@ -137,7 +164,7 @@ def zk_path(out_dir: Path, response: str, vkey: str, no_prove: bool,
         pv_sha = ic.sha256_file(pv_file) if pv_file.exists() else None
     got = json.loads(results.read_text())[0]
     outcome = {k: v for k, v in got.items() if k not in ("name", "mode")}
-    payload = cert.build_payload(policy.id, policy.version, spec, "public", outcome,
+    payload = cert.build_payload(policy.id, policy.version, spec, mode, outcome,
                                  vkey_hash, proof_sha, public_values_sha256=pv_sha,
                                  challenge=challenge.challenge_block(
                                      nonce, outcome["response_binding"]),
@@ -172,10 +199,104 @@ def challenge_experiment(env: dict, delivered: str) -> bool:
     return ok
 
 
+def print_mode_contrast(pub_env: dict, priv_env: dict, spec: dict, response: str) -> bool:
+    """同一条 T、同一条策略、两种模式 —— 把验证方**实际看得见的东西**并排打出来。
+
+    表里每一格都是从两份证书的 ``outcome`` **现读**的，不是手写的说明文字：
+    策略一改、规则一换，这张表跟着变（否则它就变成又一处会漂移的文档）。
+    """
+    p = cert.envelope_payload(pub_env)
+    v = cert.envelope_payload(priv_env)
+    po, vo = p["outcome"], v["outcome"]
+
+    def evidence(o):
+        """公开模式给明文 evidence；私有模式只给 evidence_commitment。"""
+        return [(x["rule"], x.get("evidence") or x.get("evidence_commitment") or "?")
+                for x in o.get("violations", [])]
+
+    same = (po["passed"] == vo["passed"] and p["policy_hash"] == v["policy_hash"])
+    rd = vo.get("redaction") or {}
+    rows = [
+        ("结论 passed", str(po["passed"]), str(vo["passed"])),
+        ("策略指纹 policy_hash", p["policy_hash"][:16] + "…", v["policy_hash"][:16] + "…"),
+        ("命中了哪几条规则", " ".join(r for r, _ in evidence(po)) or "—",
+         " ".join(r for r, _ in evidence(vo)) or "—"),
+        ("每条规则的证据", ", ".join(f"{r}「{e}」" for r, e in evidence(po)) or "—",
+         ", ".join(f"{r} {e[:16]}…" for r, e in evidence(vo)) or "—"),
+        ("响应本身的承诺", "—（该模式不承诺 T）",
+         (vo.get("response_commitment") or "—")[:16] + "…"),
+        ("脱敏见证", "—",
+         f"mask_count={rd.get('mask_count')} mask_covered={rd.get('mask_covered')}"),
+    ]
+    # 中英混排下 str.ljust 按**字符**补齐会错位，这里按**显示宽度**补（CJK 记 2 列）。
+    # 口径与 demo_all.sh 的 pad() 保持一致：只有 East_Asian_Width ∈ {W,F} 记 2 列。
+    # 别改成 `ord(c) > 0x2000` —— 那会把 `—`(U+2014) / `…`(U+2026) 这些
+    # *Ambiguous* 字符也算成 2 列，于是**含这两个字符的行会整体左移一格**，
+    # 正是这两个脚本口径不一致时会犯的错。
+    def width(s: str) -> int:
+        return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+
+    def fit(s: str, n: int) -> str:
+        return s + " " * max(0, n - width(s))
+
+    w1 = max(width(r[0]) for r in rows)
+    w2 = max(width("公开模式"), *(width(r[1]) for r in rows))
+    print(f"[{'PASS' if same else 'FAIL'}] 对比前提 同一 T · 同一策略："
+          f"policy_hash 相同={p['policy_hash'] == v['policy_hash']} "
+          f"passed 相同={po['passed'] == vo['passed']}（={po['passed']}）")
+    print(f"     {fit('验证方能看到', w1)}   {fit('公开模式', w2)} 私有模式")
+    for label, a, b in rows:
+        print(f"     {fit(label, w1)}   {fit(a, w2)} {b}")
+
+    # 私有模式真正的出口：证据可以**选择性开示**。开示件必须与证书里的承诺对得上，
+    # 篡改一件必须被拒 —— 否则「承诺」就只是装饰，不构成可核对的披露。
+    bundle = commit.evidence_bundle(spec, response)
+    ok_open = commit.verify_bundle(bundle)
+    proof_comms = {x["evidence_commitment"] for x in vo.get("violations", [])}
+    bundled = {e["evidence_commitment"] for e in bundle}
+    tampered = [dict(e) for e in bundle]
+    if tampered:
+        tampered[0]["evidence"] = "tampered"
+    ok_reject = not commit.verify_bundle(tampered)
+    ok_disclose = ok_open and proof_comms == bundled and ok_reject
+    print(f"[{'PASS' if ok_disclose else 'FAIL'}] 选择性开示 开示件自洽={ok_open} "
+          f"与证明里的承诺逐条相符={proof_comms == bundled} 篡改被拒={ok_reject}"
+          f"（公开模式没有这一步 —— 证据本来就是明文）")
+    return same and ok_disclose
+
+
+def mode_contrast(out_dir: Path, response: str, vkey: str, prove: bool,
+                  signer, proof_mode: str):
+    """同一个挑战值喂给两种模式，各出一张证书 —— 这才是控制变量的对比。
+
+    ``prove`` 缺省 **False**（`--contrast-prove` 才打开），原因不是省时间而是**证不了**：
+    拿本 demo 的 `agent_content_v1`（3 条规则、含 `pattern_block`）出证，
+    **公开模式**能过，**私有模式**在本机（11.9 GB）实测被内核 OOM-kill
+    （`anon-rss` 10.391 GiB，而本机的可用天花板约 10.385 GiB —— 见 README
+    「公私模式对比」一节）。私有模式的真证明由支路② `private_demo.py` 承担，
+    那条策略更小、实测峰值 10.383 GiB 能过。所以这里默认只做**宿主校验**，
+    两张证书如实标注 `proof_mode: unproven`。
+    """
+    spec = compile_policy(ic.load_policy(REPO / CONTENT_PACK))
+    nonce = challenge.new_nonce()
+    no_prove = not prove
+    pub = zk_path(out_dir, response, vkey, no_prove, nonce, proof_mode, signer,
+                  tag="_public", mode="public")
+    priv = zk_path(out_dir, response, vkey, no_prove, nonce, proof_mode, signer,
+                   tag="_private", mode="private")
+    ok = print_mode_contrast(pub[0], priv[0], spec, response)
+    return pub, priv, ok
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", type=Path, default=REPO / "scripts" / "examples" / "out" / "e2e")
     ap.add_argument("--no-prove", action="store_true", help="skip the real SP1 proof")
+    ap.add_argument("--no-contrast", action="store_true", help="跳过公私模式对比")
+    ap.add_argument("--contrast-prove", action="store_true",
+                    help="给对比的两张证书也出真证明。**默认关闭**：本机 11.9 GB 上"
+                         "这条策略的私有模式证明需要 ~10.39 GiB，会被内核 OOM-kill"
+                         "（见 README「公私模式对比」）。≥16 GB 的机器可以打开")
     ap.add_argument("--proof-mode", choices=["core", "compressed", "groth16", "plonk"],
                     default="core", help="core (default) or compressed for verifier-only audit")
     ap.add_argument("--nonce", default="auto",
@@ -229,6 +350,25 @@ def main() -> int:
     session_entries.append(entry)
     ok_challenge = challenge_experiment(zk_env, CLEAN_REPLY)
 
+    # ---- 3b) 公私模式对比（同一个 T、同一条策略，两张证书）----
+    # 这一段的产物**也进会话**（kind 同为 "zk"），所以 verify_session.py 会连着
+    # 把两张证书一起验 —— 对比演示不额外开一条验证旁路。
+    contrast = None
+    if not args.no_contrast:
+        (cpub, cpriv, ok_contrast) = mode_contrast(
+            out_dir, CONTRAST_REPLY, vkey, args.contrast_prove, signer, args.proof_mode)
+        # zk_path 返回 (env, policy_id, proof_rel, passed, proof_mode) 五元组 ——
+        # 这里按位取（解包成 4 个会当场 ValueError，别退回去）。
+        contrast = {"ok": ok_contrast, "proved": args.contrast_prove,
+                    "public": {"proof": cpub[2], "passed": cpub[3], "proof_mode": cpub[4]},
+                    "private": {"proof": cpriv[2], "passed": cpriv[3], "proof_mode": cpriv[4]}}
+        # 条目本身不必标 public/private —— 证书载荷里的 "mode" 字段已经写明了。
+        for _tag, c in (("public", cpub), ("private", cpriv)):
+            e = {"kind": "zk", "policy_pack": CONTENT_PACK, "envelope": c[0]}
+            if c[2]:
+                e["proof"] = c[2]
+            session_entries.append(e)
+
     # ---- 4) 把每张证书锚定进账本（可选：同时上链） ----
     backend = anchor.backend_from_env(ledger, rpc_url=args.rpc, contract=args.contract,
                                       private_key=args.private_key)
@@ -272,6 +412,8 @@ def main() -> int:
             "zk_passed": zk_passed,
             # 诚实标注（P0-4）：这张 zk 证书到底附了哪一档证据
             "zk_proof_mode": zk_mode,
+            # 公私模式对比（3b）：两张证书都在 certificates 里，这里只记结论
+            "mode_contrast": contrast,
             "challenge_bound": ok_challenge,
             "ledger_ok": ok_chain,
             "on_chain": on_chain["n"],
@@ -304,6 +446,12 @@ def main() -> int:
     if zk_ch:
         print(f"challenge   : nonce={zk_ch['nonce'][:16]}… "
               f"response_bound={ok_challenge}")
+    if contrast is not None:
+        # 如实说清这两张证书附的是哪一档证据：默认**只有宿主校验**，
+        # 别让「对比演示通过」被读成「两种模式都出证了」。
+        print(f"mode contrast: 公开/私有各一张证书已入会话 "
+              f"(passed={contrast['public']['passed']}) —— 上面那张表是现读的")
+        print(f"             证据档位: {'core（--contrast-prove）' if contrast['proved'] else 'unproven（宿主校验；本机 12 GB 证不了这条策略的私有模式，见 README）'}")
     print(f"ledger      : {ledger} chain={reason}")
     if on_chain["n"]:
         print(f"on-chain    : {on_chain['n']}/{len(session_entries)} anchored on "
@@ -311,7 +459,8 @@ def main() -> int:
     else:
         print("on-chain    : skipped (no --rpc/--contract; pass them to anchor on a real chain)")
     print("\nverify with: python3 scripts/verify_session.py --session " + str(out_dir / "session.json"))
-    return 0 if (ok_chain and ok_challenge) else 1
+    ok = ok_chain and ok_challenge and (contrast is None or contrast["ok"])
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

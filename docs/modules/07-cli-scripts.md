@@ -18,7 +18,7 @@
 | `gen_key.py` | 生成/查看 Ed25519 出证密钥对（打印 keyid + 公钥） | 否 | 否 | 毫秒 |
 | `issue_cert.py` | 签发证书 + 锚定（可选上链） | `pop-script` | 是（可 `--no-prove`） | ~70 s |
 | `verify_cert.py` | **第三方**独立验证单张证书 | `pop-script` / `pop-verify` | 验证已有证明 | ~20 s |
-| `demo_e2e.py` | 一键真实会话（LangChain + MCP + zk + 锚定） | `pop-script` | 可 `--no-prove` | 秒级 / ~70 s |
+| `demo_e2e.py` | 一键真实会话（LangChain + MCP + zk + **公私对比** + 锚定） | `pop-script` | 可 `--no-prove` / `--no-contrast` | host 秒级；出证 **~2.5 分钟**（1 份证明 —— 对比那 2 张默认只做宿主校验） |
 | `verify_session.py` | **第三方**独立验证整个会话包 | 同上 | 验证已有证明 | 秒级 |
 | `ezkl_prove.py` | 语义规则（`semantic_bound`）的 ezkl 出证/验证/自检 | 否（需 ezkl+torch） | 否（ezkl 自己的证明） | setup ~48 s / prove ~77 s |
 | `compose_proof.py` | **组合证明**（P1-6）：策略半 + 推理半各出一份 → 合成 → 联合验证 | `pop-script` | 是（可 `--no-prove` / `--reuse-proofs`） | 两次出证，各 ~2 分钟 |
@@ -353,7 +353,7 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
 
 ### 2.10 `demo_e2e.py` —— 一键真实会话
 
-四段，全部用**真实**组件（`--no-prove` 只跳过 SP1 证明）：
+五段，全部用**真实**组件（`--no-prove` 只跳过 SP1 证明）：
 
 1. **LLM 流式路径**：LangChain `GenericFakeChatModel` 流式两次 —— 一次干净、一次
    中途泄露 `sk-…` 触发**早停**与链式证书；
@@ -365,23 +365,59 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
    篡改后的 `T′` 打不开、换 nonce 打不开），vkey 哈希、证明哈希与**证明模式**
    （`proof_mode`，取 pop-script 写的 `.meta.json`；`--no-prove` 时为 `unproven`）
    一起绑进证书；
-4. **锚定**：每张证书的 `cert_digest` 入账本；给了 `--rpc/--contract` 就**同时上链**
+4. **公私模式对比**（`mode_contrast`，`--no-contrast` 可跳过）：拿**同一条响应、
+   同一个 nonce**分别走 `public` 与 `private` 两次 `zk_path`（输出到 `zk_public/` 与
+   `zk_private/`），再把两份 `outcome` **现读**成一张并排表 —— 表里每一格都来自证书
+   本身，不是手写的说明文字，所以策略一改这张表跟着变：
+
+   ```text
+   验证方能看到           公开模式                                                   私有模式
+   结论 passed            False                                                      False
+   策略指纹 policy_hash   ffb2722e19d886c6…                                          ffb2722e19d886c6…
+   命中了哪几条规则       no_bad_topics no_secret                                    no_bad_topics no_secret
+   每条规则的证据         no_bad_topics「exploit」, no_secret「sk-[A-Za-z0-9]{16,}」 no_bad_topics 04da09655d48e492…, no_secret 71a60a1657d3fe25…
+   响应本身的承诺         —（该模式不承诺 T）                                        28df5e47336a061b…
+   脱敏见证               —                                                          mask_count=29 mask_covered=True
+   ```
+
+   要点：两行的 `policy_hash` 与 `passed` **必须相同**（同一个 T、同一条策略 ——
+   这是对比成立的前提，脚本自己断言）；差别只在**验证方看得见什么** —— 公开模式把
+   命中的那个词**逐字**写进证书（`no_bad_topics「exploit」`），私有模式只给
+   `evidence_commitment`，外加 `response_commitment` 与脱敏见证。随后再演示私有模式
+   真正的出口：**证据选择性开示**（`commit.evidence_bundle` 自洽、与证书里的承诺
+   **逐条相符**、篡改一件被拒）—— 公开模式没有这一步，因为证据本来就是明文。
+   这两张证书也进 `session.json`（`kind` 同为 `"zk"`），所以 `verify_session.py`
+   会顺带一起验，对比演示**不额外开一条验证旁路**；
+5. **锚定**：每张证书的 `cert_digest` 入账本；给了 `--rpc/--contract` 就**同时上链**
    （成功后回写 `meta.on_chain`）。
+
+> ⚠️ **第 4 步默认只做宿主校验，两张证书都标 `unproven`** —— 这不是为了省时间，
+> 是**证不了**：用本 demo 的 `agent_content_v1`（3 条规则、含 `pattern_block`）出证，
+> **公开模式能过、私有模式不能**。本机 11.9 GB 上实测被内核 OOM-kill，
+> `anon-rss` **10.391 GiB**，而本机可用天花板约 **10.385 GiB**
+> （对照：`private_demo.py` 那条更小的策略峰值 10.383 GiB **能过**）。
+> 私有模式的**真证明**由支路② `private_demo.py` 承担。
+> ≥16 GB 的机器可以加 `--contrast-prove` 让对比也出真证明。
+> `--no-contrast` 则整步跳过。
+>
+> 混合会话（1 张真证明 + 2 张宿主校验）在 `verify_session.py` 里是**分别计数的**：
+> `zk_proof` 那一行会印成 `SP1 proof verified (pop-script) + unproven (host-check only)×2`，
+> 不会因为最后一条是 unproven 就把验过的证明说没了。
 
 每张证书都用 Ed25519 签名：demo 缺省生成一把**临时**密钥（`--key` 可换成落盘私钥），
 公钥写进 `session.json` 的 `signers` 字段并打印（`signer : ed25519:…` + `public_hex=…`）。
 私钥不落盘、也不进会话包 —— 第三方拿到的是**只能验、不能签**的公钥。
 
 产出 `session.json`（含 `signers` 公钥记录、`certificates` 列表、`summary`
-（多一项 `challenge_bound`、`zk_proof_mode` 与 `tool_trace`）、顶层的 `challenge` 记录、
-以及有链时的 `chain` 坐标），
+（多一项 `challenge_bound`、`zk_proof_mode`、`mode_contrast` 与 `tool_trace`）、
+顶层的 `challenge` 记录、以及有链时的 `chain` 坐标），
 
 > `summary.tool_trace`（P1-5）= `{receipts, trace_root, gateway_keyid, gateway_public_hex, seal}`：
 > 链长、链尾摘要、工具网关公钥与**会话末端承诺**（`seal`，P1-5b）。前四项都是**公开坐标** ——
 > 验证方拿网关侧收到的回执重算最后一条的 `SHA256`，即可核对「这份证明绑的是哪条链」，
 > 与 `challenge` 之于响应完全对称；`seal` 更进一步回答「这条链**到此为止**」，因此是
 > 「链尾有没有被整条删掉」的唯一依据（见 [`../security-model.md`](../security-model.md) §5.3）。
-末尾提示用 `verify_session.py` 验证。**这是「12 张证书」的来源**。
+末尾提示用 `verify_session.py` 验证。**这是「14 张证书」的来源**。
 
 ### 2.11 `verify_session.py` —— 第三方验证整个会话
 
@@ -462,8 +498,8 @@ bash scripts/demo_all.sh --list       # 只列支路，不跑
 
 | # | key | 支路 | 驱动 |
 |---|---|---|---|
-| ① | `policy` | 公开模式主干 | `demo_e2e.py` |
-| ② | `private` | 私有模式 | `private_demo.py` |
+| ① | `policy` | 公开模式主干（**含公私对比**，见 §2.10 第 4 步） | `demo_e2e.py` |
+| ② | `private` | 私有模式六实验（① 里的对比只覆盖「同一条 T 两种模式」；这一条挖得更深：泄漏/绑定/证据/证明） | `private_demo.py` |
 | ③ | `semantic` | 语义规则（P2-9） | `ezkl_prove.py selftest` |
 | ④ | `compose` | 组合证明（P1-6） | `compose_proof.py` |
 | ⑤ | `session` | 会话聚合（P2-10） | `prove_session.py` |

@@ -57,8 +57,8 @@
 
 | # | 支路 | 驱动 | 在 `demo_e2e` | 前置 |
 |---|---|---|---|---|
-| ① | **公开模式主干**：流式(含早停) + MCP 工具 + 真 SP1 证明 + 挑战绑定 + 账本 | `scripts/demo_e2e.py` | ✅ 就是它 | — |
-| ② | **私有模式**：响应承诺 + 逐违规证据承诺 + 脱敏证明 + 证据开示 | `scripts/private_demo.py` | ⛔ | — |
+| ① | **公开模式主干**：流式(含早停) + MCP 工具 + 真 SP1 证明 + 挑战绑定 + **公私对比** + 账本 | `scripts/demo_e2e.py` | ✅ 就是它 | — |
+| ② | **私有模式**：响应承诺 + 逐违规证据承诺 + 脱敏证明 + 证据开示 | `scripts/private_demo.py` | 🔶 部分（① 里已含「同一条 T 两种模式」的并排对比与证据开示；②里的六个专项实验仍只在 `private_demo.py`） | — |
 | ③ | **语义规则**（P2-9）：ezkl 陪伴证明，验证方与 SP1 结论**合取** | `scripts/ezkl_prove.py` | ⛔ | ezkl + `semantic/artifacts/` |
 | ④ | **组合证明**（P1-6）：策略半 ∧ 推理半，两个 vkey | `scripts/compose_proof.py` | ⛔ | — |
 | ⑤ | **会话聚合**（P2-10）：一组证书的 Merkle 根 + 三条义务 | `scripts/prove_session.py` | ⛔ | ① 的 `session.json` |
@@ -112,13 +112,57 @@ python3 scripts/make_shots.py --run-demo
 #   → docs/demo/session_report.html · session_report.svg · session_summary.png · verify_result.png
 ```
 
+### 公私模式对比（就在上面的主 demo 里，第 4 步）
+
+同一条响应、同一条策略、同一个 `nonce`，公开模式与私有模式**各出一张证书**，
+然后把「验证方在这两张证书里分别看得见什么」**现读**出来并排打印
+（`--no-contrast` 可跳过）：
+
+```text
+[PASS] 对比前提 同一 T · 同一策略：policy_hash 相同=True passed 相同=True（=False）
+     验证方能看到           公开模式                                                   私有模式
+     结论 passed            False                                                      False
+     策略指纹 policy_hash   ffb2722e19d886c6…                                          ffb2722e19d886c6…
+     命中了哪几条规则       no_bad_topics no_secret                                    no_bad_topics no_secret
+     每条规则的证据         no_bad_topics「exploit」, no_secret「sk-[A-Za-z0-9]{16,}」 no_bad_topics 04da09655d48e492…, no_secret 71a60a1657d3fe25…
+     响应本身的承诺         —（该模式不承诺 T）                                        28df5e47336a061b…
+     脱敏见证               —                                                          mask_count=29 mask_covered=True
+[PASS] 选择性开示 开示件自洽=True 与证明里的承诺逐条相符=True 篡改被拒=True
+```
+
+> **这一步默认只做宿主校验（两张证书都标 `unproven`），不是省时间而是证不了**：
+> 本 demo 的 `agent_content_v1`（3 条规则、含 `pattern_block`）**公开模式能出证、
+> 私有模式不能** —— 在本机 11.9 GB 上实测被内核 OOM-kill（`anon-rss` 10.391 GiB，
+> 而本机可用天花板约 10.385 GiB；对照 `private_demo.py` 那条更小的策略峰值
+> 10.383 GiB 能过）。私有模式的**真证明**由支路② `private_demo.py` 承担。
+> ≥16 GB 的机器可以加 `--contrast-prove` 让对比也出真证明。
+
+三件要读对的事：
+
+- **策略指纹与结论必须相同** —— 同一个 T、同一条策略，所以两张证书的 `policy_hash`
+  与 `passed` 一致；脚本自己断言这一点（上面那行 `[PASS] 对比前提`），不一致就是 FAIL。
+  差别**只在验证方看得见什么**，不在判定结果。
+- **公开模式把命中的那个词逐字写进证书**（`no_bad_topics「exploit」`，连密钥正则
+  `sk-[A-Za-z0-9]{16,}` 也照抄）—— 这就是私有模式要解决的问题。私有模式同一位置只有
+  `evidence_commitment`，外加响应承诺与脱敏见证。
+- **私有模式不是「涂黑」** —— 它的出口是**证据选择性开示**：`commit.evidence_bundle`
+  开示一件证据时，该件必须与证书里那条承诺**逐条相符**，篡改一件即被拒。公开模式
+  没有这一步，因为证据本来就是明文。
+
+这两张证书也写进 `session.json`（`kind` 同为 `"zk"`），所以下面第 2 步的第三方验证会
+**连同它们一起验**，对比演示不额外开一条验证旁路。
+
+> ⚠️ 对比表里 `passed=False` 是**故意**的：对比用的是会同时触发关键词规则与密钥规则的
+> 违规响应 —— 有违规才看得出两种模式的差别。主 demo 那条 `zk` 证书用的仍是干净响应
+> （`passed=True`）。
+
 ### 链上锚定（可选，真跑本地 Anvil，一键）
 
 ```bash
 bash scripts/retry_install_foundry.sh   # 装 foundry（anvil/cast）；已装则秒退
-bash scripts/anchor_e2e.sh              # 起 anvil → 部署 Anchor.sol → 12 张证书摘要上链 → 第三方 --rpc 核对
+bash scripts/anchor_e2e.sh              # 起 anvil → 部署 Anchor.sol → 14 张证书摘要上链 → 第三方 --rpc 核对
 SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附真实 Core 证明（本机实测 3:10 / 峰值 10.2 GiB）
-#   → [PASS] chain_anchored 12/12 digests on chain … (12 cross-checked) + 反例对照 anchoredAt=0
+#   → [PASS] chain_anchored 14/14 digests on chain … (14 cross-checked) + 反例对照 anchoredAt=0
 ```
 
 - 📚 **分板块模块文档（按功能读代码的入口）**：**`docs/modules/`** —— 总览 [`README.md`](docs/modules/README.md)，

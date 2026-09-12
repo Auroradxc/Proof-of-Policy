@@ -704,13 +704,13 @@ zkAgent 证明「provider 执行了声明的模型与工具轨迹」（推理完
 \subsection{端到端与审计}
 \label{sec:eval-e2e}
 
-\code{scripts/demo_e2e.py} 产生 12 张证书（流式链+早停、MCP 参数+响应、zk 证明）并锚定；
+\code{scripts/demo_e2e.py} 产生 14 张证书（流式链+早停、MCP 参数+响应、zk 证明）并锚定；
 \code{scripts/verify_session.py} 第三方仅凭公开产物验证：
 \code{ledger_chain / signature / policy_hash / anchored / stream_chains / zk_proof} 全 PASS。
 
 链上变体（\code{bash scripts/anchor_e2e.sh}：本地 Anvil $\to$ 部署 \code{Anchor.sol} $\to$
-12 张证书摘要上链）：第三方 \code{verify_session --rpc} 逐证书 \code{anchoredAt} 读回并交叉核对
-本地账本，\code{chain_anchored 12/12} PASS；反例对照（未登记摘要读回 0）确认该检查非恒真。
+14 张证书摘要上链）：第三方 \code{verify_session --rpc} 逐证书 \code{anchoredAt} 读回并交叉核对
+本地账本，\code{chain_anchored 14/14} PASS；反例对照（未登记摘要读回 0）确认该检查非恒真。
 \code{--prove} 变体在真实 Core 证明（2.78 MB）下同样通过。
 
 \paragraph{交叉验证（I1）。} \code{scripts/cross_validate.py} 把 \textbf{19 条向量}同时交给

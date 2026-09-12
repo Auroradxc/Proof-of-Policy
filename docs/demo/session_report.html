@@ -15,14 +15,14 @@
 <h1>Proof-of-Policy — 端到端 demo 报告</h1>
 <div class="sub">agent 会话 → 证书（流式链 / MCP 参数+结果 / zk 证明）→ 锚定账本 → 第三方独立验证</div>
 <div class="card">
-  <div class="big">12 张证书</div>
+  <div class="big">14 张证书</div>
   <div class="muted">stream=4 · blocked tool calls=['args']
    · zk passed=True · ledger chain=ok</div>
-  <div style="margin-top:10px"><span class='pill'>llm <b>2</b></span><span class='pill'>stream <b>4</b></span><span class='pill'>tool-args <b>3</b></span><span class='pill'>tool-result <b>2</b></span><span class='pill'>zk <b>1</b></span></div>
+  <div style="margin-top:10px"><span class='pill'>llm <b>2</b></span><span class='pill'>stream <b>4</b></span><span class='pill'>tool-args <b>3</b></span><span class='pill'>tool-result <b>2</b></span><span class='pill'>zk <b>3</b></span></div>
 </div>
 <div class="card">
   <h2 style="margin:0 0 8px;font-size:18px">第三方验证（scripts/verify_session.py）</h2>
-  <ul><li class='ok'><span>PASS</span><code>ledger_chain</code><em>ok</em></li><li class='ok'><span>PASS</span><code>certificates_signature</code><em>12 certs</em></li><li class='ok'><span>PASS</span><code>certificates_policy_hash</code><em>2 pack(s), 3 sources</em></li><li class='ok'><span>PASS</span><code>certificates_response_binding</code><em>1 challenge-bound cert(s), self-consistent</em></li><li class='ok'><span>PASS</span><code>certificates_anchored</code><em>digest present in ledger</em></li><li class='ok'><span>PASS</span><code>stream_chains</code><em>2 run(s)</em></li><li class='ok'><span>PASS</span><code>zk_proof</code><em>SP1 proof verified (pop-script) + response binding</em></li><li class='ok'><span>PASS</span><code>chain_anchored</code><em>not anchored on chain (file ledger only)</em></li></ul>
+  <ul><li class='ok'><span>PASS</span><code>ledger_chain</code><em>ok</em></li><li class='ok'><span>PASS</span><code>certificates_signature</code><em>14 certs, 1 key(s) in ring</em></li><li class='ok'><span>PASS</span><code>certificates_policy_hash</code><em>2 pack(s), 3 sources</em></li><li class='ok'><span>PASS</span><code>certificates_response_binding</code><em>3 challenge-bound cert(s), self-consistent</em></li><li class='ok'><span>PASS</span><code>certificates_proof_mode</code><em>14 cert(s) labeled, 0 predate the field</em></li><li class='ok'><span>PASS</span><code>certificates_anchored</code><em>digest present in ledger</em></li><li class='ok'><span>PASS</span><code>stream_chains</code><em>2 run(s)</em></li><li class='ok'><span>PASS</span><code>zk_proof</code><em>unproven (host-check only)×3</em></li><li class='ok'><span>PASS</span><code>chain_anchored</code><em>not anchored on chain (file ledger only)</em></li></ul>
   <div class="result">RESULT: PASS</div>
 </div>
 <div class="card muted">复现：<code class="k">SP1_PROVER=cpu python3 scripts/demo_e2e.py</code> →

@@ -219,7 +219,7 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
 | `MCPGuard.judge_result` | 生成（结果侧） | `public` + `extra.tool` | `tool-result` | 有 |
 | `LangGraphEventCertifier` | 两者 | 同上 | — | 有 |
 
-`scripts/demo_e2e.py` 一次会话产出 **12 张证书**：流式（含早停）、LLM、MCP 参数 + 结果、zk 各若干。
+`scripts/demo_e2e.py` 一次会话产出 **14 张证书**：流式（含早停）、LLM、MCP 参数 + 结果、zk 各若干。
 
 ---
 

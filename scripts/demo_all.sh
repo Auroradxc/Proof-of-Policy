@@ -65,13 +65,13 @@ emit() {
 #
 # 每条支路：`key|中文名|驱动脚本|说明`。顺序即执行顺序（有依赖的排在被依赖者之后）。
 LANES=(
-  "policy|公开模式主干|scripts/demo_e2e.py|LangChain 流式(含早停) + MCP 工具(参数/结果) + 真 SP1 证明 + 挑战绑定 + 账本"
+  "policy|公开模式主干|scripts/demo_e2e.py|LangChain 流式(含早停) + MCP 工具(参数/结果) + 真 SP1 证明 + 挑战绑定 + 公私模式对比 + 账本"
   "private|私有模式|scripts/private_demo.py|响应承诺 + 逐违规证据承诺 + 脱敏证明(mask_covered) + 证据开示"
   "semantic|语义规则(P2-9)|scripts/ezkl_prove.py|ezkl 陪伴证明：确定性特征图 + 阈值判定，验证方与 SP1 结论**合取**"
   "compose|组合证明(P1-6)|scripts/compose_proof.py|策略半 ∧ 推理半，两个 guest 两个 vkey → 一张组合证书"
   "session|会话聚合(P2-10)|scripts/prove_session.py|一组证书的 Merkle 根 + 三条义务(policy_hash 全同/链无缝/覆盖完整)"
   "multiparty|多证明者(P2-11)|scripts/prove_multiparty.py|按规则类切三段，各角色用自己的键对**自己那段**出证"
-  "anchor|链上锚定(P7-c)|scripts/anchor_e2e.sh|起 anvil → 部署 Anchor.sol → 12 张证书摘要上链 → 第三方 --rpc 核对"
+  "anchor|链上锚定(P7-c)|scripts/anchor_e2e.sh|起 anvil → 部署 Anchor.sol → 14 张证书摘要上链 → 第三方 --rpc 核对"
   "verify|第三方独立验证|scripts/verify_session.py|只用公开产物(session.json + ledger + proof)复算全部结论"
 )
 

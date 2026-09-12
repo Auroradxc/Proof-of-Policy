@@ -153,6 +153,16 @@ SP1_PROVER=cpu python3 scripts/private_demo.py
 #      （challenge 行： (T',nonce)_opens=True wrong_T'_rejected=True wrong_nonce_rejected=True domain_separated=True）
 ```
 
+**只想看公/私差别**：不必单跑这一条 —— 主 demo 的**第 4 步**就会拿同一条 T、
+同一个 nonce 在两种模式下各出一张证书，把「验证方分别看得见什么」**现读**成一张
+并排表（公开模式证据是明文、私有模式只有承诺），再演示证据选择性开示与篡改被拒。
+见 [`../README.md`](../README.md) 的「公私模式对比」一节，或 `--no-contrast` 关掉它。
+
+> 主 demo 那一步的两张证书**默认只做宿主校验**（标 `unproven`）：本 demo 的
+> `agent_content_v1` 这条策略在**私有模式**下本机证不了（实测 `anon-rss` 10.391 GiB
+> 被 OOM-kill，天花板约 10.385 GiB）。**这一节才是私有模式真证明的落点** ——
+> 这里的策略更小，实测峰值 10.383 GiB，是能过的那一档。
+
 ## 6. 复现：合规证书 + 第三方验证
 
 ```bash
@@ -302,6 +312,15 @@ python3 scripts/make_shots.py --run-demo                   # 生成 docs/demo/*.
 ```
 期望：`verify_session` 全 PASS；`docs/demo/session_report.html`、`session_summary.png`、`verify_result.png` 生成。
 
+> 第 4 步（公私对比）默认开着：它会让**同一个响应**再走一次公开、一次私有，
+> 各出一张证书并并排打印「验证方分别看得见什么」，然后演示证据选择性开示与篡改被拒。
+> 这两张证书**默认只做宿主校验**（`unproven`，≈秒级）—— 本 demo 的策略私有模式
+> 本机证不了，理由见 §5 的注；`--contrast-prove`（≥16 GB）才会给它们也出真证明。
+> 不想看就 `--no-contrast`。
+> 两张对比证书同样进 `session.json`，所以上面那条 `verify_session` 的
+> `zk` 条数会是 **3**（主干 1 + 对比 2）而不是 1，`certificates` 总数也相应多 2；
+> `zk_proof` 那一行会印成 `SP1 proof verified (pop-script) + unproven (host-check only)×2`。
+
 ## 10.（可选）框架适配
 
 ```bash
@@ -348,7 +367,7 @@ SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附带真实 Core 证明�
 [PASS] ledger_chain / certificates_signature / certificates_policy_hash / certificates_anchored
 [PASS] stream_chains 2 run(s)
 [PASS] zk_proof      SP1 proof verified (pop-script)      # --no-prove 时为 unproven (host-check only)
-[PASS] chain_anchored 12/12 digests on chain 0x5fbdb231… (12 cross-checked)
+[PASS] chain_anchored 14/14 digests on chain 0x5fbdb231… (14 cross-checked)
 negative control: unknown digest anchoredAt = 0 (expected 0)
 ALL PASS ✅
 ```
@@ -382,9 +401,9 @@ python3 scripts/verify_session.py --session .../session.json \
 - `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 **整批重跑**：19 条向量各出一份真 core 证明，`--chunk 2` 切到 10 个独立子进程，约 45 min，见 `modules/08-tests-bench.md` §5）
   （真实证明分块跑：默认 `--chunk 4`，那次重跑用 `--chunk 2` = 10 块，见 §4 的说明；`--no-prove` 时跳过真实证明）；
 - `verify_cert.py`（带 `--response T′`）/ `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证与响应绑定核对）；
-- `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 12/12 + 反例对照，见 §12）；
+- `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 14/14 + 反例对照，见 §12）；
   `--prove` 变体（2026-09-12 本机实测重跑）→ **ALL PASS ✅**，含真 Core 证明：
-  `[PASS] zk_proof SP1 proof verified (pop-script) + response binding`、`[PASS] chain_anchored 12/12`，
+  `[PASS] zk_proof SP1 proof verified (pop-script) + response binding`、`[PASS] chain_anchored 14/14`，
   整条命令 **3:10 墙钟 / 峰值 10.18 GiB**（`/usr/bin/time -v`）；
 - `python3 scripts/ezkl_prove.py selftest` → **四条文本全 PASS**（含同形异义反例，见 §8）；
 - `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic` → **OK**（真·端到端一例，~61 s）。

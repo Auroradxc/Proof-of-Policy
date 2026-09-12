@@ -192,14 +192,17 @@ def main() -> int:
     POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
     zk_entries = [e for e in entries if e["kind"] == "zk"]
     zk_ok = True
-    detail = "n/a"
+    # 逐条记录每种结局的**条数**再汇总 —— 早先这里是一个被覆盖的 `detail` 标量，
+    # 于是「1 张真证明 + 2 张宿主校验」的会话会只印最后一张的 "unproven"，
+    # 把已经验过的证明说没了。混合会话现在是常态（公私对比的两张证书就是 unproven）。
+    tally: dict[str, int] = {}
     for e in zk_entries:
         payload = cert.envelope_payload(e["envelope"])
         proof_rel = e.get("proof")
         if not proof_rel:
             # 未证明（host-check only）：要求证书也没有声称有证明
             zk_ok &= payload["binding"]["proof_sha256"] is None
-            detail = "unproven (host-check only)"
+            tally["unproven (host-check only)"] = tally.get("unproven (host-check only)", 0) + 1
             continue
         proof = base / proof_rel
         sidecar = verifier.sidecar_path(proof)
@@ -216,7 +219,7 @@ def main() -> int:
             zk_ok &= sha256_file(proof) == payload["binding"]["proof_sha256"]
             # 公开值解出来的 outcome 必须与证书载荷逐字段一致（含 policy_hash）
             zk_ok &= verifier.outcome_without_meta(v) == payload["outcome"]
-            detail = f"pop-verify ({v.get('proof_mode')}, no prover)"
+            kind = f"pop-verify ({v.get('proof_mode')}, no prover)"
         else:
             # Core 证明：用 pop-script --verify 重新验证
             out = base / "verify_out.json"
@@ -227,7 +230,10 @@ def main() -> int:
             zk_ok &= verifier.outcome_without_meta(v) == payload["outcome"]
             zk_ok &= v.get("vkey_hash") == payload["binding"]["vkey_hash"]
             zk_ok &= sha256_file(proof) == payload["binding"]["proof_sha256"]
-            detail = "SP1 proof verified (pop-script)"
+            kind = "SP1 proof verified (pop-script)"
+        # 这一条自己成功了，之后绑定的失败注解单独记 —— 成功种类按条计数。
+        notes: list[str] = []
+        tally[kind] = tally.get(kind, 0) + 1
         # 证明模式标注（P0-4）：证书自称的这一档，要与工件**自报**的模式一致
         # （边车 / meta / 验证器输出，多来源必须指向同一档）。
         declared = (payload.get("binding") or {}).get("proof_mode")
@@ -236,9 +242,9 @@ def main() -> int:
             modes = sorted(set(observed.values()))
             if modes != [declared]:
                 zk_ok = False
-                detail += (" | proof_mode MISMATCH: cert={} vs {}"
-                           .format(declared,
-                                   " == ".join(f"{m}[{s}]" for s, m in observed.items())))
+                notes.append("proof_mode MISMATCH: cert={} vs {}"
+                             .format(declared,
+                                     " == ".join(f"{m}[{s}]" for s, m in observed.items())))
         # 第三方比对的最后一腿：证明公开值承诺的 policy_hash，必须与证书声明的
         # 一致，也必须与「该证书所用的策略包现场重编译」所得一致。
         ok_bind, bind_detail = verifier.check_policy_binding([
@@ -248,7 +254,7 @@ def main() -> int:
         ])
         zk_ok &= ok_bind
         if not ok_bind:
-            detail += " | " + bind_detail
+            notes.append(bind_detail)
         # 响应绑定同理：证明公开值承诺的 response_binding 必须与证书里那两处
         # 声称一致。这三路都指向「被证明的 T」，缺了它，证书所说的「某条响应
         # 通过了」就没法拴到任何一条具体响应上。
@@ -258,7 +264,13 @@ def main() -> int:
             ("proof", verifier.committed_response_binding(v)),
         ])
         zk_ok &= ok_rbind
-        detail += " + response binding" if ok_rbind else " | " + rbind_detail
+        if not ok_rbind:
+            notes.append(rbind_detail)
+        if notes:
+            key = "问题: " + " | ".join(notes)
+            tally[key] = tally.get(key, 0) + 1
+    # 汇总成「每种结局各几条」，形如 `SP1 proof verified (pop-script)×1 + unproven×2`。
+    detail = " + ".join(f"{k}×{n}" if n > 1 else k for k, n in tally.items()) or "n/a"
     results.append(("zk_proof", zk_ok, detail))
 
     # 4) 链上锚定核对（可选）：每个证书摘要都能从 Anchor 合约读回，且链上时间戳
