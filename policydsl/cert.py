@@ -182,8 +182,19 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
     的旁证」。放进 ``outcome`` 的后果是**每一张带真实证明的证书都对不上**
     （公开值里没有这个字段）。见 ``policydsl/trace.py`` 的「截尾与 ToolSeal」。
 
+    ``semantic`` 是 P2-9 的**语义规则陪伴证明**块（同样在载荷**顶层**，理由与
     ``trace_seal`` 完全相同）：
 
+        {"companions": [{"rule", "system", "vk_sha256", "onnx_sha256",
+                         "threshold_bp", "direction", "proof_file",
+                         "proof_sha256"}, ...]}
+
+    它**不是**可有可无的装饰。SP1 公开值里的 ``outcome.delegated`` 非空时，语义
+    规则**没有被那份证明判定**；这一块携带的 ezkl 陪伴证明才是判定它的东西。
+    验证方必须对 ``delegated`` 里每一条都找到匹配的 companion 并逐字段核验
+    （``policydsl.semantic.verify_companion``），**一条都不能少** —— 少了就是
+    「看起来验过了」而实际没验。``delegated`` 非空而本块缺失/不全时，
+    ``verify_cert.py`` 一律判 FAIL（fail closed）。
     """
     if proof_mode is None and proof_sha256 is None:
         proof_mode = PROOF_MODE_UNPROVEN      # 没有工件 → 只能自称「未证明」
@@ -203,6 +214,8 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
         payload["challenge"] = challenge
     if trace_seal is not None:
         payload["trace_seal"] = trace_seal
+    if semantic is not None:
+        payload["semantic"] = semantic
     if extra:
         payload.update(extra)
     return payload

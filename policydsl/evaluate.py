@@ -26,7 +26,9 @@ from dataclasses import dataclass
 from typing import List, Union
 
 from . import nfa, trace
-from .model import CheckResult, Policy, PolicyError, Transcript, Violation
+from .model import (
+    CheckResult, DelegatedConstraint, Policy, PolicyError, Transcript, Violation,
+)
 
 # check 可接受的输入类型：自由文本或结构化轨迹
 Target = Union[str, Transcript]
@@ -103,6 +105,8 @@ def check(policy: Policy, target: Target) -> CheckResult:
     policy.validate()
     tx = _to_transcript(target)
     violations: List[Violation] = []
+    # 被委托给外部证明系统（ezkl）的约束 —— 本层与 SP1 电路一样**只登记、不判定**。
+    delegated: List[DelegatedConstraint] = []
 
     # 回执链的**结构**校验，只做一次（tool_arg_guard / budget_bound/calls 都用）。
     # 空链合法 —— 一次工具都没调用是正常情形，不是「链坏了」。
@@ -184,6 +188,40 @@ def check(policy: Policy, target: Target) -> CheckResult:
                 violations.append(Violation(
                     rule, "budget", {"unit": unit, "total": total, "budget": budget}))
 
+        elif rule.kind == "semantic_bound":
+            # 语义规则：**参考层判不了**，如实登记为「已委托」，而不是猜一个结论。
+            #
+            # 这里判不了不是实现偷懒，是分工：判定要跑一遍 ONNX 前向，那是 ezkl
+            # 的地盘；参考层既没有 ezkl 也不该有（它是纯标准库）。所以本层的角色
+            # 与 SP1 电路一致：**登记委托**，结论由陪伴证明给。
+            #
+            # 三种错误做法，每一种都对应一个真实存在的漏洞形态：
+            #   ① 当作通过（不记）—— 语义规则变成一个恒真的空壳；
+            #   ② 记一条 violation —— `passed` 变 false，而「策略被违反」不是事实；
+            #   ③ 在这里跑一遍 torch 前向 —— 那是一个**参考实现**，不是**证明**：
+            #      它只能说明「我这台机器算出来是这样」，不能说明「出证方真的这么算的」。
+            thr = int(rule.params["threshold_bp"])
+            if not (0 <= thr <= 10000):
+                raise PolicyError(
+                    f"rule '{rule.name}': threshold_bp 必须在 [0,10000]，得到 {thr}")
+            if rule.params["direction"] not in ("le", "ge"):
+                raise PolicyError(
+                    f"rule '{rule.name}': direction 必须是 le/ge，得到 "
+                    f"{rule.params['direction']!r}")
+            # 指纹在这里现解析（与 compile 同一口径）：参考层不信任策略里写的值，
+            # 只把它当作「作者声明的目标」，实际比对交给 verify_cert。
+            from .compile import _model_vkey
+            from . import semantic as sem
+
+            delegated.append(DelegatedConstraint(
+                name=rule.name,
+                system="ezkl-halo2",
+                model_vkey=rule.params.get("model_vkey") or _model_vkey(),
+                onnx_sha256=rule.params.get("onnx_sha256") or sem.onnx_sha256(),
+                threshold_bp=thr,
+                direction=rule.params["direction"],
+            ))
+
     # 坏链即使没有任何工具规则「接住」它也要记一笔：否则一条只有内容规则的策略
     # 会带着一条明显自相矛盾的回执链通过判定，而结果里什么都看不出来。
     # 规则名用带尖括号的占位符，与策略里的规则名（标识符）不可能撞车。
@@ -191,5 +229,6 @@ def check(policy: Policy, target: Target) -> CheckResult:
                                 for v in violations):
         violations.append(Violation(_TraceRule(), "trace_unbound", chain_why))
 
-    # passed = 无任何违规（"and" 语义）
-    return CheckResult(passed=not violations, violations=violations)
+    # passed = 无任何违规（"and" 语义）。**注意**：`delegated` 非空时它只覆盖
+    # 判得了的那部分，见 `CheckResult` 与 `DelegatedConstraint` 的 docstring。
+    return CheckResult(passed=not violations, violations=violations, delegated=delegated)

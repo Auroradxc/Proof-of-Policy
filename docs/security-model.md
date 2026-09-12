@@ -215,6 +215,9 @@ Pr[G_Bind_trace(A) = 1]
 
 **命题**：设 `C` 是验证方接受的组合证书，其两半各自通过验证、绑到**同一条**送达
 `T′`、且来自**不同**的 vkey。若 `C.parts[policy].outcome.passed = true` 且
+`delegated` 为空，则
+
+```
 T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 ```
 
@@ -252,11 +255,20 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 
 #### L6.1 覆盖率：结论形式与主定理不同
 
+组合层的 `satisfied` **额外要求 `delegated` 为空**。`delegated` 非空意味着策略里有规则
 **没被这份证明判定**（P2-9 的语义规则）—— 此时组合层**不下合规结论**，而不是
 "当作过了"。少了这一条，组合证书会成为「把没判的规则当判过了」的新通道，
+正是 P0-1 的形态；且这属于 `合规 = PASS` 那一侧（L7），不属于主定理的和式。
+
 #### L6.2 不保证
 
 * **推理那一半是代理**：`pop-infer` 里是一个 16→32→4 的定点 MLP，权重由编译期常量
+  种子生成、**编进程序**（因此被 vkey 承诺 —— 比 P2-9 的 ezkl 委托更强）。它是
+  结构同构的 stand-in，**不是 zkAgent**（D1：zkAgent 源码不可得）。
+* **不保证模型质量**：与 L7 第 ② 条同源。这一半证的是「**这张**图在**这条**响应上
+  确实算出**这个**输出」，与「这张图好不好」无关；没有数据训练过它。
+* **不保证成本结论**：见下。
+
 #### L6.3 实验能证什么、不能证什么（如实标注）
 
 计划里的假设是「**组合成本 ≈ 两者之和，且由推理证明主导**」。本机实测的结论是
@@ -274,6 +286,36 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 ③换模型 / 换输入 ④两半绑不同 `T` / 送达 `T′` 与绑定不符 ⑤形状/模式/域/policy_hash
 重编译不符 —— 全部必须被拒。
 
+### L7 语义委托健全性（P2-9）—— 归约到 A2 + A6
+
+> 全文见 [`design-semantic-rules.md`](design-semantic-rules.md)（含三个信任边界条件、
+> 与 zkML 的关系、以及"不保证"清单）。
+
+**命题**：设 `π = π_in ∧ π_sem`（`π_in` 入电路、`π_sem` 被委托给 ezkl）。
+若 `Verify` 接受且 `verify_cert.py` 报出 **`合规: PASS`**，则 `T′ ⊨ π`。
+
+**论证**（在 A1、A6 下）：`π_in` 部分同主定理。`π_sem` 部分要求验证方对每条被委托的
+规则跑通 `semantic.verify_companion` 的六步 —— 第 2 步把证书声明的
+`{vk_sha256, onnx_sha256, threshold_bp, direction}` 逐字段钉在**电路公开值**里；
+第 3 步把证明字节钉在证书承诺的哈希上；第 4 步核本地 `vk` 哈希并跑 ezkl 验证器；
+第 5 步要求公开实例的输入部分 `== encode(T′)`；第 6 步才比阈值。任一步失败即
+`ok=False`，且 `verify_cert.py` 对 `delegated` 非空却找不到陪伴证明的情形
+**默认 FAIL**（fail closed）。故 `T′ ⊭ π_sem` 时不可能得到 `合规: PASS`。∎
+
+**为什么必须"分开呈报"**：`RESULT`（证书真伪）与 `合规`（策略是否满足）是两件事 ——
+一张如实记录违规的证书同样是**真**证书（`--expect violate` 的演示依赖这一点）。
+而 `outcome.passed` **只覆盖电路判得了的部分**，`π_sem` 不在其中。少了 `合规` 行，
+一张 `passed=true` 而语义规则没过的证书会被读成合规，那正是 P0-1 的形态。
+
+**代码落点**：`policydsl/semantic.py::verify_companion`、
+`circuits/types/src/lib.rs::DelegatedConstraint`、`scripts/verify_cert.py` 检查 3e、
+`tests/test_semantic.py`（29）。
+
+**不保证**：① **响应内容保密** —— ezkl 的公开实例含 `encode(T)`，而 `encode` 对收录
+字符**单射**（反查 `VOCAB` 即可恢复原文），故含语义规则的策略**只支持公开模式**，
+私有模式在电路内 panic；② 模型质量（训练数据/分布外/投毒）—— 密码学不判断模型好不好；
+③ 定点近似的决策边界（`|P-θ| < 1/128` 处可能与浮点参考不符）；
+④ v1 只有单一模型，N 条规则共用同一份 `proof.json`。
 
 ---
 
@@ -295,7 +337,11 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 要把 `π` 换成 `π′` 需要 L1；要让轨迹规则判在一条**假**链上，需要 L3 的签名层。
 **覆盖范围**：`keyword_block` / `length_bound` / `pattern_block` / `format_check` /
 `tool_arg_guard` / `budget_bound` 六类**均已入电路**（`pop-types::evaluate`，与 Python golden 交叉验证 14/14）。
-**未覆盖**：语义级规则（P2-9，未实现）；`budget_bound(tokens)` 的分词语义（见 §6）。
+**另有一类不在上式的和里**：`semantic_bound`（P2-9）**不由本电路判定**，而是被
+**委托**给 ezkl 并由验证方合取 —— 它有自己的引理 **L7**，结论形式是
+`合规 = PASS`（**不是** `outcome.passed`）。把 L7 混进上式会掩盖它真正的失败形态：
+不是"证明被攻破"，而是"**漏判却看起来全绿**"。
+**未覆盖**：`budget_bound(tokens)` 的分词语义（见 §6）。
 
 ---
 
@@ -388,6 +434,8 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | **`budget_bound(tokens)` 语义** | 电路内按**固定空白字节集** `{0x20,09,0a,0b,0c,0d}` 切分计数，**不**依赖 Unicode White_Space（该定义随 Unicode 版本漂移），也**不**假称是任何真实分词器。口径变更**不兼容**：`policy_hash` 随之变化 |
 | **规则语义** | 正则为受支持子集 + ASCII 语义；长度按码点；`int`/`float` 仅规范子集（超集输入按子集规则拒绝） |
 | **重放** | 无 `n` 的证书可被重放（危害是会话计数）；带 `n` 的证书重放可被 `NonceStore` 检出 |
+| **语义规则的隐私** | 含 `semantic_bound` 的策略**只支持公开模式**：ezkl 公开实例含 `encode(T)`，而 `encode` 对收录字符**单射**（可反查 `VOCAB` 恢复原文）—— 这是格式的必然，不是疏漏（L7 的"不保证 ①"） |
+| **模型质量** | L7 只证「用的是**这张**图、输入是**这条**响应、分数满足阈值」，**不证「这张图是好的」** —— 训练数据偏置、分布外文本、投毒模型一律不管；阈值是策略作者的判断，不是安全参数 |
 | **非目标** | 不证明「模型推理本身」的**通用**命题。P1-6 覆盖的是**代理模型**（`pop-infer` 里那张定点 MLP）的前向完整性 —— 换成真 LLM 的推理证明属于另一件事（D1）；不覆盖训练数据/模型卡（EU AI Act Art.11 等） |
 
 ---
@@ -404,9 +452,12 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | **L5** 账本 + 锚定 | `policydsl/anchor.py`、`contracts/Anchor.sol` | `tests/test_anchor.py`（4）、`test_anchor_chain.py`（22） |
 | 证书签名（A3/A7） | `policydsl/cert.py::Ed25519Signer`、`policydsl/keys.py` | `tests/test_cert.py`（19） |
 | 证明模式诚实标注 | `cert.PROOF_MODE_HIDING`、`verifier.artifact_proof_modes` | `tests/test_verifier_only.py`（8） |
+| **L7** 语义委托（P2-9） | `policydsl/semantic.py`、`scripts/ezkl_prove.py`、`circuits/types::DelegatedConstraint`、`verify_cert.py` 3e | `tests/test_semantic.py`（29，含 6 条反例；真·端到端由 `POP_TEST_EZKL=1` 打开） |
 | **L6** 组合义务（P1-6） | `policydsl/compose.py`、`circuits/infer-program`（guest）、`circuits/types::job_domain`、`scripts/compose_proof.py` | `tests/test_compose.py`（48，含 5 组反例 + 4 条驱动接线回归；真·端到端由 `POP_TEST_COMPOSE=1` 打开） |
 
 **回归总盘**：`python3 -m unittest discover -s tests -t .` → **348 passed / 11 skipped**（skip 均为设计内，
+含 P2-9 那例要真出 ezkl 证明的端到端 —— 由 `POP_TEST_EZKL=1` 打开；P1-6 那 5 例要真出两份
+SP1 证明 —— 由 `POP_TEST_COMPOSE=1` 打开。两组均已单独实测通过）。
 
 ---
 
@@ -422,5 +473,6 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | **G_Priv** | Leak 实验（`private_demo`、`test_private_output_no_leak`）；上界论证见 §5.2 |
 | **G_Redact** | `TestMaskCoverage`（伪造 span → `mask_covered=false`） |
 | **G_Ledger** | `TestAnchorLedger`（链篡改检出）、`TestAnvilEndToEnd`（真链读回） |
+| **L7 语义委托** | 六条反例：换 ONNX、换 vk、改阈值、翻转方向、换证明文件/换响应、图外自算特征 —— 全部必须被拒；反向对照（良性文本 `合规: PASS`、同形异义文本 `合规: FAIL` 而 `RESULT: PASS`）见 `design-semantic-rules.md` §7 |
 | **L6 组合义务** | 五组反例：换证明文件/缺失、同 vkey/非期望 vkey、换模型/换输入、两半绑不同 T/送达 T′ 不符、形状/模式/域/policy_hash 重编译 —— 全部必须被拒（`tests/test_compose.py`）；成本与「推理是否主导」的实测见 `bench/results/compose.md` |
 | 端到端 | `scripts/verify_session.py` 全 PASS（含真实 SP1 证明） |

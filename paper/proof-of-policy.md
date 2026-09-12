@@ -213,6 +213,8 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 ## 6. Implementation
 
 Python 参考层（DSL/编译/NFA/私密/证书/锚定/框架适配）+ Rust（SP1 v6 workspace：`types` 共享判定、`program` 与 `infer-program` 两个 guest、`script` 驱动）。
+单测 + 集成测试 **348 全绿（11 skip 均为设计内）**，其中 `tests/test_semantic.py`（29 例）覆盖 P2-9 的
+语义规则委托（陪伴证明的逐字段绑定、四类换料攻击、私有模式 fail closed）；`tests/test_trace.py`（39 例）覆盖 §4.2.1 的四条验收
 与 P1-5b 的截尾对策（`TestSeal` + `test_tail_truncation_is_rejected`）；
 `tests/test_rules_incircuit.py` 钉死 Python 参考层与电路内实现的逐点对齐；`scripts/` 提供交叉验证、
 demo、证书签发/验证、截图；`docs/reproduce.md` 复现指南。
@@ -318,12 +320,16 @@ zkAgent 证明「provider 执行了声明的模型与工具轨迹」（推理完
 
 ### 8.2 其他
 
-生产签名（Ed25519/HSM）与密钥托管（当前上链用明文私钥参数，demo 为 Anvil 公开测试键）、公共测试网/主网部署（当前为本地 Anvil）；语义级规则（嵌入/学习型护栏，ezkl）；
 生产签名（Ed25519/HSM）与密钥托管（当前上链用明文私钥参数，demo 为 Anvil 公开测试键）、公共测试网/主网部署（当前为本地 Anvil）；
+**语义级规则的模型质量**（P2-9 已打通 ezkl 委托链路，但随包模型是**演示用**的小型代理，
+不是可用的学习型护栏——「P(有害) 低」只说明**这个模型**如此，不构成语义安全保证；且陪伴证明的
+公开实例含 `encode(T)`，故语义规则**只支持公开模式**，见 `docs/security-model.md` §5.4 与
+`docs/design-semantic-rules.md`）；
 **推理证明的真实性**（P1-6 分支 A 已给出组合**机制**与形式化引理 L6，但推理那一半是确定性定点 MLP
 代理——权重由编译期种子生成、编进程序因而被 vkey 承诺，证明的是「**这张**图在**这条**响应上确实
 算出**这个**输出」，与「这张图好不好」无关；换上真 zkAgent 只需替换 prover，组合层不动。
 代理规模下「组合成本由推理证明主导」**未被验证**，见 `bench/results/compose.md`）；
+同形异义折叠（`P2-9b`）；正则子集与 ASCII 语义扩展；证明开销优化（lookup/并行/预计算）；
 与 zkAgent 轨迹证明、可验证 DP 的组合。
 
 ## 9. Conclusion

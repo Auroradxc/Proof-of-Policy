@@ -56,15 +56,16 @@ pub fn main() {
 | `BudgetUnit { Calls, Tokens }` | `budget_bound` 的计量单位 |
 | `NfaSpec { start, accept, states }` / `NfaState { eps, edges }` / `NfaEdge { to, ranges }` | **可序列化 NFA 契约**（由 `policydsl.nfa` 产出） |
 | `PatternMode { Pike, Naive }` | 匹配模式（默认 `Pike`） |
-| `Constraint` | 六种变体的枚举（见下表） |
+| `Constraint` | 七种变体的枚举（见下表） |
+| `BoundDirection { Le, Ge }` | `semantic_bound` 的判定方向（P2-9）。两值枚举而非布尔/带符号阈值 |
+| `DelegatedConstraint { name, system, model_vkey, onnx_sha256, threshold_bp, direction }` | **被委托给外部证明系统的约束**（P2-9）。`system` 为 `ezkl-halo2`（`SEMANTIC_SYSTEM_EZKL`） |
 | `ProofRequest { response, constraints, nonce, receipts }` | 公开模式输入（`nonce` 为 P0-2 挑战值，`serde(default)`；`receipts` 为 P1-5 回执链）。**`deny_unknown_fields`** |
 | `Violation { rule, kind, evidence }` | 违规（证据为**字符串**） |
+| `ProofOutput { policy_hash, response_binding, trace_root, passed, violations, delegated }` | 公开模式输出（提交为公开值；`trace_root` 为链尾摘要，空链为 `"genesis"`；`delegated` 为本次判定中被委托出去的约束，空 = 这份证明自足） |
 | `PrivateViolation { rule, kind, evidence_commitment }` | 私有模式的违规（只有承诺） |
 | `RedactionProof { redacted_commitment, mask_count, redaction_ok, mask_covered }` | 脱敏证明 |
 | `PrivateRequest { response, constraints, nonce, mask, redacted, spans, receipts }` | 私有模式输入（`nonce` 同上）。**`deny_unknown_fields`** |
 | `PrivateOutput { policy_hash, response_binding, response_commitment, trace_root, passed, violations, redaction }` | 私有模式输出 |
-| `Job { Public(ProofRequest), Private(PrivateRequest) }` | 一个 ELF 服务两种模式的调度枚举 |
-| `Outcome { Public(ProofOutput), Private(PrivateOutput) }` | 顶层承诺结果 |
 | `Job { Public(ProofRequest), Private(PrivateRequest), Infer(InferRequest) }` | 调度枚举。前两态属**策略域**、`Infer` 属**推理域**（P1-6）；两个 guest 各只收自己那一域 |
 | `Outcome { Public(ProofOutput), Private(PrivateOutput), Infer(InferOutput) }` | 顶层承诺结果 |
 | `InferRequest { response, nonce }` | 推理任务的输入（P1-6）。**没有**「输入向量」字段 —— 输入由图内从 `response` 导出，见 §2.5c |
@@ -79,7 +80,11 @@ PatternBlock  { name, patterns, specs: Vec<NfaSpec>, mode: PatternMode }
 FormatCheck   { name, format: FormatKind }
 ToolArgGuard  { name, tools, forbidden_fields }
 BudgetBound   { name, budget, unit: BudgetUnit }
+SemanticBound { name, model_vkey, onnx_sha256, threshold_bp, direction }   // P2-9：委托
 ```
+
+前六个是电路**自己判定**的；第七个 `SemanticBound`（P2-9）**不判定**，
+只登记进公开值 —— 见 §2.3b。
 
 序列化为 serde 的**内部标签**枚举（`#[serde(tag = "kind", rename_all = "snake_case")]`，
 即 `{"kind": "keyword_block", ...}`）—— 直接吃 `policydsl/compile.py` 产出的形状，
@@ -158,9 +163,74 @@ parse_float_ok(s) // trim → 非空、无 '_'、不含 nan/inf（忽略大小�
 parse_json_ok(s)  // serde_json::from_str::<Value>（拒绝 NaN/Infinity）
 ```
 
+### 2.3b 语义规则的**委托** `SemanticBound`（P2-9）
+
+`semantic_bound`（「回复的语义有害概率不得高于阈值」这类规则）**无法在 SP1 里判定** ——
+判定要跑一遍 ONNX 前向，那是 ezkl/halo2 的地盘。所以电路对它的处理是**登记而非判定**：
+
+```rust
+SpecConstraint::SemanticBound { name, model_vkey, onnx_sha256, threshold_bp, direction } => {
+    delegated.push(DelegatedConstraint {
+        name: name.clone(), system: SEMANTIC_SYSTEM_EZKL.into(),
+        model_vkey: model_vkey.clone(), onnx_sha256: onnx_sha256.clone(),
+        threshold_bp: *threshold_bp, direction: *direction,
+    });
+}
+```
+
+三处刻意的设计：
+
+1. **不 push `violation`**。用「未判定」表达这条规则，会让 `passed` 变 `false`，
+   而 `passed = false` 的语义是「策略被**违反**」—— 那不是事实（我们并不知道它是否被违反）。
+   `delegated` 是一个**独立**字段，专门表达「未判定」。
+2. **字段全量重复一遍**（`model_vkey` / `onnx_sha256` / `threshold_bp` / `direction`
+   在约束和公开值里各出现一次）。公开值因此**自足**：验证方不必从别处取值来比对，
+   否则「比对」就退化成「信任另一处声明」。
+3. **进公开值而不是只写在证书里**。证书是出证方写的，公开值是电路算的。只有后者能让
+   第三方**独立**看出「这份证明需要陪伴」。「遇到了就跳过」的做法下，一个只跑 `pop-verify`
+   的第三方会把这份证明当成一条**完整**的合规证明 —— 而策略哈希承诺的是整份规范字节
+   （含语义规则），所以验证方拿策略包就知道 π 里有语义规则，「跳过」不会掉包 π，
+   但足以让**只验 SP1 的人**得出错误结论。
+
+`delegated` 非空时的语义（`types/src/lib.rs` 的 doc comment 原文口径）：
+
+> `passed` 只反映**电路内可判定的**那部分约束。一份 `passed = true` 且 `delegated` 非空
+> 的证明，**不等于**策略被满足 —— 它等于「电路内那部分满足了，剩下的几条请去核陪伴证明」。
+> 验证方必须对 `delegated` 里每一条都找到匹配的陪伴证明并验证，否则必须拒绝（fail closed）。
+
+怎么合取、陪伴证明长什么样、失败形态有哪些，见
+[`../design-semantic-rules.md`](../design-semantic-rules.md) 与 [`07`](07-cli-scripts.md) §2.5。
+
 ### 2.4 私有模式 `evaluate_private(req) -> PrivateOutput`
 
-先复用 `evaluate` 算出公开结论，再**只保留承诺**：
+**v1 边界（P2-9）：含语义规则的策略只支持公开模式。** 函数第一件事就是把这类请求
+**panic 掉**（guest panic ⇒ 产不出证明，fail closed）：
+
+```rust
+if let Some(SpecConstraint::SemanticBound { name, .. }) =
+    constraints.iter().find(|c| matches!(c, SpecConstraint::SemanticBound { .. }))
+{
+    panic!("语义规则 '{}' 需要公开模式：ezkl 陪伴证明必须把 encode(T) 放进公开实例，\
+            否则验证方无法把证明绑到响应上（信任边界 ③）。…", name);
+}
+```
+
+理由是一个不相容对：陪伴证明的公开实例里**必须**有 `encode(T)`（否则验证方只能相信
+出证方转述的一个分数，那正是 P0-1 的形态），而私有模式承诺的正是「响应不进公开值」。
+两条同时满足不可能，所以拒绝 —— 而不是**悄悄略过**语义约束，后者会产出一份
+`passed = true` 却没有判定语义规则的私密证书，看上去完全正常。
+
+> ⚠️ 这同时是一条**隐私**边界，且与上面的论证是同一条：`features.encode` 在词表上**单射**，
+> 所以公开实例里的 `encode(T)` 可被反查词表还原出原文（同形异义正是**不**同的码点，
+> 折叠不了）。语义规则因此**只有公开模式**这一种形态。详见
+> [`../design-semantic-rules.md`](../design-semantic-rules.md) §3。
+
+编译期还有一道同样的检查（`policydsl/compile.py`，报错更友好）；电路内这道是兜底 ——
+手写的 `PrivateRequest` 绕不过编译期检查。回归见 `tests/test_semantic.py`。
+
+解决路径（未做）：`P2-9b 同形异义折叠`，见设计文档 §10。
+
+再往下是正常流程：复用 `evaluate` 算出公开结论，再**只保留承诺**：
 
 ```rust
 violations = public.violations.map(|v| PrivateViolation {
@@ -259,6 +329,13 @@ pub fn response_binding(nonce: &[u8], response: &str) -> String {
 **两个设计点是刻意的**（也就是 L6 的三条信任边界条件的落地）：
 
 1. **权重编进程序** ⇒ 模型身份由 **vkey** 承诺。出证方没有「我用的其实是另一张图」的余地
+   —— 对比 P2-9 的 ezkl 委托（那里靠 `onnx_sha256` + vk 指纹承诺模型权重），
+   这是**更强**的形式。
+2. **输入由图内从 `response` 导出**，不是证明者自填的向量。否则「输出被承诺」
+   只说明「存在某个输入得到这个输出」—— 与 P1-5 之前那条自述式 `tool_calls`
+   是同一类毛病。
+
+**它同时携带与策略半共用的 `response_binding`**（同一套 `commit.response_binding` 公式、
 同一个 nonce）—— 这就是两半能组合的锚点：「说的是同一条 T」由验证方**现场重算**核对，
 而不是靠证书自述。
 
@@ -450,6 +527,13 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
    `tests/test_binding.py::TestPythonRustParity`。
 9. **类型一改就要重建 guest**：`types`（含新增字段）变了 ⇒ ELF 变 ⇒ vkey 变 ⇒
    `scripts/examples/out/` 下所有旧证明与证书**全部失效**，必须整体重生成。
+10. **`delegated` 非空 ⇒ 这份证明单独不构成合规结论**（P2-9）。任何把
+    `ProofOutput.passed` 直接当成「策略已满足」的消费方都是错的，必须合取陪伴证明。
+    验证侧的落地形式是 `verify_cert.py` 打印的**第二行** `合规:` ——
+    第一行 `RESULT:` 只说「这张证书是真的」。
+11. **语义规则只支持公开模式**：`evaluate_private` 见到 `SemanticBound` 直接 panic
+    （§2.4）。新增任何「把响应明文放进公开实例」的委托系统时，都要复制这道检查。
+12. **两个 guest 各只收自己那一域**（P1-6）：`pop-program` 断言 `DOMAIN_POLICY`、
     `pop-infer` 断言 `DOMAIN_INFER`。**不要**为了「方便」把它们合成一个 guest ——
     合并会让两个 vkey 变成同一个，「这份证明属于哪一半」就无从判断，
     组合义务（L6）随之失效。新增任何一个「要组合进同一张证书」的证明域，
@@ -462,6 +546,7 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
 | 测试 | 覆盖 |
 |---|---|
 | `tests/test_rules_incircuit.py` | 六类规则在 `--check` 下与 Python golden 逐点对齐（含规范化证据串） |
+| `tests/test_semantic.py`（P2-9） | `delegated` 的登记与合取：真实语义规则的陪伴证明绑定（换 onnx/vk/阈值/方向一律 FAIL）、私有模式 panic、公开实例与送达响应一致性、缺材料 fail-closed |
 | `tests/test_trace.py` | P1-5 四条验收（完整链通过 / 删·换·重排失败 / 伪造回执验签失败 / 旧向量被拒），并实测 `trace_root` 与 Python 逐字节一致 |
 | `tests/test_compose.py`（P1-6） | 代理推理的参考实现逐位一致（`--check --job infer`）、组合绑定的 5 组反例、域分离（两个 guest 互相拒绝对方的向量）、驱动接线（`job` 旗标 / `mode` 不被剥掉） |
 | `tests/test_binding.py::TestPythonRustParity` | `response_binding` 在电路内与 Python 逐字节一致（公开 + 私有，多种 nonce 长度） |

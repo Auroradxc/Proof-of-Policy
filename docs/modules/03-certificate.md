@@ -39,6 +39,21 @@
     "trace_root": "<64hex>|\"genesis\"",   // P1-5：工具回执链的链尾摘要（空链为 genesis）
     "passed": true,
     "violations": [{"rule": "...", "kind": "...", "evidence": "..."}],
+    "delegated": [                        // P2-9：电路**没判**的约束（语义规则）
+      {"name": "low_harm_probability", "system": "ezkl-halo2",
+       "model_vkey": "<64hex>",            // vk.ezkl 的 sha256
+       "onnx_sha256": "<64hex>",           // 模型图的 sha256
+       "threshold_bp": 5000, "direction": "le"}
+    ]
+  },
+  "semantic": {                           // 可选（P2-9），见下
+    "companions": [
+      {"rule": "low_harm_probability", "system": "ezkl-halo2",
+       "vk_sha256": "<64hex>", "onnx_sha256": "<64hex>",
+       "threshold_bp": 5000, "direction": "le",
+       "proof_file": "proof.json",         // 只是**文件名**：验证方在 --semantic-dir 下按 basename 找
+       "proof_sha256": "<64hex>"}          // 证明是独立工件，证书只承诺它的哈希
+    ]
   },
   "binding": {
     "vkey_hash": "<hex>",                 // "unproven" 表示未附证明（仅链下判定）
@@ -103,6 +118,34 @@
 与链尾摘要。**没有 `--gateway-key` 就核不了签名，也分不开「出证方没承诺」与「没给我看」** ——
 此时 3d 如实记 `PASS + 「截尾不可排除」(skipped)`；给了网关公钥却**没有** `trace_seal` 的
 证书判 FAIL。详细边界与信任假设见 [`../security-model.md`](../security-model.md) §5.3。
+
+### 语义规则的委托块（`semantic` + `outcome.delegated`）—— P2-9
+
+学习型规则（`semantic_bound`）**不由 SP1 电路判定**：它的判定要跑一张 ONNX 前向，
+那是 ezkl 的地盘。所以电路做的是**登记委托**：
+
+- `outcome.delegated` 由**电路**产出，逐条列出"这几条我没判"，并带上电算出的
+  `{model_vkey, onnx_sha256, threshold_bp, direction}` 四个指纹；
+- `semantic.companions[]` 由**出证方**写入，声称"对应的 ezkl 陪伴证明是这一份"。
+
+验证方的工作就是把**出证方写的**逐字段钉在**电路说的**上（`verify_companion` 六步），
+再跑 ezkl 验证器、再把公开实例的输入部分与 `encode(T′)` 逐位比对、最后比阈值。
+
+**两条必须记住的**：
+
+1. **`outcome.passed` 只覆盖电路判得了的部分。** 它**不**包含被委托出去的规则 ——
+   所以一张 `passed=true` 的证书可能整体**不合规**。`verify_cert.py` 因此把结论分成
+   两行：`RESULT:`（这张证书**是不是真的**）与 `合规:`（**策略是不是满足了**）。
+   详见 [`../design-semantic-rules.md`](../design-semantic-rules.md) §7 的现场输出。
+2. **fail closed 是默认行为**：`delegated` 非空却找不到对应的陪伴证明 ⇒ **FAIL**，
+   而不是"跳过"。跳过会得到一张看起来全绿、而语义规则根本没被判定的证书。
+
+**边界**：含语义规则的策略**只支持公开模式**（`evaluate_private` 直接 panic）——
+ezkl 的公开实例含 `encode(T)`，而 `encode` 对收录字符是**单射**（可反查 `VOCAB`
+恢复原文）。这是格式的必然，不是疏漏，见设计文档 §3.③。
+
+**证明文件不入库**：`proof.json` 是**每条响应一份**的产物，随证书归档；证书里只承诺
+它的 `proof_sha256`（与 `binding.proof_sha256` 对 SP1 证明的做法一致）。
 
 ### 证明模式标注（`binding.proof_mode`）—— P0-4
 

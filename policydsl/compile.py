@@ -26,7 +26,7 @@ import json
 from typing import Any, Dict
 
 from . import nfa
-from .model import Policy, PolicyError
+from .model import Policy, PolicyError, Rule
 
 SPEC_VERSION = "v1"
 
@@ -67,6 +67,92 @@ def _canonical_hash(obj: Dict[str, Any]) -> str:
     return hashlib.sha256(canonical_spec_bytes(obj)).hexdigest()
 
 
+def _semantic_constraint(rule: "Rule") -> Dict[str, Any]:
+    """把 ``semantic_bound`` 规则编译成约束，**固化模型指纹**（P2-9 §9.4）。
+
+    模型指纹（``onnx_sha256`` / ``model_vkey``）在这里被**写进约束**，从而进入
+    ``policy_hash``。这是信任边界 ① 的落地形式：策略一旦编译，它承诺的就是
+    **某一个具体的图**；换一张图（哪怕只改一点权重）都会让 policy_hash 变，
+    旧证明立刻对不上。
+
+    两种情况：
+
+    - 策略**显式写了**指纹：必须与仓库里的模型一致，否则编译期失败。这挡的是
+      「用另一个模型去证这条策略」——不挡的话，攻击者只要拿一个「恒判安全」的
+      模型出证，而验证方核的还是策略里那串哈希，两边各说各话。
+    - 策略**没写**：从仓库里的模型现场解析并固化。作者不必手抄 sha256；代价是
+      策略包本身不自足（换机器要先有同一份模型才能重编译），这一点如实记在
+      ``docs/design-semantic-rules.md``。
+    """
+    from . import semantic as sem
+
+    manifest = sem.model_manifest()
+    for key, actual in (("onnx_sha256", manifest["onnx_sha256"]),
+                        ("model_vkey", _model_vkey())):
+        want = rule.params.get(key)
+        if want is not None and want != actual:
+            raise PolicyError(
+                f"rule '{rule.name}': 策略里写死的 {key} 与仓库里的模型不一致\n"
+                f"  策略 {want}\n  实际 {actual}\n"
+                f"（这条检查挡的是「拿另一个模型去证这条策略」）")
+    return {
+        "kind": "semantic_bound",
+        "name": rule.name,
+        "model_vkey": rule.params.get("model_vkey") or _model_vkey(),
+        "onnx_sha256": rule.params.get("onnx_sha256") or manifest["onnx_sha256"],
+        "threshold_bp": int(rule.params["threshold_bp"]),
+        "direction": rule.params["direction"],
+    }
+
+
+def _model_vkey() -> str:
+    """ezkl 验证钥匙的指纹 = ``semantic/artifacts/vk.ezkl`` 的 sha256。
+
+    少了它，约束只能承诺「模型是这一张」，承诺不了「证明是由这个电路出的」——
+    而恰好是后者把整张图（含特征投影表）唯一确定了。
+    """
+    from . import semantic as sem
+
+    p = sem.model_dir() / "artifacts" / sem.ARTIFACT_NAMES["vk"]
+    if not p.exists():
+        raise PolicyError(
+            f"缺少 {p} —— 语义规则需要 ezkl 的验证钥匙指纹。"
+            f"先跑 `python3 scripts/ezkl_prove.py setup` 生成它")
+    return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+def require_covering_length_bound(policy: Policy) -> None:
+    """含语义规则的策略**必须**再含一条覆盖它的 ``length_bound``（P2-9 v1 边界）。
+
+    为什么这是硬要求：特征图是**定长**的（``MAX_CHARS``）。超长响应若被静默
+    截断，那么「第 ``MAX_CHARS`` 个字符之后的内容」就完全没被判定，而证明照样
+    有效 —— 攻击者只要把有害内容放在尾部就能绕过语义规则。所以：
+
+    - **截断被禁止**（``semantic.features.encode`` 超长直接报错）；
+    - 于是策略必须自己声明长度上界 ``max <= MAX_CHARS``，把「合法输入的最大长度」
+      与图的容量**对齐**。这样任意合法输入都必然被完整判定。
+
+    缺了它，语义规则在**任何**超长响应上都判不了（encode 会报错），策略实际上
+    是残缺的 —— 与其等到出证时才炸，不如编译期就说清楚。
+    """
+    from . import semantic as sem
+
+    if not any(r.kind == "semantic_bound" for r in policy.rules):
+        return
+    width = sem.input_width()
+    lens = [r for r in policy.rules if r.kind == "length_bound"]
+    if not lens:
+        raise PolicyError(
+            f"含语义规则的策略必须同时含一条 length_bound，且 max <= {width}"
+            f"（特征图是定长的；超长响应会被拒绝而不是截断，没有这条上界策略就"
+            f"无法处理长响应）")
+    if not any(int(r.params["max"]) <= width for r in lens):
+        worst = min(int(r.params["max"]) for r in lens)
+        raise PolicyError(
+            f"语义规则要求至少一条 length_bound 的 max <= {width}（图的字符上限），"
+            f"而策略里最小的 max 是 {worst} —— 超长响应会让语义规则判不了")
+
+
 def compile_policy(policy: Policy) -> Dict[str, Any]:
     """把 Policy 编译为 ConstraintSpec 字典（含 sha256 绑定哈希）。
 
@@ -74,6 +160,7 @@ def compile_policy(policy: Policy) -> Dict[str, Any]:
     关键词/字段/工具名在编译期就做排序去重与小写化，保证跨层一致性。
     """
     policy.validate()
+    require_covering_length_bound(policy)   # 语义规则的定长图边界（见该函数）
     constraints: list[Dict[str, Any]] = []
     for rule in policy.rules:
         if rule.kind == "keyword_block":
@@ -138,6 +225,8 @@ def compile_policy(policy: Policy) -> Dict[str, Any]:
                 "budget": int(rule.params["budget"]),
                 "unit": rule.params.get("unit", "calls"),
             })
+        elif rule.kind == "semantic_bound":
+            constraints.append(_semantic_constraint(rule))
         else:
             # 未知/未实现类型：打 stub 标记，说明参考评估器尚未实现
             constraints.append({

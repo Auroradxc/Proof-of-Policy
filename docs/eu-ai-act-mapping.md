@@ -38,7 +38,7 @@ anchor   = Anchor.anchor(digest) { ts, by, seq } + Anchored 事件 # 链上登�
 
 ## 尚未覆盖（后续）
 
-- ~~真实链上锚定（`anchor_on_chain` RPC 后端）与智能合约事件~~ → **已实现**（`contracts/Anchor.sol` + `RpcAnchorBackend`，本地 Anvil 端到端 PASS，见 `docs/reproduce.md` §10；公共测试网/生产部署与密钥托管仍待补）；
+- ~~真实链上锚定（`anchor_on_chain` RPC 后端）与智能合约事件~~ → **已实现**（`contracts/Anchor.sol` + `RpcAnchorBackend`，本地 Anvil 端到端 PASS，见 `docs/reproduce.md` §12；公共测试网/生产部署与密钥托管仍待补）；
 - ~~Ed25519/HSM 签名替换 demo HMAC~~ → **Ed25519 已落地**（P0-3：私钥不动、公钥随 `key.json`/`session.json` 分发，`verify_cert.py --keyring`）；HSM/KMS 托管仍待补；
 - ~~**工具调用轨迹的绑定**~~ → **P1-5 已落地**：轨迹类规则改判**工具网关签发的回执链**
   （`receipts`，删除自填的 `tool_calls`/`token_count`）。链**结构**由电路保证（删/换/重排 → `trace_unbound`

@@ -18,6 +18,31 @@ contracts/cache/
 # anvil 端到端运行期产物
 scripts/examples/out/
 .anchor_deploy.json
+# 语义规则（P2-9）的 ezkl 运行期大文件——**故意不入库**：
+#   pk.ezkl 3.13 GB，可由 `ezkl_prove.py setup` 重算；
+#   kzg.srs 32 MB，是标准 SRS，同样可重算。
+# 入库的是小文件与凭据：settings.json / model.compiled / vk.ezkl / MANIFEST.json。
+# （用 .ezkl 而不是 .key 作扩展名：`*.key` 那条是给 Ed25519 私钥用的，
+#   而 vk.ezkl **必须**入库——它会被 `*.key` 静默吞掉。见 policydsl/semantic.py）
+semantic/artifacts/pk.ezkl
+semantic/artifacts/kzg.srs
+# 出证时的中间产物（-witness/-input），可从响应重算
+semantic/artifacts/witness.json
+semantic/artifacts/input.json
+# 自检记录（`ezkl_prove.py selftest` 重跑即得；分数随 ezkl 版本漂移，不入库）
+semantic/artifacts/selftest.json
+semantic/artifacts/selftest_*.json
+# 陪伴证明：**每条响应一份**，随证书归档；入库的是它的 sha256（写在证书的
+# semantic.companions[].proof_sha256 里）。把一个具体响应的证明当成仓库里的
+# 固定工件，会掩盖"换一条响应就得重出一份"这个事实。
+semantic/artifacts/proof.json
+# ezkl 自己的证明「证书」（ids/onnx_sha256/proof_sha256/score_bp/text）—— 与
+# proof.json 同属**每条响应一份**：它里面的 proof_sha256 指的正是那份不入库的
+# 证明，单独入库只会留下一个指向不存在文件的悬空记录。（无人引用：grep 全仓
+# 没有任何代码读它。）
+semantic/artifacts/cert.json
+semantic/model.resmoke.onnx
+
 # Ed25519 签名私钥（P0-3）——**绝不允许入库**
 .pop-keys/
 *.key

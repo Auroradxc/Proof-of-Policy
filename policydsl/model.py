@@ -15,6 +15,9 @@
   format_check  : 响应必须能按声明的格式（json/int/float）解析
   tool_arg_guard: 工具调用的参数不得包含被禁止的字段
   budget_bound  : 累计调用/令牌预算必须满足上限
+  semantic_bound: 语义规则（P2-9）—— 响应经**确定性特征图 + 训练好的 head**
+                  算出的分数必须越过/低于阈值。**由 ezkl 承担证明**，SP1 电路
+                  只登记委托（见 ``docs/design-semantic-rules.md``）
 
 Python 层是「参考语义」（reference semantics）：单测与 SP1 程序都以它为目标。
 ``compile()`` 把 Policy 编译成 ConstraintSpec（JSON），后者是与电路内 prover
@@ -110,6 +113,29 @@ class Rule:
                 raise PolicyError(f"rule '{self.name}': budget_bound needs int budget >= 0")
             if unit not in ("calls", "tokens"):
                 raise PolicyError(f"rule '{self.name}': budget_bound unit must be 'calls' or 'tokens'")
+        elif self.kind == "semantic_bound":
+            # 语义规则：阈值（万分点）+ 方向必填；模型指纹可选。
+            #
+            # 指纹**可选**是刻意的：多数策略作者只想说「有害概率不得超过 5%」，
+            # 而不想手抄一串 sha256。缺省时由 compile 从仓库里的模型现场解析
+            # （`policydsl.semantic.model_manifest`）并**固化进约束** —— 一旦固化，
+            # 模型再变就会导致 policy_hash 变、证明对不上。显式给出时则要求它与
+            # 实际模型一致，否则编译期直接失败（「用另一个模型去证」必须报错）。
+            thr = self.params.get("threshold_bp")
+            if not isinstance(thr, int) or isinstance(thr, bool) or not (0 <= thr <= 10000):
+                raise PolicyError(
+                    f"rule '{self.name}': semantic_bound needs int 'threshold_bp' in [0,10000]"
+                    f"（万分点刻度，与 ezkl 公开实例同刻度），got {thr!r}")
+            direction = self.params.get("direction")
+            if direction not in ("le", "ge"):
+                raise PolicyError(
+                    f"rule '{self.name}': semantic_bound needs 'direction' in {{'le','ge'}}, "
+                    f"got {direction!r}（le: 分数 <= 阈值；ge: 分数 >= 阈值）")
+            for key in ("onnx_sha256", "model_vkey"):
+                v = self.params.get(key)
+                if v is not None and not (isinstance(v, str) and v):
+                    raise PolicyError(
+                        f"rule '{self.name}': optional '{key}' must be a non-empty string")
         else:
             # 未知规则类型：直接拒绝，防止拼写错误悄悄变成「无操作」
             raise PolicyError(f"rule '{self.name}': unknown kind '{self.kind}'")
@@ -170,15 +196,51 @@ class Violation:
 
 
 @dataclass
+class DelegatedConstraint:
+    """一条**被委托**给外部证明系统的约束（P2-9 的 ``semantic_bound``）。
+
+    逐字段对应 ``pop_types::DelegatedConstraint``（Rust 侧）—— 两侧**必须同形**，
+    否则「链下 golden 结论」与「电路公开值」就无法逐字段比对，而那正是
+    ``tests/`` 里交叉校验的前提。
+
+    语义：「这条约束**没有**被本次判定覆盖；需要另行合取一条陪伴证明（ezkl），
+    其 ``model_vkey`` / ``onnx_sha256`` / ``threshold_bp`` / ``direction`` 必须与
+    这里逐字段相等。」``passed`` 只反映电路/参考层**判得了**的那部分。
+    """
+
+    name: str
+    system: str                # 当前恒为 "ezkl-halo2"，见 pop_types::SEMANTIC_SYSTEM_EZKL
+    model_vkey: str
+    onnx_sha256: str
+    threshold_bp: int
+    direction: str             # "le" | "ge"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为可 JSON 化的字典（形状与 Rust 侧的 serde 输出一致）。"""
+        return {
+            "name": self.name,
+            "system": self.system,
+            "model_vkey": self.model_vkey,
+            "onnx_sha256": self.onnx_sha256,
+            "threshold_bp": self.threshold_bp,
+            "direction": self.direction,
+        }
+
+
+@dataclass
 class CheckResult:
     """一次判定结果：是否通过，以及（若不通过）违规列表与备注。
 
     passed 为 True 当且仅当 violations 为空（语义为 "and"）。
+
+    **``delegated`` 非空时 ``passed`` 的含义要读准**：它只表示「本次判定覆盖到的
+    那些约束都通过了」，而不是「策略被满足了」。见 :class:`DelegatedConstraint`。
     """
 
     passed: bool
     violations: List[Violation] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
+    delegated: List[DelegatedConstraint] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         """序列化为可 JSON 化的字典。"""
@@ -186,6 +248,7 @@ class CheckResult:
             "passed": self.passed,
             "violations": [v.to_dict() for v in self.violations],
             "notes": self.notes,
+            "delegated": [d.to_dict() for d in self.delegated],
         }
 
 

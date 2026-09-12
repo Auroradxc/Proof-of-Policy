@@ -9,8 +9,11 @@ __version__ = "0.1.0"
 # 从各子模块 re-export 常用符号，方便 `from policydsl import Policy` 等用法
 from .model import (  # noqa: F401
     Policy, Rule, Transcript, Violation, CheckResult, PolicyError,
+    DelegatedConstraint,
 )
-from .compile import compile_policy, SPEC_VERSION  # noqa: F401
+from .compile import (  # noqa: F401
+    compile_policy, SPEC_VERSION, require_covering_length_bound,
+)
 from .evaluate import check  # noqa: F401
 from .trace import (  # noqa: F401
     ToolGateway, ToolReceipt, ToolSeal, verify_chain, verify_seal,
@@ -18,6 +21,7 @@ from .trace import (  # noqa: F401
 
 __all__ = [
     "Policy", "Rule", "Transcript", "Violation", "CheckResult",
-    "compile_policy", "SPEC_VERSION", "check",
+    "PolicyError", "DelegatedConstraint",
+    "compile_policy", "SPEC_VERSION", "require_covering_length_bound", "check",
     "ToolGateway", "ToolReceipt", "ToolSeal", "verify_chain", "verify_seal",
 ]

@@ -33,6 +33,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 348 passed, 11 skipped
 | `test_verifier_only` | 8 | `prefer_verifier_only` 三条件、core 不走近路；**P0-4**：`artifact_proof_modes` 收齐多来源、缺失不编默认值、来源不一致如实暴露 |
 | `test_demo_e2e` | 2 | 端到端会话产物结构 |
 | `test_ezkl_evm` | 10 | **T2**：`ezkl_evm.run` 对同步/异步/Future 三种可调用对象都成立（5 例，**不依赖 ezkl**）；真实 ezkl 下裸调用必抛 `no running event loop`（把上游坏行为钉死）、包一层即产出 `Halo2Verifier` 源码与 `verifyProof` ABI、连调互不影响、`reusable` 变体 + VK artifact（`vka.json` 实为 bincode，不是 JSON）、**剥空 `PATH` 也不调用 solc** |
+| `test_semantic` | 29 | **P2-9**：语义规则（学习型规则）的委托与绑定，**含 6 条反例**（换 ONNX、换 vk、改阈值、翻转 `direction`、换证明文件/换响应、图外自算特征）与 fail-closed 四路（缺材料目录/缺陪伴证明/缺 `--response`/多带证明）；**分层**见下 —— 28 例不依赖 ezkl 与 32 MiB `srs` |
 | `test_compose` | 48 | **P1-6**：组合证明 `Compose = (推理完整性 ∧ 策略合规)`。三层 —— ① 参考实现逐位一致（`pop-script --check --job infer` ↔ `policydsl/infer.py`：模型哈希/响应绑定/输入绑定/输出）② 组合绑定的 **5 组反例**（换证明文件·缺失、同 vkey·非期望 vkey、换模型·换输入、两半绑不同 T·送达 T′ 不符、形状·模式·域·policy_hash 重编译）③ **四条驱动接线回归**（`--job` 旗标 ≠ part 的 kind；`part_from_proof` 得把旗标而不是 kind 传下去；验证结果的 `mode` 不能被当展示元信息剥掉；`pop-script --verify` 必须显式给 `--out`，否则在仓库根落一个 `results.json`）——这几条对应 2026-09-12 真端到端跑出来的真 bug，单测当时全绿。真·端到端 5 例由 `POP_TEST_COMPOSE=1` 打开 |
 | **合计** | **348** | |
 
@@ -43,15 +44,23 @@ python3 -m unittest discover -s tests -t . -v   # 期望 348 passed, 11 skipped
 | `test_verifier_only` 中 2 例 | `circuits/testdata/audit_proof/` 没有 compressed fixture | 在 ≥16 GB 机器上跑 `SP1_PROVER=cpu bash scripts/make_audit_proof.sh` |
 | `test_frameworks`（或 `test_mcp`）中 1 例 | 依赖已安装而用例本身是「缺依赖时的行为」 | 设计如此，装了框架就会 skip |
 | `test_policy_binding` 中 2 例 | 「证明层」用例默认关闭（要 `scripts/examples/out/cert_public/` 下的工件与当前 guest ELF 匹配；改过 ELF 就得重新出证） | `POP_TEST_PROOF=1 python3 -m unittest tests.test_policy_binding`（**已实测通过**：Ran 22 … OK，67.1 s） |
+| `test_semantic` 中 1 例 | 「真·端到端」要出一份 ezkl 证明（~61 s、峰值 ~9 GiB） | `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic`（已实测通过） |
 | `test_compose` 中 5 例 | 「真·端到端」要出**两份** SP1 证明（各 ~2 分钟、峰值 ~10.5 GiB） | `POP_TEST_COMPOSE=1 python3 -m unittest tests.test_compose`（**已实测通过**：47 例全跑、无一 skip，563.5 s；加四条接线回归后共 48 例） |
 
+#### `test_semantic` 为什么敢把 ezkl 关在门外
+
+六条反例在 `verify_companion` 的**第 1–5 步**就被挡住（指纹比对、证明文件哈希、
+本地 `vk` 哈希、`encode(T′)` 逐位比对），而这几步不跑 ezkl 验证器 ——
+所以 28 例在**没有 ezkl、没有 32 MiB `kzg.srs`** 的机器上也能全绿。
+第 3 步之后才是"跑 ezkl 验证器"（`verify_proof=True`），它由那条默认关闭的端到端
+用例覆盖。**把最后一颗钉子与整面墙分开**，是为了让反例能在 CI 上天天跑。
 
 > `test_binding` 的 19 例**全部实际执行**：它靠 `pop-script --check`（秒级、不出证明）做
 > Python↔Rust 逐字节比对，不需要真证明，因此不受 `POP_TEST_PROOF` 门控。
 
 > 这是当前环境下的计数（`langchain`/`langgraph`/`mcp`、`pop-script`/`pop-verify`、
 > 以及 `ezkl`/`torch` 均已安装，因此真实框架用例、Rust 路径用例与 ezkl 用例**实际执行**了，
-> 而不是跳过）。**CI 上的 skip 数会更多（5 → 10）**：CI 不装 `ezkl`/`torch`，
+> 而不是跳过）。**CI 上的 skip 数会更多（11 → 16）**：CI 不装 `ezkl`/`torch`，
 > `test_ezkl_evm` 里需要真实 ezkl 的 5 例（`TestEzklEvmVerifier`）整组跳过，只有不依赖 ezkl 的
 > `TestRunHelper` 5 例照跑 —— 这是设计内的，P2-9 的可选依赖不进 CI。
 
@@ -104,6 +113,7 @@ core 边车不得走快路径 —— 这些保证正向检查**不是恒真**的
 | `bench_cycles.py` | **zkVM 周期数**（`pop-script --execute`） | 每点数秒 | `bench/results/cycles.{json,md}` |
 | `bench_proofs.py` | **证明墙钟时间 + 工件大小 + 峰值内存** | 每点 ~100–150 s | `bench/results/proofs.{json,md}` |
 | `bench_verify.py` | **验证成本**（冷启动 CLI / vkey setup / 纯验证） | 每次 ~20 s | `bench/results/verify.{json,md}` |
+| `bench_semantic.py` | **ezkl 陪伴证明的成本**（setup / prove / verify） | 真出 ezkl 证明 | `bench/results/semantic.{json,md}` |
 | `bench_compose.py` | **组合证明的成本**（两半各自 prove/verify + 组合层开销） | 真出两份 SP1 证明 | `bench/results/compose.{json,md}` |
 
 ```bash
@@ -182,6 +192,28 @@ SP1_PROVER=cpu python3 bench/bench_compose.py
 `pop-verify`（`05` §5）正是为了消掉 cold CLI 里的证明器构造而存在的：它只依赖 `sp1-verifier`。
 `bench/results/verify.md` 里那句 “A verifier-only path … is future work” 是**写入时的状态**，
 现已实现（`circuits/verifier`、`policydsl/verifier.py`）；重跑该 benchmark 可更新这一行。
+
+### 3.5 语义规则（ezkl）的出证代价（`bench/results/semantic.md`）
+
+P2-9 的语义规则走**另一套证明系统**（ezkl / halo2），代价必须单独测
+（`bench/bench_semantic.py`，每个阶段**分进程**跑 —— 见下）：
+
+| 阶段 | 耗时 | 峰值常驻 | 频次 |
+|---|---:|---|---|
+| setup | 48.2 s | 4.76 GiB | 每策略一次 |
+| prove | 76.6 s（3 次中位） | 8.72 GiB，proof 40 KiB | **每条响应** |
+| verify | 1.0 s | — | 每条响应 |
+
+三个结论（也写进了 [`../design-semantic-rules.md`](../design-semantic-rules.md) §8）：
+
+1. **`prove` 的成本落在在线路径上**：每条响应 77 s。这把语义规则定位成**离线审计/
+   批量核查**的能力，不是实时护栏 —— 实时护栏仍需轻量的确定性规则。
+2. **峰值 ~9 GiB**：`setup` 与 `prove` 必须**分进程**跑，否则两段峰值叠加会在
+   12 GB 机器上 OOM。`bench_semantic.py` 的 `_run_phase` 就是为此存在的。
+3. **入不入库**：`vk.ezkl`（802 KiB）**必须入库** —— 它是验证方唯一的凭据；
+   `pk.ezkl`（2.92 GiB）与 `kzg.srs`（32 MiB）不入库（可重算）；`proof.json`（40 KiB）
+   **也不入库** —— 它是**每条响应一份**的产物，随证书归档，入库的只是它的 sha256
+   （写在证书的 `semantic.companions[].proof_sha256` 里）。
 
 ### 3.6 组合证明（P1-6）的成本（`bench/results/compose.md`）
 

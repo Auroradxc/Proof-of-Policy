@@ -23,7 +23,7 @@
 
 ---
 
-## 2. 六种规则类型
+## 2. 七种规则类型
 
 规则是 `Rule(kind, name, params)`。`kind` 决定语义与参数 schema，`name` 是**证书与违规记录里的稳定标识**。
 
@@ -35,8 +35,15 @@
 | `format_check` | `format: json\|int\|float` | `response` | ✅ | 响应整体须能按规范子集解析 |
 | `tool_arg_guard` | `forbidden_fields: [str]`（非空），可选 `tools: [str]` | **工具回执链** `receipts` | ✅ | 工具参数不得含被禁字段（`tools` 非空时限定范围） |
 | `budget_bound` | `budget:int ≥ 0`，`unit: calls\|tokens` | `receipts`（calls）/ `response`（tokens，电路内自算） | ✅ | 累计量不得超过 `budget` |
+| `semantic_bound` | `threshold_bp: int ∈ [0,10000]`，`direction: le\|ge` | `response`（经模型前向） | ❌ **委托**（P2-9） | 模型给出的分数须 `<＝`/`>＝` 阈值；由 ezkl 陪伴证明判定，电路只登记进公开值 `delegated` |
 
-> 六类**全部入电路**（P7-b 之后）。两点见 `../security-model.md` §5：
+> 前六类**全部入电路**（P7-b 之后）；第七类 `semantic_bound`（P2-9）**不在电路内判定**，
+> 而是**委托**给 ezkl/halo2 伴侣证明 —— 见 [`../design-semantic-rules.md`](../design-semantic-rules.md)
+> 与 [`05`](05-zk-circuits.md) §2.3b。两条它独有的编译期约束：① 策略必须自带一条
+> `max ≤ MAX_CHARS` 的 `length_bound`（否则长响应会**静默截断**，尾部逃过判定）；
+> ② 含语义规则的策略**只能走公开模式**（`encode(T)` 必须进 ezkl 公开实例，与私密模式不相容）。
+>
+> 两点见 `../security-model.md` §5：
 > ① `budget_bound/tokens` 的口径自 P1-5 起改为**电路内自算**（响应按固定空白字节集切分的 run 数，
 > **不是**证明者声明值，也**不是**真实分词器）——对既有策略是**不兼容变更**，`policy_hash` 随之改变；
 > ② agent 工具路径证书的 `zk:true` 表示「规则可证」，是否**附了证明**看 `binding.vkey_hash`（`unproven` = 仅链下判定），而这一档证据隐藏程度看 `binding.proof_mode`（P0-4，见 [`03`](03-certificate.md) §2）。

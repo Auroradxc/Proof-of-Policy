@@ -28,7 +28,7 @@
 
 ```bash
 cd Proof-of-Policy/03_代码仓库/zk-policy     # 仓库根（目录曾名为“方向二”，已重命名）
-python3 -m unittest discover tests -v          # 期望 220 passed（5 skip：2 个 compressed fixture + 2 个 POP_TEST_PROOF 门控 + 1 设计内）
+python3 -m unittest discover tests -v          # 期望 348 passed（11 skip：2 个 compressed fixture + 2 个 POP_TEST_PROOF 门控 + 1 个 POP_TEST_EZKL 门控 + 5 个 POP_TEST_COMPOSE 门控 + 1 设计内）
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json | head    # 编译出 ConstraintSpec
 ```
 
@@ -96,7 +96,6 @@ SP1_PROVER=cpu python3 scripts/verify_cert.py \
 > —— 这正是「中间人换响应」被拦下的样子。不带 `--response` 时该项只做证书内部自洽比对，
 > 报告会写明来源仅来自证书本身。
 
-## 7. 复现：一键端到端 demo + 截图
 ## 7. 复现：组合证明（P1-6，可选）
 
 ```bash
@@ -120,6 +119,40 @@ SP1_PROVER=cpu python3 scripts/compose_proof.py \
 
 ---
 
+## 8. 复现：语义规则（P2-9，可选，重依赖）
+
+第七类规则 `semantic_bound`（「回复的有害概率不得高于阈值」这类**学不出形式证明**的规则）
+**不在 SP1 电路内判定**：电路只把「这条被委托了」登记进公开值 `delegated[]`，
+判定由一条 **ezkl/halo2 陪伴证明**补上，验证方必须**合取**二者。因此这一段是**独立的一条链**，
+需要 `requirements-ezkl.txt` 里的那套依赖（torch / onnx / ezkl），且 `semantic/artifacts/` 会占 ~3 GB
+（`pk.ezkl` 2.92 GiB 与 `kzg.srs` 32 MiB 可重算、不入库；`vk.ezkl` 802 KiB 入库）。
+
+```bash
+python3 -m pip install --user -r requirements-ezkl.txt   # 网络对策见 §0
+python3 scripts/ezkl_prove.py info       # 只看产物清单与规模（秒级，不出证）
+python3 scripts/ezkl_prove.py selftest   # 四条文本端到端自检（含同形异义反例）
+POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic   # 真·端到端一例（~61 s / 峰值 ~9 GiB）
+```
+
+**这两条命令必须分进程**：ezkl 的 `setup` 与 `prove` 峰值叠加会在 12 GB 机器上 OOM
+（setup 4.76 GiB + prove 8.72 GiB，见 `bench/results/semantic.md`）——`scripts/ezkl_prove.py`
+本身就是分阶段跑的，别把两步并进一个进程。
+
+⚠️ **三条硬边界**（论证见 [`design-semantic-rules.md`](design-semantic-rules.md) 的**引理 L7**）：
+
+1. **`passed=true` 且 `delegated` 非空 ≠ 策略被满足**。`verify_cert.py` 因此打印**两行**：
+   `RESULT:` 说这张证书真不真，`合规:` 说策略满足没满足。带 `--semantic-dir` 时它会核
+   `{system, model_vkey, onnx_sha256, threshold_bp, direction}` 与陪伴证明的公开实例是否逐字段相等。
+2. **语义规则只支持公开模式** —— `encode` 在词表上单射，公开实例可反查原文；策略含语义规则时
+   私有模式**直接 panic**（fail closed）。
+3. **随包模型是演示用小模型**，不构成任何语义安全保证（与 §4.2 的 `tokens` 口径同一类诚实标注）。
+
+> 最值得跑的一条是 `selftest`：它先演示现有 `keyword_block` 被同形异义字（`wеaponize` 的西里尔 `е`）
+> **绕过**，再展示语义规则把同一句拦下 —— 这是论文里那条绕过实验的可复现版本。
+
+---
+
+## 9. 复现：一键端到端 demo + 截图
 
 ```bash
 SP1_PROVER=cpu python3 scripts/demo_e2e.py                 # 真实会话 + 真实 SP1 证明（加 --no-prove 秒级）
@@ -128,13 +161,13 @@ python3 scripts/make_shots.py --run-demo                   # 生成 docs/demo/*.
 ```
 期望：`verify_session` 全 PASS；`docs/demo/session_report.html`、`session_summary.png`、`verify_result.png` 生成。
 
-## 8.（可选）框架适配
+## 10.（可选）框架适配
 
 ```bash
 bash scripts/install_frameworks.sh     # langchain / langgraph / mcp；装好后真实框架测试自动启用
 ```
 
-## 9.（可选）审计路径：verifier-only（免构造证明器）
+## 11.（可选）审计路径：verifier-only（免构造证明器）
 
 ```bash
 # a) 生成 compressed 证明（默认 core 不变；此命令额外产出验证边车 .bytes/.pv/.vkh/.verify.json）
@@ -154,7 +187,7 @@ python3 scripts/verify_cert.py --cert .../cert.json --pack policy_packs/eu_ai_ac
 > ⚠️ **内存**：`compressed` 证明需 **≥16 GB**（本机 12 GB 实测 OOM，峰值 anon-RSS 11.0 GB；Core 仍需 ~10 GB）。
 > 需要 fixture 时运行 `SP1_PROVER=cpu bash scripts/make_audit_proof.sh`（生成后 `tests/test_verifier_only.py` 的用例自动启用）。
 
-## 10.（可选）链上锚定：真跑本地 Anvil
+## 12.（可选）链上锚定：真跑本地 Anvil
 
 把每张**证书摘要**（`cert_digest` = 证书载荷的 SHA-256）登记进 `contracts/Anchor.sol`，
 得到一条公共、带时间戳、与本地账本无关的存在性证明。链上只存 32 字节摘要，不存响应内容。
@@ -203,13 +236,14 @@ python3 scripts/verify_session.py --session .../session.json \
 
 ## 验收判据（复现成功）
 
-- `python3 -m unittest discover tests` → **220 passed（5 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = 设计内「依赖已装」用例）；
 - `python3 -m unittest discover tests` → **348 passed（11 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = 设计内「依赖已装」用例）；
 - `scripts/prove_policy.py` → **RESULT: PASS**；
 - `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **RESULT: host 14/14  prove 14/14  PASS**
   （真实证明分 4 块跑，见 §4 的说明；`--no-prove` 时跳过真实证明）；
 - `verify_cert.py`（带 `--response T′`）/ `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证与响应绑定核对）；
 - `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 12/12 + 反例对照，见 §12）；
+- `python3 scripts/ezkl_prove.py selftest` → **四条文本全 PASS**（含同形异义反例，见 §8）；
+- `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic` → **OK**（真·端到端一例，~61 s）。
 
 ## 故障排查
 
@@ -226,5 +260,5 @@ python3 scripts/verify_session.py --session .../session.json \
 
 > 安全/边界说明：证书签名为 **Ed25519**（`policydsl/cert.py` + `policydsl/keys.py`，P0-3）——验证方只持公钥、无法伪造；
 > 第三方验签用 `verify_cert.py --keyring <公钥>`（或证书同目录的 `key.json`）。**HSM/KMS 托管仍待补**；
-> 锚定默认走**文件账本**（离线可验），也可 `--rpc/--contract` 真上链（见 §10，本地 Anvil 端到端 PASS）；
+> 锚定默认走**文件账本**（离线可验），也可 `--rpc/--contract` 真上链（见 §12，本地 Anvil 端到端 PASS）；
 > 上链交易用明文私钥参数（demo 用 Anvil 公开测试键），生产应换 keystore/HSM。

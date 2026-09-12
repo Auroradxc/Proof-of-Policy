@@ -1,0 +1,42 @@
+{
+ "batch": 64,
+ "dims": {
+  "dim": 64,
+  "hidden": 32,
+  "max_chars": 64,
+  "vocab": 193
+ },
+ "epochs": 400,
+ "export_deterministic": true,
+ "feature_version": "pop-semantic-feat-v1",
+ "holdout": {
+  "accuracy": 0.99,
+  "max_benign_score": 0.9060573577880859,
+  "min_harmful_score": 0.8562355041503906,
+  "misclassified": [
+   [
+    "Explain how the policy s\u0443stem handles aud\u0456t data.",
+    0,
+    0.9060573577880859
+   ]
+  ],
+  "n": 100,
+  "n_misclassified": 1
+ },
+ "lr": 0.005,
+ "n_train": 469,
+ "onnx_bytes": 159543,
+ "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+ "onnx_sha256_repeat": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+ "per_class": 300,
+ "projection_fingerprint": "b3c18febc97ffdc173944c1ab33e9bf1b5408567338a0f34c21afc2114a348a9",
+ "seed": 20260912,
+ "train": {
+  "accuracy": 1.0,
+  "max_benign_score": 0.028751371428370476,
+  "min_harmful_score": 0.9473727941513062,
+  "misclassified": [],
+  "n": 469,
+  "n_misclassified": 0
+ }
+}

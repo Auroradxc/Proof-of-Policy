@@ -261,6 +261,61 @@ pub enum SpecConstraint {
     },
     /// 累计预算：工具调用次数，或声明的 `token_count`。
     BudgetBound { name: String, budget: u32, unit: BudgetUnit },
+    /// **语义规则的委托**（P2-9）：这条约束由外部证明系统（ezkl / halo2）承担，
+    /// SP1 电路**不判定**它，只在公开值里**如实登记**（见 `DelegatedConstraint`）。
+    ///
+    /// 为什么必须登记，而不是「遇到了就跳过」：策略哈希承诺的是整份规范字节，
+    /// 其中包括这条约束 —— 验证方拿着策略包 π 就知道 π 里有语义规则，所以
+    /// 「跳过」本身不会让 π 被掉包。真正的风险是**验证方只验 SP1 证明**：一个
+    /// 只跑 `pop-verify` 的第三方会把这份证明当成一条完整的合规证明。把委托写进
+    /// 公开值，等于让「这份证明单独不足以判定策略」成为**可机检**的事实，
+    /// 而不是一句写在文档里的免责声明。
+    SemanticBound {
+        name: String,
+        /// 承担该约束的模型的 ezkl 验证钥匙指纹（`vk.ezkl` 的 sha256）。
+        model_vkey: String,
+        /// ONNX 图的 sha256 —— 信任边界 ① 的落地形式：权重被承诺。
+        onnx_sha256: String,
+        /// 阈值，单位**万分之一**（与证书、与 ezkl 公开实例同刻度）。
+        threshold_bp: u32,
+        /// 判定方向：分数应「不超过」还是「不低于」阈值。
+        direction: BoundDirection,
+    },
+}
+
+/// `semantic_bound` 的判定方向。
+///
+/// 用两值枚举而不是一个布尔或带符号阈值：`le`（`score <= threshold_bp`）与
+/// `ge`（`score >= threshold_bp`）在链下**同名同义**，链上照抄，避免「方向」
+/// 这种小开关在某一层被默认掉。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BoundDirection {
+    /// `score <= threshold_bp` —— 例如「P(有害) 必须足够低」。
+    Le,
+    /// `score >= threshold_bp` —— 例如「P(满足某必需属性) 必须足够高」。
+    Ge,
+}
+
+/// 承担语义约束的证明系统标识（进公开值，验证方据它选验证器）。
+pub const SEMANTIC_SYSTEM_EZKL: &str = "ezkl-halo2";
+
+/// 一条被**委托**给外部证明系统的约束（P2-9 的 `semantic_bound`）。
+///
+/// 出现在 `ProofOutput.delegated` 里，语义是：「本条约束**没有**被这份证明判定；
+/// 验证方必须另行合取一条陪伴证明，其模型指纹、阈值与方向必须与这里**逐字段
+/// 相等**。」字段之所以全部重复一遍约束里的内容，是为了让公开值**自足** ——
+/// 验证方不必（也不该）从别处取这些值来比对，否则「比对」就退化成了「信任
+/// 另一处声明」。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DelegatedConstraint {
+    pub name: String,
+    /// 承担该约束的证明系统（见 [`SEMANTIC_SYSTEM_EZKL`]）。
+    pub system: String,
+    pub model_vkey: String,
+    pub onnx_sha256: String,
+    pub threshold_bp: u32,
+    pub direction: BoundDirection,
 }
 
 /// `pattern_block.nfa` 的包装（Python 侧为 `{"nfa": {"compiled": [...]}}`）。
@@ -355,6 +410,19 @@ pub struct ProofOutput {
     pub trace_root: String,
     pub passed: bool,
     pub violations: Vec<Violation>,
+    /// **本次判定中被委托出去的约束**（P2-9 的 `semantic_bound`），按约束在策略
+    /// 里出现的顺序排列。空表示「这份证明自己就够了」。
+    ///
+    /// 非空时的语义很重要，务必读清楚：`passed` 只反映**电路内可判定的**那部分
+    /// 约束。一份 `passed = true` 且 `delegated` 非空的证明，**不等于**策略被满足
+    /// —— 它等于「电路内那部分满足了，剩下的几条请去核陪伴证明」。验证方必须对
+    /// `delegated` 里每一条都找到匹配的陪伴证明并验证，否则必须**拒绝**
+    /// （fail closed）。少了这一步，语义规则就成了一个「看起来验过了」的空壳。
+    ///
+    /// 之所以放进公开值而不是只写在证书里：证书是出证方写的，公开值是电路算的。
+    /// 放在公开值里，验证方才能**独立**看出「这份证明需要陪伴」，而不必信任
+    /// 出证方的转述。见 [`DelegatedConstraint`]。
+    pub delegated: Vec<DelegatedConstraint>,
 }
 
 // --------------------------------------------------------------------------- //
@@ -548,6 +616,9 @@ pub fn evaluate(
     receipts: &[ToolReceipt],
 ) -> ProofOutput {
     let mut violations: Vec<Violation> = Vec::new();
+    // 被委托给外部证明系统的约束（P2-9）。**只登记、不判定** —— 判不了，
+    // 见 `DelegatedConstraint`。登记它的原因见 `SpecConstraint::SemanticBound`。
+    let mut delegated: Vec<DelegatedConstraint> = Vec::new();
 
     // 回执链的**结构**校验，只做一次（tool_arg_guard / budget_bound/calls
     // 都要用）。空链合法 —— 一次工具都没调用是正常情形，不是「链坏了」。
@@ -661,6 +732,26 @@ pub fn evaluate(
                     });
                 }
             }
+            SpecConstraint::SemanticBound {
+                name, model_vkey, onnx_sha256, threshold_bp, direction,
+            } => {
+                // 电路内**证明不了**这条约束：判定要跑一遍 ONNX 前向（且那是 ezkl
+                // 的地盘）。所以这里既不判 pass 也不判 violate，只把「这条被委托了」
+                // 记进公开值，让验证方去合取陪伴证明。
+                //
+                // 注意**不能**在这里 push 一条 violation 来表达「未判定」：那会让
+                // `passed` 变 false，而 `passed=false` 的语义是「策略被违反」，
+                // 那不是事实（我们并不知道它是否被违反）。用 `delegated` 单独表达
+                // 「未判定」，才不会被误读成「已违反」。
+                delegated.push(DelegatedConstraint {
+                    name: name.clone(),
+                    system: SEMANTIC_SYSTEM_EZKL.into(),
+                    model_vkey: model_vkey.clone(),
+                    onnx_sha256: onnx_sha256.clone(),
+                    threshold_bp: *threshold_bp,
+                    direction: *direction,
+                });
+            }
         }
     }
 
@@ -683,6 +774,7 @@ pub fn evaluate(
         trace_root: trace_root(receipts),
         passed: violations.is_empty(),
         violations,
+        delegated,
     }
 }
 
@@ -855,6 +947,7 @@ pub fn outcome_value(out: &Outcome) -> serde_json::Value {
             "trace_root": o.trace_root,
             "passed": o.passed,
             "violations": o.violations,
+            "delegated": o.delegated,
         }),
         Outcome::Private(o) => serde_json::json!({
             "mode": "private",
@@ -865,6 +958,14 @@ pub fn outcome_value(out: &Outcome) -> serde_json::Value {
             "response_commitment": o.response_commitment,
             "violations": o.violations,
             "redaction": o.redaction,
+            // 私密模式下**恒为空**：语义规则需要响应本身进 ezkl 的公开实例，
+            // 而私密模式的前提正是「响应不进公开值」。二者不相容，电路在
+            // `evaluate_private` 入口直接拒绝（见那里的说明），所以这里不可能
+            // 出现非空值 —— 保留字段是为了两种模式**形状一致**，让验证方的
+            // 逐字段比对不必区分模式。
+            "delegated": Vec::<DelegatedConstraint>::new(),
+        }),
+        Outcome::Infer(o) => serde_json::json!({
             "mode": "infer",
             "domain": INFER_DOMAIN_STR,
             "model_hash": o.model_hash,
@@ -962,6 +1063,31 @@ fn mask_within_spans(mask: &[u32], spans: &[(u32, u32)]) -> bool {
 /// 响应承诺与可选的脱敏证明。
 pub fn evaluate_private(req: &PrivateRequest, policy_hash: &str,
                         constraints: &[SpecConstraint]) -> PrivateOutput {
+    // ---- v1 边界：语义规则**只支持公开模式**（P2-9） ----------------------
+    //
+    // 语义规则的陪伴证明（ezkl）会把 `encode(T)` 放进**公开**实例：否则验证方
+    // 无法核对「被 ezkl 证明的那段文本就是这条响应」（信任边界 ③），而若不给
+    // 公开实例，验证方就只能相信出证方转述的一个分数，那正是 P0-1 的形态。
+    //
+    // 于是它天然与私密模式不相容：私密模式承诺的正是「响应不进公开值」。
+    // 两条要求同时满足是不可能的，所以这里**直接拒绝**（fail closed），而不是
+    // 悄悄把语义约束略过 —— 后者会产出一份 `passed=true` 却没有判定语义规则的
+    // 私密证书，看上去完全正常。
+    //
+    // 编译期还有一道同样的检查（`policydsl/compile.py`，报错更友好）；这里是
+    // 电路内的兜底：手写的 ProofRequest 绕不过编译期检查。
+    if let Some(SpecConstraint::SemanticBound { name, .. }) = constraints
+        .iter()
+        .find(|c| matches!(c, SpecConstraint::SemanticBound { .. }))
+    {
+        panic!(
+            "语义规则 '{}' 需要公开模式：ezkl 陪伴证明必须把 encode(T) 放进公开实例，\
+             否则验证方无法把证明绑到响应上（信任边界 ③）。私密模式下无法证明含\
+             语义规则的策略 —— 这是刻意的 fail-closed（P2-9 v1 边界）。",
+            name
+        );
+    }
+
     let public = evaluate(policy_hash, constraints, &req.response, &req.nonce,
                           &req.receipts);
     let violations = public

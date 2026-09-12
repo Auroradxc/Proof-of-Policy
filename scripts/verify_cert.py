@@ -60,6 +60,7 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
 from policydsl import anchor, cert, challenge, commit, keys, trace, verifier
+from policydsl import semantic as S
 from policydsl.compile import compile_policy
 from policydsl.model import Policy, Rule
 
@@ -100,10 +101,21 @@ def main() -> int:
     ap.add_argument("--gateway-key", default=None,
                     help="工具网关公钥（P1-5，形式同 --keyring）：给了就对回执链逐条验签，"
                          "并核对会话末端承诺 trace_seal（P1-5b，拦截尾）")
+    ap.add_argument("--semantic-dir", type=Path, default=None,
+                    help="P2-9：语义规则的 ezkl 材料目录（vk.ezkl / settings.json / srs / "
+                         "陪伴证明）。策略含 semantic_bound 时**必给** —— 那部分不在 SP1 "
+                         "证明里，不给就核不了（本工具会 fail closed）")
+    ap.add_argument("--semantic-skip-ezkl", action="store_true",
+                    help="P2-9：只核对指纹与响应绑定，**不跑 ezkl 验证器**。用于没有 ezkl 的"
+                         "环境；此时「证明本身有效」这一条未被核验，结果会如实标注")
     args = ap.parse_args()
 
     env = json.loads(args.cert.read_text(encoding="utf-8"))
     results = []
+    # 送达的响应 T′ 原文（**不加工**，见 scripts/ezkl_prove.py::_read_response）。
+    # 语义规则的陪伴证明要对着它核对 encode(T′)，逐字符都必须一致。
+    response_text = (args.response.read_text(encoding="utf-8")
+                     if args.response is not None else None)
 
     # 1) 签名校验（P0-3）：非对称 —— 验证方只拿公钥，无法伪造签名。
     try:
@@ -353,6 +365,63 @@ def main() -> int:
                 why_seal = ("seal 与链长/链尾一致；未给 --gateway-key，seal 签名未验")
             results.append(("trace_seal", ok_seal, why_seal))
 
+    # 3e) 语义规则（P2-9）：**SP1 证明判不了的那部分**，必须由陪伴证明补上。
+    #
+    #     这一块的特殊之处：它是本项目里**唯一**一处「证明通过了、但结论还不完整」
+    #     的地方。`outcome.delegated` 非空 == 电路在说「这几条我没判，你去找陪伴
+    #     证明」。所以这里的默认行为必须是 **fail closed**：delegated 里有一条
+    #     找不到对应的 companion，就是 FAIL —— 而不是「跳过」。
+    #
+    #     跳过会得到一个**静默的空壳**：证书看起来全绿，而语义规则那条根本没被
+    #     判定。这正是 P0-1 的形态（「看起来验过了」），只是换了个位置。
+    delegated = (payload.get("outcome") or {}).get("delegated") or []
+    # 语义规则的**满足情况**（与证书真伪分开记，见下面的「合规」行）。
+    semantic_satisfied: list = []
+    if delegated:
+        comps = ((payload.get("semantic") or {}).get("companions")) or []
+        by_rule = {c.get("rule"): c for c in comps if isinstance(c, dict)}
+        if not args.semantic_dir:
+            results.append(("semantic", False,
+                            f"策略里有 {len(delegated)} 条语义规则被委托给陪伴证明，"
+                            f"但没有给 --semantic-dir —— 无法核验；"
+                            f"（这些规则**没有被 SP1 证明判定**，不能默认通过）"))
+        elif response_text is None:
+            # 绑定核对要拿 T′ 重算 encode(T′)。没有 T′ 就核不了第 5 步，
+            # 而第 5 步正是「这份 ezkl 证明说的是这条响应」的**唯一**依据。
+            results.append(("semantic", False,
+                            "策略含语义规则但没给 --response：无法把陪伴证明绑到送达的"
+                            "响应上（信任边界 ③）—— 只验 ezkl 证明本身是不够的"))
+        else:
+            for dep in delegated:
+                rule = dep.get("name")
+                comp = by_rule.get(rule)
+                if comp is None:
+                    results.append((f"semantic[{rule}]", False,
+                                    "证书里没有这条规则的陪伴证明（delegated 非空而 "
+                                    "companions 缺失/不全）—— 语义规则未被判定"))
+                    continue
+                ok_c, why_c, hits = S.verify_companion(
+                    dep, comp, response_text, args.semantic_dir,
+                    verify_proof=not args.semantic_skip_ezkl)
+                if ok_c and args.semantic_skip_ezkl:
+                    why_c += "（--semantic-skip-ezkl：**未**跑 ezkl 验证器，证明有效性未核）"
+                # 这一栏是**证书真伪**：证明是真的、绑在这条响应上。
+                # 「规则是否满足」是证书内容，另记在下面的合规行里 —— 见
+                # `policydsl.semantic.verify_companion` 的返回值说明。
+                results.append((f"semantic[{rule}]", ok_c, why_c))
+                if ok_c:
+                    semantic_satisfied.append((rule, hits))
+    else:
+        # 电路说「我全判了」。但证书若**多带**了一份 companion，说明出证方与电路
+        # 对策略的理解不一致 —— 宁可报出来，也不要默默忽略一个多余的证明。
+        comps = ((payload.get("semantic") or {}).get("companions")) or []
+        if comps:
+            results.append(("semantic", False,
+                            f"公开值里 delegated 为空，证书却带了 {len(comps)} 份陪伴证明"
+                            f"—— 证书与证明对策略的描述不一致"))
+        else:
+            results.append(("semantic", True, "策略里没有语义规则（无需陪伴证明）"))
+
     # 4) 锚定账本：链完整 + 证书摘要确实在账本中
     ok_chain, reason = anchor.verify_ledger(args.ledger)
     digest = cert.cert_digest(payload)
@@ -384,6 +453,33 @@ def main() -> int:
     for name, ok, detail in results:
         print(f"  [{'PASS' if ok else 'FAIL'}] {name:14s} {detail}")
     print("\nRESULT: " + ("PASS" if ok_all else "FAIL"))
+
+    # 合规行（P2-9）：**与 RESULT 分开**，因为二者是两件事。
+    #
+    #   RESULT  = 这张证书是**真的**吗（签名/绑定/证明都对得上）。一张如实记录
+    #             违规的证书同样是真证书 —— 仓库里 `--expect violate` 的演示就
+    #             靠这一点。所以它与 `passed` 无关。
+    #   合规    = 证书**说的是不是「策略满足了」**。SP1 的 outcome.passed 只覆盖
+    #             判得了的那部分；被委托出去的语义规则必须**逐条**满足，否则
+    #             整体不算合规 —— 少了这一行，一张 `passed=true` 而语义规则没过
+    #             的证书会被读成合规，那正是本项目的头号失败形态。
+    #
+    # 只有真的核过语义规则时才下结论：`--semantic-skip-ezkl` 下证明有效性未核，
+    # 这里如实说「未核」，而不是顺着 outcome.passed 说「合规」。
+    if semantic_satisfied:
+        sp1_ok = bool(payload["outcome"].get("passed"))
+        sem_ok = all(h for _, h in semantic_satisfied)
+        if args.semantic_skip_ezkl:
+            verdict = "未核（--semantic-skip-ezkl）"
+        else:
+            verdict = "PASS" if (sp1_ok and sem_ok) else "FAIL"
+        unmet = [r for r, h in semantic_satisfied if not h]
+        why = f"（SP1 部分 passed={sp1_ok}"
+        if unmet:
+            why += f"；未满足的语义规则：{', '.join(unmet)}"
+        why += "）"
+        print(f"合规: {verdict} {why}" if verdict != "未核（--semantic-skip-ezkl）"
+              else f"合规: {verdict}")
     return 0 if ok_all else 1
 
 

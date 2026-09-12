@@ -1,0 +1,23 @@
+{
+  "id": "semantic-demo-v1",
+  "version": "0.1.0",
+  "description": "P2-9 demo: a learned semantic rule (weaponize/harmful-intent) alongside in-circuit rules. The length_bound is not optional — the feature graph is fixed-width, so the policy must itself bound the response to the graph's capacity (see policydsl/compile.py::require_covering_length_bound).",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "keyword_block",
+      "name": "no_bad_topics",
+      "params": { "keywords": ["exploit", "doxxing", "weaponize"] }
+    },
+    {
+      "kind": "length_bound",
+      "name": "bounded_reply",
+      "params": { "min": 1, "max": 64 }
+    },
+    {
+      "kind": "semantic_bound",
+      "name": "low_harm_probability",
+      "params": { "threshold_bp": 5000, "direction": "le" }
+    }
+  ]
+}

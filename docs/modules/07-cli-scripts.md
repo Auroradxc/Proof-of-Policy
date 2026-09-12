@@ -19,6 +19,7 @@
 | `verify_cert.py` | **第三方**独立验证单张证书 | `pop-script` / `pop-verify` | 验证已有证明 | ~20 s |
 | `demo_e2e.py` | 一键真实会话（LangChain + MCP + zk + 锚定） | `pop-script` | 可 `--no-prove` | 秒级 / ~70 s |
 | `verify_session.py` | **第三方**独立验证整个会话包 | 同上 | 验证已有证明 | 秒级 |
+| `ezkl_prove.py` | 语义规则（`semantic_bound`）的 ezkl 出证/验证/自检 | 否（需 ezkl+torch） | 否（ezkl 自己的证明） | setup ~48 s / prove ~77 s |
 | `compose_proof.py` | **组合证明**（P1-6）：策略半 + 推理半各出一份 → 合成 → 联合验证 | `pop-script` | 是（可 `--no-prove` / `--reuse-proofs`） | 两次出证，各 ~2 分钟 |
 | `deploy_anchor.py` | 部署 `Anchor.sol`（字节码来自入库 artifact） | 否 | 否 | 秒级 |
 | `make_shots.py` | 从会话产物生成截图/HTML/SVG | 否 | 否 | 秒级 |
@@ -98,7 +99,7 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
 python3 scripts/issue_cert.py --pack P --response R --out-dir D \
     [--mode public|private] [--proof-mode core|compressed|groth16|plonk] \
     [--nonce auto|none|<hex>] [--key 私钥.pem] \
-    [--no-prove] [--ledger L] [--rpc URL --contract 0x…] [--private-key KEY]
+    [--no-prove] [--no-semantic] [--ledger L] [--rpc URL --contract 0x…] [--private-key KEY]
 ```
 
 `--nonce` 默认 `auto`：现场 `challenge.new_nonce()` 出一个 32 字节随机挑战值，
@@ -120,6 +121,15 @@ python3 scripts/issue_cert.py --pack P --response R --out-dir D \
 - **签名（P0-3）**：`keys.signer_from_env(--key)` 取 Ed25519 私钥（缺省 `$POP_SIGNING_KEY`，
   都没有就在 `.pop-keys/signing.key` **生成一把新的**，0600、已 gitignore）。公钥写进
   `<out-dir>/key.json` —— 验证方只需要它。
+- **语义规则的陪伴证明（P2-9）**：电路公开值里的 `delegated` 非空时，自动调
+  `scripts/ezkl_prove.py prove` 出一份 ezkl 陪伴证明（**~77 s / 峰值 ~9 GiB**，
+  见 `08` §3.5），并把每个约定约束的指纹写进证书的 `semantic.companions[]`。
+  同一份证明被所有规则共用（v1 只有**一个**模型 —— 证明的内容是"`encode(T)` 经这张
+  图算出的分数"，方向与阈值只是对同一个分数的不同比较）。
+  `--no-semantic` 只跳过这一步，**不负责让证书变得能过** —— 跳过后 `delegated` 非空
+  而 `companions` 缺失，`verify_cert.py` 会据此判 FAIL（fail closed）。
+  出证方在写证书**之前**会被打印出每条语义规则的分数与满足情况：`passed: True`
+  只覆盖电路判得了的约束，不该被读成"合规"。
 
 ### 2.5 `verify_cert.py` —— 第三方验证单张证书
 
@@ -127,6 +137,7 @@ python3 scripts/issue_cert.py --pack P --response R --out-dir D \
 python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] \
     [--response T.txt] [--nonce HEX] [--keyring key.json|pub.hex|pub.pem] \
     [--receipts receipts.json [--gateway-key gw.pub.hex]] \
+    [--semantic-dir semantic/artifacts] [--semantic-skip-ezkl] \
     [--rpc URL --contract 0x…]
 ```
 
@@ -140,6 +151,7 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 | `trace_binding` | P1-5：证书 `outcome` 内嵌 / 证明公开值 / **由 `--receipts` 给的网关侧回执链现场重算** 的 `trace_root` 三者比对。链长不必塞进公开值 —— 验证方本来就持有网关发给它的回执 |
 | `receipt_chain`（可选） | P1-5：对 `--receipts` 的链**逐条 Ed25519 验签**（链下那一关）。只给 `--receipts` 不给 `--gateway-key` 时如实记「未给 --gateway-key，回执签名未验」，**不假装验过** |
 | `trace_seal` | P1-5b：载荷**顶层** `trace_seal`（网关在会话末端签的 `{count, trace_root}`）——验签 + `seal.trace_root == outcome.trace_root` +（有 `--receipts` 时）`len(chain) == seal.count` 与链尾摘要。**这一卡拦的是截尾**：`trace_binding` 比的是两份检材，二者可以同时是那条被截断的链。**只给 `--receipts` 而没给 `--gateway-key` 时**核不了签名、也分不开「出证方没承诺」与「没给我看」，故如实记 `PASS + 「截尾不可排除」(skipped)`；**给了 `--gateway-key` 却没有 `trace_seal`** 的证书判 FAIL（既然知道这段会话有网关，就该有它的末端承诺） |
+| `semantic[<rule>]`（P2-9） | 语义规则的**陪伴证明**：`system` 一致 → 证书声明的 `{vk_sha256, onnx_sha256, threshold_bp, direction}` 与**电路公开值**逐字段相等 → 证明文件字节哈希 == 证书承诺的 `proof_sha256` → 本地 `vk.ezkl` 哈希 == 约束承诺的 `model_vkey` + 设置口径合规 + ezkl 验证器通过 → 公开实例的输入部分 == **由送达的 `--response` 现场重算的 `encode(T′)`** → 分数满足阈值。**缺 `--semantic-dir` 或 `--response` 一律 FAIL**（没有 T′ 就核不了绑定，这几条规则根本没被 SP1 判过，不能默认通过）；证书多带陪伴证明而公开值 `delegated` 为空也判 FAIL。`--semantic-skip-ezkl` 跳过 ezkl 验证器那一步（用于离线预检），此时该行会**如实注明"证明有效性未核"** |
 | `anchor` | 账本链完整 + 摘要存在于账本 |
 | `anchor_on_chain`（可选） | 链上 `anchoredAt` 读回，且与本地 meta 的 `chain_ts` 一致 |
 | `proof_mode` | P0-4：证书自称的 `binding.proof_mode` 与**工件自报的模式**（边车 `*.verify.json` / `*.meta.json` / 验证器输出）比对，多来源必须指向同一档。没有工件的证书只能标 `unproven` —— 自称 `core` 却拿不出证明即判 FAIL；P0-4 之前的旧证书（无此字段）**如实跳过**，不倒过来判它失败 |
@@ -174,6 +186,51 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 （`tests/test_trace.py::TestTraceInCircuit::test_in_circuit_blind_to_last_element_forgery`
 与 `TestVerifyCertTraceBinding::test_forged_last_element_caught_by_gateway_key`），
 详见 [`security-model.md`](../security-model.md) §5。
+
+`--semantic-dir` 指向存放 `vk.ezkl` / `settings.json` / `kzg.srs` / 陪伴证明的目录。
+**策略含语义规则时必给** —— 那些规则没有被 SP1 证明判定，缺了材料就无从判断，
+按 fail closed 判 FAIL（而不是"跳过"）。更要紧的是 `--response`：陪伴证明的公开实例里
+有 `encode(T)`，验证方拿 T′ 重算才能把证明绑到**送达的**响应上（信任边界 ③）。
+
+#### `RESULT` 与 `合规` 是两行，不要只看第一行
+
+验证结束时会打印两行：
+
+```
+RESULT: PASS | FAIL      ← 这张证书**是不是真的**（签名/绑定/证明都对得上）
+合规: PASS | FAIL | 未核  ← 证书说的是不是「策略满足了」
+```
+
+一张**如实记录违规**的证书同样是**真**证书（`RESULT: PASS` 而 `passed=false`），
+仓库里 `--expect violate` 的演示就依赖这一点，所以二者不能合并。
+而 `outcome.passed` **只覆盖 SP1 判得了的约束** —— 被委托出去的语义规则不在其中。
+少了 `合规` 那行，一张 `passed=true` 而语义规则没过的证书会被读成合规，
+而那正是本项目的头号失败形态（P0-1）。现场输出见
+[`../design-semantic-rules.md`](../design-semantic-rules.md) §7。
+
+### 2.6 `ezkl_prove.py` —— 语义规则的 ezkl 出证（P2-9）
+
+```bash
+python3 scripts/ezkl_prove.py setup      # gen_settings → compile → gen_srs → setup（每策略一次）
+python3 scripts/ezkl_prove.py prove      --response T.txt
+python3 scripts/ezkl_prove.py verify
+python3 scripts/ezkl_prove.py selftest   # 四条文本端到端自检（含同形异义反例）
+python3 scripts/ezkl_prove.py info       # 产物尺寸与口径
+```
+
+**`setup` 与 `prove` 必须分进程跑** —— 出证峰值 ~8.7 GiB、setup ~4.8 GiB，
+两段叠加会在 12 GB 机器上 OOM。这不是建议，是实测出来的硬约束（`08` §3.5）。
+
+两个最容易踩空的口径，都写在脚本 docstring 里：
+
+1. **`run_args.input_scale` 必须为 0**（= 1）。ezkl 里**消费下标**的算子
+   （`Gather`/`OneHot`）拿的是**缩放后**的值，而算术算子拿**解量化后**的值。
+   用常见的 `input_scale=7` 会让 `Cast` 把 `id/128` 截断成 0 —— 全序列变 PAD、
+   模型输出一个**常数**，而**证明照样验证通过**：症状看起来像"训练失败"。
+   `patch_settings` 强制这个值，`check_settings` 在验证方侧再核一遍。
+2. **响应超过 `MAX_CHARS` 时 `prove` 报错退出**，而不是截断 —— 静默截断会让尾部
+   内容逃过判定。策略必须自带一条 `max <= MAX_CHARS` 的 `length_bound`
+   （编译期强制，见 `policydsl/compile.py::require_covering_length_bound`）。
 
 ### 2.7 `compose_proof.py` —— 组合证明（P1-6）
 

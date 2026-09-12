@@ -1,0 +1,70 @@
+{
+ "artifact_bytes": {
+  "MANIFEST.json": 1031,
+  "kzg.srs": 33554692,
+  "model.compiled": 1262290,
+  "model.onnx": 159543,
+  "pk.ezkl": 3138161715,
+  "proof.json": 40821,
+  "settings.json": 4422,
+  "vk.ezkl": 821447
+ },
+ "bench": "semantic",
+ "model": {
+  "dim": 64,
+  "feature_version": "pop-semantic-feat-v1",
+  "head_sha256": "6caa8b3969dc98de7412fc3ccd6d36c48b8577b7292a544e8fcbdcf0129bf985",
+  "hidden": 32,
+  "max_chars": 64,
+  "num_rows": null,
+  "onnx_bytes": 159543,
+  "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+  "semantic_version": "pop-semantic-v1",
+  "vocab": 193
+ },
+ "note": "ezkl\uff08halo2\uff09\u8bed\u4e49\u89c4\u5219\u94fe\u8def\uff1b\u4e0e bench_proofs.py\uff08SP1\uff09\u662f\u4e24\u6761\u72ec\u7acb\u94fe\u8def",
+ "prove": {
+  "log": [
+   "[1/2] gen_witness                1.4s",
+   "[2/2] prove                     86.7s  proof=40 KB  \u5cf0\u503c\u5e38\u9a7b 8.72 GB"
+  ],
+  "median_s": 76.62,
+  "peak_gb": 8.72,
+  "wall_s": [
+   67.47,
+   76.62,
+   91.4
+  ]
+ },
+ "score_bp": 10000,
+ "setup": {
+  "input_scale": 0,
+  "log": [
+   "[1/5] gen_settings               1.2s  num_rows=131270",
+   "      \u53e3\u5f84\u8865\u4e01 input_scale=0 logrows=18  (pop-semantic-settings-v1)",
+   "[2/5] compile                    0.0s  1.20 MB",
+   "[3/5] gen_srs(logrows=18)        8.8s  32.0 MB",
+   "[4/5] setup                     38.0s  pk=2.92 GB",
+   "[5/5] MANIFEST.json \u5df2\u5199      \u5cf0\u503c\u5e38\u9a7b 4.76 GB"
+  ],
+  "logrows": 18,
+  "num_rows": 131270,
+  "peak_gb": 4.76,
+  "wall_s": 48.185375690460205
+ },
+ "text_len": 52,
+ "verify": {
+  "log": [
+   "[1/2] verify                     1.7s  -> True",
+   "[2/2] \u516c\u5f00\u5b9e\u4f8b               65 \u4e2a\uff08\u8f93\u5165 64 + \u8f93\u51fa 1\uff09",
+   "      \u7ed1\u5b9a\u6838\u5bf9              \u8f93\u5165 == encode(T) \u2713",
+   "      P(\u6709\u5bb3) = 128/128 = 1.0000  \u2192 10000 bp"
+  ],
+  "median_s": 1.0,
+  "wall_s": [
+   1.0,
+   0.98,
+   2.18
+  ]
+ }
+}

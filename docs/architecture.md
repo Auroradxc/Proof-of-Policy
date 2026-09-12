@@ -50,6 +50,12 @@ nonce ─────────── challenge.new_nonce() ──────
 工具轨迹（P1-5）另有一路：**工具网关**在每次调用执行后签发回执并接链，agent 只能原样转发；
 `tool_arg_guard` / `budget_bound(calls)` 判的是这条链，链尾摘要 `trace_root` 进公开值。
 
+语义规则（P2-9）还有第三路：策略含 `semantic_bound` 时，出证方额外产出一条
+**ezkl 陪伴证明**（`scripts/ezkl_prove.py`），它证明「该策略指定的模型在这条响应上给出的分数满足阈值」。
+两份证明**必须一起验**：SP1 那份的 `delegated[]` 说明「哪几条没被判」，ezkl 那份补上判定结果，
+二者由 `{vk 指纹, onnx 哈希, 阈值, 方向}` 逐字段绑定，且 ezkl 的公开实例输入 `encode(T)` 由验证方
+拿送达的 `T′` 现场重算比对。
+
 组合证明（P1-6）是第四路，方向与前几路都不同 —— 它把**另一个证明系统/程序**的结论与策略合规
 **合取**：
 
@@ -70,6 +76,9 @@ Compose = (推理完整性 ∧ 策略合规)
 ## 安全模型
 
 - **合规健全性**：不满足 π 的响应无法产出被接受的证明（证明者不能伪造通过）——**六类可判定规则均已入电路**。
+  ⚠️ 第七类 `semantic_bound`（P2-9）**不在电路内判定**：它被**委托**给 ezkl/halo2 陪伴证明，
+  电路只把「这条被委托了」登记进公开值 `delegated`。因此 `passed=true` 而 `delegated` 非空的证明
+  **不等于**策略被满足 —— 验证方必须额外合取陪伴证明，否则必须拒绝（fail closed），见下。
 - **策略绑定（P0-1）**：公开值**必然携带** `policy_hash`，且它与参与判定的约束来自**同一段规范字节**，
   所以「用策略 π′ 判定却声称 π 的哈希」不可能。
 - **响应绑定（P0-2）**：验证者出一次性 `nonce`，电路把 `response_binding = SHA256("pop-bind-v1"‖len‖nonce‖T)`
@@ -82,9 +91,18 @@ Compose = (推理完整性 ∧ 策略合规)
   见 `pop-types::verify_receipt_chain`），链尾摘要 `trace_root` 进公开值；**签发者身份**由**链下**
   Ed25519 验签承担（zkVM 内不验签）。因此信任前提是「网关密钥不被滥用」——网关是被显式信任的第三方。
   详见 [`security-model.md`](security-model.md) §5 与 `docs/modules/05-zk-circuits.md` §2.3a/§2.5b。
+- **语义规则的委托（P2-9）**：`semantic_bound`（学习型/语义规则）由外部证明系统承担：
+  电路公开值里登记 `delegated[]`，出证方附一条 **ezkl 陪伴证明**，验证方核到
+  `{system, model_vkey, onnx_sha256, threshold_bp, direction}` **逐字段相等**、证明文件字节哈希
+  等于证书承诺的 `proof_sha256`、且公开实例的输入部分 == **由送达的 `T′` 现场重算的 `encode(T′)`**
+  （信任边界 ③，防「拿别人的证明顶包」）。**三个信任边界**：模型权重被承诺（onnx sha256 + vk 指纹）、
+  特征由图内确定性导出、输入绑到响应。⚠️ `encode` 在词表上单射 ⇒ 公开实例可反查原文，
+  故语义规则**只支持公开模式**（私有模式 `evaluate_private` 直接 panic，fail closed）。
+  详见 [`design-semantic-rules.md`](design-semantic-rules.md) 与 [`security-model.md`](security-model.md) 引理 L7。
 - **组合义务（P1-6）**：`Compose = (推理完整性 ∧ 策略合规)`，由两份**来自不同程序**
   （不同 vkey）的证明合成，验证方跑 `compose.verify_composite` 的 8 步 ——
   证明文件哈希、密码学有效性、**键分离**、域绑定、四方 `response_binding`（含现场重算）、
+  `model_hash`/`input_binding` 现场重算、合规结论。⚠️ 组合层在策略半 `delegated` 非空时
   **不下合规结论**（那条要合取 ezkl 陪伴证明，见下）；⚠️ 推理半是**代理**，
   不是真实 LLM 的推理证明（D1）。详见 [`security-model.md`](security-model.md) 引理 L6。
 - **不可伪造**：无原响应的攻击者不能伪造「通过」证明；证据开示需 `SHA256(片段)=承诺`。

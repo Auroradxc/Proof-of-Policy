@@ -602,9 +602,19 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 | **9.2** | **模型与特征**：`semantic/train.py`（数据 + 训练 + 导出 ONNX）；权重与 ONNX 入库，`semantic/MODEL.sha256` | `semantic/model.onnx` + 训练脚本 | ONNX 导出**逐位确定**（同权重两次导出 sha256 相同） |
 | **9.3** | **ezkl 编译与出证**：`scripts/ezkl_prove.py` —— `gen_settings → compile → setup → prove → verify`；产出 `vk` + `proof` | `semantic/artifacts/{vk.json,proof.json}` | `ezkl verify` 通过；记录**出证时间/大小/内存**（进 `bench/`） |
 | **9.4** | **策略规则**：新增 `semantic_bound` kind，贯通 `model.py → compile.py → serialize.py → pop-types` | `Constraint::SemanticBound { name, model_vkey, onnx_sha256, threshold_bp, direction }` | `tests/test_semantic.py::test_compile_semantic`；契约哈希稳定 |
-| **9.5** | **组合与绑定**：ezkl 公开输入塞入 `response_binding`；PoP 证书引用 `{ezkl_vk, ezkl_proof_sha256, onnx_sha256}`；验证方核对三者一致 | 扩展 `policydsl/cert.py` + `verify_cert.py` | 见 9.7 反例 |
-| **9.6** | **信任边界论证**：`docs/design-semantic-rules.md` —— 为什么权重必须承诺、为什么特征必须图内、与 zkML 工作的关系 | 设计文档 | 与 §P1-8 的形式化模型对接（新增引理 L6） |
-| **9.7** | **验收 + 反例** | `tests/test_semantic.py` | 见下 |
+| **9.5** | **组合与绑定** —— ✅ **已完成（2026-09-12）** | `policydsl/semantic.py::verify_companion/companion_entry`、`cert.build_payload(semantic=)`、`scripts/{issue_cert,verify_cert}.py` | 见 9.7 反例；**两处与原文不同，理由见 9.5 记要** |
+| **9.6** | **信任边界论证** —— ✅ **已完成（2026-09-12）** | [`design-semantic-rules.md`](design-semantic-rules.md) | 与 §P1-8 的形式化模型对接：新增**引理 L7**（**不是 L6 —— 那号已被 P1-6 占用**，见记要） |
+| **9.7** | **验收 + 反例** —— ✅ **已完成（2026-09-12）** | `tests/test_semantic.py`（29 例 / 6 条反例） | 见下；全套 **348 passed / 11 skipped**（2026-09-12 复跑） |
+
+> **9.1–9.4 的完成状态补记（2026-09-12 审计）** —— 这四行此前没打勾，实物其实都在，逐条对账如下。
+> 其中 **9.1 有一处未按计划交付**，如实记下：
+>
+> | # | 计划交付 | 实际 | 判定 |
+> |---|---|---|---|
+> | 9.1 | `scripts/install_ezkl.sh` + **离线 wheel 缓存入库** | ❌ 二者都**没做** | 安装路径已由 `requirements-ezkl.txt`（含版本锁定与冒烟说明）+ §8 的一行 `python3 -m pip install --user -r requirements-ezkl.txt` 覆盖；wheel 缓存当时没触发（镜像一直可用），且要入库 ~2 GB 二进制。**这是一处主动偏差，不是遗漏** —— 若要真离线，再补 `install_ezkl.sh` 与 wheelhouse |
+> | 9.2 | `semantic/model.onnx` + 训练脚本 + `MODEL.sha256` | ✅ `semantic/{train.py,features.py,dataset.py,model.onnx,head.weights.json,MODEL.sha256}` | 导出逐位确定由 `test_two_processes_same_sha256` 锁死 |
+> | 9.3 | `scripts/ezkl_prove.py` + `semantic/artifacts/{vk,proof}` | ✅ 同名脚本（`setup/prove/verify/selftest/info` 五个子命令）+ `semantic/artifacts/{vk.ezkl,proof.json}`（manifest 见 `MANIFEST.json`） | 成本已进 `bench/results/semantic.md`（setup 48.2 s / prove 76.6 s） |
+> | 9.4 | `semantic_bound` 贯通四层 + `test_compile_semantic` | ✅ `model.py`（校验阈值/方向）→ `compile.py`（固化 `onnx_sha256` + `model_vkey`）→ `serialize.py` → `pop-types` | 契约哈希稳定由编译测试与 `policy_hash` 三方比对共同保证 |
 
 > **9.0 记要（T2 的结论，2026-09-11）** —— 原文把这件事记成「先试 ezkl 12.x；或绕开该 API
 > 手写 Solidity verifier」，两条**都不需要**。真因是**调用方式**，不是版本也不是依赖：
@@ -627,9 +637,35 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 > the pairing input computations exceeds 256 bits`），17 通过；`create_evm_vka` 产出的
 > `vka.json` **不是 JSON**（bincode 序列化的 VkArtifact），部署时别 `json.load`。
 
+> **9.5–9.7 记要（2026-09-12）—— 三处与计划原文不同，逐条记下**
+>
 > ① **引理编号是 L7，不是 L6。** 计划 §9.6 写"新增引理 L6"，但 `L6` 早已分配给了
 > P1-6 的跨证明组合义务（`docs/security-model.md` §3）。两条引理层面不同 ——
 > L6 是**横向拼接**（多份证明合成一次会话结论）、L7 是**纵向下沉**（一次证书内，
+> 部分判定被委托给另一个证明系统）—— 所以没有合并，而是新增 L7 并保留 L6 原义。
+>
+> ② **绑定方式与原文不同。** 原文是"ezkl 公开输入塞入 `response_binding`"，
+> 实际做法是把 **`encode(T)` 的 id 序列本身**放进公开实例，验证方拿 `T′` 现场重算
+> 逐位比对。原因：`response_binding` 是 `H(n,T)`，而 ezkl 图吃的是 id，
+> 若把哈希塞进输入，图内根本无法消费它（哈希不可微、也不构成合法 id）。
+> 现行做法更强 —— 它绑的是**送到图里的那份输入**，而不只是"某条文本的哈希"。
+> **代价**：`encode` 对收录字符单射 ⇒ 公开实例可反查 `VOCAB` 恢复原文 ⇒
+> 含语义规则的策略**只支持公开模式**（私有模式电路内 panic，fail closed）。
+> 这条诚实地写进了 `design-semantic-rules.md` §3.③ 与安全模型 §5.4。
+>
+> ③ **特征实现与 §9.1 不同**（`D=64` 的常数投影表 + 圆周移位，而非 `D=512` 的
+> n-gram 哈希桶），且**未采用**"特征在 SP1 内算"的回退。理由是实测的算子代价：
+> `one_hot(idx) @ A` 的等价写法编译出 ~73 万行、`pk.ezkl` 9.46 GB，本机出不了证；
+> 换成 `F.embedding`（图内即 `Gather`）后降到 13.1 万行。详细对照见
+> `design-semantic-rules.md` §4。
+>
+> ④ **另一处实测发现（最容易踩空的一处）**：ezkl 的算子对定点口径**不一致** ——
+> 消费下标的算子（`Gather`/`OneHot`）拿**缩放后**的值，算术算子拿**解量化后**的值。
+> 故 `run_args.input_scale` **必须为 0**（= 1，缩放值就是 id）。用常见的 7 会让
+> `Cast` 把小数截断成 0、全序列变 PAD，模型输出一个常数 —— **证明照样验证通过**，
+> 症状看起来像"训练失败"。`semantic.patch_settings` 强制它，`check_settings` 在
+> 验证方侧再核一遍。
+
 #### 9.3 验收测试（每条都必须有反例 —— 正向检查容易写成恒真）
 
 ```python
@@ -711,9 +747,9 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 | 阶段 | 判据 |
 |---|---|
-| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（T2 关闭后当前 **261 全绿 / 5 skip**） |
-| P2 | ① `test_semantic.py` **7 例全绿含 5 条反例**（§9.3）；② `test_session.py`；③ `test_multiparty.py`；④ `bench/results/` 新增三张表（含 ezkl 出证成本）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 L6 对接 |
+| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（2026-09-12 复跑：**348 全绿 / 11 skip**，skip 见 §7 说明） |
 | P1 | ① `test_trace.py` ✅（**P1-5 已完成**：39 例含四条验收 + P1-5b 的 seal/截尾，`cross_validate` host/prove 14/14）/ `test_compose.py` ✅（**P1-6 分支 A 已完成**：48 例含 5 组反例 + 四条驱动接线回归）/ `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应（**L6 已从「规划中」改为已证**） |
+| P2 | ① `test_semantic.py` **29 例全绿含 6 条反例**（§9.3；✅ 2026-09-12）；② `test_session.py`；③ `test_multiparty.py`；④ `bench/results/` 新增表格（含 ezkl 出证成本 ✅ `semantic.md`）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 **L7** 对接（**L6 已被 P1-6 占用**，见 §9.2 记要） |
 
 ---
 

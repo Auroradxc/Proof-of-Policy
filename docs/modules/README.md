@@ -41,6 +41,8 @@ zk-policy/
 │   ├── keys.py               #   签名密钥：定位/读写 PKCS#8、公钥导出与 keyring 装配（P0-3）
 │   ├── anchor.py             #   锚定后端：文件哈希链账本 / 链上 Anchor 合约
 │   ├── trace.py              #   工具回执链：结构/验签/会话末端 seal（P1-5 / P1-5b）
+│   ├── semantic.py           #   语义规则的委托与 ezkl 陪伴证明核验（P2-9 / 引理 L7）
+│   ├── ezkl_evm.py           #   ezkl 的 EVM 验证器接口（事件循环包装，T2）
 │   ├── infer.py              #   代理推理模型（定点 MLP）的 Python 参考实现（P1-6）
 │   ├── compose.py            #   组合证明：键分离 + 8 步联合验证（P1-6 / 引理 L6）
 │   ├── agent.py              #   框架无关钩子 AgentMonitor（生成路径 + 工具路径）
@@ -56,10 +58,9 @@ zk-policy/
 │   ├── script/               #   宿主驱动 pop-script：--check / --execute / 出证 / --verify
 │   ├── verifier/             #   pop-verify：仅验证器二进制（无证明器状态）
 │   └── patches/              #   tempfile 补丁（sp1-prover 6.7.0 依赖 TempDir::keep）
+├── semantic/                 # P2-9：语义规则的模型与特征（确定性 ONNX 导出 + ezkl 产物）
 ├── contracts/                # Anchor.sol + 已编译 artifact（Anchor.json，免 solc 部署）
 ├── scripts/                  # 端到端脚本（demo / 交叉验证 / 出证 / 验证 / 安装）
-├── bench/                    # 评测（cycl数矩阵 / 证明成本 / 验证成本 / 对标）
-├── tests/                    # 单测与集成测试（220 passed / 5 skip）
 ├── bench/                    # 评测（周期数矩阵 / 证明成本 / 验证成本 / ezkl / 组合 / 对标）
 ├── tests/                    # 单测与集成测试（348 passed / 11 skip）
 ├── policy_packs/             # 示例策略包（EU AI Act / PII / 金融 / agent 内容与工具）
@@ -126,6 +127,7 @@ zk-policy/
 
 | 线 | 文档 | 代码 | 一句话 |
 |---|---|---|---|
+| P2-9 语义规则（引理 L7） | [`../design-semantic-rules.md`](../design-semantic-rules.md) | `semantic.py` `ezkl_evm.py` `semantic/` `scripts/ezkl_prove.py` | 学习型规则不在 SP1 内判定，而是**委托**给 ezkl/halo2 陪伴证明，验证方必须**合取**二者 |
 | P1-6 组合证明（引理 L6） | [`../security-model.md`](../security-model.md) §3 L6 | `compose.py` `infer.py` `circuits/infer-program` `scripts/compose_proof.py` | 两份证明（策略合规 ∧ 推理完整性）合成一次会话结论，前提是**键分离** |
 
 推荐阅读路径：
@@ -133,6 +135,7 @@ zk-policy/
 - **想改策略/加规则**：01 → 05（两侧都要改）→ 08（补交叉验证用例）
 - **想接自己的 agent**：06 → 03 → 04
 - **想接自己的链/审计流程**：04 → 07（`anchor_e2e.sh` 是最小完整例子）
+- **想懂语义规则怎么不被「证明者声明」钻空子**：`../design-semantic-rules.md`（§9.0 的三条信任边界）
 - **只想复现数字**：`docs/reproduce.md` 与 08
 
 ---

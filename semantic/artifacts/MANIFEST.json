@@ -1,0 +1,37 @@
+{
+ "artifacts": {
+  "model.compiled": {
+   "bytes": 1262290,
+   "sha256": "32e1934a312127c1fb776587383277bba0eb406150649bda223785154037686f"
+  },
+  "vk.ezkl": {
+   "bytes": 821447,
+   "sha256": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e"
+  }
+ },
+ "model": {
+  "dim": 64,
+  "feature_version": "pop-semantic-feat-v1",
+  "head_sha256": "6caa8b3969dc98de7412fc3ccd6d36c48b8577b7292a544e8fcbdcf0129bf985",
+  "hidden": 32,
+  "max_chars": 64,
+  "num_rows": null,
+  "onnx_bytes": 159543,
+  "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+  "semantic_version": "pop-semantic-v1",
+  "vocab": 193
+ },
+ "not_committed": {
+  "pk": true,
+  "srs": true
+ },
+ "semantic_version": "pop-semantic-v1",
+ "settings": {
+  "fingerprint": "be5a422c9608ed7d9be2f2fcb1cd2a97e5e55a632f395d0c008442760bf0599d",
+  "input_scale": 0,
+  "logrows": 18,
+  "num_rows": 131270,
+  "sha256": "c3e090be019b8d472af1048ffb28d90ab5a18ee4d01cb420fe5f45d2e704d0f9"
+ },
+ "settings_version": "pop-semantic-settings-v1"
+}

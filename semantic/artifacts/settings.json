@@ -1,0 +1,397 @@
+{
+ "check_mode": "UNSAFE",
+ "einsum_params": {
+  "equations": [
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "abcd,abcd->abc",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 64,
+     "d": 2
+    }
+   ],
+   [
+    "abcd,abcd->abc",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 64,
+     "d": 2
+    }
+   ],
+   [
+    "abcd,abcd->abc",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 64,
+     "d": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 64,
+     "c": 2
+    }
+   ],
+   [
+    "mk,nk->n",
+    {
+     "k": 64,
+     "m": 1,
+     "n": 32
+    }
+   ],
+   [
+    "ab,ab->a",
+    {
+     "a": 32,
+     "b": 2
+    }
+   ],
+   [
+    "ab,ab->a",
+    {
+     "a": 32,
+     "b": 2
+    }
+   ],
+   [
+    "ab,ab->a",
+    {
+     "a": 32,
+     "b": 2
+    }
+   ],
+   [
+    "ab,ab->a",
+    {
+     "a": 32,
+     "b": 2
+    }
+   ],
+   [
+    "k,k->mn",
+    {
+     "k": 32
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ],
+   [
+    "abc,abc->ab",
+    {
+     "a": 1,
+     "b": 1,
+     "c": 2
+    }
+   ]
+  ],
+  "total_einsum_col_size": 0
+ },
+ "input_types": [
+  "F32"
+ ],
+ "max_dynamic_input_len": 12352,
+ "model_input_scales": [
+  7
+ ],
+ "model_instance_shapes": [
+  [
+   1,
+   64
+  ],
+  [
+   1,
+   1
+  ]
+ ],
+ "model_output_scales": [
+  7
+ ],
+ "module_sizes": {
+  "polycommit": [],
+  "poseidon": [
+   0,
+   [
+    0
+   ]
+  ]
+ },
+ "num_blinding_factors": null,
+ "num_dynamic_lookups": 3,
+ "num_rows": 131270,
+ "num_shuffles": 0,
+ "output_types": [
+  "F32"
+ ],
+ "required_lookups": [
+  {
+   "Sigmoid": {
+    "scale": 128.0
+   }
+  }
+ ],
+ "required_range_checks": [
+  [
+   0,
+   16383
+  ],
+  [
+   0,
+   127
+  ],
+  [
+   -1,
+   1
+  ],
+  [
+   0,
+   1
+  ]
+ ],
+ "run_args": {
+  "bounded_log_lookup": false,
+  "check_mode": "UNSAFE",
+  "decomp_base": 16384,
+  "decomp_legs": 2,
+  "disable_freivalds": false,
+  "epsilon": 2.220446049250313e-16,
+  "ignore_range_check_inputs_outputs": false,
+  "input_scale": 0,
+  "input_visibility": "Public",
+  "logrows": 18,
+  "lookup_range": [
+   -32768,
+   32768
+  ],
+  "num_inner_cols": 2,
+  "output_visibility": "Public",
+  "param_scale": 7,
+  "param_visibility": "Fixed",
+  "rebase_frac_zero_constants": false,
+  "rebase_scale": null,
+  "scale_rebase_multiplier": 1,
+  "variables": [
+   [
+    "batch_size",
+    1
+   ]
+  ]
+ },
+ "timestamp": 1789146681924,
+ "total_assignments": 262509,
+ "total_const_size": 12616,
+ "total_dynamic_col_size": 37056,
+ "total_shuffle_col_size": 0,
+ "version": "23.0.5"
+}
