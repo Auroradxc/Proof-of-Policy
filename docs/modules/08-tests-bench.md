@@ -34,7 +34,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 425 passed, 12 skipped
 | `test_verifier_only` | 8 | `prefer_verifier_only` 三条件、core 不走近路；**P0-4**：`artifact_proof_modes` 收齐多来源、缺失不编默认值、来源不一致如实暴露 |
 | `test_demo_e2e` | 2 | 端到端会话产物结构 |
 | `test_ezkl_evm` | 10 | **T2**：`ezkl_evm.run` 对同步/异步/Future 三种可调用对象都成立（5 例，**不依赖 ezkl**）；真实 ezkl 下裸调用必抛 `no running event loop`（把上游坏行为钉死）、包一层即产出 `Halo2Verifier` 源码与 `verifyProof` ABI、连调互不影响、`reusable` 变体 + VK artifact（`vka.json` 实为 bincode，不是 JSON）、**剥空 `PATH` 也不调用 solc** |
-| `test_semantic` | 29 | **P2-9**：语义规则（学习型规则）的委托与绑定，**含 6 条反例**（换 ONNX、换 vk、改阈值、翻转 `direction`、换证明文件/换响应、图外自算特征）与 fail-closed 四路（缺材料目录/缺陪伴证明/缺 `--response`/多带证明）；**分层**见下 —— 28 例不依赖 ezkl 与 32 MiB `srs` |
+| `test_semantic` | 30 | **P2-9**：语义规则（学习型规则）的委托与绑定，**含 6 条反例**（换 ONNX、换 vk、改阈值、翻转 `direction`、换证明文件/换响应、图外自算特征）与 fail-closed 四路（缺材料目录/缺陪伴证明/缺 `--response`/多带证明）；**分层**见下 —— 30 例中只有 1 例（`test_real_proof_verifies_and_binds`）需 ezkl 与 32 MiB `srs`，其余 29 例在本机实际执行 |
 | `test_compose` | 48 | **P1-6**：组合证明 `Compose = (推理完整性 ∧ 策略合规)`。三层 —— ① 参考实现逐位一致（`pop-script --check --job infer` ↔ `policydsl/infer.py`：模型哈希/响应绑定/输入绑定/输出）② 组合绑定的 **5 组反例**（换证明文件·缺失、同 vkey·非期望 vkey、换模型·换输入、两半绑不同 T·送达 T′ 不符、形状·模式·域·policy_hash 重编译）③ **四条驱动接线回归**（`--job` 旗标 ≠ part 的 kind；`part_from_proof` 得把旗标而不是 kind 传下去；验证结果的 `mode` 不能被当展示元信息剥掉；`pop-script --verify` 必须显式给 `--out`，否则在仓库根落一个 `results.json`）——这几条对应 2026-09-12 真端到端跑出来的真 bug，单测当时全绿。真·端到端 5 例由 `POP_TEST_COMPOSE=1` 打开 |
 | `test_session` | 38 | **P2-10**：跨证书一致性（`session` 域 = guest③）。三层 —— ① **Merkle 纯算术层**（单叶子即叶子本身；内部节点带 `pop-session-node-v1` 前缀；**奇数末位提升、绝不复制** ← 这条是「挖尾」防线的前提；n=1…9 的包含证明往返；篡改叶子与形状非法 fail-closed）② **两层对拍**（`pop-script --check --job session` ↔ `policydsl/session.py::run_session` 在链长 1/2/3/5/8 上**逐字段相等** —— 奇数链才会走到末位提升；Merkle 根跨层逐字节一致；nonce 改则 `session_binding` 改）③ **义务与反例**（混异策略 / 挖中间 / 换序 / 缺 `chain` / 缺 `seal` / 两条网关的 seal / 空集；验证侧的 happy path、**挖尾**、**整张换尾**、伪造根 / 伪造链尾承诺 / 伪造策略哈希、错域、现场重编译策略包、seal 签名与真回执）。**真·端到端 1 例**（`POP_TEST_SESSION=1`）对着真证明跑计划的两条验收判据（混异策略 + 挖尾），并核 `--nonce` 换一个即拒 |
 | **合计** | **425** | |
@@ -54,7 +54,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 425 passed, 12 skipped
 
 六条反例在 `verify_companion` 的**第 1–5 步**就被挡住（指纹比对、证明文件哈希、
 本地 `vk` 哈希、`encode(T′)` 逐位比对），而这几步不跑 ezkl 验证器 ——
-所以 28 例在**没有 ezkl、没有 32 MiB `kzg.srs`** 的机器上也能全绿。
+所以 29 例在**没有 ezkl、没有 32 MiB `kzg.srs`** 的机器上也能全绿。
 第 3 步之后才是"跑 ezkl 验证器"（`verify_proof=True`），它由那条默认关闭的端到端
 用例覆盖。**把最后一颗钉子与整面墙分开**，是为了让反例能在 CI 上天天跑。
 

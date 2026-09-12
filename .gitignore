@@ -12,6 +12,10 @@ scripts/examples/out/
 bench/work/
 .install_frameworks.lock
 .install_foundry.lock
+.install_ezkl.lock
+# ezkl 依赖栈的离线 wheel 缓存（`install_ezkl.sh --save-wheels`）——
+# **故意不入库**：torch 一个大轮子就几百 MB～2 GB，纯二进制、可由 pip 重下。
+wheelhouse/
 # forge 的编译产物——只有 contracts/Anchor.json（abi+bytecode）入库
 contracts/out/
 contracts/cache/

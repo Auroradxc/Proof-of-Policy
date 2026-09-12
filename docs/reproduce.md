@@ -163,11 +163,18 @@ RESULT: PASS
 （`pk.ezkl` 2.92 GiB 与 `kzg.srs` 32 MiB 可重算、不入库；`vk.ezkl` 802 KiB 入库）。
 
 ```bash
-python3 -m pip install --user -r requirements-ezkl.txt   # 网络对策见 §0
+bash scripts/install_ezkl.sh             # 装依赖栈（幂等；--check 只看装没装好）
 python3 scripts/ezkl_prove.py info       # 只看产物清单与规模（秒级，不出证）
 python3 scripts/ezkl_prove.py selftest   # 四条文本端到端自检（含同形异义反例）
 POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic   # 真·端到端一例（~61 s / 峰值 ~9 GiB）
 ```
+
+`install_ezkl.sh` 做的事就是 `python3 -m pip install --user -r requirements-ezkl.txt`
+（网络对策见 §0），外加**版本核对**（`ezkl==23.0.5 / onnx==1.22.0 / torch==2.14.0`，
+装错版本会让陪伴证明与策略里固化的 `onnx_sha256` / `model_vkey` 对不上）和一次
+冒烟（`ezkl_prove.py info`）。网络不通时会**快速失败**（退出码 2），不会留下半成品；
+也可以在有网时先 `--save-wheels` 存一份 wheel 到 `wheelhouse/`（**不入库**，torch
+一个大轮子就几百 MB），之后用 `--offline` 全程离线装。
 
 **这两条命令必须分进程**：ezkl 的 `setup` 与 `prove` 峰值叠加会在 12 GB 机器上 OOM
 （setup 4.76 GiB + prove 8.72 GiB，见 `bench/results/semantic.md`）——`scripts/ezkl_prove.py`

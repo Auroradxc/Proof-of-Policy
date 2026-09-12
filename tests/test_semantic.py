@@ -789,5 +789,25 @@ class TestOnnxExportDeterministic(unittest.TestCase):
                          _vk_sha256(), "MANIFEST 记录的 vk 指纹与 vk.ezkl 实际内容不符")
 
 
+class TestProveCliInfo(unittest.TestCase):
+    """``ezkl_prove.py info`` 必须能跑通 —— 它是**只读的入口**，也是最常跑的那条。
+
+    它自称「不需要 ezkl」（ezkl 是延迟 import 的），却曾经一跑就 ``KeyError:
+    'settings_version'``：那个字段在清单**顶层**，代码却去 ``man["settings"]``
+    里找。崩之前它已经打完了半张清单，看着挺正常 —— 这种「半张正常输出」的
+    缺陷最容易被反复忽略。2026-09-12 给 `install_ezkl.sh` 加冒烟步骤时才撞上。
+    """
+
+    def test_info_runs_and_reports_settings(self):
+        proc = subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "ezkl_prove.py"), "info"],
+            cwd=str(REPO), capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        # 清单打印不能中途断掉：`num_rows`/`input_scale` 是这条链的两个正确性前提
+        # （见 semantic.py 的模块 docstring），它们必须真的出现在输出里。
+        self.assertIn("num_rows=", proc.stdout)
+        self.assertIn("input_scale=0", proc.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

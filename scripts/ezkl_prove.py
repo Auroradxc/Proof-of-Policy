@@ -370,8 +370,13 @@ def cmd_info(args: argparse.Namespace) -> int:
         print(f"\n模型指纹不可用：{exc}")
     if man:
         s = man["settings"]
+        # ⚠️ `settings_version` 在清单**顶层**（`_write_manifest` 的 `man` 键下），
+        # 不在 `settings` 块里。2026-09-12 给 `install_ezkl.sh` 加冒烟步骤时才
+        # 发现这里写成了 `s['settings_version']` —— 于是 `info` 每次都在打完
+        # 清单后 KeyError 崩掉（崩溃前那半张清单看着还挺正常，所以一直没人注意）。
         print(f"设置 input_scale={s['input_scale']} logrows={s['logrows']} "
-              f"num_rows={s['num_rows']} ({s['settings_version']})")
+              f"num_rows={s['num_rows']} 指纹 {s['fingerprint'][:16]}… "
+              f"({man.get('settings_version', '—')})")
     return 0
 
 

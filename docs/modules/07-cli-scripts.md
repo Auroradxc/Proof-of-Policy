@@ -1,6 +1,6 @@
 # 07 · CLI 与脚本
 
-> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（13 个 Python 入口 + 5 个 shell）。
+> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（14 个 Python 入口 + 6 个 shell）。
 > 这一板块回答：**每个脚本负责哪一段，什么时候该用哪个。**
 > 完整的复现顺序见 [`../reproduce.md`](../reproduce.md)；这里讲的是**脚本内部在做什么**。
 
@@ -26,6 +26,7 @@
 | `make_shots.py` | 从会话产物生成截图/HTML/SVG | 否 | 否 | 秒级 |
 | `anchor_e2e.sh` | 起 anvil → 部署 → demo → `--rpc` 核对 + 反例 | 可选 | 可 `--prove` | ~10 s / ~70 s |
 | `make_audit_proof.sh` | 生成 compressed 审计 fixture | `pop-script` | 是（需 ≥16 GB） | 若干分钟 |
+| `install_ezkl.sh` | 装 ezkl 栈（`ezkl==23.0.5 / onnx / torch`）到独立 venv，装前核版本、装后冒烟 `ezkl_prove.py info` | 否 | 否 | 取决于网络 |
 | `install_frameworks.sh` | 装 langchain/langgraph/mcp 到独立 venv | 否 | 否 | 取决于网络 |
 | `retry_install_frameworks.sh` | 上述网络的镜像回退版 | 否 | 否 | 同上 |
 | `retry_install_foundry.sh` | 装 foundry（anvil/cast/forge） | 否 | 否 | 取决于网络 |
@@ -429,10 +430,11 @@ bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 有了 fixture，`tests/test_verifier_only.py` 的 2 个用例会自动启用（否则 skip）。
 **本机 12 GB 内存下 compressed 会 OOM**，需 ≥16 GB 机器。
 
-### 三个安装脚本
+### 四个安装脚本
 
 | 脚本 | 说明 |
 |---|---|
+| `install_ezkl.sh` | 创建独立 venv 装 **ezkl 栈**（`ezkl==23.0.5 / onnx==1.22.0 / torch==2.14.0`）。幂等（已装同版本则跳过）；`--check` 只检不装；**装前核版本**（版本错了会让陪伴证明与策略固化的 `onnx_sha256`/`model_vkey` 对不上）；装后冒烟 `ezkl_prove.py info`（`KeyError: 'settings_version'` 就是那时候撞出来的）；网络不通**快速失败**（退出码 2）而不是挂死；锁文件防并发。离线走 `--save-wheels` / `--offline` 两条路 —— 但 **wheelhouse 本身不入库**（torch 一个轮子几百 MB～2 GB，纯二进制、可由 pip 重下，`wheelhouse/` 已 gitignore） |
 | `install_frameworks.sh` | 创建独立 venv 装 langchain / langgraph / mcp；索引按镜像顺序尝试，失败不致命 |
 | `retry_install_frameworks.sh` | 网络受限版：按字节数探测镜像可用性后重试，带 `--trusted-host` |
 | `retry_install_foundry.sh` | 装 foundry；官方 `foundryup` 常超时，实际走 `gh-proxy.com` 拉发行包 |

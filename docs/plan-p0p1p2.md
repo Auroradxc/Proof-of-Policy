@@ -612,7 +612,8 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 >
 > | # | 计划交付 | 实际 | 判定 |
 > |---|---|---|---|
-> | 9.1 | `scripts/install_ezkl.sh` + **离线 wheel 缓存入库** | ❌ 二者都**没做** | 安装路径已由 `requirements-ezkl.txt`（含版本锁定与冒烟说明）+ §8 的一行 `python3 -m pip install --user -r requirements-ezkl.txt` 覆盖；wheel 缓存当时没触发（镜像一直可用），且要入库 ~2 GB 二进制。**这是一处主动偏差，不是遗漏** —— 若要真离线，再补 `install_ezkl.sh` 与 wheelhouse |
+> | 9.1 | `scripts/install_ezkl.sh` + **离线 wheel 缓存入库** | 脚本 ✅ **已补（2026-09-12）**；wheel 缓存 ❌ **仍不入库**（主动偏差） | `install_ezkl.sh` 现已交付：幂等、`--check` 只检、装前**版本核对**（`ezkl==23.0.5 / onnx==1.22.0 / torch==2.14.0`，装错版本会让陪伴证明与策略固化的 `onnx_sha256`/`model_vkey` 对不上）、装后冒烟 `ezkl_prove.py info`、网络不通**快速失败**（退出码 2）、锁文件防并发。离线侧给了 `--save-wheels` / `--offline` 两条路，但 wheelhouse 本身**不入库** —— torch 一个轮子就几百 MB～2 GB，纯二进制、可由 pip 重下（`wheelhouse/` 已进 `.gitignore`）。 |
+> 顺带：补这个冒烟步骤时撞出 `ezkl_prove.py info` 的一个真缺陷 —— 它读 `settings_version` 找错了层级（该字段在清单**顶层**，不在 `settings` 块里），于是打完半张清单就 `KeyError` 崩掉；已修并补回归用例 `TestProveCliInfo`。 |
 > | 9.2 | `semantic/model.onnx` + 训练脚本 + `MODEL.sha256` | ✅ `semantic/{train.py,features.py,dataset.py,model.onnx,head.weights.json,MODEL.sha256}` | 导出逐位确定由 `test_two_processes_same_sha256` 锁死 |
 > | 9.3 | `scripts/ezkl_prove.py` + `semantic/artifacts/{vk,proof}` | ✅ 同名脚本（`setup/prove/verify/selftest/info` 五个子命令）+ `semantic/artifacts/{vk.ezkl,proof.json}`（manifest 见 `MANIFEST.json`） | 成本已进 `bench/results/semantic.md`（setup 48.2 s / prove 76.6 s） |
 > | 9.4 | `semantic_bound` 贯通四层 + `test_compile_semantic` | ✅ `model.py`（校验阈值/方向）→ `compile.py`（固化 `onnx_sha256` + `model_vkey`）→ `serialize.py` → `pop-types` | 契约哈希稳定由编译测试与 `policy_hash` 三方比对共同保证 |
