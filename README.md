@@ -122,13 +122,18 @@ zk-policy/
 
 ## 学习路线（0 基础研究生）
 
-详见 `../方向2_Proof-of-Policy_8周计划_v2_零基础版.md`。本仓库按周打标：
+详见 **《方向2_Proof-of-Policy_8周计划_v2_零基础版.md》** —— 该文件在**仓库外的上层工作区**
+`Proof-of-Policy/02_项目计划/`（不随本仓库分发），本仓库内的历史映射表见
+[`roadmap.md`](roadmap.md)，当前计划见 [`docs/plan-p0p1p2.md`](docs/plan-p0p1p2.md)。
+
+本仓库按周打标（落点按**实际交付**订正，2026-09-12）：
+
 - **W2**：`policydsl/model.py` 的 KeywordBlock / LengthBound 规则 → `tests/`
 - **W3**：PatternBlock（PII 正则）+ NFA 路径设计 → `docs/policy-dsl.md`
-- **W4**：`compile.py` 产出 ConstraintSpec → 填充 `circuits/program`（需先装 Rust+SP1）
-- **W5**：私有模式（承诺 + 违规定位）
-- **W6**：`demo/` agent 插桩 + 合规证书
-- **W7**：评测脚本 + 安全模型
+- **W4**：`compile.py` 产出 ConstraintSpec → 填充 `circuits/program`（PoP v0 真出证）
+- **W5**：私有模式（承诺 + 违规定位）→ `policydsl/commit.py` + `pop-types::evaluate_private`
+- **W6**：agent 插桩 + 合规证书 → `policydsl/agent.py` + 三个框架适配器 + `cert.py` + `scripts/demo_e2e.py`
+- **W7**：评测脚本（`bench/`）+ 安全模型（`docs/security-model.md`）
 
 ## 安装 Rust + SP1（W4 前执行）
 

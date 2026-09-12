@@ -221,7 +221,7 @@
 **Day 1（Mon）—— 最小 agent**
 - 阅读：Hugging Face Agents Course Unit 1-2；LangGraph 官方快速开始。
 - 练习：搭最小 LangGraph agent（调用 1 个工具）。
-- 产出：`demo/agent/` 最小 agent 跑通。
+- 产出：`policydsl/agent.py`（`AgentMonitor`，含 `ScriptedModel` 的可复现最小 agent）+ 三个框架适配器跑通。
 
 **Day 2（Tue）—— MCP 风格工具**
 - 阅读：MCP 规范 "Tools" 一节。
@@ -229,7 +229,8 @@
 - 产出：agent + 1 工具。
 
 **Day 3（Wed）—— 证书格式**
-- 阅读：`demo/README.md` 的证书示例；DSSE/JSON 概念。
+- 阅读：`policydsl/cert.py` 的证书载荷形状；DSSE/JSON 概念。（计划里写的是 `demo/README.md`，
+  该目录是**从未使用的占位空壳**，已于 2026-09-12 删除；证书格式的权威定义在 `cert.py` + `docs/modules/03-*.md`。）
 - 练习：实现证书生成 `{policy, policy_hash, response_commitment, passed, proof, ts}`。
 - 产出：cert 脚本 + 示例证书。
 
