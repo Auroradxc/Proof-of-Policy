@@ -1,6 +1,6 @@
 # 07 · CLI 与脚本
 
-> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（15 个 Python 入口 + 6 个 shell）。
+> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（15 个 Python 入口 + 7 个 shell）。
 > 这一板块回答：**每个脚本负责哪一段，什么时候该用哪个。**
 > 完整的复现顺序见 [`../reproduce.md`](../reproduce.md)；这里讲的是**脚本内部在做什么**。
 
@@ -10,6 +10,7 @@
 
 | 脚本 | 一句话 | 需要 Rust 二进制？ | 需要 SP1 证明？ | 典型耗时 |
 |---|---|---|---|---|
+| **`demo_all.sh`** | **总入口**：把下面各条支路依次跑一遍 + 汇总成 `REPORT.md` | 视支路 | 视支路（`--prove`） | fast 约 20 秒 / `--prove` 约 26–27 分钟（本机实测） |
 | `policydsl/__main__.py` | 编译策略 / 参考判定 | 否 | 否 | 毫秒 |
 | `prove_policy.py` | 单条响应 → 真实证明 + golden 比对 | `pop-script` | 是（可 `--no-prove`） | ~70 s |
 | `cross_validate.py` | 19 条向量 × (host + prove) 与 golden 对拍 | `pop-script` | 是（可 `--no-prove`） | host 秒级；prove 约 2 分钟/条（默认分 4 块，每块峰值 ~10 GB） |
@@ -31,6 +32,10 @@
 | `install_frameworks.sh` | 装 langchain/langgraph/mcp 到独立 venv | 否 | 否 | 取决于网络 |
 | `retry_install_frameworks.sh` | 上述网络的镜像回退版 | 否 | 否 | 同上 |
 | `retry_install_foundry.sh` | 装 foundry（anvil/cast/forge） | 否 | 否 | 取决于网络 |
+
+> **不知道从哪下手就跑 `demo_all.sh`** —— 它自己不出证、不重新实现任何逻辑，只是按依赖
+> 顺序调用下表里的驱动，并如实记下「哪条跑了 / 哪条为什么跳过 / 耗时与峰值内存」。
+> 完整说明见 §3。
 
 补充：`scripts/vectors.json`、`results.json`、`results_check.json`、`results_prove.json`、
 `scripts/examples/out/` 都是**运行产物**（部分入库、部分 gitignored）。
@@ -441,6 +446,46 @@ python3 scripts/verify_cert.py --cert c.json --pack p.json --ledger l.jsonl \
 
 ## 3. Shell 脚本
 
+### `demo_all.sh` —— 全链路总入口
+
+```bash
+bash scripts/demo_all.sh              # fast：走宿主校验（--no-prove），约 20 秒
+bash scripts/demo_all.sh --prove      # 出真证明，每条支路数分钟、峰值 ~10 GB，本机实测 26–27 分钟
+bash scripts/demo_all.sh --out-dir D  # 产物与报告落 D（默认 scripts/examples/out/all）
+bash scripts/demo_all.sh --list       # 只列支路，不跑
+```
+
+**它存在的理由**：本项目的端到端能力分散在 8 条支路上，`demo_e2e.py` 只覆盖其中
+「公开模式主干」一条，但第一次读仓库的人跑完它很容易以为链路已经全覆盖了。
+
+依次跑这 8 条（顺序即依赖顺序）：
+
+| # | key | 支路 | 驱动 |
+|---|---|---|---|
+| ① | `policy` | 公开模式主干 | `demo_e2e.py` |
+| ② | `private` | 私有模式 | `private_demo.py` |
+| ③ | `semantic` | 语义规则（P2-9） | `ezkl_prove.py selftest` |
+| ④ | `compose` | 组合证明（P1-6） | `compose_proof.py` |
+| ⑤ | `session` | 会话聚合（P2-10） | `prove_session.py` |
+| ⑥ | `multiparty` | 多证明者（P2-11） | `prove_multiparty.py` |
+| ⑦ | `anchor` | 链上锚定（P7-c） | `anchor_e2e.sh` |
+| ⑧ | `verify` | 第三方独立验证 | `verify_session.py` |
+
+**结果三态，必须分开读**：`PASS` / `FAIL`（该步真的失败了，退出码 1）/ `SKIP`
+（缺依赖 —— 未装 ezkl、缺 `semantic/artifacts/`、未装 foundry、或上游 `session.json`
+没产出，**不代表功能不存在**）。⑤⑧ 依赖 ① 的产物，① 失败时会级联成 SKIP 并写明原因。
+
+耗时与峰值用 `/usr/bin/time -f %M` 量；没有 `/usr/bin/time` 时退化成 `date`，此时报告里
+峰值列显示 `-` 而不是编一个数。产物：`REPORT.md` + `logs/<key>.log`。
+
+报告末尾**现推**三条最容易被误读的结论（从合约 ABI、demo 源码、安全模型原文里读，
+所以不会随文档更新漂移）：① 链上只锚定证书摘要，没有 `anchorWithProof`；
+② 流式路径的「LLM」是 `GenericFakeChatModel`；③ 组合证明里的「推理」是 stand-in。
+细节见 [`../../README.md`](../../README.md) 的「8 条端到端支路」。
+
+> ⚠️ **fast 模式下的 `PASS` 不是「已出证」** —— 各驱动在 `--no-prove` 下只做
+> Python ↔ Rust 宿主对拍。要真证明必须加 `--prove`。
+
 ### `anchor_e2e.sh` —— 端到端链上锚定（推荐入口）
 
 ```bash
@@ -491,6 +536,7 @@ bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 | **核对送达的 T′ 就是被证明的 T** | 上一条再加 `--response T′.txt`（P0-2，见 §2.5） |
 | **核对被证明的轨迹就是我手上这条链** | 上一条再加 `--receipts receipts.json [--gateway-key gw.pub.hex]`（P1-5，见 §2.5） |
 | **核对链有没有被截尾** | 上一条的 `--gateway-key` 是必要条件：seal 的签名与「会话末端承诺」都要它才立得住（P1-5b，见 `verify_cert.py` 的 3d 与安全模型 §5.3） |
+| **一次看全 8 条支路** | `bash scripts/demo_all.sh`（真出证加 `--prove`；汇总在 `REPORT.md`） |
 | 全链路最小复现 | `bash scripts/anchor_e2e.sh` |
 | 生成论文/文档用的截图 | `python3 scripts/make_shots.py --run-demo` |
 

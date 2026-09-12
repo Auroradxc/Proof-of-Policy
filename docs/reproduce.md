@@ -283,6 +283,18 @@ POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic   # 真·端到端一例
 
 ## 9. 复现：一键端到端 demo + 截图
 
+> **想一次看全所有支路**（不只下面这条主干），跑总入口：
+>
+> ```bash
+> bash scripts/demo_all.sh            # fast：宿主校验，约 20 秒
+> bash scripts/demo_all.sh --prove    # 真出证，本机实测 26–27 分钟、峰值 ~10 GB
+> ```
+>
+> 它把 8 条支路（公开模式 / 私有模式 / 语义规则 / 组合 / 会话聚合 / 多证明者 /
+> 链上锚定 / 第三方验证）依次跑一遍，汇总成 `scripts/examples/out/all/REPORT.md`，
+> 并标出每条是 PASS / FAIL / SKIP（跳过原因）与耗时、峰值内存。
+> 见 [`modules/07-cli-scripts.md`](modules/07-cli-scripts.md) §3。
+
 ```bash
 SP1_PROVER=cpu python3 scripts/demo_e2e.py                 # 真实会话 + 真实 SP1 证明（加 --no-prove 秒级）
 python3 scripts/verify_session.py --session scripts/examples/out/e2e/session.json
