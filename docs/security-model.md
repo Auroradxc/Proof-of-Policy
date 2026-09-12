@@ -569,10 +569,11 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 **回归总盘**：`python3 -m unittest discover -s tests -t .` → **550 passed / 15 skipped**（2026-09-13 复跑；
 skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— 由 `POP_TEST_EZKL=1` 打开；P1-6 那 5 例
 要真出两份 SP1 证明 —— 由 `POP_TEST_COMPOSE=1` 打开；P2-10 那例要真出一份会话聚合证明 ——
-由 `POP_TEST_SESSION=1` 打开。三组均已单独实测通过；另有 3 例由 `POP_TEST_PROOF=1` 打开，
-其中**证明服务的真 vkey 出证那 1 例在本机（12 GB）跑不过去** —— 被 OOM killer 杀在
-9.7 GiB 常驻，而 SP1 core 证明的固定地板是 ~10.15 GiB（见 `bench/results/proofs.md`）。
-这是**内存**不是代码：换一台 ≥16 GB 的机器再验收，服务侧已把这种失败翻成一句
+由 `POP_TEST_SESSION=1` 打开。三组均已单独实测通过；另有 3 例由 `POP_TEST_PROOF=1` 打开
+（2 例证明层 + 1 例证明服务的真 vkey 出证，**三例均实测通过**）。最后那 1 例在本机
+11.7 GiB 上是**勉强过**：与别的进程并跑时被 OOM killer 杀在 9.7 GiB 常驻，腾空后重跑
+通过（171.1 s，`MemAvailable` 一度只剩 0.15 GiB）—— SP1 core 证明的固定地板是
+~10.15 GiB（见 `bench/results/proofs.md`）。服务侧已把这种失败翻成一句
 「多半是内存不足 + 怎么核实」（`policydsl/service.py::failure_reason`）。
 
 ---

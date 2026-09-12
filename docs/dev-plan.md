@@ -351,6 +351,10 @@ GET  /v1/policies                                                 → 已注册�
 - 部署文档进 `docs/`：[`runbook-proof-service.md`](runbook-proof-service.md)
   （依赖、内存前提、并发上限、如何换签名钥、已知边界与排查表）。
 
+**三条都实测过了**（2026-09-13）：`curl` 三段走通、`verify_hint` 跑出 `RESULT: PASS`
+（含 `[PASS] proof`）；排队那条由 `test_second_request_queues_instead_of_being_refused`
+锁住；真 vkey 出证那条（`POP_TEST_PROOF=1`）**腾空内存后 171.1 s 通过**（详见 §5.2.4）。
+
 #### 5.2.4 落地情况（2026-09-13）
 
 | 组件 | 位置 |
@@ -366,15 +370,19 @@ GET  /v1/policies                                                 → 已注册�
 **证书却照样签得出来**。改用 `serialize.vector_entry` 后修掉，并把回执旁证一并
 落盘（`receipts.json`），让 `trace_binding` 有第二个来源可比。
 
-**一个在本机没跑过去的验收**：真 vkey 出证那条用例（`POP_TEST_PROOF=1`）被 OOM
-killer 杀在 9.7 GiB 常驻（`dmesg`：`Killed process … (pop-script) anon-rss:9931092kB`）。
-这不是代码问题 —— ~10.15 GiB 是 SP1 core 证明的**固定地板**（[`bench/results/proofs.md`](../bench/results/proofs.md)），
-本机 11.7 GiB 总内存还要装下 harness 自己。**但它暴露了一个真问题**：作业失败时
+**真 vkey 出证那条验收在本机是「勉强过」**：第一次跑被 OOM killer 杀在 9.7 GiB 常驻
+（`dmesg`：`Killed process … (pop-script) anon-rss:9931092kB`）；让别的进程腾出内存后
+**重跑通过**（171.1 s，真 vkey ≠ `unproven`、`proof_mode=core`、`verify_cert` → `RESULT: PASS`）。
+全程 `MemAvailable` 一度掉到 **0.15 GiB** 并靠 swap 撑住 —— 也就是说它**装得下，但没有余量**：
+~10.15 GiB 是 SP1 core 证明的**固定地板**（[`bench/results/proofs.md`](../bench/results/proofs.md)），
+本机 11.7 GiB 总内存还要装下 harness 自己。所以这条验收的判据不是「跑一次」而是
+「**腾空之后再跑**」，而它**暴露了一个真问题**：作业失败时
 `job.error` 记的是 `CalledProcessError: Command '[.../tmp/tmpidq5b550/jobs/…/vectors.json]'
 died with <Signals.SIGKILL: 9>` —— 一屏临时路径，唯独没说「内存不够」。于是新增
 `service.failure_reason()`：信号类失败被翻成一句运维能照着做的话（点名 ~10.15 GiB
 地板、给出 `dmesg | grep -i 'killed process'` 的核实法、并提醒调大 `--concurrency`
-只会更快 OOM），其他信号不甩锅给内存。有 4 例锁住。**换成 ≥16 GB 的机器再验收那一条。**
+只会更快 OOM），其他信号不甩锅给内存。有 4 例锁住。**这条诊断是那次失败唯一的产出，
+它值得留下** —— 换一台 ≥16 GB 的机器，这条路径本来也不会给人看这种错误。
 
 **一处刻意的能力边界**：语义规则（`semantic_bound`）策略在服务里**当场拒**
 （400 + 说明 + 指路 `issue_cert.py`）。陪伴证明只存在于那条命令行路径，服务发一张

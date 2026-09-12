@@ -26,7 +26,7 @@
 | Python | 3.10+，**标准库** | 同左 |
 | `circuits/target/release/pop-script` | **需要**（宿主判定也走它，只是加 `--check`） | 需要 |
 | Rust + SP1 工具链 | 不需要 | **需要**（`SP1_PROVER=cpu`） |
-| 内存 | 可忽略 | **≥12 GB，且同时只能有一个证明器**（固定地板 ~10.15 GiB，见 [`bench/results/proofs.md`](../bench/results/proofs.md)） |
+| 内存 | 可忽略 | **≥12 GB，且同时只能有一个证明器**（固定地板 ~10.15 GiB，见 [`bench/results/proofs.md`](../bench/results/proofs.md)）。⚠️ 「≥12 GB」是**刚好装得下**而不是「有余量」：11.7 GiB 的机器上实测 `MemAvailable` 会掉到 0.15 GiB 并靠 swap 撑住 —— 同时有别的进程在占内存就会 OOM。**出证前先腾内存** |
 | 磁盘 | 每张 check 证书 ~10 KB | 每份作业 ~4 MB（`proof.bin`） |
 | 网络 | 无 | 无（出证不需要联网；上链才需要 RPC） |
 
@@ -159,7 +159,7 @@ export POP_SIGNING_KEY=/etc/pop/signing.key
 | 服务起不来 | `--pack` 指向的文件是否存在且是合法 JSON；启动日志里 `⚠ 跳过策略包` 那几行 |
 | `/v1/attest` 一直 `proving` | `free -g` 看是不是在换页；真证明 2.5 分钟是正常的，明显更久多半是内存不够 |
 | 作业 `failed` | `GET /v1/attest/{job}` 的 `error` 字段；工作线程把异常记在那里 |
-| `error` 里写着「被 SIGKILL 杀死」 | **内存**。SP1 core 证明的地板 ~10.15 GiB（[`bench/results/proofs.md`](../bench/results/proofs.md)）。核实 `dmesg \| grep -i 'killed process'`；调大 `--concurrency` 只会更快 OOM |
+| `error` 里写着「被 SIGKILL 杀死」 | **内存**。SP1 core 证明的地板 ~10.15 GiB，而 12 GB 机器只是「刚好装得下」（§1.1）。先腾内存再重试；核实 `dmesg \| grep -i 'killed process'`。**调大 `--concurrency` 只会更快 OOM** |
 | `verify_cert.py` 报 `anchor chain=bad` | 账本被改过或被并发写过。服务内部用 `threading.Lock` 串行化追加，**手动**编辑或另一个进程同时写会打断哈希链 |
 | `trace_binding` FAIL | 是否漏了 `--receipts`；没有回执时它本来就验不了（§2） |
 | 429 | 队列满。看 `GET /v1/health` 的 `outstanding`/`capacity`；要么退避重试，要么换机器（别把 `--concurrency` 调大） |

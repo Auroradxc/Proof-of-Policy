@@ -594,7 +594,9 @@ curl -s -X POST localhost:8787/v1/attest -H 'Content-Type: application/json' \
 加 `<Signals.SIGKILL: 9>`，唯独没说原因。信号类失败因此被翻成「多半是内存不足 +
 ~10.15 GiB 地板 + `dmesg | grep -i 'killed process'` 的核实法」，其他信号如实说
 信号号、不甩锅给内存。这条是**被真事逼出来的**：`POP_TEST_PROOF=1` 那条验收用例
-2026-09-13 在本机（12 GB）被 OOM 杀在 9.7 GiB 常驻。
+2026-09-13 在本机（11.7 GiB）与别的进程并跑时被 OOM 杀在 9.7 GiB 常驻 —— **腾空后
+重跑通过**（171.1 s）。也就是说这台机器装得下这一次证明，但**没有余量**：`MemAvailable`
+中途一度只剩 0.15 GiB。
 
 ## 3. Shell 脚本
 
