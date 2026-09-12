@@ -5,7 +5,11 @@
 
 ---
 
-## 0. 当前基线（2026-09-10 实测）
+## 0. 开工基线（2026-09-10 实测 —— **历史快照，不是现状**）
+
+> 现状看 [`plan-p0p1p2.md`](plan-p0p1p2.md)。本节保留下来是为了说明**起点在哪**：
+> 当时 `policydsl/` 只有 11 个单测、`format_check`/`tool_arg_guard`/`budget_bound`
+> 还是 Python 侧 stub、`circuits/` 尚不能构建。下面是那一刻的读数。
 
 - 工具链已装：Rust stable 1.98、SP1 cargo-prove **6.7.0**（+ succinct rustc 1.94 toolchain）、Go 1.25（gnark native 证明需）、protoc、cargo=rsproxy 镜像、GitHub 克隆=gh-proxy 镜像（仓库局部）。
 - WSL 内存已提至 12GB（真实 CPU Core 证明峰值 ~9–10GB，原 7.6GB OOM）。
@@ -136,8 +140,15 @@
 - [x] **对标 zkAgent（ePrint 2026/199）**：`bench/comparison_zkagent.md` —— 二者**正交可组合**；PoP 在**低一个数量级硬件**（24 核/12 GB vs 32 核/512 GB）下：证明时间同量级（118.9–172.5 s vs 99–194 s）、证明大小相当（2.7 MiB vs LogUp 3.1 MiB）、纯验证 ~90 ms（vs 38 ms–0.42 s），并额外提供**承诺式隐私**（口径见 `bench/comparison_zkagent.md` §4.4 —— 「不公开明文」，非「内容不可恢复」）
 - [x] **安全模型**：`docs/security-model.md`（完备性/健全性/内容隐私/脱敏健全性/证据不可伪造/绑定/记录完整性 + 对应实验 + “为何违规轨迹无法通过验证”）
 - [x] **论文初稿**：`paper/proof-of-policy.md`（威胁模型/系统/安全模型/实验含对标/相关工作四派定位/局限）
-- [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；测试 **102+ 全绿（1 skip=设计内）**
-- ⏳ 待办（延伸）：verifier-only 二进制（免构造证明器，降低验证冷启动）；链上锚定 RPC 后端；format/budget/tool 规则入电路
+  —— ⚠️ **初稿已由 LaTeX 版取代**：权威源是 `paper/proof-of-policy.tex`（xelatex + ctex），
+  `.md` 只是阅读镜像且已落后（缺 L8/L9）。以 `.tex` 为准。
+- [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；
+  测试 **469 全绿 / 13 skip**（2026-09-12 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
+- [x] **待办（延伸）—— 三项均已完成**（此前误记为待办，2026-09-12 订正）：
+  verifier-only 二进制（`pop-verify`，见 Phase P7-a）；链上锚定 RPC 后端（`RpcAnchorBackend`，见 P7-c）；
+  format/budget/tool 规则入电路（见 P7-b）
+- ⏳ **本阶段真正的延伸待办**（转 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9）：
+  **T1 租 ≥64 GB 云机**（链上 groth16 验证 = P1-7，**唯一的外部阻塞**；顺带补 P2-12 全矩阵）
 
 ---
 
@@ -150,6 +161,12 @@ P0 ─► P1 ─► P2 ─► P3(透明MVP★)
 - 里程碑硬优先级：**P3 透明模式 MVP 必达**。
 - 砍单顺序：P4 私有模式 → P5 Agent 深度 → P6 消融。
 - 每阶段完成把基线写入 `roadmap.md` 勾选清单。
+  —— ⚠️ **这条流程在 2026-08～09 期间没有执行**，导致 `roadmap.md` 与
+  [`8week-gantt.md`](8week-gantt.md) 长期停在「Rust/SP1 未装」的旧状态。
+  **2026-09-12 已一次性补回**；此后本文件的阶段完成时须同步回填，否则同样会漂移。
+- 另注：本文件用 **Phase 0–6 + P7** 编号，`../roadmap.md` 用 **周0–W8**，
+  [`plan-p0p1p2.md`](plan-p0p1p2.md) 用 **P0/P1/P2 + T1–T4** ——
+  三套编号的映射表见 [`../roadmap.md`](../roadmap.md) §3。
 
 ## 4. 已知环境对策（详见记忆 zk-policy-env-setup）
 

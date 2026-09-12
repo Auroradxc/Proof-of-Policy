@@ -1,7 +1,16 @@
 # Proof-of-Policy · 8 周甘特图 & 看板
 
+> ⚠️ **本文件是 8 周学习阶段的进度看板，已完成并冻结**（不再更新）。
+> 当前开发计划见 [`plan-p0p1p2.md`](plan-p0p1p2.md)；三套编号的对应关系见
+> [`../roadmap.md`](../roadmap.md) §3。
+>
+> **2026-09-12 订正**：看板此前从未回填（`dev-plan.md` §3 承诺的「每阶段完成把基线写入
+> `roadmap.md` 勾选清单」没有执行），停在全部未勾的状态。下面的甘特图保留为**当时的排期**，
+> 看板已按实际交付补齐。
+
 > 起始日按 2026-08-03（周0）排布，可整体平移。依赖关系见 v2 计划：周0→W1→W2→W3→W4(★MVP)→W5→W6→W7→W8。
-> 配套：《方向2_Proof-of-Policy_8周计划_v2_零基础版.md》、`docs/learning-calendar.md`。
+> 配套：《方向2_Proof-of-Policy_8周计划_v2_零基础版.md》（**在仓库外的上层工作区**
+> `Proof-of-Policy/02_项目计划/`，不随本仓库分发）、`docs/learning-calendar.md`。
 
 ## 一、甘特图（Mermaid）
 
@@ -37,6 +46,10 @@ gantt
     论文初稿                 :milestone, m4, 2026-10-04, 0d
 ```
 
+> 图中 `m3 demo 视频` 是**当时的里程碑，最终未产出**：交付形态改为
+> `scripts/demo_e2e.py` 一键端到端 + `docs/demo/` 的 HTML/SVG/PNG 报告与截图
+> （由 `scripts/make_shots.py` 生成）。其余里程碑均按期达成。
+
 ## 二、关键路径
 
 ```
@@ -53,28 +66,31 @@ gantt
 
 | 周 | 待办（本周） | 进行中 | ✅ 已完成 |
 |---|---|---|---|
-| **周0** | [ ] 装 Rust+SP1；[ ] 跑通 fibonacci 证明 | | [ ] 概念阅读开始 |
-| **W1** | [ ] 概念笔记（三性质/R1CS）；[ ] SP1 最小证明 | | [ ] 环境跑通 |
-| **W2** | [ ] KeywordBlock/LengthBound 实现+单测；[ ] 基准表 | | [ ] 规则库 v0 |
-| **W3** | [ ] PatternBlock（NFA 路径）；[ ] ≥2 类 PII 规则 | | [ ] 字符串规则模块 |
-| **W4** | [ ] 策略编译器；[ ] 透明模式端到端；[ ] 链上 verify | | [ ] **PoP v0（MVP）** |
-| **W5** | [ ] 响应承诺；[ ] 违规定位披露；（尽力）redaction | | [ ] PoP v1 私有简化 |
-| **W6** | [ ] LangGraph 插桩；[ ] 合规证书；[ ] 链上锚定 | | [ ] 证书 + demo |
-| **W7** | [ ] 成本曲线；[ ] 四象限表；[ ] 安全模型草稿 | | [ ] 评测 + 模型 |
-| **W8** | [ ] 论文初稿；[ ] 复现指南；[ ] demo 视频 | | [ ] 论文 + 仓库 |
+| **周0** | [x] 装 Rust+SP1；[x] 跑通 fibonacci 证明 | | [x] 概念阅读开始 |
+| **W1** | [x] 概念笔记（见 `architecture.md`）；[x] SP1 最小证明 | | [x] 环境跑通 |
+| **W2** | [x] KeywordBlock/LengthBound 实现+单测；[x] 基准表 | | [x] 规则库 v0 |
+| **W3** | [x] PatternBlock（NFA 路径）；[x] ≥2 类 PII 规则 | | [x] 字符串规则模块 |
+| **W4** | [x] 策略编译器；[x] 透明模式端到端；[x] 链上 verify（→ W6 交付） | | [x] **PoP v0（MVP）** |
+| **W5** | [x] 响应承诺；[x] 违规定位披露；[x] redaction | | [x] PoP v1 私有 |
+| **W6** | [x] 三框架插桩；[x] 合规证书；[x] 链上锚定（真跑本地 Anvil） | | [x] 证书 + 一键 demo |
+| **W7** | [x] 成本曲线；[x] 四象限表；[x] 安全模型 v2（L1–L9） | | [x] 评测 + 模型 |
+| **W8** | [x] 论文（`paper/proof-of-policy.tex`）；[x] 复现指南；[ ] demo 视频（**未产出 → 改由一键 demo + `docs/demo/` 截图替代**） | | [x] 论文 + 仓库 |
 
 ## 四、周产出速查（对仓库落点）
 
-| 周 | 落点 | 验收 |
-|---|---|---|
-| W1 | `docs/w1_notes.md`、SP1 例程 | 口述三性质 |
-| W2 | `policydsl/model.py`、`tests/test_dsl.py` | 单测全绿 + 基准表 |
-| W3 | `policy_packs/finance_redaction_v1.json`、`docs/policy-dsl.md` | ≥2 类 PII 通过 |
-| W4 | `circuits/program`、`circuits/script` | PoP v0 证明→验证 |
-| W5 | 私有模式模块、`docs/security-model.md` 第一节 | 验证者看不到全文 |
-| W6 | `demo/`、cert 脚本 | 真实会话证书可验证 |
-| W7 | `bench/`、`docs/security-model.md` | 成本曲线 + 对比表 |
-| W8 | 论文 + README 复现 | 导师按 README 复现通过 |
+> 「计划落点」是当时写的目标位置，「实际落点」是交付真正所在的文件 —— 两列不一致的地方
+> 是**有意的订正**，不是笔误。
+
+| 周 | 计划落点 | 实际落点 | 验收 |
+|---|---|---|---|
+| W1 | `docs/w1_notes.md`、SP1 例程 | `docs/architecture.md`（**独立笔记文件从未产出**） | 口述三性质 |
+| W2 | `policydsl/model.py`、`tests/test_dsl.py` | 同左 | 单测全绿 + 基准表 |
+| W3 | `policy_packs/finance_redaction_v1.json`、`docs/policy-dsl.md` | 同左 + `policydsl/nfa.py`、`policydsl/pii.py` | ≥2 类 PII 通过 |
+| W4 | `circuits/program`、`circuits/script` | 同左 | PoP v0 证明→验证 |
+| W5 | 私有模式模块、`docs/security-model.md` 第一节 | `policydsl/commit.py` + `pop-types::evaluate_private` | 验证者看不到全文 |
+| W6 | `demo/`、cert 脚本 | **`policydsl/agent.py` + 三个框架适配器 + `policydsl/cert.py` + `scripts/demo_e2e.py`**（`demo/` 空目录已删） | 真实会话证书可验证 |
+| W7 | `bench/`、`docs/security-model.md` | 同左（+ `docs/quadrant.md`、`docs/plan-p0p1p2.md`） | 成本曲线 + 对比表 |
+| W8 | 论文 + README 复现 | `paper/proof-of-policy.tex`（权威源）+ `docs/reproduce.md` + `docs/demo/` 截图 | 导师按 README 复现通过 |
 
 ## 五、风险与退路（速览）
 
