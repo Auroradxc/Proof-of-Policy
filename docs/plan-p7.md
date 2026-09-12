@@ -49,6 +49,10 @@ Core 证明路径不受影响（~10 GB，回归 PASS）。
 > `receipts` 回执链；② `budget_bound(tokens)` 不再是"声明的 `token_count`"，而是**电路内自算**。
 > 现状见 `docs/plan-p0p1p2.md` §P1-5 与 `docs/modules/05-zk-circuits.md` §2.3a。本节保留作对照，
 > 不复写历史。
+>
+> ③ 向量数：P7-b 交付时是 **14 向量**，后续叠加 P1-5（回执链）、P2-9b（同形折叠）后
+> 现为 **19 向量** —— 上文的「14/14」只在当时的向量集上成立，当前口径见
+> `docs/reproduce.md` §验收判据（`host 19/19 · prove 19/19`）。
 
 ## C. 链上锚定 RPC 后端（真跑本地 Anvil）—— 已实现并端到端 PASS
 

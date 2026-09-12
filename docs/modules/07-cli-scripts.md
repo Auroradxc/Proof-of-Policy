@@ -25,7 +25,7 @@
 | `prove_multiparty.py` | **多证明者**（P2-11）：三个角色各证一段策略切片 → 证书 + 两条验收判据的现场造假演示 | `pop-script` | 是（可 `--no-prove`） | 出证 ~2 分钟 × 非空切片数（示例包 2 段） |
 | `deploy_anchor.py` | 部署 `Anchor.sol`（字节码来自入库 artifact） | 否 | 否 | 秒级 |
 | `make_shots.py` | 从会话产物生成截图/HTML/SVG | 否 | 否 | 秒级 |
-| `anchor_e2e.sh` | 起 anvil → 部署 → demo → `--rpc` 核对 + 反例 | 可选 | 可 `--prove` | ~10 s / ~70 s |
+| `anchor_e2e.sh` | 起 anvil → 部署 → demo → `--rpc` 核对 + 反例 | 可选 | 可 `--prove` | ~10 s / **3:10**（带真证明，2026-09-12 本机实测） |
 | `make_audit_proof.sh` | 生成 compressed 审计 fixture | `pop-script` | 是（需 ≥16 GB） | 若干分钟 |
 | `install_ezkl.sh` | 装 ezkl 栈（`ezkl==23.0.5 / onnx / torch`）到独立 venv，装前核版本、装后冒烟 `ezkl_prove.py info` | 否 | 否 | 取决于网络 |
 | `install_frameworks.sh` | 装 langchain/langgraph/mcp 到独立 venv | 否 | 否 | 取决于网络 |
@@ -445,7 +445,7 @@ python3 scripts/verify_cert.py --cert c.json --pack p.json --ledger l.jsonl \
 
 ```bash
 bash scripts/anchor_e2e.sh                 # 不生成证明，~10s
-SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove    # 附真实 Core 证明，~66s / ~10GB
+SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove    # 附真实 Core 证明，本机实测 3:10 / 峰值 10.2 GiB
 RPC=http://… bash scripts/anchor_e2e.sh    # 复用已有节点
 bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 ```

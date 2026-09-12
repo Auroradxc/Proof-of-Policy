@@ -1,5 +1,10 @@
 # 策略 DSL 规范（v0.1）
 
+> ⚠️ **本文件是 v0.1 阶段的历史规范，已不再维护。**「规则长什么样 → 编译成什么 → 谁怎么判定」
+> 的**权威说明**是 [`modules/01-policy-dsl.md`](modules/01-policy-dsl.md)；
+> 电路侧的对照见 [`modules/05-zk-circuits.md`](modules/05-zk-circuits.md)。
+> 本文保留作当时的形状对照，下表的 kind 清单与状态已按现状订正（2026-09-12）。
+
 ## 策略包格式（JSON）
 
 ```jsonc
@@ -18,14 +23,22 @@
 
 ## 规则类型
 
+**共 8 个 kind。** 除 `semantic_bound` 委托给 ezkl 陪伴证明外，其余**七类全部入电路**
+（`pop-types::evaluate`）；`policy_hash` 是这 8 类的规范字节的 SHA-256。
+
 | kind | 语义 | params | 状态 |
 |---|---|---|---|
-| `keyword_block` | 响应不得包含任一关键词/短语（大小写不敏感） | `keywords: [str]` | W2 已实现 |
-| `length_bound` | 响应字符数在 `[min, max]` | `min, max: int` | W2 已实现 |
-| `pattern_block` | 响应不得匹配任一正则（子串；正则须在受支持子集内） | `patterns: [str]` | W3 已实现（NFA 编译进 ConstraintSpec） |
-| `format_check` | 响应必须可解析为声明格式（json/int/float） | `format: str` | W1.5 已实现(Python) |
-| `tool_arg_guard` | 工具调用参数不得含禁止字段（可限定 `tools`） | `forbidden_fields: [str]`, `tools?: [str]` | W1.5 已实现(Python) |
-| `budget_bound` | 累计调用次数/token 预算 | `budget: int`, `unit: calls\|tokens` | W1.5 已实现(Python) |
+| `keyword_block` | 响应不得包含任一关键词/短语（ASCII 大小写不敏感） | `keywords: [str]` | ✅ 已实现（Python + 电路） |
+| `normalized_keyword_block` | 先按折叠表规范化响应（同形异义→ASCII、删零宽、全角→半角）再做子串判定 | `keywords: [str]`，`fold?: "v1" \| 显式表` | ✅ **P2-9b**（Python + 电路；表随约束走，进 `policy_hash`） |
+| `length_bound` | 响应码点数在 `[min, max]` | `min, max: int` | ✅ 已实现（Python + 电路） |
+| `pattern_block` | 响应不得匹配任一正则（子串；正则须在受支持子集内） | `patterns: [str]`，`match_mode?: pike\|naive` | ✅ 已实现（NFA 编译进 ConstraintSpec，两侧同一份 spec） |
+| `format_check` | 响应必须可解析为声明格式（json/int/float 规范子集） | `format: str` | ✅ 已实现（**P7-b 起入电路**） |
+| `tool_arg_guard` | 工具回执链的参数不得含禁止字段（可限定 `tools`） | `forbidden_fields: [str]`, `tools?: [str]` | ✅ 已实现（**P7-b 起入电路**） |
+| `budget_bound` | 累计调用次数 / 响应空白 run 数预算 | `budget: int`, `unit: calls\|tokens` | ✅ 已实现（**P7-b 起入电路**；`tokens` 口径自 P1-5 改为电路内自算） |
+| `semantic_bound` | 模型打分须过阈值（`le`/`ge`） | `threshold_bp: int`, `direction: le\|ge` | ✅ **P2-9**：委托给 ezkl，**不在电路内**判定，只登记进公开值 `delegated` |
+
+> 上表的权威版本（含每条规则的判定对象、编译期约束与反例）见
+> [`modules/01-policy-dsl.md`](modules/01-policy-dsl.md) §2。
 
 ## 语义
 

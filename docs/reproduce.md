@@ -63,10 +63,11 @@ RESULT: PASS
 SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 19/19 · prove 19/19（prove 约 45 min，见下方注）
 ```
 
-> 真实证明默认**分块**（`--chunk 4`，共 4 个 `pop-script` 进程）。原因很实际：
-> 本机（11.9 GB RAM）把 14 个向量塞进一个进程时，会在第 6~7 个证明处被内核
+> 真实证明默认**分块**（`--chunk 4`；19 条向量 = 5 个 `pop-script` 进程）。原因很实际：
+> 本机（11.9 GB RAM）把全部向量塞进一个进程时，会在第 6~7 个证明处被内核
 > OOM-kill（峰值 10.65 / 10.82 GB）。分块不改变交给电路的输入，只是让每个进程
 > 从干净状态开始；`--chunk 0` 可恢复单进程（需 ≥16 GB 机器）。
+> 2026-09-12 那次 19 向量的整批重跑用的是 `--chunk 2`（10 个子进程，约 45 min）。
 
 > ⚠️ **一台 12 GB 机器的证明侧天花板**（P2-12 实测，[`bench/results/proofs.md`](../bench/results/proofs.md)）：
 > 别指望换更大的策略再跑一遍 —— 峰值常驻的**固定地板就是 ~10.15 GiB**
@@ -326,7 +327,7 @@ bash scripts/retry_install_foundry.sh          # 网络可用时安装；成功�
 
 # 一键端到端：起 anvil → 部署合约 → 会话 demo（每张证书上链）→ 第三方 --rpc 核对（含反例对照）
 bash scripts/anchor_e2e.sh                     # 默认不生成 SP1 证明（秒级）
-SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附带真实 Core 证明（~66s / ~10 GB）
+SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附带真实 Core 证明（本机实测 3:10 / 峰值 10.2 GiB）
 ```
 
 期望输出（末段）：
@@ -367,9 +368,12 @@ python3 scripts/verify_session.py --session .../session.json \
 - `python3 -m unittest discover tests` → **469 passed（13 skip）**（2026-09-12 复跑；skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = `POP_TEST_SESSION` 门控的会话聚合证明端到端用例，1 = `POP_TEST_MULTIPARTY` 门控的多证明者端到端用例（真出两份切片证明），1 = 设计内「依赖已装」用例）；
 - `scripts/prove_policy.py` → **RESULT: PASS**；
 - `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 **整批重跑**：19 条向量各出一份真 core 证明，`--chunk 2` 切到 10 个独立子进程，约 45 min，见 `modules/08-tests-bench.md` §5）
-  （真实证明分 4 块跑，见 §4 的说明；`--no-prove` 时跳过真实证明）；
+  （真实证明分块跑：默认 `--chunk 4`，那次重跑用 `--chunk 2` = 10 块，见 §4 的说明；`--no-prove` 时跳过真实证明）；
 - `verify_cert.py`（带 `--response T′`）/ `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证与响应绑定核对）；
 - `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 12/12 + 反例对照，见 §12）；
+  `--prove` 变体（2026-09-12 本机实测重跑）→ **ALL PASS ✅**，含真 Core 证明：
+  `[PASS] zk_proof SP1 proof verified (pop-script) + response binding`、`[PASS] chain_anchored 12/12`，
+  整条命令 **3:10 墙钟 / 峰值 10.18 GiB**（`/usr/bin/time -v`）；
 - `python3 scripts/ezkl_prove.py selftest` → **四条文本全 PASS**（含同形异义反例，见 §8）；
 - `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic` → **OK**（真·端到端一例，~61 s）。
 
@@ -378,7 +382,7 @@ python3 scripts/verify_session.py --session .../session.json \
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | 证明进程被杀、无输出 | 内存不足（WSL 默认 ~7.6GB） | 宿主 `C:\Users\<你>\.wslconfig` 设 `memory=12GB`，`wsl --shutdown` 后重启 |
-| `cross_validate --prove` 跑到第 6~7 个向量就被 kill | 单进程跑 14 个证明会累积内存（峰值 10.8 GB） | 用默认的 `--chunk 4`（本来就默认分块）；别改成 `--chunk 0` |
+| `cross_validate --prove` 跑到第 6~7 个向量就被 kill | 单进程跑 19 个证明会累积内存（峰值 10.8 GB） | 用默认的 `--chunk 4`（本来就默认分块）；别改成 `--chunk 0` |
 | `bench_proofs.py` 的某个点被 kill（退出码 137） | 该点超出本机证明侧天花板（固定地板 ~10.15 GiB） | **这是结论不是故障**：脚本会把它如实记进 `rows[].error` 并继续后面的点；换更小的点（减规则数 / 减长度），边界见 [`bench/results/proofs.md`](../bench/results/proofs.md) |
 | `cargo prove ... unreachable` | `SP1_PROVER=native` 非法 | 用 `SP1_PROVER=cpu` |
 | 出证报 “light prover cannot prove” | light 只能执行/验证 | 用 `cpu` |

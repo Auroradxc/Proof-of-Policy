@@ -6,7 +6,7 @@
 #
 # 用法：
 #   bash scripts/anchor_e2e.sh                 # 默认不生成 SP1 证明（快，~10s）
-#   SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附带真实 Core 证明（~66s / ~10GB）
+#   SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附带真实 Core 证明（本机实测 3:10 / 峰值 10.2 GiB）
 #   RPC=http://127.0.0.1:8545 bash scripts/anchor_e2e.sh   # 复用已在跑的节点
 #   bash scripts/anchor_e2e.sh --keep           # 结束后不关闭 anvil
 #

@@ -234,7 +234,13 @@ if let Some(SpecConstraint::SemanticBound { name, .. }) =
 编译期还有一道同样的检查（`policydsl/compile.py`，报错更友好）；电路内这道是兜底 ——
 手写的 `PrivateRequest` 绕不过编译期检查。回归见 `tests/test_semantic.py`。
 
-解决路径（未做）：`P2-9b 同形异义折叠`，见设计文档 §10。
+~~解决路径（未做）~~：`P2-9b 同形异义折叠`**已交付**（2026-09-11）——
+`normalized_keyword_block` 把同形异义字/零宽字符/全角折叠成 ASCII 后再做子串判定，
+**折叠表随约束走**（`fold` 字段进规范字节、进 `policy_hash`），且全电路内、零依赖。
+设计见 [`../design-semantic-rules.md`](../design-semantic-rules.md) §1–§3 与 §10，代码见
+`policydsl/normalize.py`（表构造）+ `pop-types::folded_text` / `SpecConstraint::NormalizedKeywordBlock`
+（`circuits/types/src/lib.rs`，执行）；验收在 `tests/test_semantic.py` 与
+`cross_validate` 的 `norm_*` 向量（host 19/19 · prove 19/19）。
 
 再往下是正常流程：复用 `evaluate` 算出公开结论，再**只保留承诺**：
 

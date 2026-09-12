@@ -610,7 +610,7 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 | **9.4** | **策略规则**：新增 `semantic_bound` kind，贯通 `model.py → compile.py → serialize.py → pop-types` | `Constraint::SemanticBound { name, model_vkey, onnx_sha256, threshold_bp, direction }` | `tests/test_semantic.py::test_compile_semantic`；契约哈希稳定 |
 | **9.5** | **组合与绑定** —— ✅ **已完成（2026-09-12）** | `policydsl/semantic.py::verify_companion/companion_entry`、`cert.build_payload(semantic=)`、`scripts/{issue_cert,verify_cert}.py` | 见 9.7 反例；**两处与原文不同，理由见 9.5 记要** |
 | **9.6** | **信任边界论证** —— ✅ **已完成（2026-09-12）** | [`design-semantic-rules.md`](design-semantic-rules.md) | 与 §P1-8 的形式化模型对接：新增**引理 L7**（**不是 L6 —— 那号已被 P1-6 占用**，见记要） |
-| **9.7** | **验收 + 反例** —— ✅ **已完成（2026-09-12）** | `tests/test_semantic.py`（29 例 / 6 条反例） | 见下；全套 **348 passed / 11 skipped**（P2-9 收尾时复跑；**当前全量为 469/13**，见 §4 P2-10 / P2-11） |
+| **9.7** | **验收 + 反例** —— ✅ **已完成（2026-09-12）** | `tests/test_semantic.py`（**30 例** / 6 条反例；P2-9 收尾时为 29 例，P2-9b 的折叠用例 +1） | 见下；全套 **348 passed / 11 skipped**（P2-9 收尾时复跑；**当前全量为 469/13**，见 §4 P2-10 / P2-11） |
 
 > **9.1–9.4 的完成状态补记（2026-09-12 审计）** —— 这四行此前没打勾，实物其实都在，逐条对账如下。
 > 其中 **9.1 有一处未按计划交付**，如实记下：
@@ -958,8 +958,8 @@ P1-6 占用的「组合」一词撞车 —— 两者都叫 composite 会让「�
 | 阶段 | 判据 |
 |---|---|
 | P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove **19/19** 仍绿（2026-09-12 整批 prove 重跑）；⑤ 全量测试无回归（2026-09-12 复跑：**469 全绿 / 13 skip**，skip 见 §7 说明） |
-| P1 | ① `test_trace.py` ✅（**P1-5 已完成**：39 例含四条验收 + P1-5b 的 seal/截尾，`cross_validate` host/prove 14/14）/ `test_compose.py` ✅（**P1-6 分支 A 已完成**：48 例含 5 组反例 + 四条驱动接线回归）/ `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应（**L6 已从「规划中」改为已证**） |
-| P2 | ① `test_semantic.py` **29 例全绿含 6 条反例**（§9.3；✅ 2026-09-12）；② `test_session.py` ✅（**P2-10 已完成（2026-09-12）**：38 例，含计划的两条验收判据 —— 混异策略与挖尾 —— 并对着真证明跑过；见 §4 P2-10 记要）；③ `test_multiparty.py` ✅（**P2-11 已完成（2026-09-12）**：44 例，含计划的两条验收判据 —— 缺角色签名与单角色切片被换 —— 并对着真证明跑过；见 §4 P2-11 记要）；④ `bench/results/` 新增表格（含 ezkl 出证成本 ✅ `semantic.md`）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 **L7** 对接（**L6 已被 P1-6 占用**，见 §9.2 记要） |
+| P1 | ① `test_trace.py` ✅（**P1-5 已完成**：39 例含四条验收 + P1-5b 的 seal/截尾，`cross_validate` host/prove **19/19**（2026-09-12 整批重跑；P1-5 当时是 14/14））/ `test_compose.py` ✅（**P1-6 分支 A 已完成**：48 例含 5 组反例 + 四条驱动接线回归）/ `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应（**L6 已从「规划中」改为已证**） |
+| P2 | ① `test_semantic.py` **30 例全绿含 6 条反例**（§9.3；✅ 2026-09-12）；② `test_session.py` ✅（**P2-10 已完成（2026-09-12）**：38 例，含计划的两条验收判据 —— 混异策略与挖尾 —— 并对着真证明跑过；见 §4 P2-10 记要）；③ `test_multiparty.py` ✅（**P2-11 已完成（2026-09-12）**：44 例，含计划的两条验收判据 —— 缺角色签名与单角色切片被换 —— 并对着真证明跑过；见 §4 P2-11 记要）；④ `bench/results/` 新增表格（含 ezkl 出证成本 ✅ `semantic.md`）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 **L7** 对接（**L6 已被 P1-6 占用**，见 §9.2 记要） |
 
 ---
 
@@ -1102,11 +1102,11 @@ verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 | 复验项 | 命令 | 实测结果 |
 |---|---|---|
 | 标注与工件自报一致 | `verify_cert.py --cert <zk 证书> --proof <2.7 MiB 真证明> --keyring <公钥>` | `[PASS] proof_mode  cert=core (hiding: none); core[sidecar] == core[meta]`，连同签名/证明/三方策略绑定/响应绑定/锚定共 **9/9 PASS**（23 s） |
-| 真实证明全量对拍 | `SP1_PROVER=cpu cross_validate.py`（默认 `--chunk 4`） | **`RESULT: host 14/14  prove 14/14  PASS`**，14 个真实 core 证明，24:00 墙钟，峰值 10.97 GB |
+| 真实证明全量对拍 | `SP1_PROVER=cpu cross_validate.py`（默认 `--chunk 4`） | **`RESULT: host 14/14  prove 14/14  PASS`**，14 个真实 core 证明，24:00 墙钟，峰值 10.97 GB（**这是 P0 当时的 14 向量集**；2026-09-12 扩到 19 向量后整批重跑 `host 19/19 · prove 19/19`，`--chunk 2` ≈ 45 min，见下 §7 验收判据与 `docs/reproduce.md`） |
 | guest ELF ↔ vkey 正向 | 上一条的每次 `--verify` 都会**从当前 ELF 重新 `setup` 推导 vkey** | 证书/工件里的 `0x00e314…` == 现 ELF 推导值 ⇒ 三者一致 |
 | guest ELF ↔ vkey 反向 | `pop-script --verify --proof <改 `types` 之前的旧证明>` | 被拒：`pc_start != vk.pc_start`，`EXIT=101` —— 旧 ELF 的证明**无法**在新 ELF 下验通 |
 
-> 顺带查出一个真实缺陷：把 14 个向量交给**一个** `pop-script` 进程会在第 6~7 个证明处被
+> 顺带查出一个真实缺陷：把全部向量交给**一个** `pop-script` 进程会在第 6~7 个证明处被
 > OOM-kill（峰值 10.65→10.82 GB，内存逐证明累加不回落）。`cross_validate.py` 因此改为默认
 > 分块（`--chunk 4`），结果按原序合并；此前文档里写的「prove 14/14」在本机**跑不出来**，
 > 现在才是可复现的判据。
@@ -1126,7 +1126,7 @@ verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 |---|---|---|---|---|
 | **T1** | **租一台一次性 ≥64 GB 云机**（**外部资源，人工动作**），**① 产出 groth16 证明 + 测通验证合约（D2 已拍板）**；**②（顺带）**把 P2-12 证明侧的**全矩阵**补完（见下「T1 的第二个用途」） | ① `P1-7` 链上证明验证的**硬前置**：**本机 12 GB 必 OOM**（compressed 与 groth16 实测都在峰值 ~11.0 GB 被 OOM killer 终止 —— 递归包装的固定开销就超了本机内存，`SHARD_SIZE`/`MEMORY_LIMIT` 无效），groth16/plonk 出不来；② 只是**同一台机器上的顺带**，**不阻塞任何东西** | 需要人工租机（约数小时窗口）+ 一次环境搭建（Rust/SP1 工具链或直接搬 `circuits/` 目标目录）；产出入库后本机可离线复核 | ⬜ **未开始（阻塞中）** —— P1-5 完成后，本项是 **P1 段内唯一剩余任务**，也是唯一的外部阻塞；**不解决它，P1 段无法收尾**。建议立即排期租机 |
 | **T2** | 解开 ezkl `create_evm_verifier()` 的 `RuntimeError: no running event loop` | `P2-9`（D3 选定的全量 ezkl 集成）的最后一个阻塞 | 先试 ezkl 12.x；或绕开该 API，直接由编译产物手写 Solidity verifier | ✅ **已完成（2026-09-11）** —— 两条预设备选都不需要：真因是**调用方式**（API 内部走 `pyo3-async-runtimes`，须在事件循环内调用并 await 其返回的 Future），非版本、非依赖。解见 `policydsl/ezkl_evm.py` + `tests/test_ezkl_evm.py`（10 例）、记要见 §P2-9 子任务表 9.0 |
-| **T3** | 真实 SP1 证明的**全量**回归改为「出证 + 验证」两条腿都在 CI 之外定期跑 | 论文 §7 的证明时间/内存数字 | 单次 `cross_validate --prove` ≈ 24 分钟；本机跑即可 | ⬜ 未开始 |
+| **T3** | 真实 SP1 证明的**全量**回归改为「出证 + 验证」两条腿都在 CI 之外定期跑 | 论文 §7 的证明时间/内存数字 | 单次 `cross_validate --prove` ≈ **45 分钟**（19 向量、`--chunk 2`；14 向量时约 24 分钟）；本机跑即可 | ⬜ 未开始 |
 | **T4** | **P1-5b：堵住回执链的「截尾」缺口**（做 P1-8 时发现，见 [`security-model.md`](security-model.md) §5.3） | `P1-5` 的**健全性缺口**：把链尾那条违规回执**整条删掉**后，剩下的仍是一条结构自洽、逐条签名有效的**真链**，`trace_binding`（证书绑的链 == 送检的链）与 `receipt_chain`（逐条验签）**双双 PASS**；**当链与证书由出证方一起转交时，违规尾巴可被静默截掉**。**这不是「再比一次」能补的** —— 任何只看交付链的检查都无从知道「后面还有没有」 | **网关对会话末端做一次承诺**：`ToolSeal{count, trace_root, ts, keyid, sig}`（域分隔 `pop-trace-seal-v1`），验证方核对 `len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root` + 验签。截尾者只剩两条路：拿原 seal 配截断链（`count` 对不上）或为截断链新签一条（无网关私钥） | ✅ **已完成（2026-09-11，纯代码）** —— 见 `tests/test_trace.py::TestSeal`（9 例）与 `::TestVerifyCertTraceBinding::test_tail_truncation_is_rejected`（原 seal / 伪造 seal / 不带 seal 三路 + 正对照）。改动面：`policydsl/trace.py`（`ToolSeal`/`verify_seal`/`ToolGateway.seal`）+ `cert.build_payload`（载荷**顶层** `trace_seal`）+ `verify_cert.py` **3d** + 各适配器出证点。**两点与原设想的偏离，如实登记**：① **没有做「电路内对 seal 的结构校验」** —— 链尾摘要本就在电路内算并进公开值，「证明绑的是哪条链」已有电路保证；seal 要补的是「网关说这条链到此为止」，那是一个**签名**问题，按本项目「结构入电路、签名在链下」的既有分工放在链下；② **seal 放载荷顶层而不是 `outcome`** —— `outcome` 是证明公开值的镜像（验证方逐字段比对），放进去会让每一张带真实证明的证书都对不上。**残留边界**：验证方须持网关公钥（`--gateway-key`）才拿得到这个保证；只给 `--receipts` 而没给公钥时，3d 记 `PASS + 「截尾不可排除」(skipped)`；且 seal 仍是**网关的**陈述（A4），它把信任挪向网关而非消除信任 |
 
 > **T2 已于 2026-09-11 关闭**（理由见上表与 §P2-9 的 9.0 记要）。

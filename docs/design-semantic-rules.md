@@ -1,7 +1,7 @@
 # 语义规则（学习型规则）的信任边界论证
 
 > 对应计划 §9.6；代码落在 `policydsl/semantic.py`、`semantic/`、`scripts/ezkl_prove.py`、
-> `circuits/types/src/lib.rs`；验收在 `tests/test_semantic.py`（29 例，含 6 条反例）；
+> `circuits/types/src/lib.rs`；验收在 `tests/test_semantic.py`（**30 例**，含 6 条反例）；
 > 成本在 [`bench/results/semantic.md`](../bench/results/semantic.md)。
 >
 > **本文的职责是把边界说清楚，而不是把功能说漂亮。** 下一节起，每一处"我们做到了"
@@ -413,8 +413,8 @@ RESULT: PASS
 
 ## 9. 验收对照
 
-`tests/test_semantic.py`，**29 例**（`python3 -m unittest tests.test_semantic`，
-默认 3.6 s；其中真·端到端一例由 `POP_TEST_EZKL=1` 打开，约 61 s）。
+`tests/test_semantic.py`，**30 例**（`python3 -m unittest tests.test_semantic`，
+默认 3.4 s；其中真·端到端一例由 `POP_TEST_EZKL=1` 打开，约 61 s）。
 
 计划 §9.3 要求的七例与实现的对应：
 
@@ -432,7 +432,7 @@ RESULT: PASS
 `length_bound` 覆盖图）、fail-closed 四条（私有模式 panic、公开模式登记委托、
 未知系统、证明文件缺失、路径逃逸）、`verify_cert.py` 分支五条、导出确定性两条。
 
-**分层是刻意的**：只有一例需要真的出一份 ezkl 证明（默认 skip），其余 28 例在
+**分层是刻意的**：只有一例需要真的出一份 ezkl 证明（默认 skip），其余 29 例在
 **没有 ezkl、没有 32 MiB `srs`** 的机器上也能全绿 —— 六条反例在第 1–5 步就被挡住了，
 而第 1–5 步全在默认套件里。把 ezkl 验证器当雪崩测试的最后一颗钉子，而不是整面墙。
 

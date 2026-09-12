@@ -111,22 +111,28 @@ core 边车不得走快路径 —— 这些保证正向检查**不是恒真**的
 
 ## 3. 评测（`bench/`）
 
-五个脚本，覆盖五种成本：
+**六个脚本**，覆盖六种成本：
 
 | 脚本 | 测什么 | 用时不出证？ | 输出 |
 |---|---|---|---|
 | `bench_cycles.py` | **zkVM 周期数**（`pop-script --execute`） | 每点数秒 | `bench/results/cycles.{json,md}` |
-| `bench_proofs.py` | **证明墙钟时间 + 工件大小 + 峰值内存** | 每点 ~100–150 s | `bench/results/proofs.{json,md}` |
+| `bench_ablation.py` | **匹配器消融**：pike(NFA) vs 朴素回溯在病理输入下的退化 | 每点数秒 | `bench/results/ablation.{json,md}` |
+| `bench_proofs.py` | **证明墙钟时间 + 工件大小 + 峰值内存** | 本机实测每点 **119–173 s** | `bench/results/proofs.{json,md}` |
 | `bench_verify.py` | **验证成本**（冷启动 CLI / vkey setup / 纯验证） | 每次 ~20 s | `bench/results/verify.{json,md}` |
 | `bench_semantic.py` | **ezkl 陪伴证明的成本**（setup / prove / verify） | 真出 ezkl 证明 | `bench/results/semantic.{json,md}` |
 | `bench_compose.py` | **组合证明的成本**（两半各自 prove/verify + 组合层开销） | 真出两份 SP1 证明 | `bench/results/compose.{json,md}` |
 
 ```bash
 python3 bench/bench_cycles.py
+python3 bench/bench_ablation.py
 SP1_PROVER=cpu python3 bench/bench_proofs.py
 SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>
 SP1_PROVER=cpu python3 bench/bench_compose.py
 ```
+
+> `bench_proofs.py` 另有 `--proof-mode {core,compressed,groth16,plonk}`（默认 core）与
+> `--points` 口径，写法见 [`bench/README.md`](../../bench/README.md)。量测机器与模式
+> 会被一并写进 `proofs.json` 的 `host` / `proof_mode` 字段 —— **这张表只在它自己的机器上成立**。
 
 **设计要点**（都写在 `bench/README.md`，改评测前先读）：
 
