@@ -101,6 +101,29 @@ def _parse_args(input_str: Any) -> Dict[str, Any]:
     return {"input": input_str}
 
 
+class EarlyStop(RuntimeError):
+    """违规早停时**真正掐断流**用的异常（``hard_stop=True``）。
+
+    它是本项目里唯一一个「**故意**抛出来中断 LLM 调用」的异常，因此两个地方
+    要为它开特例：
+
+    * 回调抛异常默认会被 LangChain **吞掉**（``BaseCallbackHandler.raise_error``
+      缺省 ``False``，只记一条 warning）。所以 ``hard_stop=True`` 时 handler 会把
+      ``raise_error`` 置为 ``True`` —— 不置，这个异常连流都出不去，早停就成了
+      一句空话；
+    * 流被它掐断后，LangChain 会把这次「失败」路由到 :meth:`PoPCallbackHandler.on_llm_error`。
+      那条路要**跳过**，否则一次早停会产出两张证书（stop 证书 + 一张把
+      ``EarlyStop`` 当作模型故障记下来的 error 证书），而后者是误导。
+
+    携带 ``certificate`` 是为了让捕获方拿得到那张 ``streaming.stop`` 证书 ——
+    异常走到调用方时，本 run 的流式状态已经被清掉了。
+    """
+
+    def __init__(self, message: str, certificate: Optional[Dict[str, Any]] = None):
+        super().__init__(message)
+        self.certificate = certificate
+
+
 def error_block(phase: str, error: BaseException,
                 tokens: int = 0, text_len: int = 0) -> Dict[str, Any]:
     """构造载荷**顶层**的 ``error`` 块（失败也要留痕）。
@@ -148,7 +171,8 @@ class PoPCallbackHandler(BaseCallbackHandler):
                  stream_check: bool = True, stream_every: int = 1,
                  on_stream_cert=None, stop_on_violation: bool = False,
                  on_early_stop=None, proof_mode: Optional[str] = None,
-                 gateway: Optional[ToolGateway] = None):
+                 gateway: Optional[ToolGateway] = None,
+                 hard_stop: bool = False):
         super().__init__()
         self.monitor = monitor
         # 工具网关（P1-5）：工具回执由它签发（``on_tool_end`` 在工具**执行后**
@@ -172,6 +196,15 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self.on_stream_cert = on_stream_cert
         self.stop_on_violation = stop_on_violation
         self.on_early_stop = on_early_stop
+        # 真早停（见 :class:`EarlyStop`）。默认**关**：它会让回调抛异常，从而改变
+        # 调用方的控制流 —— 这类行为不能靠升级悄悄改掉既有集成。要真早停的集成
+        # 显式打开（``stop_on_violation=True, hard_stop=True``）。
+        #
+        # 置 ``raise_error`` 是**必需**的一步，不是可选修饰：LangChain 缺省会吞掉
+        # 回调抛出的异常（只记一条 warning），不置的话 EarlyStop 连流都出不去。
+        self.hard_stop = hard_stop
+        if hard_stop:
+            self.raise_error = True
         self.stream_certificates: List[Dict[str, Any]] = []
         self.stream_chains: Dict[str, List[str]] = {}   # run_id -> [载荷摘要]
         self._sbuf: Dict[str, str] = {}                 # run_id -> 累积的流式前缀
@@ -243,13 +276,30 @@ class PoPCallbackHandler(BaseCallbackHandler):
                 idx = len(self.stream_chains[run_id]) - 1
                 stop_env = self._stream_cert(
                     run_id, self._sbuf[run_id], partial=False,
-                    extra_stream={"stop": {"reason": "violation",
-                                           "at_index": idx,
-                                           "chain_head": self.stream_chains[run_id][idx]}})
+                    extra_stream={"stop": {
+                        "reason": "violation",
+                        "at_index": idx,
+                        "chain_head": self.stream_chains[run_id][idx],
+                        # ``partial=False`` 说的是「这是本 run 的**结论**」，
+                        # **不是**「判的是完整生成」：早停本来就停在中途，
+                        # 这张证书判的是截至此点的**前缀**。少了这一条，
+                        # "passed=false" 会被读成「本次生成违规」—— 而模型
+                        # 本会继续吐什么，谁都还没看见（与 error_block 的
+                        # ``scope`` 同一套口径）。
+                        "scope": "partial-prefix",
+                    }})
                 self.stream_certificates.append(stop_env)
                 if self.on_early_stop is not None:
                     self.on_early_stop(stop_env)
                 self._sstopped[run_id] = True
+                if self.hard_stop:
+                    # **先出证，后掐断**：异常一旦抛出，这次调用的控制流就交还给
+                    # 调用方（LangChain 会把它路由成一次「失败」）。顺序反过来的话
+                    # 那张 stop 证书就得建在异常处理里，而此刻流式状态已经清了。
+                    raise EarlyStop(
+                        f"policy violation at token {self._scount.get(run_id, 0)}; "
+                        f"stream aborted (certificate attached)",
+                        certificate=stop_env)
 
     def _clear_stream_state(self, run_id: str) -> None:
         """清掉该 run 的流式状态（正常结束与报错两条路都要走这一步）。"""
@@ -288,6 +338,12 @@ class PoPCallbackHandler(BaseCallbackHandler):
         「本次生成合规」，``error.scope == "partial-prefix"`` 与
         ``text_len == 0`` 一起把它说成「这次生成没有产出任何可判定的内容」。
         """
+        if isinstance(error, EarlyStop):
+            # 这不是「模型出错了」，是**我们自己**掐断的：stop 证书已经发过了
+            # （它就在 ``error.certificate`` 上）。再签一张把 EarlyStop 记成模型
+            # 故障的证书是**误导** —— 一次早停产出两张证书也会让计数对不上。
+            self.errors.append(error)
+            return
         run_id = str(kwargs.get("run_id") or "")
         text = self._sbuf.get(run_id, "")
         tokens = self._scount.get(run_id, 0)

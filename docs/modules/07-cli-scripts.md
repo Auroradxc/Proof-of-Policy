@@ -418,7 +418,16 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
 > 验证方拿网关侧收到的回执重算最后一条的 `SHA256`，即可核对「这份证明绑的是哪条链」，
 > 与 `challenge` 之于响应完全对称；`seal` 更进一步回答「这条链**到此为止**」，因此是
 > 「链尾有没有被整条删掉」的唯一依据（见 [`../security-model.md`](../security-model.md) §5.3）。
-末尾提示用 `verify_session.py` 验证。**这是「14 张证书」的来源**。
+末尾提示用 `verify_session.py` 验证。**上文各处引用的「13 张证书」就是这一次运行的产出**
+（`stream=4 llm=1 tool-args=3 tool-result=2 zk=3`）。
+
+> **为什么 `llm` 只有 1 张**：两次流式运行里，干净那次正常收尾 → 一张权威的 `llm` 证书；
+> 违规那次被**真早停**掐断（`hard_stop=True`），生成没有正常结束 → 那次**没有**权威证书，
+> 只留下流式链上的 3 张：前两个判定沿（首次判定、判定翻转）各一张部分证书 + 一张
+> `streaming.stop` 的停止证书（带 `reason: violation` 与链头指针）。
+> 「被掐断的生成没有最终结论证书」是**如实**的 —— 它的结论就是那张停止证书。
+> 早停实测随会话一起落盘：`summary.early_stop`（`aborted` / `delivered_len` /
+> `full_len` / `leak_delivered`）。`leak_delivered` 是那条硬指标，它必须是 `false`。
 
 ### 2.11 `verify_session.py` —— 第三方验证整个会话
 

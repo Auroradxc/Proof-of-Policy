@@ -300,12 +300,22 @@ build_payload(policy_id, policy_version, spec, mode, outcome,
 
 ```jsonc
 "streaming": {"partial": false,
-              "stop": {"reason": "violation", "at_index": 3, "chain_head": "<64hex>"}}
+              "stop": {"reason": "violation", "at_index": 3, "chain_head": "<64hex>",
+                       "scope": "partial-prefix"}}
 ```
 
 **健全性要点**：部分证书只是「前缀结论」，仅供早告警/早停，**权威结论始终是 `on_llm_end` 的那一张**
 （见 [`../security-model.md`](../security-model.md) 「流式早停健全性」）。链的校验由
 `langchain_adapter.verify_chain` 完成（序号连续 + `prev` 链接，可检出重排/插入/篡改）。
+
+> **早停证书上的 `partial: false` 别读错**：它说的是「这是本 run 的**结论**」，**不是**
+> 「判的是完整生成」。早停本来就停在中途，所以 `stop.scope` 明确写 `"partial-prefix"`：
+> 这张证书断言「**截至此点的前缀**违规」。读成「本次生成违规」是**过度声明** ——
+> 模型本会继续吐什么，谁都还没看见。口径与载荷顶层 `error.scope` 一致。
+>
+> 真早停（`hard_stop=True`，见 [`06`](06-frameworks.md) §2.2）掐断后这次生成**没有**
+> `on_llm_end`，因此**没有**权威证书 —— 它的结论就是这张停止证书。这是**如实**的，
+> 不是漏签。
 
 ---
 

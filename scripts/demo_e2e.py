@@ -52,7 +52,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 from policydsl import anchor, cert, challenge, commit, keys  # noqa: E402
 from policydsl.agent import AgentMonitor  # noqa: E402
 from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.langchain_adapter import PoPCallbackHandler  # noqa: E402
+from policydsl.langchain_adapter import EarlyStop, PoPCallbackHandler  # noqa: E402
 from policydsl.mcp_adapter import MCPBlocked, MCPGuard  # noqa: E402
 from policydsl.serialize import spec_canonical_text  # noqa: E402
 import issue_cert as ic  # noqa: E402  （复用 load_policy/run_pop/POP_SCRIPT）
@@ -69,19 +69,40 @@ BAD_REPLY = "Leak sk-abcdefghijklmnopqrstuvwxyz now"
 CONTRAST_REPLY = "I will exploit the vulnerability and leak sk-abcdefghijklmnopqrstuvwxyz"
 
 
-def llm_stream_path(monitor: AgentMonitor, handler: PoPCallbackHandler) -> None:
-    """两次流式运行：一次干净、一次违规（触发早停 + 链式证书）。"""
+def llm_stream_path(monitor: AgentMonitor, handler: PoPCallbackHandler) -> dict:
+    """两次流式运行：一次干净、一次违规（触发**真早停** + 链式证书）。
+
+    返回一份早停实测报告，由调用方打进产物与终端。之所以要把「实际送出去的
+    文本」量出来，是因为早停最容易被说成一句大话（"违规就停"）—— 而
+    ``stop_on_violation`` 此前只做到「后续 token 不再出证」，流该吐的还是吐完，
+    那些 token 照常计费。``hard_stop=True`` 才是真的把流掐断（``EarlyStop``
+    从回调里抛出去），报告里的 ``delivered`` 就是这件事的**证据**：它必须是
+    完整响应的一个真前缀，且不含密钥。
+    """
     from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
     from langchain_core.messages import AIMessage
 
     # 干净响应：不违规，正常流式完成
     clean = GenericFakeChatModel(messages=iter([AIMessage(content=CLEAN_REPLY)]))
-    for _ in clean.stream("hi", config={"callbacks": [handler]}):
-        pass
-    # 违规响应：流式中途泄露 secret_key，触发早停
+    clean_seen = []
+    for chunk in clean.stream("hi", config={"callbacks": [handler]}):
+        clean_seen.append(chunk.content)
+
+    # 违规响应：流式中途泄露 secret_key → 真掐断。掐断是我们自己干的，
+    # 所以这里**必须**自己接住 EarlyStop：它就是「流到此为止」的信号，
+    # 而不是一次需要向上冒泡的故障。
     bad = GenericFakeChatModel(messages=iter([AIMessage(content=BAD_REPLY)]))
-    for _ in bad.stream("hi", config={"callbacks": [handler]}):
-        pass
+    bad_seen = []
+    aborted = False
+    try:
+        for chunk in bad.stream("hi", config={"callbacks": [handler]}):
+            bad_seen.append(chunk.content)
+    except EarlyStop:
+        aborted = True
+    delivered = "".join(bad_seen)
+    return {"aborted": aborted, "delivered_len": len(delivered),
+            "full_len": len(BAD_REPLY), "leak_delivered": "sk-abc" in delivered,
+            "clean_completed": "".join(clean_seen) == CLEAN_REPLY}
 
 
 async def mcp_path(tools: AgentMonitor, content: AgentMonitor, vkey: str) -> list:
@@ -338,8 +359,12 @@ def main() -> int:
 
     # ---- 1) LLM 流式路径（哈希链 + 早停） ----
     content = AgentMonitor(ic.load_policy(REPO / CONTENT_PACK), signer=signer)
-    handler = PoPCallbackHandler(content, vkey_hash=vkey, stop_on_violation=True)
-    llm_stream_path(content, handler)
+    # ``hard_stop=True``：违规时真的把流掐断（EarlyStop 抛出），而不是只做到
+    # 「后续 token 不再出证」—— 后者对流式真模型等于继续烧钱。这一档默认关，
+    # 因为抛异常会改变调用方的控制流；demo 要展示的就是把它打开的样子。
+    handler = PoPCallbackHandler(content, vkey_hash=vkey, stop_on_violation=True,
+                                 hard_stop=True)
+    early_stop = llm_stream_path(content, handler)
     for env in handler.stream_certificates:
         session_entries.append({"kind": "stream", "policy_pack": CONTENT_PACK, "envelope": env})
     for env in handler.certificates:
@@ -412,6 +437,10 @@ def main() -> int:
         "summary": {
             "certificates": len(session_entries),
             "stream_certs": sum(1 for e in session_entries if e["kind"] == "stream"),
+            # 早停实测：``aborted`` 说明流被真的掐断了，``delivered_len`` 说明
+            # 掐在多靠前（对比 ``full_len``）。``leak_delivered`` 是那条硬指标 ——
+            # 它必须是 False，否则「早停」就只是句口号。
+            "early_stop": early_stop,
             "blocked_tool_calls": getattr(guard, "_blocked", []),
             # 工具轨迹（P1-5）：网关签发的回执链。链尾摘要 + 网关公钥都是**公开**
             # 坐标 —— 验证方拿网关侧收到的回执重算最后一条的 SHA256，即可独立核对
@@ -453,6 +482,11 @@ def main() -> int:
     print(f"              public_hex={signer.public_hex}")
     print(f"certificates: {session['summary']['certificates']} "
           f"(stream={session['summary']['stream_certs']})")
+    es = session["summary"]["early_stop"]
+    print(f"early stop  : aborted={es['aborted']} "
+          f"delivered={es['delivered_len']}/{es['full_len']} chars, "
+          f"leak_delivered={es['leak_delivered']}  "
+          f"（违规处真掐断；干净那条跑完了={es['clean_completed']}）")
     print(f"blocked tool calls: {session['summary']['blocked_tool_calls']}")
     tt = session["summary"]["tool_trace"]
     print(f"tool trace  : {tt['receipts']} receipt(s), "

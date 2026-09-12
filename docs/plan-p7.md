@@ -73,7 +73,7 @@ Core 证明路径不受影响（~10 GB，回归 PASS）。
 3. **工具链**：`scripts/deploy_anchor.py`（部署，打印 `POP_ANCHOR_RPC/CONTRACT`）；
    `issue_cert.py` / `demo_e2e.py` 支持 `--rpc/--contract`；
    `verify_session.py` / `verify_cert.py` 支持 `--rpc/--contract` 链上核对；
-   `scripts/anchor_e2e.sh` 一键：起 anvil → 部署 → 会话 demo（14 张证书全部上链）→ 第三方核对 → **反例对照**。
+   `scripts/anchor_e2e.sh` 一键：起 anvil → 部署 → 会话 demo（13 张证书全部上链）→ 第三方核对 → **反例对照**。
 
 **顺带修掉的真 bug**：`pop-script --proof-out` 会给**所有**模式（含 core）写 `<proof>.verify.json` 边车，
 而「走 verifier-only 快路径」的判定原先只看边车是否存在 → **core 证明被误判为快路径**，`pop-verify` 以 exit 3 拒绝

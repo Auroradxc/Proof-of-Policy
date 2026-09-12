@@ -160,7 +160,7 @@ python3 scripts/make_shots.py --run-demo
 
 ```bash
 bash scripts/retry_install_foundry.sh   # 装 foundry（anvil/cast）；已装则秒退
-bash scripts/anchor_e2e.sh              # 起 anvil → 部署 Anchor.sol → 14 张证书摘要上链 → 第三方 --rpc 核对
+bash scripts/anchor_e2e.sh              # 起 anvil → 部署 Anchor.sol → 13 张证书摘要上链 → 第三方 --rpc 核对
 SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附真实 Core 证明（本机实测 3:10 / 峰值 10.2 GiB）
 #   → [PASS] chain_anchored 14/14 digests on chain … (14 cross-checked) + 反例对照 anchoredAt=0
 ```

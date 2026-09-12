@@ -16,7 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from policydsl import cert  # noqa: E402
 from policydsl.agent import AgentMonitor  # noqa: E402
 from policydsl.langchain_adapter import (  # noqa: E402
-    PoPCallbackHandler, langchain_available, verify_certificates, verify_chain,
+    EarlyStop, PoPCallbackHandler, langchain_available, verify_certificates, verify_chain,
 )
 from policydsl import langgraph_adapter as lg  # noqa: E402
 from policydsl.model import Policy, Rule  # noqa: E402
@@ -231,6 +231,109 @@ class TestErrorCallbacksOffline(unittest.TestCase):
         rec = h.gateway.receipts[0].to_dict()
         self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz", json.dumps(rec))
         self.assertTrue(rec["result_digest"])
+
+
+class TestHardStopOffline(unittest.TestCase):
+    """真早停（``hard_stop=True``）：把「不再出证」变成「真的把流掐断」。
+
+    修理的是一句名不副实的话：``stop_on_violation`` 此前只做到「后续 token 不再
+    出证」（``_sstopped`` 置位后忽略），**流仍然把违规内容吐完**。对真模型这不只是
+    观感问题 —— 那些 token 照常计费，而早停本该是最直接的省钱手段。
+
+    真掐断要跨过两道默认行为：① 回调抛异常会被 LangChain **吞掉**
+    （``BaseCallbackHandler.raise_error`` 缺省 ``False``，只记 warning），所以
+    handler 必须把它置 ``True``；② 流被掐断后 LangChain 会把这次「失败」路由到
+    ``on_llm_error``，那里要**跳过** ``EarlyStop``，否则一次早停产出两张证书。
+    """
+
+    def setUp(self):
+        self.content = AgentMonitor(load_pack("agent_content_v1.json"))
+
+    def test_hard_stop_raises_and_carries_the_stop_certificate(self):
+        h = PoPCallbackHandler(self.content, stop_on_violation=True, hard_stop=True)
+        self.assertTrue(h.raise_error, "不置 raise_error，异常连流都出不去")
+        h.on_llm_new_token("Leak sk-", run_id="r1")
+        with self.assertRaises(EarlyStop) as cm:
+            h.on_llm_new_token("abcdefghijklmnopqrstuvwxyz", run_id="r1")
+        # 异常上带着那张 stop 证书 —— 抛出去之后本 run 的流式状态已被清掉
+        payload = cert.envelope_payload(cm.exception.certificate)
+        self.assertFalse(payload["outcome"]["passed"])
+        stop = payload["streaming"]["stop"]
+        self.assertEqual(stop["reason"], "violation")
+        # 停止证书判的是**前缀**，不是完整生成 —— 早停本来就停在中途。
+        # 钉死这个口径，是因为 ``partial=False`` 很容易被读成「判了全文」。
+        self.assertEqual(stop["scope"], "partial-prefix")
+        # 停止证书挂在链末、指向前一张（判定翻转那张）—— 它判的是那条链上的前缀。
+        self.assertEqual(stop["at_index"], 1)
+        self.assertEqual(payload["streaming"]["chain"]["index"], 2)
+        self.assertTrue(verify_chain(h.stream_certificates),
+                        "停止证书本身也要是链上合规的一环")
+
+    def test_default_is_soft_stop(self):
+        # 非恒真对照：不打开 hard_stop 时**不许**抛（这会让既有集成当场炸掉，
+        # 所以它是显式选择项，不能靠升级悄悄改掉）。
+        h = PoPCallbackHandler(self.content, stop_on_violation=True)
+        self.assertFalse(h.raise_error)
+        h.on_llm_new_token("Leak sk-abcdefghijklmnopqrstuvwxyz", run_id="r1")  # 不抛
+        self.assertTrue(h._sstopped["r1"])
+
+    def test_early_stop_does_not_produce_a_second_error_certificate(self):
+        # 掐断是我们自己干的，不是模型故障；把 EarlyStop 记成模型错误是误导，
+        # 也会让「一次早停 = 一张 stop 证书」这个计数对不上。
+        h = PoPCallbackHandler(self.content, stop_on_violation=True, hard_stop=True)
+        esc = EarlyStop("aborted", certificate={"payload": {}})
+        before = len(h.certificates)
+        h.on_llm_error(esc, run_id="r1")
+        self.assertEqual(len(h.certificates), before, "EarlyStop 不该再签一张")
+        self.assertEqual(h.errors, [esc], "但要留在 errors 清单里，否则这次中断就消失了")
+
+    def test_other_errors_still_produce_a_certificate(self):
+        # 对照：不是 EarlyStop 的异常照常出证（否则上面那条把 on_llm_error 关了）
+        h = PoPCallbackHandler(self.content, stop_on_violation=True, hard_stop=True)
+        h.on_llm_error(RuntimeError("rate limited"), run_id="r1")
+        self.assertEqual(len(h.certificates), 1)
+
+
+@unittest.skipUnless(langchain_available(), "langchain not installed")
+class TestRealHardStop(unittest.TestCase):
+    """真实 LangChain 流式管线上的真早停：流**确实**在违规处断了。
+
+    离线用例只能证明「回调抛了异常」；这一条证明的是**异常真的走出了回调系统**
+    （``raise_error`` 那一步没有白设），并且调用方看到的 chunk 比完整响应少。
+    """
+
+    def test_stream_is_actually_aborted(self):
+        from langchain_core.language_models.fake_chat_models import GenericFakeChatModel
+        from langchain_core.messages import AIMessage
+
+        content = AgentMonitor(load_pack("agent_content_v1.json"))
+        h = PoPCallbackHandler(content, stop_on_violation=True, hard_stop=True,
+                               stream_every=1)
+        # GenericFakeChatModel 按空白切分：['Leak', ' ', 'sk-…', ' ', 'now']
+        # 密钥在**第 3 个** chunk 才补全 —— 早停应当恰好停在这里。
+        model = GenericFakeChatModel(
+            messages=iter([AIMessage(content="Leak sk-abcdefghijklmnopqrstuvwxyz now")]))
+        seen = []
+        # LangChain 在把异常继续抛出去之前会自己记一条 warning
+        # （``langchain_core.callbacks.manager``："Error in X.y callback"），
+        # 那行噪声会被 unittest 原样打到 stderr、看起来像测试挂了。这里把它
+        # 接住并**断言它确实发生了** —— 这条日志本身就是「异常真的走出了回调
+        # 系统」的旁证（缺了它，异常可能只是被吞掉后我们碰巧没看见）。
+        with self.assertLogs("langchain_core.callbacks.manager", level="WARNING"):
+            with self.assertRaises(EarlyStop):
+                for chunk in model.stream("hi", config={"callbacks": [h]}):
+                    seen.append(chunk.content)
+        delivered = "".join(seen)
+        # 关键的那条：违规内容**没有**到达调用方。LangChain 先跑回调再吐 chunk，
+        # 所以判出违规的那个分片本身就被截住了 —— 早停点比「不再出证」更靠前。
+        self.assertNotIn("sk-abc", delivered,
+                         f"泄露的密钥仍然被吐给了调用方：{delivered!r}")
+        self.assertTrue("Leak sk-abcdefghijklmnopqrstuvwxyz now".startswith(delivered)
+                        and len(delivered) < len("Leak sk-abcdefghijklmnopqrstuvwxyz now"),
+                        f"应当是完整响应的真前缀且确实被截短，实为 {delivered!r}")
+        # 早停证书在异常上，且不带权威的 llm 证书（那次生成没有正常结束）
+        self.assertIsNotNone(h.stream_certificates[-1])
+        self.assertEqual(len(h.certificates), 0)
 
 
 class TestProofModePlumbingOffline(unittest.TestCase):

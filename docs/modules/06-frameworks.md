@@ -37,7 +37,8 @@
 （`langchain_core.callbacks`）：
 
 ```python
-handler = PoPCallbackHandler(content_monitor, vkey_hash="demo", stop_on_violation=True)
+handler = PoPCallbackHandler(content_monitor, vkey_hash=cert.VKEY_HASH_UNPROVEN,
+                             stop_on_violation=True, hard_stop=True)
 chain.invoke(x, config={"callbacks": [handler]})   # LangChain
 graph.invoke(state, config={"callbacks": [handler]})  # LangGraph
 handler.certificates           # 每个 LLM/工具事件一张证书
@@ -49,11 +50,11 @@ handler.certificates           # 每个 LLM/工具事件一张证书
 
 | 回调 | 动作 |
 |---|---|
-| `on_llm_new_token(token, **kw)` | 累积流式前缀；**判定翻转**时签发链式部分证书；`stop_on_violation` 时签早停证书并停止后续出证 |
+| `on_llm_new_token(token, **kw)` | 累积流式前缀；**判定翻转**时签发链式部分证书；`stop_on_violation` 时签早停证书并停止后续出证；`hard_stop` 时**抛出 `EarlyStop` 真掐断流**（见 §2.2） |
 | `on_llm_end(response, **kw)` | 签发**权威**证书（优先用流式缓冲的精确 token 流，回退到 `_extract_text` 结构提取） |
 | `on_tool_start(serialized, input_str, **kw)` | 记录工具名与参数（供 `on_tool_end` 使用） |
 | `on_tool_end(output, **kw)` | 签发工具调用证书 |
-| `on_llm_error(error, **kw)` | **失败也留痕**：照常签一张证书，并在载荷**顶层**附 `error` 块（见 §2.1.1） |
+| `on_llm_error(error, **kw)` | **失败也留痕**：照常签一张证书，并在载荷**顶层**附 `error` 块（见 §2.1.1）；`EarlyStop` 例外 —— 那是我们自己掐断的，直接返回，不重复出证 |
 | `on_tool_error(error, **kw)` | 工具失败**也是这次调用的结果**：网关照常签回执，工具路径照常出证 + `error` 块 |
 
 工具名/参数的提取做了兼容：`_tool_name` 从序列化信息或 kwargs 取；`_parse_args` 接受 dict、
@@ -105,8 +106,48 @@ self._sstopped[run_id]  # 是否已早停
 
 判定逻辑：**只在判定发生变化时**（首次出现或翻转）签发部分证书 —— 避免每个 token 都出一张。
 早停（`stop_on_violation=True`）在**首次** `verdict is False` 时额外签发一张
-`streaming.stop = {"reason": "violation", "at_index", "chain_head"}` 的证书，并置位 `_sstopped`
-（后续 token 直接 return）。
+`streaming.stop = {"reason": "violation", "at_index", "chain_head", "scope"}` 的证书，并置位
+`_sstopped`（后续 token 直接 return）。
+
+> **`scope` 为什么是 `"partial-prefix"`**：这张证书写 `partial=false`，但那说的是
+> 「这是本 run 的**结论**」，**不是**「判的是完整生成」—— 早停本来就停在中途。
+> 它断言的是「**截至此点的前缀**违规」，读成「本次生成违规」是**过度声明**：模型
+> 本会继续吐什么，谁都还没看见。字段口径与 `error_block` 的 `scope` 一致。
+
+#### 软停 vs 真停（`hard_stop`）
+
+上面那套只做到**软停**：不再出证，但**流照样把违规内容吐完**。对真模型这不是观感问题 ——
+那些 token 照常计费，而早停本该是最直接的省钱手段。`hard_stop=True` 才是**真停**：
+
+```python
+handler = PoPCallbackHandler(content_monitor, stop_on_violation=True, hard_stop=True)
+try:
+    for chunk in model.stream("hi", config={"callbacks": [handler]}):
+        ...
+except EarlyStop as e:
+    e.certificate          # 那张 streaming.stop 证书（先出证，后掐断）
+```
+
+要跨过两道**默认行为**，两道都不会报错、只会静默失效：
+
+1. **回调抛异常默认被吞掉**。`BaseCallbackHandler.raise_error` 缺省 `False`，LangChain
+   只记一条 `logger.warning("Error in X.y callback")` 就放过去了 —— 异常**根本出不了**
+   回调系统。所以 `hard_stop=True` 时 handler 会把 `self.raise_error` 置 `True`。
+2. **掐断会被路由成一次「失败」**。流被 `EarlyStop` 掐断后，LangChain 把它送进
+   `on_llm_error`。那里必须**跳过** `EarlyStop`：它是我们自己干的，不是模型故障，而那份
+   停止证书已经在 `error.certificate` 上了。不跳过的话，一次早停会产出**两张**证书，
+   其中一张还把自伤记成模型错误 —— 既是误导，也让计数对不上。
+
+顺序是**先出证，后掐断**：异常一旦抛出，这次调用的控制流就交还给调用方；反过来写的话，
+那张 stop 证书就得建在异常处理里，而那时流式状态已经清了。
+
+`hard_stop` **默认关**：它改变调用方的控制流，这类行为不能靠升级悄悄改掉既有集成。
+打开后有一个**如实的后果**：被掐断的那次生成**没有** `on_llm_end`，因此**没有**权威的
+`llm` 证书 —— 它的结论就是那张停止证书（`demo_e2e.py` 主路径即如此，见 [`07`](07-cli-scripts.md) §2.10）。
+
+截断点比「软停」更靠前：LangChain **先跑回调再吐 chunk**，所以判出违规的那个分片本身
+就被截住了。实测 `"Leak sk-abcdefghijklmnopqrstuvwxyz now"`（38 字符）在 `"Leak "`
+（5 字符）处断掉，密钥**没有**到达调用方。
 
 流式证书靠 `streaming.chain = {index, prev}` 串成哈希链，链接值是 `cert_digest(payload)`，
 首张的 `prev` 为 `"genesis"`：
@@ -117,12 +158,16 @@ def verify_chain(certs) -> bool      # 序号连续 + prev 链接
 
 > 健全性提示：部分证书是**前缀判定**，仅供早告警/早停；**权威结论永远是 `on_llm_end` 那张**。
 > 见 [`../security-model.md`](../security-model.md)「流式早停健全性」。
+> `hard_stop=True` 时这次生成连权威证书都没有 —— 它被掐断了，这正是**如实**的。
 
 ### 2.3 公开 API
 
 | 名称 | 说明 |
 |---|---|
-| `PoPCallbackHandler(monitor, vkey_hash="unproven", proof_sha256=None, on_cert=None, stream_check=True, stream_every=1, on_stream_cert=None, stop_on_violation=False, on_early_stop=None, proof_mode=None)` | 回调处理器 |
+| `PoPCallbackHandler(monitor, vkey_hash="unproven", proof_sha256=None, on_cert=None, stream_check=True, stream_every=1, on_stream_cert=None, stop_on_violation=False, on_early_stop=None, proof_mode=None, gateway=None, hard_stop=False)` | 回调处理器 |
+| `EarlyStop(RuntimeError)` | `hard_stop` 掐断流用的异常；`.certificate` = 那张停止证书 |
+| `error_block(phase, error, tokens=0, text_len=0)` | 构造载荷顶层的 `error` 块（`scope` 固定 `"partial-prefix"`） |
+| `handler.errors` | 本 handler 见到的异常清单（含 `EarlyStop`）—— 只看 `certificates` 分不出「正常结束」与「带错结束」 |
 | `handler.certificates` / `handler.stream_certificates` | 权威证书 / 流式（含早停）证书 |
 | `handler.stream_chain(run_id)` | 该 run 的流式证书链的载荷摘要列表 |
 | `verify_certificates(handler, keyring=None)` | 截至目前所有**权威**证书都能验签；`keyring` 缺省用 handler 自己的签名器（自验签），第三方验证传**公钥** |
@@ -260,7 +305,7 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
 | `PoPCallbackHandler.on_tool_error` | 工具（**失败**） | `tool-call` + `error` | — | 有 |
 | `LangGraphEventCertifier` | 两者 | 同上 | — | 有 |
 
-`scripts/demo_e2e.py` 一次会话产出 **14 张证书**：流式（含早停）、LLM、MCP 参数 + 结果、zk 各若干。
+`scripts/demo_e2e.py` 一次会话产出 **13 张证书**：流式（含早停）、LLM、MCP 参数 + 结果、zk 各若干。
 
 ---
 
@@ -270,7 +315,9 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
    适配器只做事件翻译与状态管理。
 2. **流式状态按 `run_id` 隔离**：`_sbuf`/`_scount`/`_sverdict`/`_sstopped` 都是 per-run 字典；
    `on_llm_end` 会清理该 run 的全部流式状态（避免长会话内存泄漏）。
-3. **早停只影响「是否继续出证」**，不改变最终判定的健全性。
+3. **早停只影响「是否继续出证」**，不改变最终判定的健全性。软停（默认）不触碰控制流；
+   `hard_stop=True` 会抛出 `EarlyStop` 改变控制流，且被掐断的那次生成**没有**权威证书
+   （它的结论是那张停止证书）。两条路都不改变**已签发**证书的含义。
 4. **生成路径也绑轨迹（P1-5b）**：`on_llm_end` / `on_llm_new_token` / `guard_node(generate)` /
    `LangGraphEventCertifier` 出的**内容**证书同样带 `receipts=gateway.receipts` 与
    `seal=gateway.seal()` —— 一张写着 `trace_root` 却没有 seal 的证书，验证方无从排除
@@ -296,7 +343,7 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
 | 测试 | 覆盖 | 真实框架缺失时 |
 |---|---|---|
 | `tests/test_agent.py` | `AgentMonitor` 两条路径 + `mock_agent` | 无依赖 |
-| `tests/test_frameworks.py` | `PoPCallbackHandler`（含流式链/篡改/早停）、`guard_node`、`attach`、`LangGraphEventCertifier` | 离线用 duck-typed fake；已装框架时跑真实 LangChain/LangGraph |
+| `tests/test_frameworks.py` | `PoPCallbackHandler`（含流式链/篡改/早停/`hard_stop`）、`guard_node`、`attach`、`LangGraphEventCertifier` | 离线用 duck-typed fake；已装框架时跑真实 LangChain/LangGraph（`TestRealHardStop` 证明流**确实**被掐断） |
 | `tests/test_mcp.py` | `MCPGuard` 参数侧拦截、结果侧判定、`extract_result_text` | 离线用 `FakeSession`；已装 mcp 时跑真实 stdio（`tests/mcp_echo_server.py`） |
 | `tests/test_demo_e2e.py` | 端到端会话（依赖齐全时才跑全部） | — |
 | `scripts/demo_e2e.py` | 真实 LangChain 流式 + 真实 MCP stdio 的一键演示 | — |
@@ -314,9 +361,10 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
   并把缺失依赖做成「导入回退 + 离线 fake」，这样单测不需要装框架。
 - **给工具路径加结果侧认证**：需要的不是新代码，而是给 `MCPGuard` / 新适配器传
   `result_monitor=<内容策略 monitor>`。
-- **加流式早停的行为差异**：`stop_on_violation` 目前只是「停止出证 + 回调 `on_early_stop`」；
-  如果框架支持真正的中断（如 LangChain 的 `raise_error` / 自定义异常），
-  可以在 `on_early_stop` 回调里抛出 —— 但要注意这会改变控制流，需补测试。
+- **流式早停的行为差异**：`stop_on_violation` 是「停止出证 + 回调 `on_early_stop`」，
+  `hard_stop=True` 再加「抛出 `EarlyStop` 真掐断」。**换框架时这条要重做**：两道门槛
+  （异常会不会被回调系统吞掉、掐断后走哪条错误路由）都是**框架特定**的，LangChain 的
+  `raise_error` 换个框架就不存在了 —— 别以为抛个异常就完事。
 
 ---
 
