@@ -3,8 +3,9 @@
 > 覆盖 `circuits/` 整个 workspace：`types`、`program`、`infer-program`、`script`、`verifier`、`patches/`。
 > 这一板块回答：**Python 侧编译出的契约，怎么在 zkVM 里跑出同一个结论，并变成一份可验证的证明。**
 >
-> **两个 guest 程序**（P1-6 起）：`pop-program` 判策略合规，`pop-infer` 证代理推理的
-> 前向完整性。它们**必须**是两个程序 —— 见 §3.0 的键分离论证。
+> **三个 guest 程序**（P1-6 起两个，P2-10 起三个）：`pop-program` 判策略合规，
+> `pop-infer` 证代理推理的前向完整性，`pop-session` 证**一组证书**的跨证书一致性。
+> 它们**必须**是三个程序 —— 见 §3.0 的键分离论证。
 
 ---
 
@@ -12,13 +13,15 @@
 
 ```
 circuits/
-├── Cargo.toml          # workspace：members = types / program / infer-program / script / verifier
-│                       # + [patch.crates-io] tempfile（见 §6）
+├── Cargo.toml          # workspace：members = types / program / infer-program / session-program
+│                       #   / script / verifier + [patch.crates-io] tempfile（见 §6）
 ├── types/    pop-types  # 共享判定逻辑（no_std + alloc）：审计对象、NFA、evaluate、evaluate_private
 │                        #   + 代理推理域（P1-6）：infer_forward / infer_input / infer_model_hash…
+│                        #   + 会话域（P2-10）：merkle_root / run_session / CertView…
 ├── program/  pop-program# zkVM guest①：只收策略任务（Public/Private）→ run_job → commit(Outcome)
 ├── infer-program/ pop-infer # zkVM guest②：只收推理任务（P1-6）→ 断言域 → run_infer → commit
-├── script/   pop-script # 宿主驱动：--check / --execute / 出证 / --verify，--job policy|infer
+├── session-program/ pop-session # zkVM guest③：只收会话任务（P2-10）→ 断言域 → run_session → commit
+├── script/   pop-script # 宿主驱动：--check / --execute / 出证 / --verify，--job policy|infer|session
 ├── verifier/ pop-verify # 仅验证器二进制（compressed/groth16/plonk）
 └── patches/tempfile     # 上游补丁（sp1-prover 6.7.0 需要 TempDir::keep()）
 ```
@@ -39,13 +42,14 @@ pub fn main() {
 }
 ```
 
-`infer-program/src/main.rs` 形状相同，只把断言反过来（`== DOMAIN_INFER`）。
-**这一行断言是 P1-6 键分离的落点**：它让「这个程序能出哪一半的证明」成为
-**vkey 层面的既成事实**，而不是宿主驱动里的一句约定 —— 见 §3.0。
+`infer-program/src/main.rs` 与 `session-program/src/main.rs` 形状相同，只把断言换成
+`== DOMAIN_INFER` / `== DOMAIN_SESSION`。**这一行断言是键分离的落点**：它让
+「这个程序能出哪一域的证明」成为 **vkey 层面的既成事实**，而不是宿主驱动里的一句约定
+—— 见 §3.0。
 
 ---
 
-## 2. `pop-types`：共享类型与判定（`types/src/lib.rs`，1339 行）
+## 2. `pop-types`：共享类型与判定（`types/src/lib.rs`，1752 行）
 
 ### 2.1 类型清单
 
@@ -66,10 +70,11 @@ pub fn main() {
 | `RedactionProof { redacted_commitment, mask_count, redaction_ok, mask_covered }` | 脱敏证明 |
 | `PrivateRequest { response, constraints, nonce, mask, redacted, spans, receipts }` | 私有模式输入（`nonce` 同上）。**`deny_unknown_fields`** |
 | `PrivateOutput { policy_hash, response_binding, response_commitment, trace_root, passed, violations, redaction }` | 私有模式输出 |
-| `Job { Public(ProofRequest), Private(PrivateRequest), Infer(InferRequest) }` | 调度枚举。前两态属**策略域**、`Infer` 属**推理域**（P1-6）；两个 guest 各只收自己那一域 |
-| `Outcome { Public(ProofOutput), Private(PrivateOutput), Infer(InferOutput) }` | 顶层承诺结果 |
+| `Job { Public(ProofRequest), Private(PrivateRequest), Infer(InferRequest), Session(SessionRequest) }` | 调度枚举。前两态属**策略域**、`Infer` 属**推理域**（P1-6）、`Session` 属**会话域**（P2-10）；三个 guest 各只收自己那一域 |
+| `Outcome { Public(ProofOutput), Private(PrivateOutput), Infer(InferOutput), Session(SessionOutput) }` | 顶层承诺结果 |
 | `InferRequest { response, nonce }` | 推理任务的输入（P1-6）。**没有**「输入向量」字段 —— 输入由图内从 `response` 导出，见 §2.5c |
 | `InferOutput { model_hash, response_binding, input_binding, output }` | 推理任务的公开值（`output` 是 `OUT_DIM` 个定点数） |
+| `SessionRequest { certs: Vec<String>, nonce }` / `CertView` / `SessionOutput` | **会话域**（P2-10）：输入是每张证书规范载荷的**文本**，输出是 Merkle 聚合与三条义务的结论。见 §2.6 |
 
 `Constraint` 的七个变体与字段（**与 `01` 的规则一一对应**）：
 
@@ -351,11 +356,47 @@ Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_com
 手写十六进制输出，**与 `hashlib.sha256().hexdigest()` 字节级一致**（小写、无前缀）——
 这是 Python 与 Rust 承诺能对上的前提。
 
+### 2.6 会话域 `Session`（P2-10）：一组证书 → 一次证明
+
+| 项 | 说明 |
+|---|---|
+| `DOMAIN_SESSION = "session"` | 第四域的名字（`Job::Session` 的域标签） |
+| `MERKLE_NODE_DOMAIN = b"pop-session-node-v1"` | Merkle **内部节点**的域前缀；叶子**不加**前缀（叶子就是证书摘要本身） |
+| `merkle_root(leaves)` | 内部节点 `SHA256(前缀 ‖ left32 ‖ right32)`；**奇数末位提升、绝不复制** —— 复制会让 `[a,b,c]` 与 `[a,b,c,c]` 同根，等于给「删掉链尾」开一条伪造路径 |
+| `SessionRequest { certs: Vec<String>, nonce }` | 输入是每张证书 `cert.canonical(payload)` 的**文本**（不是结构体） |
+| `CertView { policy_hash, streaming, trace_seal }` | guest 侧只解析**判定义务所需**的三个字段 |
+| `run_session(req)` | 三条义务的判定本体（下面） |
+| `SessionOutput` | 公开值：`policy_hash` / `cert_count` / `merkle_root` / `session_binding` / `trace_root` / `sealed_count` / `seal_keyid` |
+
+**三条义务**（任一不成立即 `assert!` ⇒ 出不了证明）：
+
+1. **同一策略**：每张证书的 `policy_hash` 等于第 0 张的（空/缺 → 拒绝）；
+2. **无缺口**：第 i 张的 `chain.index == i` 且 `chain.prev ==` 第 i-1 张的**叶子摘要**
+   （第 0 张为字面量 `"genesis"`）—— 挖中间/换序/换一张都在这里断掉；
+3. **末端承诺**：每张证书都带 `trace_seal`，且 `keyid` 全同（同一条会话）。
+
+**为什么叶子是「文本的 sha256」**：guest 收到的是规范 JSON 的**字节**，直接求哈希，
+所以 Rust 侧不需要任何 JSON 规范化 —— 与 `spec_canonical` → `policy_hash` 是同一招，
+跨语言漂移在结构上不可能（只有一种「字节」）。`CertView` 因此刻意**不做**
+`deny_unknown_fields`：载荷还有几十个别的字段，而叶子摘要已经把**整份文本**承诺住了
+（多余字段早已进哈希），在这里再拒一次只会误伤合法证书。
+
+**⚠️ 尾截断只有 Merkle 根拦得住**（本域最重要的一条，已实测）：`[0..k]` 前缀的
+`chain.index`/`prev` **依然连续**，义务 ①②③ 全部成立 —— **电路本身接受一个被砍掉
+尾巴的证书集**（这正是 P1-5b 的截尾问题在会话层的形态）。拦住它的是验证方那一步：
+「证明承诺的 `merkle_root` vs 由**交付的**证书集重算的根」。所以 `verify_session_proof`
+的根比对**不是冗余检查**，它是这条义务的唯一检测点。
+
+**⚠️ 电路不验网关签名**：`SealView` 里**没有** `sig` 字段 —— zkVM 里没有网关公钥。
+电路内只做「带了 seal」+「`keyid` 全同」，把 `(sealed_count, trace_root)` 公开出去；
+**「这条链网关真的签过」由链下的 `policydsl.trace.verify_seal` 判**（`verify_session_proof`
+只在给了 `keyring`/`receipts` 时才走那一步，没给会如实注明未验签名）。
+
 ---
 
-## 3. 两个 guest：`pop-program` 与 `pop-infer`
+## 3. 三个 guest：`pop-program`、`pop-infer` 与 `pop-session`
 
-### 3.0 为什么必须是**两个**程序（键分离）
+### 3.0 为什么必须是**分开的**程序（键分离）
 
 组合义务要求「推理完整性 ∧ 策略合规」两个子义务各自成立。若两半由**同一个**程序产生，
 验证方就没有判据回答「这份证明属于哪一半」—— 攻击者可以拿一份策略证明充当推理半
@@ -363,17 +404,22 @@ Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_com
 **显式要求两个 vkey 不同**。
 
 但只在验证方加这条检查是不够的：vkey 是**程序**的指纹，只有把这条要求钉进**电路**
-才有意义。做法是两个 guest 入口各断言一次自己的域：
+才有意义。做法是每个 guest 入口各断言一次自己的域：
 
 | guest | 入口断言 | 只接受 |
 |---|---|---|
 | `pop-program` | `job_domain(&job) == DOMAIN_POLICY` | `Job::Public` / `Job::Private` |
 | `pop-infer` | `job_domain(&job) == DOMAIN_INFER` | `Job::Infer` |
+| `pop-session` | `job_domain(&job) == DOMAIN_SESSION` | `Job::Session`（P2-10） |
 
 于是 `vkey_policy` **只可能**产出 `Public`/`Private` 结果，`vkey_infer` **只可能**产出
-`Infer` 结果 —— 「这份证明属于哪一半」成了 vkey 层面的既成事实。
-把另一域的任务喂给错的程序，`deny_unknown_fields` + 断言双重拦下
-（`tests/test_compose.py::TestDomainSeparationInGuest`）。
+`Infer` 结果，`vkey_session` **只可能**产出 `Session` 结果 —— 「这份证明属于哪一域」
+成了 vkey 层面的既成事实。把另一域的任务喂给错的程序，`deny_unknown_fields` +
+断言双重拦下（`tests/test_compose.py::TestDomainSeparationInGuest`）。
+
+会话域同样用**域前缀**做哈希隔离（`MERKLE_NODE_DOMAIN = b"pop-session-node-v1"`，
+与 `BIND_DOMAIN`/`TRACE_DOMAIN`/`INFER_DOMAIN` 同思路）：内部节点的哈希与任何别处的
+哈希**永不碰撞**。
 
 ### 3.1 共同形状
 
@@ -384,8 +430,10 @@ Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_com
 - guest 自身不做任何 I/O、不做网络、不做时间读取 —— 判定因此是**确定性**的，
   这正是「健全性」论证的支点（`../security-model.md` §2）。
 
-**代价**：`types` 一改，两个 ELF 都变，两个 vkey 都变，`scripts/examples/out/` 下
-已入库的证明工件随之失效（只有 `POP_TEST_PROOF` 打开的那个测试会用到，默认 skip）。
+**代价**：`types` 一改，三个 ELF 都变，三个 vkey 都变，`scripts/examples/out/` 下
+已入库的证明工件随之失效（只有 `POP_TEST_PROOF` / `POP_TEST_SESSION` 打开的测试会用到，
+默认 skip）。**出证成本**：会话域要读入 N 张证书的完整载荷文本并在 zkVM 里解析 N 次 JSON，
+比单条策略证明重 —— 3 张证书的 core 证明实测约 2.5 分钟、峰值约 10 GB。
 
 ---
 
@@ -395,7 +443,7 @@ Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_com
 
 | 参数 | 说明 |
 |---|---|
-| `--job policy\|infer` | 选哪一半：`policy` → `pop-program`（策略向量，含 `spec_canonical`），`infer` → `pop-infer`（推理向量，含 `response`/`nonce`）。**默认 `policy`**；别的值一律 panic（不静默退回默认域）。⚠️ 旗标是 `infer`，而 part 的 kind 是 `inference` —— 两个名字不同，见 `policydsl/compose.py::JOB_FOR_KIND` |
+| `--job policy\|infer\|session` | 选哪一域：`policy` → `pop-program`（策略向量，含 `spec_canonical`），`infer` → `pop-infer`（推理向量，含 `response`/`nonce`），`session` → `pop-session`（会话向量，含 `certs` 文本数组 + `nonce`）。**默认 `policy`**；别的值一律 panic（不静默退回默认域）。⚠️ 旗标是 `infer`，而 part 的 kind 是 `inference` —— 两个名字不同，见 `policydsl/compose.py::JOB_FOR_KIND` |
 | `--vectors <f>` | 输入向量文件（`{"vectors":[...]}` 或裸数组），默认 `vectors.json` |
 | `--out <f>` | 结果 JSON，默认 `results.json` |
 | `--proof-out <f>` | 保存证明（**只支持单向量**）+ 边车 + `.meta.json` |
@@ -502,7 +550,7 @@ pop-verify --meta <proof>.verify.json [--out result.json]
 ## 7. 构建命令
 
 ```bash
-cd circuits/script  && cargo build --release -p pop-script   # build.rs 会连两个 guest 一起编
+cd circuits/script  && cargo build --release -p pop-script   # build.rs 会连三个 guest 一起编
 cd circuits/verifier && cargo build --release -p pop-verify  # 可选，审计快路径需要
 # 单独编某个 guest（排查 guest 编译错误时）：
 cd circuits/program       && cargo prove build   # → pop-program
@@ -534,11 +582,11 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
     第一行 `RESULT:` 只说「这张证书是真的」。
 11. **语义规则只支持公开模式**：`evaluate_private` 见到 `SemanticBound` 直接 panic
     （§2.4）。新增任何「把响应明文放进公开实例」的委托系统时，都要复制这道检查。
-12. **两个 guest 各只收自己那一域**（P1-6）：`pop-program` 断言 `DOMAIN_POLICY`、
-    `pop-infer` 断言 `DOMAIN_INFER`。**不要**为了「方便」把它们合成一个 guest ——
-    合并会让两个 vkey 变成同一个，「这份证明属于哪一半」就无从判断，
-    组合义务（L6）随之失效。新增任何一个「要组合进同一张证书」的证明域，
-    都必须**再开一个 guest 程序**。
+12. **三个 guest 各只收自己那一域**（P1-6 起两个、P2-10 起三个）：`pop-program` 断言
+    `DOMAIN_POLICY`、`pop-infer` 断言 `DOMAIN_INFER`、`pop-session` 断言 `DOMAIN_SESSION`。
+    **不要**为了「方便」把它们合成一个 guest —— 合并会让两个 vkey 变成同一个，
+    「这份证明属于哪一半」就无从判断，组合义务（L6）随之失效。新增任何一个
+    「要组合进同一张证书 / 要与别的域区分开」的证明域，都必须**再开一个 guest 程序**。
 
 ---
 
@@ -549,7 +597,8 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
 | `tests/test_rules_incircuit.py` | 各电路内规则在 `--check` 下与 Python golden 逐点对齐（含规范化证据串）；P2-9b 另覆盖「折叠真的发生在电路内」（五种绕过/近邻文本） |
 | `tests/test_semantic.py`（P2-9） | `delegated` 的登记与合取：真实语义规则的陪伴证明绑定（换 onnx/vk/阈值/方向一律 FAIL）、私有模式 panic、公开实例与送达响应一致性、缺材料 fail-closed |
 | `tests/test_trace.py` | P1-5 四条验收（完整链通过 / 删·换·重排失败 / 伪造回执验签失败 / 旧向量被拒），并实测 `trace_root` 与 Python 逐字节一致 |
-| `tests/test_compose.py`（P1-6） | 代理推理的参考实现逐位一致（`--check --job infer`）、组合绑定的 5 组反例、域分离（两个 guest 互相拒绝对方的向量）、驱动接线（`job` 旗标 / `mode` 不被剥掉） |
+| `tests/test_compose.py`（P1-6） | 代理推理的参考实现逐位一致（`--check --job infer`）、组合绑定的 5 组反例、域分离（各 guest 互相拒绝对方的向量）、驱动接线（`job` 旗标 / `mode` 不被剥掉） |
+| `tests/test_session.py`（P2-10） | Merkle 纯算术（含**奇数末位提升**）、两层 `run_session` 逐字段对拍（链长 1/2/3/5/8）、三条义务的反例（混异策略/挖中间/换序/缺 chain/缺 seal/两个网关/空集）、验证侧的挖尾与整张换尾 |
 | `tests/test_binding.py::TestPythonRustParity` | `response_binding` 在电路内与 Python 逐字节一致（公开 + 私有，多种 nonce 长度） |
 | `tests/test_ablation.py::TestRustNaivePath` | Rust 侧 `nfa_match` ≡ `nfa_match_naive` |
 | `tests/test_verifier_only.py` | `pop-verify` 的调用与快路径判定 |

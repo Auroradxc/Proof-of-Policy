@@ -55,6 +55,7 @@ zk-policy/
 │   ├── types/                #   共享判定逻辑（no_std）：evaluate / evaluate_private / NFA
 │   ├── program/              #   zkVM guest①（pop-program）：只收策略任务 → run_job → commit
 │   ├── infer-program/        #   zkVM guest②（pop-infer）：只收推理任务（P1-6 组合证明）
+│   ├── session-program/      #   zkVM guest③（pop-session）：只收会话任务（P2-10 跨证书一致性）
 │   ├── script/               #   宿主驱动 pop-script：--check / --execute / 出证 / --verify
 │   ├── verifier/             #   pop-verify：仅验证器二进制（无证明器状态）
 │   └── patches/              #   tempfile 补丁（sp1-prover 6.7.0 依赖 TempDir::keep）
@@ -62,7 +63,7 @@ zk-policy/
 ├── contracts/                # Anchor.sol + 已编译 artifact（Anchor.json，免 solc 部署）
 ├── scripts/                  # 端到端脚本（demo / 交叉验证 / 出证 / 验证 / 安装）
 ├── bench/                    # 评测（周期数矩阵 / 证明成本 / 验证成本 / ezkl / 组合 / 对标）
-├── tests/                    # 单测与集成测试（348 passed / 11 skip）
+├── tests/                    # 单测与集成测试（425 passed / 12 skip）
 ├── policy_packs/             # 示例策略包（EU AI Act / PII / 金融 / agent 内容与工具）
 └── docs/                     # 文档（本目录为分板块模块文档）
 ```
@@ -118,17 +119,18 @@ zk-policy/
 | 02 | [隐私与承诺](02-privacy-commitment.md) | `commit.py` `challenge.py`（+ `nfa.py` 的区间计算） | 私有模式：承诺、选择性披露、可证明脱敏、证据开示、挑战-响应绑定 |
 | 03 | [合规证书](03-certificate.md) | `cert.py` `agent.py` | 把一次判定包成可签名、可重算哈希的 DSSE 信封 |
 | 04 | [锚定与审计](04-anchoring-audit.md) | `anchor.py` `contracts/` `verifier.py` | 防篡改记录：本地哈希链账本 + 链上存在性证明 |
-| 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/types` `program` `infer-program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证；**两个 guest 的键分离**（P1-6）（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
+| 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/types` `program` `infer-program` `session-program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证；**三个 guest 的键分离**（P1-6 / P2-10）（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
 | 06 | [框架集成](06-frameworks.md) | `langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` | 把两个钩子接到真实 agent 框架上（含流式与飞行前拦截） |
 | 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/*` | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
-| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 348 个测试覆盖什么、评测数字怎么来的 |
+| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 425 个测试覆盖什么、评测数字怎么来的 |
 
-两条**不在本目录**但同样属于实现层的线（各自有独立文档，故未拆成板块）：
+三条**不在本目录**但同样属于实现层的线（各自有独立文档，故未拆成板块）：
 
 | 线 | 文档 | 代码 | 一句话 |
 |---|---|---|---|
 | P2-9 语义规则（引理 L7） | [`../design-semantic-rules.md`](../design-semantic-rules.md) | `semantic.py` `ezkl_evm.py` `semantic/` `scripts/ezkl_prove.py` | 学习型规则不在 SP1 内判定，而是**委托**给 ezkl/halo2 陪伴证明，验证方必须**合取**二者 |
 | P1-6 组合证明（引理 L6） | [`../security-model.md`](../security-model.md) §3 L6 | `compose.py` `infer.py` `circuits/infer-program` `scripts/compose_proof.py` | 两份证明（策略合规 ∧ 推理完整性）合成一次会话结论，前提是**键分离** |
+| P2-10 跨证书一致性（引理 L8） | [`../security-model.md`](../security-model.md) §3 L8 | `session.py` `circuits/session-program` `circuits/types::run_session` `scripts/prove_session.py` | 一个 run 的流式证书用 Merkle 根聚合成一次证明；证同一策略 / 无缺口 / 覆盖完整 —— **尾截断只有根比对拦得住** |
 
 推荐阅读路径：
 
@@ -160,7 +162,7 @@ zk-policy/
 
 ```bash
 # 只跑参考层（秒级，无需 Rust）
-python3 -m unittest discover tests -v            # 348 passed / 11 skip
+python3 -m unittest discover tests -v            # 425 passed / 12 skip
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
 python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
 

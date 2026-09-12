@@ -5,15 +5,18 @@
 //!   pop-script          --vectors v.json --out r.json [--proof-out proof.bin]
 //!   pop-script --verify --proof proof.bin [--out r.json]
 //!
-//! `--job policy|infer` 选择任务域（默认 `policy`）：`policy` 走 `pop-program`
-//! ELF（策略合规），`infer` 走 `pop-infer` ELF（P1-6 的代理推理证明）。两种域的
-//! **vkey 不同**，因此 `--verify` 也必须给出同一个 `--job`。
+//! `--job policy|infer|session` 选择任务域（默认 `policy`）：`policy` 走
+//! `pop-program` ELF（策略合规），`infer` 走 `pop-infer` ELF（P1-6 的代理推理
+//! 证明），`session` 走 `pop-session` ELF（P2-10 的会话聚合）。三个域的
+//! **vkey 互不相同**，因此 `--verify` 也必须给出同一个 `--job`。
 //!
 //! `--proof-out`（单向量证明）保存证明与一个边车 `<proof-out>.meta.json`，
 //! 携带程序 vkey 哈希（供证书使用）。`--verify` 加载证明、从 ELF 重新推导
 //! 验证密钥、做密码学验证，并打印承诺的 Outcome JSON（无需任何秘密）。
 
-use pop_types::{run_job, InferRequest, Job, Outcome, PrivateRequest, ProofRequest};
+use pop_types::{
+    run_job, InferRequest, Job, Outcome, PrivateRequest, ProofRequest, SessionRequest,
+};
 use serde::Deserialize;
 use serde_json::json;
 use sp1_sdk::{
@@ -25,11 +28,14 @@ use sp1_sdk::{
 const POP_ELF: Elf = include_elf!("pop-program");
 /// 推理完整性域的 guest ELF（P1-6）。与 `POP_ELF` 是**两个程序 ⇒ 两个 vkey**。
 const INFER_ELF: Elf = include_elf!("pop-infer");
+/// 会话聚合域的 guest ELF（P2-10）。第三个程序 ⇒ 第三个 vkey。
+const SESSION_ELF: Elf = include_elf!("pop-session");
 
 /// 按 `--job` 选择要跑/要验的 guest ELF。
 fn elf_for(job_kind: &str) -> Elf {
     match job_kind {
         "infer" => INFER_ELF,
+        "session" => SESSION_ELF,
         _ => POP_ELF,
     }
 }
@@ -94,6 +100,28 @@ struct VectorsFile {
 struct InferVectorsFile {
     #[serde(default)]
     vectors: Vec<InferVectorIn>,
+}
+
+/// 会话聚合域（P2-10）的输入向量：一个 run 的证书**规范载荷文本**，按链顺序。
+///
+/// `deny_unknown_fields` 在这里同样关键：它挡住「顺手塞一个 `merkle_root`/
+/// `policy_hash` 让电路照抄」这类改动 —— 那些值必须由电路从证书文本自己算出来，
+/// 照抄证明者填的值会让整个聚合退化成自述。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SessionVectorIn {
+    #[serde(default)]
+    name: Option<String>,
+    certs: Vec<String>,
+    #[serde(default)]
+    nonce: Vec<u8>,
+}
+
+/// 会话域输入文件（与前两个域分开，理由同上：不给 `certs` 之外开口子）。
+#[derive(Deserialize)]
+struct SessionVectorsFile {
+    #[serde(default)]
+    vectors: Vec<SessionVectorIn>,
 }
 
 /// 一个待处理的向量：`(name, job)`。
@@ -223,8 +251,8 @@ fn main() {
             "--job" => {
                 i += 1;
                 job_kind = args.get(i).cloned().unwrap_or_else(|| "policy".to_string());
-                if !matches!(job_kind.as_str(), "policy" | "infer") {
-                    panic!("--job must be 'policy' or 'infer' (got {job_kind})");
+                if !matches!(job_kind.as_str(), "policy" | "infer" | "session") {
+                    panic!("--job must be 'policy', 'infer' or 'session' (got {job_kind})");
                 }
             }
             "--check" => check_mode = true,
@@ -286,6 +314,22 @@ fn main() {
             .into_iter()
             .map(|v| {
                 (v.name, Job::Infer(InferRequest { response: v.response, nonce: v.nonce }))
+            })
+            .collect()
+    } else if job_kind == "session" {
+        let vectors: Vec<SessionVectorIn> = if value.is_array() {
+            serde_json::from_value(value).expect("session vectors array")
+        } else {
+            serde_json::from_value::<SessionVectorsFile>(value)
+                .unwrap_or_else(|e| {
+                    panic!("session vectors must be {{\"vectors\":[...]}} or [...]: {e}")
+                })
+                .vectors
+        };
+        vectors
+            .into_iter()
+            .map(|v| {
+                (v.name, Job::Session(SessionRequest { certs: v.certs, nonce: v.nonce }))
             })
             .collect()
     } else {

@@ -38,6 +38,12 @@
 │  与策略半（pop-program，vkey_policy）**必须不同程序**（键分离）→ 合取成一张组合证书       │
 │  Compose = (推理完整性 ∧ 策略合规)；驱动 scripts/compose_proof.py                       │
 └───────────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+┌──────────────────── 第三个 guest（仅 P2-10 的跨证书一致性）─────────────────────────────┐
+│  circuits/session-program（pop-session）：把**一组**证书聚合成一次证明，vkey_session      │
+│  证①policy_hash 全同 ②流式链无缝无缺口 ③覆盖完整轨迹；Merkle 根承诺整组                  │
+│  驱动 scripts/prove_session.py；⚠️ 尾截断只有「根比对」拦得住，见 L8                      │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **ConstraintSpec**（`policydsl/compile.py` 产出）是两层之间的唯一契约，结构见 `docs/architecture.md`。
@@ -89,6 +95,7 @@ SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附真实 Core 证明（~6
 - 🔗 **轨迹绑定（P1-5）**：工具轨迹不再是 agent 自报的 `tool_calls`，而是**工具网关**签发的**回执链**（`policydsl/trace.py` + `pop-types::verify_receipt_chain`）。链**结构**由电路保证（删/换/重排 → `trace_unbound` fail-closed），**签发者身份**由链下 Ed25519 验签 + 公开值 `trace_root` 承担；`budget_bound(tokens)` 改为电路内自算。**截尾**（整条删掉链尾那条违规回执）由网关的**会话末端承诺** `trace_seal{count, trace_root, ts, keyid, sig}` 拦（P1-5b，载荷**顶层**，不在 `outcome` 里——`outcome` 是证明公开值的镜像）；验证方**须给 `--gateway-key`** 才核得了签名。验收见 `tests/test_trace.py`（39 例：四条验收 + `verify_cert.py --receipts` 的第三方核对 + seal 本身 + 截尾三路）；边界如实标注于 `docs/security-model.md` §5
 - 🧠 **语义规则（P2-9）**：第七类规则 `semantic_bound`（“回复的有害概率不得高于阈值”这类**学不出来形式证明**的规则）**不在 SP1 里判定** —— 电路只把「这条被委托了」登记进公开值 `delegated[]`，出证方附一条 **ezkl/halo2 陪伴证明**（`policydsl/semantic.py` + `semantic/` + `scripts/ezkl_prove.py`）。验证方必须**合取**二者，并核 `{system, model_vkey, onnx_sha256, threshold_bp, direction}` 逐字段相等 + 公开实例的输入 == 由送达的 `T′` 现场重算的 `encode(T′)`。⚠️ 三条硬边界：**`passed=true` 而 `delegated` 非空的证明不等于策略被满足**（`verify_cert.py` 因此打印**两行**：`RESULT:` 说证书真不真，`合规:` 说策略满足没满足）；**语义规则只支持公开模式**（`encode` 在词表上单射，公开实例可反查原文，私有模式直接 panic）；**随包模型是演示用小模型**，不构成语义安全保证。见 [`docs/design-semantic-rules.md`](docs/design-semantic-rules.md)（引理 L7）
 - 🔗 **组合证明（P1-6）**：`Compose = (推理完整性 ∧ 策略合规)` —— 两份证明合成一张组合证书，回答「**这条 `T` 是被那个模型算出来的吗**」这个策略合规本身不覆盖的问题（`policydsl/compose.py` + `scripts/compose_proof.py`）。**键分离**是前提：两半必须来自**不同程序**（`pop-program` 判策略、`pop-infer` 证推理，两个 guest 入口各断言一次自己的域），否则「这份证明属于哪一半」无从判断。⚠️ 推理半当前是**代理**（确定性定点 MLP，权重由编译期种子生成 ⇒ 被 vkey 承诺），**不是 zkAgent**（其源码不可得，D1）；`bench/results/compose.md` 如实报告「组合成本 ≈ 两者之和**成立**、由推理证明主导**在代理规模下不成立**」。见 `docs/security-model.md` 引理 L6
+- 🧾 **跨证书一致性（P2-10）**：`session` 域（第三个 guest `pop-session`，vkey 与另两域不同）把**一个 run 的流式证书**用 Merkle 根聚合成**一次**证明，证三件事：①所有证书 `policy_hash` 全同 ②流式链无缝拼接无缺口 ③覆盖完整轨迹（链尾带网关的会话末端承诺）。驱动 `scripts/prove_session.py`（`policydsl/session.py` 是纯 Python 参考实现，两端逐字段对拍）。⚠️ 三条硬边界：**电路不验网关签名**（zkVM 里没有网关公钥，「这条链网关真的签过」由链下 `trace.verify_seal` 判，不给 keyring 时会如实注明「签名未验」）；**尾截断只有 Merkle 根拦得住** （`[0..k]` 前缀的 `index`/`prev` 依然连续，电路本身接受一个被砍了尾巴的证书集 —— 拦下它的是「承诺的根 vs 由交付证书重算的根」这一步）；`ok`（聚合是真的）与 `satisfied`（覆盖的证书都 `passed`）必须**分开读**。见 `docs/security-model.md` 引理 L8
 - 🔐 **SP1 健全性与零知识性核查（P0-4）**：`docs/sp1-zk-audit.md` —— 健全性成立；**`core`/`compressed` 证明非零知识**（Succinct 官方安全模型明文 + 本机源码审计，两类独立证据）。私有模式因此只能宣称「公开值不泄露明文」，不能宣称「`T` 不可恢复」
 - 🔎 审计路径（verifier-only，免构造证明器）：`circuits/verifier`（bin `pop-verify`）+ `pop-script --proof-mode compressed`；见 `docs/reproduce.md` §11
 - ⛓ 链上锚定（真跑本地 Anvil）：`contracts/Anchor.sol` + `bash scripts/anchor_e2e.sh`（部署 → 每张证书摘要上链 → 第三方 `verify_session --rpc` 核对 + 反例对照）；见 `docs/reproduce.md` §12
@@ -103,7 +110,7 @@ zk-policy/
 ├── policydsl/            # Python DSL + 参考评估 + 私密/证书/锚定 + 框架适配（langchain/langgraph/mcp）
 ├── policy_packs/         # 示例策略包（JSON）
 ├── semantic/             # P2-9：语义规则的模型与特征（确定性 ONNX 导出 + ezkl 产物）
-├── circuits/             # SP1 程序与驱动（Rust，v6 workspace：types/program/infer-program/script/verifier）
+├── circuits/             # SP1 程序与驱动（Rust，v6 workspace：types/program/infer-program/session-program/script/verifier）
 ├── contracts/            # Anchor.sol + 入库 artifact（Anchor.json，部署无需 solc）
 ├── scripts/              # 交叉验证 / demo / 证书签发与验证 / 链上锚定 / 安装脚本
 ├── tests/                # 单测与集成测试（unittest，stdlib + 可选框架）

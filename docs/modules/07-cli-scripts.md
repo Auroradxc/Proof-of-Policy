@@ -21,6 +21,7 @@
 | `verify_session.py` | **第三方**独立验证整个会话包 | 同上 | 验证已有证明 | 秒级 |
 | `ezkl_prove.py` | 语义规则（`semantic_bound`）的 ezkl 出证/验证/自检 | 否（需 ezkl+torch） | 否（ezkl 自己的证明） | setup ~48 s / prove ~77 s |
 | `compose_proof.py` | **组合证明**（P1-6）：策略半 + 推理半各出一份 → 合成 → 联合验证 | `pop-script` | 是（可 `--no-prove` / `--reuse-proofs`） | 两次出证，各 ~2 分钟 |
+| `prove_session.py` | **会话聚合证明**（P2-10）：一个 run 的流式证书 → 一次证明 + 独立验证 | `pop-script` | 是（可 `--no-prove`） | 出证 ~2.5 分钟（3 张证书） |
 | `deploy_anchor.py` | 部署 `Anchor.sol`（字节码来自入库 artifact） | 否 | 否 | 秒级 |
 | `make_shots.py` | 从会话产物生成截图/HTML/SVG | 否 | 否 | 秒级 |
 | `anchor_e2e.sh` | 起 anvil → 部署 → demo → `--rpc` 核对 + 反例 | 可选 | 可 `--prove` | ~10 s / ~70 s |
@@ -67,7 +68,9 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
 | `norm_homoglyph` / `norm_zero_width` / `norm_fullwidth` / `norm_ascii` / `norm_clean` | normalized_keyword_block（P2-9b：三种绕过 + ASCII 正例 + 干净对照） |
 
 比对方式：Python 的 `(rule.name, kind)` 集合 vs Rust 输出的 `(rule, kind)` 集合，加上 `passed`。
-期望输出 `RESULT: host 14/14  prove 14/14  PASS`。
+期望输出 `RESULT: host 19/19  prove 19/19  PASS`；带 `--no-prove` 时末行是
+`RESULT: host 19/19  prove SKIPPED (--no-prove)  PASS` —— **`--no-prove` 下这条 prove 字段不是出证结论**，
+早期版本会照抄 host 计数，读起来像「19 条证明都过了」，已改掉。
 
 **真实证明默认分块跑**（`--chunk N`，缺省 4）：SP1 core 证明的峰值 RSS 本就 ~10.3 GB，
 且每证完一个还会缓慢累加 —— 本机实测把（当时的）14 个向量交给**一个** `pop-script` 进程，会在第
@@ -271,7 +274,42 @@ RESULT: PASS | FAIL           ← 这张**组合证书**是不是真的
 **推理半是代理**（`policydsl/infer.py`，16→32→4 定点 MLP），不是 zkAgent ——
 见 [`../../bench/results/compose.md`](../../bench/results/compose.md) 与 L6.2。
 
-### 2.8 `demo_e2e.py` —— 一键真实会话
+### 2.8 `prove_session.py` —— 会话聚合证明（P2-10）
+
+```bash
+python3 scripts/prove_session.py \
+  --session scripts/examples/out/e2e/session.json \
+  [--run N] [--nonce-hex <hex>] [--keyring <公钥>] \
+  [--proof-out <f>] [--proof-mode core|compressed|groth16|plonk] [--no-prove]
+```
+
+把 `session.json` 里**同一个 run 的流式证书**按序取出（`--run` 选第几个；
+不选则全部），证「①同一策略 ②链无缝无缺口 ③覆盖完整轨迹」三条义务，
+用 Merkle 根把 N 张证书摘要聚合成**一次**证明。每个 run 打印三行：
+
+```
+  merkle_root / policy_hash / trace_root  ← Python 参考实现现场重算
+  [ ok ] parity  Python == Rust（9 个公开字段逐一相等）  ← 与 pop-script --check --job session 对拍
+  [ ok ] verify  …                                        ← 真证明的独立验证（--no-prove 时跳过）
+```
+
+五个容易踩空的点：
+
+1. **`--no-prove` 不做任何证明**，只跑「Python ↔ Rust 同聚合」对拍 —— 输出里会
+   明确写「**不要把上面的重算当成已出证**」。别把对拍结果读成出证结论。
+2. **只出证，不验签**。不给 `--keyring` 时验证环节会如实注明「seal 签名未验」；
+   「这条链网关真的签过」要另外给 `--keyring`（或跑 `verify_session.py --gateway-key`）。
+3. **一次证明只覆盖一个 run，且只覆盖链上证书**。一个 run 的权威 `on_llm_end`
+   证书没有 `streaming.chain`，按内容被判在 run 之外（`policydsl/session.py::runs_of`）——
+   这是**设计如此**，不是漏了：它在链外的另一套核对里（`verify_session.py`）。
+4. **`--nonce-hex` 是重放新鲜度的旋钮**。缺省随机取 16 字节并打印；`session_binding`
+   含 nonce，所以验证必须用同一个 —— 脚本内部自己传，跑一次就够了。
+5. **没有 seal 的证书集会被拒**（义务 ③），这是**如实拒绝**：拿旧版 `demo_e2e`
+   在盘留下的 `scripts/examples/out/*/session.json` 去出会话证明就会撞上这一条
+   （那些 bundle 生成于「每张流式证书都附 `gateway.seal()`」落地之前）。
+   用当前代码重跑 `demo_e2e.py` 得到的证书集每张都带 seal。
+
+### 2.9 `demo_e2e.py` —— 一键真实会话
 
 四段，全部用**真实**组件（`--no-prove` 只跳过 SP1 证明）：
 
@@ -303,7 +341,7 @@ RESULT: PASS | FAIL           ← 这张**组合证书**是不是真的
 > 「链尾有没有被整条删掉」的唯一依据（见 [`../security-model.md`](../security-model.md) §5.3）。
 末尾提示用 `verify_session.py` 验证。**这是「12 张证书」的来源**。
 
-### 2.9 `verify_session.py` —— 第三方验证整个会话
+### 2.10 `verify_session.py` —— 第三方验证整个会话
 
 ```bash
 python3 scripts/verify_session.py --session S [--keyring 公钥] \
@@ -332,7 +370,7 @@ python3 scripts/verify_session.py --session S [--keyring 公钥] \
   （`N cert(s) labeled, M predate the field`）。`zk_proof` 那一步还会再拿
   **工件自报的模式**核对一次（多来源必须一致）。
 
-### 2.10 `deploy_anchor.py` / `make_shots.py`
+### 2.11 `deploy_anchor.py` / `make_shots.py`
 
 - `deploy_anchor.py`：`--rpc`（默认 `http://127.0.0.1:8545`）、`--private-key`（默认 `anchor.ANVIL_KEY`）、
   `--out`（默认 `.anchor_deploy.json`，gitignored）。**不需要 solc/forge**，字节码来自
@@ -342,7 +380,7 @@ python3 scripts/verify_session.py --session S [--keyring 公钥] \
 
 ---
 
-### 2.11 `gen_key.py` —— 出证方密钥对（P0-3）
+### 2.12 `gen_key.py` —— 出证方密钥对（P0-3）
 
 ```bash
 python3 scripts/gen_key.py [--out-dir D] [--path P] [--name demo] [--force]

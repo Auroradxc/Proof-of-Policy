@@ -13,8 +13,17 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+REPO = Path(__file__).resolve().parent.parent
+#: 出证/宿主校验驱动。
+POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+#: 免证明器快路径验证二进制。
+POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
 
 #: 可以被 `pop-verify` 独立验证的证明模式（core 不在其中）
 VERIFIER_ONLY_MODES = ("compressed", "groth16", "plonk")
@@ -197,6 +206,53 @@ def check_trace_binding(sources: Sequence[Tuple[str, Optional[str]]]) -> Tuple[b
     独立完成（`verify_cert.py --gateway-key` 会把两步都跑）。
     """
     return check_agreement(sources, what="trace_root")
+
+
+def run_cmd(cmd: Sequence[str],
+            env_extra: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
+    """在仓库根目录跑一条外部命令（cwd 固定，避免相对路径随调用方漂移）。"""
+    env = dict(os.environ)
+    if env_extra:
+        env.update(env_extra)
+    return subprocess.run(list(cmd), cwd=str(REPO), capture_output=True, text=True, env=env)
+
+
+def verify_proof_file(proof: Path, job_kind: str = "policy", *,
+                      pop_verify: Path = POP_VERIFY,
+                      pop_script: Path = POP_SCRIPT) -> Dict[str, Any]:
+    """验证一份**已保存**的证明，返回验证器输出的字典。
+
+    能走 ``pop-verify``（免构造证明器）就走，否则退回 ``pop-script --verify``；
+    **core 证明必须走后者** —— core 没有可供第三方核验的递归工件。
+    验证失败一律抛 ``ValueError``（**不降级**）。
+
+    组合层（``compose.py``）与会话层（``session.py``）共用这一份实现。放在这里
+    而不是各写一份的理由是具体的：``--out`` 那个坑只要漏一次就会在**仓库根**
+    落一个 ``results.json``（`pop-script` 的 `--out` 默认值是相对 cwd 的
+    ``results.json``，而 cwd 是仓库根）—— 2026-09-12 审计在组合层发现并修好过
+    一次，不希望它在第二份拷贝里复活。
+    """
+    sidecar = sidecar_path(proof)
+    if prefer_verifier_only(proof, pop_verify):
+        proc = run_cmd([str(pop_verify), "--meta", str(sidecar)])
+        if proc.returncode != 0:
+            # pop-verify 只在**验证失败**时非 0（用法错误是 2/3，也会到这里）；
+            # 两种情形都必须 fail closed，把 stderr 带上以便定位。
+            raise ValueError(f"pop-verify 拒绝这份证明（job={job_kind}）："
+                             f"{proc.stderr.strip() or proc.stdout.strip()}")
+        return json.loads(proc.stdout)
+    args = [str(pop_script), "--verify", "--proof", str(proof), "--job", job_kind]
+    with tempfile.TemporaryDirectory(prefix="pop-verify-") as tmp:
+        args += ["--out", str(Path(tmp) / "verify.json")]
+        proc = run_cmd(args, {"SP1_PROVER": "cpu"})
+    if proc.returncode != 0:
+        raise ValueError(f"pop-script --verify 失败（job={job_kind}）："
+                         f"{proc.stderr.strip() or proc.stdout.strip()}")
+    # pop-script --verify 把 JSON 打到 stdout，最后一段才是结果
+    start = proc.stdout.find("{")
+    if start < 0:
+        raise ValueError(f"pop-script --verify 没有输出 JSON：{proc.stdout!r}")
+    return json.loads(proc.stdout[start:])
 
 
 def short_hash(h: str, n: int = 8) -> str:

@@ -194,10 +194,8 @@ class CompositeCertificate:
 # --------------------------------------------------------------------------- #
 
 def _run(cmd: Sequence[str], env_extra: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
-    env = dict(os.environ)
-    if env_extra:
-        env.update(env_extra)
-    return subprocess.run(list(cmd), cwd=str(REPO), capture_output=True, text=True, env=env)
+    """跑一条外部命令。实现已挪到 :func:`policydsl.verifier.run_cmd`（会话层共用）。"""
+    return V.run_cmd(cmd, env_extra)
 
 
 def _verify_one(proof: Path, job_kind: str,
@@ -208,32 +206,12 @@ def _verify_one(proof: Path, job_kind: str,
     与 ``verify_session.py`` 同一条路：能走 ``pop-verify``（免构造证明器）就走，
     否则退回 ``pop-script --verify``。**注意 core 证明必须走后者** —— core 没有
     可供第三方核验的递归工件。
+
+    实现已挪到 :func:`policydsl.verifier.verify_proof_file`（P2-10 的会话层要用
+    同一条路，而 ``--out`` 那个坑不该有第二份拷贝）；这里保留函数名与签名，
+    供本模块内外的既有调用方继续使用。
     """
-    sidecar = V.sidecar_path(proof)
-    if V.prefer_verifier_only(proof, pop_verify):
-        proc = _run([str(pop_verify), "--meta", str(sidecar)])
-        if proc.returncode != 0:
-            # pop-verify 只在**验证失败**时非 0（用法错误是 2/3，也会到这里）；
-            # 两种情形都必须 fail closed，把 stderr 带上以便定位。
-            raise ValueError(f"pop-verify 拒绝这份证明（job={job_kind}）："
-                             f"{proc.stderr.strip() or proc.stdout.strip()}")
-        return json.loads(proc.stdout)
-    # ⚠️ **必须显式给 `--out`**：`pop-script` 的 `--out` 默认是**当前工作目录**下的
-    # `results.json`，而 `_run` 的 cwd 是仓库根 —— 不给就会在仓库根落一个 `results.json`，
-    # 混进 `git status` 里像个待提交的新文件。`verify_cert.py` / `verify_session.py`
-    # 都显式给了，这里是唯一漏掉的一处（2026-09-12 审计发现）。
-    args = [str(pop_script), "--verify", "--proof", str(proof), "--job", job_kind]
-    with tempfile.TemporaryDirectory(prefix="pop-verify-") as tmp:
-        args += ["--out", str(Path(tmp) / "verify.json")]
-        proc = _run(args, {"SP1_PROVER": "cpu"})
-    if proc.returncode != 0:
-        raise ValueError(f"pop-script --verify 失败（job={job_kind}）："
-                         f"{proc.stderr.strip() or proc.stdout.strip()}")
-    # pop-script --verify 把 JSON 打到 stdout，最后一段才是结果
-    start = proc.stdout.find("{")
-    if start < 0:
-        raise ValueError(f"pop-script --verify 没有输出 JSON：{proc.stdout!r}")
-    return json.loads(proc.stdout[start:])
+    return V.verify_proof_file(proof, job_kind, pop_verify=pop_verify, pop_script=pop_script)
 
 
 def part_from_proof(proof: Path, kind: str, name: str,

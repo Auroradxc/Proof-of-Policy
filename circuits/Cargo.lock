@@ -2706,6 +2706,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pop-session"
+version = "0.1.0"
+dependencies = [
+ "pop-types",
+ "sp1-zkvm",
+]
+
+[[package]]
 name = "pop-types"
 version = "0.1.0"
 dependencies = [

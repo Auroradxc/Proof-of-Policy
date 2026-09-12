@@ -506,9 +506,12 @@ class TestDriverWiring(unittest.TestCase):
         """验证一份证明时**必须显式给 `--out`**。
 
         `pop-script` 的 `--out` 默认落在**当前工作目录**的 `results.json`，而
-        `_run` 的 cwd 是仓库根 —— 漏给就会在仓库根写一个 `results.json`，
+        命令的 cwd 是仓库根 —— 漏给就会在仓库根写一个 `results.json`，
         混进 `git status` 像个待提交的新文件（2026-09-12 审计发现，
         `verify_cert.py` / `verify_session.py` 都给，只有这里漏）。
+
+        P2-10 起这条路径的实现挪到了 `verifier.verify_proof_file`（会话层要复用
+        同一条路），所以拦的是**那个**函数的执行缝；断言不变。
         """
         seen = []
 
@@ -516,15 +519,15 @@ class TestDriverWiring(unittest.TestCase):
             seen.append(list(cmd))
             return subprocess.CompletedProcess(cmd, 0, stdout='{"verified": true}', stderr="")
 
-        orig = C._run
-        C._run = fake_run
+        orig = V.run_cmd
+        V.run_cmd = fake_run
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 p = Path(tmp) / "x.proof"
                 p.write_bytes(b"bytes")
                 C._verify_one(p, "policy", pop_verify=Path(tmp) / "no-such-pop-verify")
         finally:
-            C._run = orig
+            V.run_cmd = orig
         self.assertEqual(len(seen), 1)
         argv = seen[0]
         self.assertIn("--out", argv)

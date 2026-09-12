@@ -1,0 +1,9 @@
+[package]
+name = "pop-session"
+version = "0.1.0"
+edition = "2021"
+description = "SP1 zkVM program: aggregate a set of certificates into one proof (same policy, gapless chain, full trajectory, P2-10)"
+
+[dependencies]
+sp1-zkvm = "6.7.0"
+pop-types = { path = "../types" }

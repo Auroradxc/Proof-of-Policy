@@ -1047,6 +1047,7 @@ pub enum Job {
     Public(ProofRequest),
     Private(PrivateRequest),
     Infer(InferRequest),
+    Session(SessionRequest),
 }
 
 /// 顶层承诺的结果。
@@ -1055,6 +1056,7 @@ pub enum Outcome {
     Public(ProofOutput),
     Private(PrivateOutput),
     Infer(InferOutput),
+    Session(SessionOutput),
 }
 
 /// 任务属于哪个**域**（`"policy"` = 策略合规，`"infer"` = 推理完整性）。
@@ -1067,6 +1069,7 @@ pub fn job_domain(job: &Job) -> &'static str {
     match job {
         Job::Public(_) | Job::Private(_) => DOMAIN_POLICY,
         Job::Infer(_) => DOMAIN_INFER,
+        Job::Session(_) => DOMAIN_SESSION,
     }
 }
 
@@ -1074,6 +1077,7 @@ pub fn job_domain(job: &Job) -> &'static str {
 pub const DOMAIN_POLICY: &str = "policy";
 /// 推理完整性域（由 `pop-infer` 承载）。
 pub const DOMAIN_INFER: &str = "infer";
+// `DOMAIN_SESSION`（会话聚合域，由 `pop-session` 承载）定义在 P2-10 那一节。
 
 /// 把承诺的 `Outcome` 摊平成验证方可直接比对的 JSON 形状（**唯一真相源**）。
 ///
@@ -1118,6 +1122,17 @@ pub fn outcome_value(out: &Outcome) -> serde_json::Value {
             "response_binding": o.response_binding,
             "input_binding": o.input_binding,
             "output": o.output,
+        }),
+        Outcome::Session(o) => serde_json::json!({
+            "mode": "session",
+            "domain": DOMAIN_SESSION,
+            "policy_hash": o.policy_hash,
+            "cert_count": o.cert_count,
+            "merkle_root": o.merkle_root,
+            "session_binding": o.session_binding,
+            "trace_root": o.trace_root,
+            "sealed_count": o.sealed_count,
+            "seal_keyid": o.seal_keyid,
         }),
     }
 }
@@ -1450,6 +1465,257 @@ pub fn run_infer(req: &InferRequest) -> InferOutput {
     }
 }
 
+// --------------------------------------------------------------------------- //
+// P2-10 会话聚合域：把**一组**证书（而不是一条响应）聚合成一次证明。
+// --------------------------------------------------------------------------- //
+
+/// 会话聚合域（由 `pop-session` 承载，P2-10）。
+pub const DOMAIN_SESSION: &str = "session";
+
+/// Merkle 内部节点的域分隔前缀。
+///
+/// 叶子**不加**前缀：叶子就是各证书的 `cert_digest` 本身（见
+/// [`CertView`] 的说明），验证方据此在链下由真实证书文件直接重算。
+pub const MERKLE_NODE_DOMAIN: &[u8] = b"pop-session-node-v1";
+
+/// 单个十六进制字符 → 半字节（只认小写；`hex()` 产出的就是小写）。
+fn hex_nibble(c: u8) -> u8 {
+    match c {
+        b'0'..=b'9' => c - b'0',
+        b'a'..=b'f' => c - b'a' + 10,
+        _ => panic!("摘要里出现非小写十六进制字符（它必须与 `hex()` 的输出同形）"),
+    }
+}
+
+/// 64 个十六进制字符 → 32 字节。长度不对即 panic（fail closed）。
+fn hex32(s: &str) -> [u8; 32] {
+    let b = s.as_bytes();
+    assert!(b.len() == 64, "期望 64 个十六进制字符的摘要，得到 {} 个", b.len());
+    let mut out = [0u8; 32];
+    for i in 0..32 {
+        out[i] = (hex_nibble(b[2 * i]) << 4) | hex_nibble(b[2 * i + 1]);
+    }
+    out
+}
+
+/// 对一组 32 字节叶子求 Merkle 根。
+///
+/// 规则（`policydsl.session.merkle_root` 必须**逐字节**一致）：
+///
+/// * 叶子 = 各证书的 `cert_digest`，**原样**（不加前缀、不再哈希一次）；
+/// * 内部节点 = `SHA256(NODE_DOMAIN ‖ left ‖ right)`；
+/// * 某层为奇数个节点时，把**末位提升**到上一层 —— **不复制**它。复制是
+///   Merkle 的经典坑：它让 `[a,b,c]` 与 `[a,b,c,c]` 得到同一个根，于是
+///   「挖掉一张尾证书」就有了一条伪造路径，而「挖掉一张」正是本域要拦的攻击。
+pub fn merkle_root(leaves: &[[u8; 32]]) -> [u8; 32] {
+    assert!(!leaves.is_empty(), "Merkle 树至少需要一片叶子");
+    let mut level: Vec<[u8; 32]> = leaves.to_vec();
+    while level.len() > 1 {
+        let mut next: Vec<[u8; 32]> = Vec::with_capacity((level.len() + 1) / 2);
+        let mut i = 0;
+        while i + 1 < level.len() {
+            let mut h = Sha256::new();
+            h.update(MERKLE_NODE_DOMAIN);
+            h.update(level[i]);
+            h.update(level[i + 1]);
+            let mut d = [0u8; 32];
+            d.copy_from_slice(&h.finalize());
+            next.push(d);
+            i += 2;
+        }
+        if i < level.len() {
+            next.push(level[i]); // 奇数个：末位提升
+        }
+        level = next;
+    }
+    level[0]
+}
+
+/// 会话证明的输入：**一个 run** 的证书，按链顺序，每张以**规范载荷文本**给出。
+///
+/// 为什么传文本而不是「解析好的字段」：电路对这份文本求 SHA-256，得到的正是
+/// `cert.cert_digest(payload)`；验证方在链下用**真实证书文件**重算同一个值并
+/// 重算 Merkle 根，两边才对得上。若改由证明者直接填字段，Merkle 根承诺的就只是
+/// 那些字段，验证方没有任何办法把它拴到自己手上那批证书 —— 那门检查会退化成
+/// 恒真（正是 P0-1 的形态）。这与策略域传 `spec_canonical` **文本**是同一手法。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionRequest {
+    /// 该 run 的证书规范载荷文本（`cert.canonical(payload)` 的 UTF-8 解码），
+    /// 按 `streaming.chain.index = 0, 1, 2 …` 排列。
+    pub certs: Vec<String>,
+    /// 一次性挑战值。绑定公式与策略域同一条：
+    /// `session_binding = response_binding(nonce, merkle_root)` —— 会话证明因此
+    /// 不能被整体重放到另一个挑战上。
+    #[serde(default)]
+    pub nonce: Vec<u8>,
+}
+
+/// 一张证书载荷中**本电路要读的**那部分视图。
+///
+/// 刻意**不**标 `deny_unknown_fields`：整份载荷的字节已经被叶子摘要承诺
+/// （`leaf = SHA256(这份文本)`），多带字段既藏不住、也改不了根；而载荷里本来
+/// 就有 `cert_version` / `binding` / `ai_act` / `semantic` 等本电路不关心的字段。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CertView {
+    /// ① 同策略：整组证书必须承诺同一个策略哈希。
+    #[serde(default)]
+    pub policy_hash: String,
+    /// ② 无缝拼接：`streaming.chain = {index, prev}`（与 `verify_chain` 同一语义）。
+    #[serde(default)]
+    pub streaming: Option<StreamingView>,
+    /// ③ 覆盖完整轨迹：网关的会话末端承诺（P1-5b 的 `ToolSeal`）。
+    #[serde(default)]
+    pub trace_seal: Option<SealView>,
+}
+
+/// 载荷里 `streaming` 块（流式部分证书用；非流式证书没有它）。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct StreamingView {
+    #[serde(default)]
+    pub partial: bool,
+    #[serde(default)]
+    pub tokens: u64,
+    #[serde(default)]
+    pub chain: Option<ChainView>,
+}
+
+/// 流式哈希链的一环：`index` 是位置，`prev` 是上一张证书的载荷摘要（首张为
+/// `"genesis"`）。镜像 `policydsl.langchain_adapter.verify_chain` 的判据。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChainView {
+    #[serde(default)]
+    pub index: u64,
+    #[serde(default)]
+    pub prev: String,
+}
+
+/// 会话末端承诺（`ToolSeal`）中**进电路**的那部分。
+///
+/// `sig` 刻意不在这个视图里：网关签名的 Ed25519 验签在**链下**用网关公钥做
+/// （与 [`ToolReceipt`] 的 `sig` 同样的分工，见 `policydsl.trace.verify_seal`）。
+/// 电路能证明的是「这组证书里**链尾那张**携带的 `(count, trace_root)` 是这些值」，
+/// 它把这几个值送进公开值，验证方再拿它们去核网关签名与手上的回执链。
+/// **电路不证明 `count` 就是真实回执条数** —— 那是 seal 签名与回执链的事，
+/// 这条边界必须写清楚，不能让它看起来像被证过了。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SealView {
+    #[serde(default)]
+    pub count: u64,
+    #[serde(default)]
+    pub trace_root: String,
+    #[serde(default)]
+    pub keyid: String,
+}
+
+/// 会话证明的公开输出。
+///
+/// 三个字段分别对应三条义务的**可核对结论**：
+/// `policy_hash`（① 全组同一个策略）、`merkle_root` + `cert_count`（这组证书到底
+/// 是哪几张 —— 验证方由真实文件重算后比对）、`trace_root` + `sealed_count` +
+/// `seal_keyid`（③ 链尾那张证书的会话末端承诺）。
+///
+/// ② 的结论**不在这里单列**：无缝拼接是电路内的断言（不满足就出不了证明），
+/// 而不是一个供验证方再去解读的字段。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SessionOutput {
+    pub policy_hash: String,
+    pub cert_count: u32,
+    pub merkle_root: String,
+    pub session_binding: String,
+    pub trace_root: String,
+    pub sealed_count: u64,
+    pub seal_keyid: String,
+}
+
+/// 执行一次会话聚合（guest 与宿主检查共用）。
+pub fn run_session(req: &SessionRequest) -> SessionOutput {
+    assert!(
+        !req.certs.is_empty(),
+        "会话证明至少需要一张证书 —— 空集的一致性、无缺口与覆盖都是**恒真**的，\
+         那样的证明什么也没说"
+    );
+    let mut leaves: Vec<[u8; 32]> = Vec::with_capacity(req.certs.len());
+    let mut policy_hash: Option<String> = None;
+    let mut seal_keyid: Option<String> = None;
+    let mut last_seal: Option<SealView> = None;
+    let mut prev_leaf = String::from("genesis");
+
+    for (i, text) in req.certs.iter().enumerate() {
+        let digest = sha256_hex(text); // == cert.cert_digest(payload)
+        let view: CertView = serde_json::from_str(text).expect(
+            "证书载荷不是合法 JSON —— 本域的输入必须是 cert.canonical(payload) 的文本",
+        );
+
+        // ---- ① 同一策略 ----
+        match &policy_hash {
+            None => {
+                assert!(!view.policy_hash.is_empty(), "第 0 张证书载荷缺 policy_hash");
+                policy_hash = Some(view.policy_hash.clone());
+            }
+            Some(p) => assert_eq!(
+                p,
+                &view.policy_hash,
+                "第 {} 张证书的策略哈希与第 0 张不同（{} vs {}）—— \
+                 这组证书不是同一个策略下签发的",
+                i,
+                p,
+                view.policy_hash
+            ),
+        }
+
+        // ---- ② 流式链无缝拼接 ----
+        let chain = view
+            .streaming
+            .as_ref()
+            .and_then(|s| s.chain.as_ref())
+            .expect("证书缺 streaming.chain（它不是流式链上的一环，本域无从判「无缺口」）");
+        assert_eq!(
+            chain.index,
+            i as u64,
+            "第 {} 张证书的 chain.index 是 {}，应为 {}（链有缺口或中间缺了证书）",
+            i,
+            chain.index,
+            i
+        );
+        assert_eq!(
+            chain.prev, prev_leaf,
+            "第 {} 张证书的 chain.prev 与上一张的载荷摘要不符（链被重排或中间被换过）",
+            i
+        );
+
+        // ---- ③ 会话末端承诺 ----
+        let seal = view
+            .trace_seal
+            .expect("证书缺 trace_seal（会话末端未被网关承诺 ⟹ 无法排除链尾被删）");
+        match &seal_keyid {
+            None => seal_keyid = Some(seal.keyid.clone()),
+            Some(k) => assert_eq!(
+                k, &seal.keyid,
+                "第 {} 张证书的 seal 来自另一个网关（keyid {} vs {}）—— \
+                 这组证书不是同一条会话",
+                i, k, seal.keyid
+            ),
+        }
+        last_seal = Some(seal);
+
+        prev_leaf = digest.clone();
+        leaves.push(hex32(&digest));
+    }
+
+    let root = hex(&merkle_root(&leaves));
+    let seal = last_seal.expect("空集已在入口拒绝");
+    SessionOutput {
+        policy_hash: policy_hash.expect("空集已在入口拒绝"),
+        cert_count: req.certs.len() as u32,
+        merkle_root: root.clone(),
+        session_binding: response_binding(&req.nonce, &root),
+        trace_root: seal.trace_root,
+        sealed_count: seal.count,
+        seal_keyid: seal_keyid.unwrap_or_default(),
+    }
+}
+
 fn parse_spec(spec_canonical: &str) -> (String, ConstraintSpec) {
     let spec: ConstraintSpec = serde_json::from_str(spec_canonical)
         .expect("spec_canonical is not a valid ConstraintSpec");
@@ -1481,5 +1747,6 @@ pub fn run_job(job: &Job) -> Outcome {
             Outcome::Private(evaluate_private(r, &hash, &spec.constraints))
         }
         Job::Infer(r) => Outcome::Infer(run_infer(r)),
+        Job::Session(r) => Outcome::Session(run_session(r)),
     }
 }

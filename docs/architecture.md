@@ -68,7 +68,7 @@ Compose = (推理完整性 ∧ 策略合规)
 ```
 
 **键分离**是组合成立的前提：两半必须来自**不同程序**（不同 vkey），否则「这份证明属于哪一半」
-无从判断。做法是两个 guest 入口各断言一次自己的域（`pop-types::job_domain`），
+无从判断。做法是每个 guest 入口各断言一次自己的域（`pop-types::job_domain`），
 把这条要求钉进电路。⚠️ 推理半在当前仓库里是**代理**（确定性定点 MLP），
 不是 zkAgent（D1）—— 组合的是**机制**，不是真实 LLM 的推理。见
 [`security-model.md`](security-model.md) 引理 L6 与 `bench/results/compose.md`。

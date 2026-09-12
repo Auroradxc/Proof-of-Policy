@@ -239,7 +239,7 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 **为什么键分离是命题的一部分，而不是工程细节**：若两半可以由**同一个**程序产生，
 则「这份证明属于哪一半」在验证方无判据 —— 攻击者可以拿一份策略证明充当推理半
 （或反之）而通过全部逐 half 的检查。`verify_composite` 第 4 步显式要求
-`vkey_policy ≠ vkey_inference`；两个 guest 入口各自断言 `job_domain == DOMAIN_*`
+`vkey_policy ≠ vkey_inference`；每个 guest 入口各自断言 `job_domain == DOMAIN_*`
 （`pop-program` 只收 Public/Private，`pop-infer` 只收 Infer），把这条要求钉进
 **电路**而不是只写在 Python 里。给了 `expected_vkeys` 时还额外核「它们就是你信任的
 那两个程序」——没给时 `detail` **如实注明**「未提供期望 vkey」，不假装核过了。
@@ -316,6 +316,51 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 私有模式在电路内 panic；② 模型质量（训练数据/分布外/投毒）—— 密码学不判断模型好不好；
 ③ 定点近似的决策边界（`|P-θ| < 1/128` 处可能与浮点参考不符）；
 ④ v1 只有单一模型，N 条规则共用同一份 `proof.json`。
+
+### L8 跨证书一致性（P2-10）—— 归约到 A1 + A2（Merkle 的抗第二原像）
+
+**命题**：设 `P` 是一份**被接受**的会话聚合证明，公开值含
+`(policy_hash, cert_count, merkle_root, session_binding, trace_root, sealed_count, seal_keyid)`，
+交付的证书集为 `E = (e₀ … e_{n-1})`。若 `verify_session_proof` 返回 `ok=True`
+（给了 `proof` 时还要求密码学验证通过、且公开值解出的 outcome 与交付 outcome 逐字段一致），则：
+
+1. `E` 中每张证书的 `policy_hash` 相同，且（给了策略包/策略时）等于验证方**现场重编译**
+   得到的那个 —— 这组证书确实都出自同一策略，而那策略就是验证方手上这个；
+2. `eᵢ` 的 `chain.index = i` 且 `chain.prev = leaf(eᵢ₋₁)`（`leaf(e₀) = genesis`）——
+   交付的顺序与链上的顺序一致、**中间没有缺口**；
+3. `n = cert_count`，且由这 n 个叶子算出的 Merkle 根 `= merkle_root` ——
+   于是**交付集就是被证明的那一组，不多不少**。
+
+**论证**（在 A1、A2 下）：(1)(2) 是电路内的 `assert!`，产不出证明即失败（A1 保证
+公开值唯一等于 guest 的确定性执行结果，证明者选不了）。(3) 的第一半由公开值
+`cert_count` 与交付集长度比对得到；第二半由「验证方用**交付的**证书重算根」与承诺比对
+得到 —— 若交付集 ≠ 被证明集，则两者的根必须相同，即找到 Merkle 的一个第二原像，
+与 A2 矛盾。∎
+
+**为什么第 (3) 条非有不可**（已实测的两端行为）：`[0..k]` 这样的**前缀**仍然满足
+`index` 连续、`prev` 相连、策略全同、seal 齐全 —— **电路本身接受一个被砍掉尾巴的证书集**
+（这正是 L3/§5.3 的截尾问题在会话层的形态）。拦住它的唯一一步就是根比对。反过来，
+**挖中间 / 换序 / 换一张**则在电路内就断（`index`/`prev` 对不上），出不了证明 ——
+两类攻击由两个不同的机制拦下，不能合并陈述。
+
+**代码落点**：`circuits/session-program/`（guest③，vkey 与另两域不同）、
+`circuits/types/src/lib.rs::run_session`、`policydsl/session.py::verify_session_proof`、
+`scripts/prove_session.py`、`tests/test_session.py`（38）。
+
+**不保证 / 诚实边界**：
+
+- **不验网关签名**。`SealView` 里没有 `sig` —— zkVM 内没有网关公钥。电路内只断言
+  「每张证书都带 seal」+「`keyid` 全同」，公开的 `(sealed_count, trace_root)` 是链尾证书
+  **自报**的承诺；**它的真伪由链下 `trace.verify_seal` 判**（L3 / §5.3）。因此
+  `verify_session_proof` 不给 `keyring`/`receipts` 时会**如实注明「seal 签名未验」**，
+  那一行不该被读成「已核过」。
+- **覆盖范围只有一个 run、且只有链上证书**。没有 `streaming.chain` 的证书（含一个 run 的
+  权威 `on_llm_end`）不属于任何 run —— 整条会话的核对（锚定、工具回执、权威证书）
+  仍然是 `verify_session.py` 的职责，本引理不覆盖。
+- **`ok` 与 `satisfied` 必须分开读**：`ok` = 「这次聚合是真的」，`satisfied` = 「被覆盖的
+  证书全都 `passed`」。一张如实记录违规的聚合证明**同样是真**的 —— 与 L7 同一条口径。
+  另注：`satisfied=true` 只说**被聚合的那批**证书合规，**不等于**整条会话合规
+  （见上一条：链外证书不在其中）。
 
 ---
 
@@ -458,11 +503,13 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | 证书签名（A3/A7） | `policydsl/cert.py::Ed25519Signer`、`policydsl/keys.py` | `tests/test_cert.py`（19） |
 | 证明模式诚实标注 | `cert.PROOF_MODE_HIDING`、`verifier.artifact_proof_modes` | `tests/test_verifier_only.py`（8） |
 | **L7** 语义委托（P2-9） | `policydsl/semantic.py`、`scripts/ezkl_prove.py`、`circuits/types::DelegatedConstraint`、`verify_cert.py` 3e | `tests/test_semantic.py`（29，含 6 条反例；真·端到端由 `POP_TEST_EZKL=1` 打开） |
-| **L6** 组合义务（P1-6） | `policydsl/compose.py`、`circuits/infer-program`（guest）、`circuits/types::job_domain`、`scripts/compose_proof.py` | `tests/test_compose.py`（48，含 5 组反例 + 4 条驱动接线回归；真·端到端由 `POP_TEST_COMPOSE=1` 打开） |
+| **L6** 组合义务（P1-6） | `policydsl/compose.py`、`circuits/infer-program`（guest②）、`circuits/types::job_domain`、`scripts/compose_proof.py` | `tests/test_compose.py`（48，含 5 组反例 + 4 条驱动接线回归；真·端到端由 `POP_TEST_COMPOSE=1` 打开） |
+| **L8** 跨证书一致性（P2-10） | `circuits/session-program`（guest③）、`circuits/types::run_session`、`policydsl/session.py::verify_session_proof`、`scripts/prove_session.py` | `tests/test_session.py`（38，含两种挖法的反例；真·端到端由 `POP_TEST_SESSION=1` 打开） |
 
-**回归总盘**：`python3 -m unittest discover -s tests -t .` → **348 passed / 11 skipped**（skip 均为设计内，
-含 P2-9 那例要真出 ezkl 证明的端到端 —— 由 `POP_TEST_EZKL=1` 打开；P1-6 那 5 例要真出两份
-SP1 证明 —— 由 `POP_TEST_COMPOSE=1` 打开。两组均已单独实测通过）。
+**回归总盘**：`python3 -m unittest discover -s tests -t .` → **425 passed / 12 skipped**（2026-09-12 复跑；
+skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— 由 `POP_TEST_EZKL=1` 打开；P1-6 那 5 例
+要真出两份 SP1 证明 —— 由 `POP_TEST_COMPOSE=1` 打开；P2-10 那例要真出一份会话聚合证明 ——
+由 `POP_TEST_SESSION=1` 打开。三组均已单独实测通过）。
 
 ---
 

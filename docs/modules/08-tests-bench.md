@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（22 个模块，348 个用例）与 `bench/`（5 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（24 个模块，425 个用例）与 `bench/`（5 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,7 +8,7 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 期望 348 passed, 11 skipped
+python3 -m unittest discover -s tests -t . -v   # 期望 425 passed, 12 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
@@ -36,9 +36,10 @@ python3 -m unittest discover -s tests -t . -v   # 期望 348 passed, 11 skipped
 | `test_ezkl_evm` | 10 | **T2**：`ezkl_evm.run` 对同步/异步/Future 三种可调用对象都成立（5 例，**不依赖 ezkl**）；真实 ezkl 下裸调用必抛 `no running event loop`（把上游坏行为钉死）、包一层即产出 `Halo2Verifier` 源码与 `verifyProof` ABI、连调互不影响、`reusable` 变体 + VK artifact（`vka.json` 实为 bincode，不是 JSON）、**剥空 `PATH` 也不调用 solc** |
 | `test_semantic` | 29 | **P2-9**：语义规则（学习型规则）的委托与绑定，**含 6 条反例**（换 ONNX、换 vk、改阈值、翻转 `direction`、换证明文件/换响应、图外自算特征）与 fail-closed 四路（缺材料目录/缺陪伴证明/缺 `--response`/多带证明）；**分层**见下 —— 28 例不依赖 ezkl 与 32 MiB `srs` |
 | `test_compose` | 48 | **P1-6**：组合证明 `Compose = (推理完整性 ∧ 策略合规)`。三层 —— ① 参考实现逐位一致（`pop-script --check --job infer` ↔ `policydsl/infer.py`：模型哈希/响应绑定/输入绑定/输出）② 组合绑定的 **5 组反例**（换证明文件·缺失、同 vkey·非期望 vkey、换模型·换输入、两半绑不同 T·送达 T′ 不符、形状·模式·域·policy_hash 重编译）③ **四条驱动接线回归**（`--job` 旗标 ≠ part 的 kind；`part_from_proof` 得把旗标而不是 kind 传下去；验证结果的 `mode` 不能被当展示元信息剥掉；`pop-script --verify` 必须显式给 `--out`，否则在仓库根落一个 `results.json`）——这几条对应 2026-09-12 真端到端跑出来的真 bug，单测当时全绿。真·端到端 5 例由 `POP_TEST_COMPOSE=1` 打开 |
-| **合计** | **348** | |
+| `test_session` | 38 | **P2-10**：跨证书一致性（`session` 域 = guest③）。三层 —— ① **Merkle 纯算术层**（单叶子即叶子本身；内部节点带 `pop-session-node-v1` 前缀；**奇数末位提升、绝不复制** ← 这条是「挖尾」防线的前提；n=1…9 的包含证明往返；篡改叶子与形状非法 fail-closed）② **两层对拍**（`pop-script --check --job session` ↔ `policydsl/session.py::run_session` 在链长 1/2/3/5/8 上**逐字段相等** —— 奇数链才会走到末位提升；Merkle 根跨层逐字节一致；nonce 改则 `session_binding` 改）③ **义务与反例**（混异策略 / 挖中间 / 换序 / 缺 `chain` / 缺 `seal` / 两条网关的 seal / 空集；验证侧的 happy path、**挖尾**、**整张换尾**、伪造根 / 伪造链尾承诺 / 伪造策略哈希、错域、现场重编译策略包、seal 签名与真回执）。**真·端到端 1 例**（`POP_TEST_SESSION=1`）对着真证明跑计划的两条验收判据（混异策略 + 挖尾），并核 `--nonce` 换一个即拒 |
+| **合计** | **425** | |
 
-### 11 个 skip（都是设计内的）
+### 12 个 skip（都是设计内的）
 
 | skip | 原因 | 怎么启用 |
 |---|---|---|
@@ -47,6 +48,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 348 passed, 11 skipped
 | `test_policy_binding` 中 2 例 | 「证明层」用例默认关闭（要 `scripts/examples/out/cert_public/` 下的工件与当前 guest ELF 匹配；改过 ELF 就得重新出证） | `POP_TEST_PROOF=1 python3 -m unittest tests.test_policy_binding`（**已实测通过**：Ran 22 … OK，67.1 s） |
 | `test_semantic` 中 1 例 | 「真·端到端」要出一份 ezkl 证明（~61 s、峰值 ~9 GiB） | `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic`（已实测通过） |
 | `test_compose` 中 5 例 | 「真·端到端」要出**两份** SP1 证明（各 ~2 分钟、峰值 ~10.5 GiB） | `POP_TEST_COMPOSE=1 python3 -m unittest tests.test_compose`（**已实测通过**：47 例全跑、无一 skip，563.5 s；加四条接线回归后共 48 例） |
+| `test_session` 中 1 例 | 「真·端到端」要出一份 SP1 **会话聚合证明**（3 张证书，~2.5 分钟、峰值 ~10 GiB） | `POP_TEST_SESSION=1 python3 -m unittest tests.test_session.TestSessionEndToEnd -v`（**已实测通过**：Ran 1 … OK，152.5 s —— 含一次出证、一次独立验证与**四条**拒绝路径：换组证书 / 尾截断 / 混入异策略证书 / 错 nonce） |
 
 #### `test_semantic` 为什么敢把 ezkl 关在门外
 
@@ -61,7 +63,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 348 passed, 11 skipped
 
 > 这是当前环境下的计数（`langchain`/`langgraph`/`mcp`、`pop-script`/`pop-verify`、
 > 以及 `ezkl`/`torch` 均已安装，因此真实框架用例、Rust 路径用例与 ezkl 用例**实际执行**了，
-> 而不是跳过）。**CI 上的 skip 数会更多（11 → 16）**：CI 不装 `ezkl`/`torch`，
+> 而不是跳过）。**CI 上的 skip 数会更多（12 → 17）**：CI 不装 `ezkl`/`torch`，
 > `test_ezkl_evm` 里需要真实 ezkl 的 5 例（`TestEzklEvmVerifier`）整组跳过，只有不依赖 ezkl 的
 > `TestRunHelper` 5 例照跑 —— 这是设计内的，P2-9 的可选依赖不进 CI。
 
@@ -280,7 +282,12 @@ P2-9 的语义规则走**另一套证明系统**（ezkl / halo2），代价必�
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **348 passed / 11 skip**（CI 上 16 skip，见 §1）、`cross_validate` host 14/14 + prove 14/14。
+  当前验收判据是 **425 passed / 12 skip**（2026-09-12 复跑；CI 上更多 skip，见 §1）、
+  `cross_validate` **host 19/19**。
+  ⚠️ **prove 一侧的现状要说清楚**：向量从 14 增至 19（P2-9b 的 5 条）之后**尚未整批重跑真实证明**
+  （单进程跑不完、须 `--chunk`，约 2 分钟/条）。已单独实测过 `norm_homoglyph` 一条真 core 证明
+  （`passed=false`、`kind=normalized_keyword_block`、`evidence=weaponize`）。**别把 `--no-prove` 的
+  末行当出证结论** —— 它现在会显式打印 `prove SKIPPED (--no-prove)`。
 
 ---
 

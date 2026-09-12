@@ -257,10 +257,12 @@ def main() -> int:
 
     # 真实证明（全部向量）
     results_prove = scripts / "results_prove.json"
-    if "--no-prove" in sys.argv:
+    skipped_prove = "--no-prove" in sys.argv
+    if skipped_prove:
+        # 这里**不能**拿 host 的计数冒充 prove：`--no-prove` 下一条证明都没出，
+        # 末行若照抄 host 数字，读的人（和文档）会把 host 结论当成出证结论。
         print("--- real proofs: skipped (--no-prove) ---")
-        n2 = n1
-        d2 = d1
+        n2 = None
     else:
         chunk = parse_chunk(sys.argv)
         shape = ("single process" if chunk <= 0
@@ -280,9 +282,10 @@ def main() -> int:
         n2, d2 = compare(rp, expected)
         report("prove", [ok for _, ok, _, _ in d2], d2)
 
-    ok = n1 == len(expected) and n2 == len(expected)
+    ok = n1 == len(expected) and (skipped_prove or n2 == len(expected))
+    prove_txt = "SKIPPED (--no-prove)" if skipped_prove else f"{n2}/{len(expected)}"
     print("\n" + "=" * 60)
-    print(f"RESULT: host {n1}/{len(expected)}  prove {n2}/{len(expected)}  {'PASS' if ok else 'FAIL'}")
+    print(f"RESULT: host {n1}/{len(expected)}  prove {prove_txt}  {'PASS' if ok else 'FAIL'}")
     return 0 if ok else 1
 
 

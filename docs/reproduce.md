@@ -28,7 +28,7 @@
 
 ```bash
 cd Proof-of-Policy/03_代码仓库/zk-policy     # 仓库根（目录曾名为“方向二”，已重命名）
-python3 -m unittest discover tests -v          # 期望 348 passed（11 skip：2 个 compressed fixture + 2 个 POP_TEST_PROOF 门控 + 1 个 POP_TEST_EZKL 门控 + 5 个 POP_TEST_COMPOSE 门控 + 1 设计内）
+python3 -m unittest discover tests -v          # 期望 425 passed（12 skip：2 个 compressed fixture + 2 个 POP_TEST_PROOF 门控 + 1 个 POP_TEST_EZKL 门控 + 5 个 POP_TEST_COMPOSE 门控 + 1 个 POP_TEST_SESSION 门控 + 1 设计内）
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json | head    # 编译出 ConstraintSpec
 ```
 
@@ -116,6 +116,41 @@ SP1_PROVER=cpu python3 scripts/compose_proof.py \
 与「这条响应满足策略」两件事各自被证明，且证明**来自不同程序**（不同 vkey）——
 否则「这份证明属于哪一半」无从判断。⚠️ 推理那一半在当前仓库是**代理**（确定性定点 MLP），
 不是 zkAgent；见 [`security-model.md`](security-model.md) 引理 L6 与 `bench/results/compose.md`。
+
+---
+
+## 7½. 复现：会话聚合证明（P2-10，可选）
+
+```bash
+# 先有一个端到端会话包（旧的在盘 bundle 不带 seal，会被义务③如实拒掉）
+python3 scripts/demo_e2e.py --no-prove --out-dir scripts/examples/out/e2e
+
+# 秒级：只看「一个 run 的证书集能否聚合」（Python ↔ Rust 对拍，不出证）
+python3 scripts/prove_session.py --session scripts/examples/out/e2e/session.json --no-prove
+# 期望：每个 run 两行 [ ok ]，末行 RESULT: PASS
+
+# 真实出证 + 独立验证（3 张证书的 run：~2.5 分钟、峰值 ~10 GiB）
+SP1_PROVER=cpu python3 scripts/prove_session.py \
+  --session scripts/examples/out/e2e/session.json --run 1 \
+  --nonce-hex 00112233445566778899aabbccddeeff \
+  --proof-out scripts/examples/out/session/run1.proof
+```
+
+**它会如实分开报两件事**（2026-09-12 实测的尾行）：
+
+```
+  [ ok ] verify   Merkle 根与交付的 3 张证书相符; … ; 只核对了 count/trace_root；未给网关公钥，seal 签名未验
+  **不合规**：这张聚合证明本身是真的，它覆盖的轨迹不满足策略
+RESULT: PASS
+```
+
+—— `demo_e2e` 的第二个 run 里有两张证书是**如实记录了违规**的，所以聚合证明**为真**而轨迹
+**不合规**：`ok`（这次聚合是真的）与 `satisfied`（被覆盖的证书都 passed）必须分开读。
+不给 `--keyring` 时那行会明说「seal 签名未验」—— 电路内没有网关公钥，**别把这一行读成已核过**。
+
+改一条证书再喂进去（换一张 / 挖掉链尾一张 / 换个 nonce），`verify` 一行会变 `[FAIL]`：
+**尾截断只有 Merkle 根拦得住**（前缀的 `index`/`prev` 依然连续），理由见
+[`security-model.md`](security-model.md) 引理 L8。
 
 ---
 
@@ -246,7 +281,7 @@ python3 scripts/verify_session.py --session .../session.json \
 
 ## 验收判据（复现成功）
 
-- `python3 -m unittest discover tests` → **348 passed（11 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = 设计内「依赖已装」用例）；
+- `python3 -m unittest discover tests` → **425 passed（12 skip）**（2026-09-12 复跑；skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = `POP_TEST_SESSION` 门控的会话聚合证明端到端用例，1 = 设计内「依赖已装」用例）；
 - `scripts/prove_policy.py` → **RESULT: PASS**；
 - `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（**prove 未重跑**：向量 14 → 19 后只做过 host 全量 + `norm_homoglyph` 单条真实证明，整批 prove 须 `--chunk`，见 `modules/08-tests-bench.md` §5）
   （真实证明分 4 块跑，见 §4 的说明；`--no-prove` 时跳过真实证明）；

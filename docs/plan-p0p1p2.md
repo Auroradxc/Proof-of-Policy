@@ -455,7 +455,8 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
 **验收**：`tests/test_compose.py` + `bench/results/compose.md`；**反例**——替换任一子证明必须被拒。
 **均已达**：`POP_TEST_COMPOSE=1 python3 -m unittest tests.test_compose` → **Ran 47 tests … OK**（563.5 s，
 无一 skip）；`bench/results/compose.{json,md}` 已跑出；全套 `python3 -m unittest discover -s tests -t .`
-→ **348 passed / 11 skipped**。反例的「替换任一子证明必须被拒」在真产物上单独跑过
+→ **348 passed / 11 skipped**（P2-9 收尾时的快照；P2-10 再加 38 例后全量为 425/12，见 §4）。
+反例的「替换任一子证明必须被拒」在真产物上单独跑过
 （`test_swapping_either_subproof_is_rejected`）。
 
 **记要（分支 A ✅ 2026-09-12 完成）**：
@@ -604,7 +605,7 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 | **9.4** | **策略规则**：新增 `semantic_bound` kind，贯通 `model.py → compile.py → serialize.py → pop-types` | `Constraint::SemanticBound { name, model_vkey, onnx_sha256, threshold_bp, direction }` | `tests/test_semantic.py::test_compile_semantic`；契约哈希稳定 |
 | **9.5** | **组合与绑定** —— ✅ **已完成（2026-09-12）** | `policydsl/semantic.py::verify_companion/companion_entry`、`cert.build_payload(semantic=)`、`scripts/{issue_cert,verify_cert}.py` | 见 9.7 反例；**两处与原文不同，理由见 9.5 记要** |
 | **9.6** | **信任边界论证** —— ✅ **已完成（2026-09-12）** | [`design-semantic-rules.md`](design-semantic-rules.md) | 与 §P1-8 的形式化模型对接：新增**引理 L7**（**不是 L6 —— 那号已被 P1-6 占用**，见记要） |
-| **9.7** | **验收 + 反例** —— ✅ **已完成（2026-09-12）** | `tests/test_semantic.py`（29 例 / 6 条反例） | 见下；全套 **348 passed / 11 skipped**（2026-09-12 复跑） |
+| **9.7** | **验收 + 反例** —— ✅ **已完成（2026-09-12）** | `tests/test_semantic.py`（29 例 / 6 条反例） | 见下；全套 **348 passed / 11 skipped**（P2-9 收尾时复跑；**当前全量为 425/12**，见 §4 P2-10） |
 
 > **9.1–9.4 的完成状态补记（2026-09-12 审计）** —— 这四行此前没打勾，实物其实都在，逐条对账如下。
 > 其中 **9.1 有一处未按计划交付**，如实记下：
@@ -728,12 +729,61 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
   `WЕAPONIZE` 这类大写变体很可能只有折叠规则拦得住。已写进 `normalize.py` 与
   `design-semantic-rules.md` §10，并由 `tests/test_normalize.py::TestVocabConsistency` 钉住两张表的包含关系。
 
-### P2-10 跨证书策略一致性
+### P2-10 跨证书策略一致性 —— ✅ **已完成（2026-09-12）**
 
 `policydsl/session.py` + 新 guest 模式 `Job::Session`：证「一组证书 ①`policy_hash` 全同；
 ②流式链无缝拼接无缺口；③覆盖完整轨迹」。用 Merkle 根把 N 张证书摘要聚合进一次证明。
 
 **验收**：`tests/test_session.py` —— 混入一张异策略证书 → 失败；挖掉一张 → 失败。
+两条判据都**对着真证明**跑过（`TestSessionEndToEnd`，`POP_TEST_SESSION=1`，实测 152.5 s）。
+
+**交付物**：第三个域 `session`（第三个 guest ⇒ 第三个 vkey）—— `circuits/session-program/`
+（crate 名 `pop-session`）+ `circuits/types` 的 P2-10 段（`merkle_root`、`SessionRequest` /
+`CertView` / `SessionOutput`、`run_session`）+ 驱动接线（`build.rs` 三个 ELF、`--job session`）+
+`policydsl/session.py`（参考实现 + Merkle 包含证明 + `prove_session` / `verify_session_proof`）+
+`scripts/prove_session.py`（CLI）+ `tests/test_session.py`（38 例，其中 1 例 gated）。
+
+**三个设计要点（每一个都是「换个做法就出漏洞」的那种）**：
+
+1. **叶子 = 载荷文本的 sha256**（`cert_digest(payload)`），guest 收到的就是每张证书
+   `cert.canonical(payload)` 的**文本**，直接对它求哈希 —— 与 `policy_hash` 同一招。
+   Rust 侧因此**不需要**任何 JSON 规范化，跨语言漂移在结构上不可能（只有一种「字节」）。
+2. **Merkle 奇数末位「提升」而非「复制」**：复制会让 `[a,b,c]` 与 `[a,b,c,c]` 得到同一个根，
+   于是「删掉链尾那张」多出一条伪造路径 —— 正好毁掉本域要防的东西。
+3. **尾截断只有 Merkle 根拦得住**（已实测）：`[0..k]` 前缀的 `chain.index` / `prev`
+   **依然连续**，电路内 ①②③ 全部成立，所以**电路本身接受一个被砍过尾巴的证书集**；
+   拦住它的是 `verify_session_proof` 里「证明承诺的根 vs 由**交付的**证书集重算的根」这一步。
+   中间挖洞 / 换序则相反 —— `chain.index` / `prev` 当场就断，出不了证明。这个分工写进了
+   `session.py` 与 `test_session.py` 的模块 docstring。
+
+**如实边界（不要读过头）**：
+
+- **电路不验网关签名**：`SealView` 刻意**没有** `sig` 字段 —— zkVM 里没有网关公钥。
+  电路内 ③ 只做两件事：每张证书必须带 seal、且 `keyid` 全同（同一条会话）；再把
+  `(sealed_count, trace_root)` 公开给验证方。**「这条链网关真的签过」是链下
+  `trace.verify_seal` 判的** —— `verify_session_proof` 只在给了 `keyring` / `receipts`
+  时才走那一步，没给会如实注明「未验签名」。
+- **要求每张证书都带 seal**（不是只有链尾）：与真实签发路径一致
+  （`langchain_adapter._stream_cert` / `on_llm_end` 每张都附 `gateway.seal()`）。
+  代价是手工造的「只在链尾带 seal」证书集会被拒 —— 有意从严。
+- **一次证明只覆盖一个 run，且只覆盖链上证书**：`runs_of` 按内容分组
+  （`chain.index` 归零即新 run），没有 `streaming.chain` 的证书（含权威的 `on_llm_end`）
+  不属于任何 run，因此不在本证明的覆盖范围内。
+- `CertView` 刻意**不做** `deny_unknown_fields`：载荷还有几十个别的字段，而叶子摘要
+  已经把整份文本承诺住了（多余字段早已进哈希），在这里再拒一次只会误伤。
+
+**顺带查出的两件事**：
+
+- `scripts/cross_validate.py --no-prove` 此前**拿 host 的计数冒充 prove**（末行照抄 host 数字）。
+  可 `--no-prove` 下一条证明都没出 —— 那个数字会被读成「出证结论」并抄进文档。已改为
+  `prove SKIPPED (--no-prove)`。
+- 仓库里**在盘的** `scripts/examples/out/*/session.json` 是**旧的**（生成于「每张流式证书都带
+  seal」落地之前），拿它去出会话证明会被 ③ 拒。这是**如实拒绝、不是回归**：用当前代码重跑
+  `demo_e2e.py` 得到的证书集每张都带 seal，两个 run 都过宿主校验、`run[1]` 已真出证并验过。
+
+**与计划不同的一处**：多交付了一个 `scripts/prove_session.py`（计划只要求
+`session.py` + guest + 测试）。理由很具体：会话层否则**没有命令行入口**
+（`pop-script --job session` 要手工拼 `vectors.json`），`docs/reproduce.md` 就没有可跑的命令。
 
 ### P2-11 多证明者
 
@@ -771,9 +821,9 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 | 阶段 | 判据 |
 |---|---|
-| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（2026-09-12 复跑：**348 全绿 / 11 skip**，skip 见 §7 说明） |
+| P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（2026-09-12 复跑：**425 全绿 / 12 skip**，skip 见 §7 说明） |
 | P1 | ① `test_trace.py` ✅（**P1-5 已完成**：39 例含四条验收 + P1-5b 的 seal/截尾，`cross_validate` host/prove 14/14）/ `test_compose.py` ✅（**P1-6 分支 A 已完成**：48 例含 5 组反例 + 四条驱动接线回归）/ `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应（**L6 已从「规划中」改为已证**） |
-| P2 | ① `test_semantic.py` **29 例全绿含 6 条反例**（§9.3；✅ 2026-09-12）；② `test_session.py`；③ `test_multiparty.py`；④ `bench/results/` 新增表格（含 ezkl 出证成本 ✅ `semantic.md`）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 **L7** 对接（**L6 已被 P1-6 占用**，见 §9.2 记要） |
+| P2 | ① `test_semantic.py` **29 例全绿含 6 条反例**（§9.3；✅ 2026-09-12）；② `test_session.py` ✅（**P2-10 已完成（2026-09-12）**：38 例，含计划的两条验收判据 —— 混异策略与挖尾 —— 并对着真证明跑过；见 §4 P2-10 记要）；③ `test_multiparty.py`；④ `bench/results/` 新增表格（含 ezkl 出证成本 ✅ `semantic.md`）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 **L7** 对接（**L6 已被 P1-6 占用**，见 §9.2 记要） |
 
 ---
 
