@@ -1,0 +1,28 @@
+{
+  "id": "multiparty-demo-v1",
+  "version": "0.1.0",
+  "description": "P2-11 demo: one policy whose rules fall to two different roles — content rules (keyword/length) belong to the model side, tool rules (tool_arg_guard/budget_bound) to the tool gateway. Neither role can prove the other's slice, so the certificate needs both signatures and both proofs (policydsl/multiparty.py::shard).",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "keyword_block",
+      "name": "no_bad_topics",
+      "params": { "keywords": ["weaponize", "doxxing", "exploit"] }
+    },
+    {
+      "kind": "length_bound",
+      "name": "bounded_reply",
+      "params": { "min": 1, "max": 2000 }
+    },
+    {
+      "kind": "tool_arg_guard",
+      "name": "no_secret_args",
+      "params": { "forbidden_fields": ["password", "token", "api_key"] }
+    },
+    {
+      "kind": "budget_bound",
+      "name": "call_budget",
+      "params": { "budget": 5, "unit": "calls" }
+    }
+  ]
+}

@@ -362,6 +362,65 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
   另注：`satisfied=true` 只说**被聚合的那批**证书合规，**不等于**整条会话合规
   （见上一条：链外证书不在其中）。
 
+### L9 多证明者责任划分（P2-11）—— 归约到 A1 + A2 + A3（签名不可伪造）
+
+**命题**：设 `M` 是一张**被接受**的多证明者证书（`verify_multiparty` 返回 `ok=True`，
+且给了 `keyring`、`verify_proofs=True`），其 `plan` 把策略 `π` 切成三个角色切片
+`π_model ∪ π_gateway ∪ π_deployer = π`（两两不交）。则：
+
+1. **每一段都真的被证过**：非空切片 `π_r` 携带的证明的公开值解出的 `policy_hash`
+   `= slice_sha256(π_r)`，且密码学验证通过 —— 证明的内容就是**它自称那一段**，
+   不是别的段、也不是整条策略；空切片必须**不带**证明（多带一份即拒）；
+2. **三段都出自同一个 guest**：所有切片的 vkey 相同（给了 `expected_vkey` 时还要求等于它），
+   且证明模式为 `public`（切片证明不接受私有模式）；
+3. **同一条响应、同一条轨迹**：三段的 `response_binding` 相同，且与验证方由**送达的 T′**
+   现场重算的一致；三段的 `trace_root` 相同（回执链**全量**发给每个切片，否则这条没法核）；
+4. **每个角色都签了自己那一段**：`part` 的自报字段（`rules` / `slice_sha256` / 证明引用 /
+   `plan_digest` / `policy_hash` / `response_binding`）被该角色的 Ed25519 签名覆盖，
+   且三个 role 的 keyid **两两不同**；
+5. **（给了 `policy`/`policy_pack` 时）划分就是验证方手上那条策略的划分**：现场
+   `compile_policy` 得到的哈希与证书的 `policy_hash` 相等，且 `plan_of(policy)` 与证书里的
+   `plan` **逐字段相等**。
+
+**论证**：(1) 的密码学部分诉诸 A1（公开值唯一等于 guest 的确定性执行结果）+
+zkVM 可靠性；「证明段 == 自称段」那一步是**验证方自己**重算 `slice_sha256` 后与
+公开值比对 —— 它核的是两个**声明**之间的一致性，不需要密码学，因此**离线预检**
+（`verify_proofs=False`）里也照样生效。(2) 是 vkey 与 `.meta.json` 的逐字段比对。
+(3) 由 `verify_response_binding` 的多来源比对（≥2 来源）与 `trace_root` 的相等得到。
+(4) 诉诸 A3（Ed25519 EUF-CMA）：`part` 的签名原像是 `part.claim()` 的规范 JSON，
+多带或漏掉一个字段都会让原像变，签名即失效；role 与 keyid 的**两两不同**保证了
+「这一段是谁证的」可判定。(5) 是验证方现场重编译并与交付的 `plan` 比对 —— 与
+P0-1「空策略证明 + 真策略哈希」攻击的同一条防线。∎
+
+**为什么「单角色切片被换」有三个不同的拦点，而不是一个**（验收②的展开）：
+
+| # | 攻击 | 被谁拦下 |
+|---|---|---|
+| ① | 该角色把 `rules`/`slice_sha256` 换成另一段的（**不改 plan**） | 命题 (4)：`part` 自报与 `plan` 对不上，当场拒 |
+| ② | 该角色改 `plan` 以迁就自己伪造的切片 | 命题 (4)：`plan_digest` 进了签名原像，而另外两个角色签的是**改前**的 plan —— 它们的签名立刻失效 |
+| ③ | **三方合谋**：三把键一起改 plan、一起重签 | 只剩命题 (5)：不带 `policy_pack` 时签名层**完全自洽**，证书会通过；带上策略包即被拒 |
+
+第 ③ 条是这条引理**必须如实写下来**的边界：**三方合谋在签名层是不可检出的** ——
+因为「谁拥有哪几把键」这件事本身就在证书之外。`test_colluding_roles_rewritten_plan_needs_the_pack`
+把这条钉成「不带策略包时**会通过**」，免得日后有人把它读成「签名能挡住合谋」。
+
+**代码落点**：`policydsl/multiparty.py::verify_multiparty`（七步）、
+`policydsl/compile.py::compile_slice_policy`、
+`scripts/prove_multiparty.py`、`tests/test_multiparty.py`（44）。
+
+**不保证 / 诚实边界**：
+
+- **「聚合证明」不是递归聚合**。是 N 份切片证明（共享同一个 vkey）**加**一份把它们拴在
+  一起的证书，**验证成本 O(N)** —— 本仓库没有做递归聚合，也不主张做到了。
+- **三个角色共享同一个 `pop-program`（同一个 vkey）**。各持一把键只是**责任划分**，
+  不是「不同角色用不同的电路」。切片对 guest 而言就是一条普通策略，因此**在盘的旧证明
+  继续有效**（换 ELF 会让它们全废）。
+- **`ok` 与 `satisfied` 分开读**（同 L7/L8 口径）：`satisfied` = 「每段都 `passed` 且
+  `delegated` 为空」。语义切片归部署方，而那段**不判定**它、只把它记进 `delegated`，
+  所以**含语义规则的策略永远不会**因为这一段就 `satisfied` —— 合规结论要另外合取
+  ezkl 陪伴证明（**L7**）。一张如实记录违规的证书**同样是真**的。
+- **本模块不产生陪伴证明**，也不做「整条会话」的核对（那是 L8 / `verify_session.py` 的事）。
+
 ---
 
 ## 4. 主定理
@@ -382,7 +441,7 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 要把 `π` 换成 `π′` 需要 L1；要让轨迹规则判在一条**假**链上，需要 L3 的签名层。
 **覆盖范围**：`keyword_block` / `normalized_keyword_block` / `length_bound` / `pattern_block` /
 `format_check` / `tool_arg_guard` / `budget_bound` 七类**均已入电路**（`pop-types::evaluate`，
-与 Python golden 交叉验证 19/19）。
+与 Python golden 交叉验证 **host 19/19 · prove 19/19**）。
 其中 `normalized_keyword_block`（P2-9b）的**折叠表是约束的一部分**（`fold` 字段进规范字节、
 进 `policy_hash`）：证明者既不能把表换成「不折叠」，也不能让电路按别的表判 —— 换表就是换策略，
 指纹会变。电路另有一道结构校验（未知版本/表过大/替换值非 ASCII ⇒ panic），
@@ -494,7 +553,7 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 
 | 引理 / 性质 | 实现 | 测试 |
 |---|---|---|
-| 判定函数（golden ⇄ 电路） | `policydsl/evaluate.py` ⇄ `circuits/types/src/lib.rs::evaluate` | `tests/test_rules_incircuit.py`（13）、`cross_validate` host 19/19 |
+| 判定函数（golden ⇄ 电路） | `policydsl/evaluate.py` ⇄ `circuits/types/src/lib.rs::evaluate` | `tests/test_rules_incircuit.py`（13）、`cross_validate` **host 19/19 · prove 19/19**（2026-09-12 整批重跑） |
 | **L1** 策略绑定 | `circuits/program`（guest 内算）、`policydsl/verifier.py::check_policy_binding` | `tests/test_policy_binding.py`（22） |
 | **L2** 响应绑定 | `policydsl/commit.py::response_binding`、`policydsl/challenge.py` | `tests/test_binding.py`（19） |
 | **L3** 轨迹绑定 | `policydsl/trace.py`、`circuits/types::verify_receipt_chain`、`verify_cert.py` 3c | `tests/test_trace.py`（39） |
@@ -505,8 +564,9 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | **L7** 语义委托（P2-9） | `policydsl/semantic.py`、`scripts/ezkl_prove.py`、`circuits/types::DelegatedConstraint`、`verify_cert.py` 3e | `tests/test_semantic.py`（29，含 6 条反例；真·端到端由 `POP_TEST_EZKL=1` 打开） |
 | **L6** 组合义务（P1-6） | `policydsl/compose.py`、`circuits/infer-program`（guest②）、`circuits/types::job_domain`、`scripts/compose_proof.py` | `tests/test_compose.py`（48，含 5 组反例 + 4 条驱动接线回归；真·端到端由 `POP_TEST_COMPOSE=1` 打开） |
 | **L8** 跨证书一致性（P2-10） | `circuits/session-program`（guest③）、`circuits/types::run_session`、`policydsl/session.py::verify_session_proof`、`scripts/prove_session.py` | `tests/test_session.py`（38，含两种挖法的反例；真·端到端由 `POP_TEST_SESSION=1` 打开） |
+| **L9** 多证明者责任划分（P2-11） | `policydsl/multiparty.py::verify_multiparty`、`policydsl/compile.py::compile_slice_policy`、`scripts/prove_multiparty.py` | `tests/test_multiparty.py`（44，含两条验收判据与「三方合谋」边界；真·端到端由 `POP_TEST_MULTIPARTY=1` 打开） |
 
-**回归总盘**：`python3 -m unittest discover -s tests -t .` → **425 passed / 12 skipped**（2026-09-12 复跑；
+**回归总盘**：`python3 -m unittest discover -s tests -t .` → **469 passed / 13 skipped**（2026-09-12 复跑；
 skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— 由 `POP_TEST_EZKL=1` 打开；P1-6 那 5 例
 要真出两份 SP1 证明 —— 由 `POP_TEST_COMPOSE=1` 打开；P2-10 那例要真出一份会话聚合证明 ——
 由 `POP_TEST_SESSION=1` 打开。三组均已单独实测通过）。
@@ -517,7 +577,7 @@ skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— �
 
 | 定义/引理 | 对应实验 |
 |---|---|
-| Completeness | `scripts/prove_policy.py`、`cross_validate.py` host 19/19 |
+| Completeness | `scripts/prove_policy.py`、`cross_validate.py` **host 19/19 · prove 19/19**（2026-09-12 整批重跑） |
 | **G_Sound** | 违规向量出证得到 `passed=false`；「空策略证明 + 真策略哈希」攻击回归必须失败 |
 | **G_Bind_pol** | `verify_cert.py` 的 `policy_hash` 卡；`test_policy_binding.py`（含证明层 opt-in） |
 | **G_Bind_resp** | `verify_cert.py --response T′`（3b）；换 `T′`/换 `n`/域分离/空 nonce 四组反例 |
@@ -527,4 +587,6 @@ skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— �
 | **G_Ledger** | `TestAnchorLedger`（链篡改检出）、`TestAnvilEndToEnd`（真链读回） |
 | **L7 语义委托** | 六条反例：换 ONNX、换 vk、改阈值、翻转方向、换证明文件/换响应、图外自算特征 —— 全部必须被拒；反向对照（良性文本 `合规: PASS`、同形异义文本 `合规: FAIL` 而 `RESULT: PASS`）见 `design-semantic-rules.md` §7 |
 | **L6 组合义务** | 五组反例：换证明文件/缺失、同 vkey/非期望 vkey、换模型/换输入、两半绑不同 T/送达 T′ 不符、形状/模式/域/policy_hash 重编译 —— 全部必须被拒（`tests/test_compose.py`）；成本与「推理是否主导」的实测见 `bench/results/compose.md` |
+| **L8 跨证书一致性** | 混入异策略证书 / 挖中间 / 换序 / 尾截断（**电路接受、只有根比对拦得住**）/ 伪造根 —— 全部必须被拒（`tests/test_session.py`） |
+| **L9 多证明者** | 验收①：缺任一角色签名（或空签名表 / 缺 part / 重复 part）必须被拒；验收②：单角色切片被换（该角色拿自己键重签 / 谎报切片为空 / 单独改 plan / 改 `plan_digest`）必须被拒；**三方合谋改 plan 在不给策略包时会通过、给了即被拒**（如实钉住） |
 | 端到端 | `scripts/verify_session.py` 全 PASS（含真实 SP1 证明） |

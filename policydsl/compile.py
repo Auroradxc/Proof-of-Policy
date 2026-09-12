@@ -158,14 +158,13 @@ def require_covering_length_bound(policy: Policy) -> None:
             f"而策略里最小的 max 是 {worst} —— 超长响应会让语义规则判不了")
 
 
-def compile_policy(policy: Policy) -> Dict[str, Any]:
-    """把 Policy 编译为 ConstraintSpec 字典（含 sha256 绑定哈希）。
+def compile_constraints(policy: Policy) -> list:
+    """逐条规则 → 规范化的约束表示（**不含**策略级检查与哈希，见 `_assemble`）。
 
-    流程：先校验策略 → 逐条规则映射为规范化的约束表示 → 计算稳定字段哈希。
-    关键词/字段/工具名在编译期就做排序去重与小写化，保证跨层一致性。
+    单独抽出来的理由只有一个：切片编译（P2-11）必须走**同一份**规则映射。
+    让 ``policydsl/multiparty.py`` 自己再写一遍「kind → 约束」就等于把「跨层
+    唯一真相源」变成两份，而两份迟早会漂移。
     """
-    policy.validate()
-    require_covering_length_bound(policy)   # 语义规则的定长图边界（见该函数）
     constraints: list[Dict[str, Any]] = []
     for rule in policy.rules:
         if rule.kind == "keyword_block":
@@ -258,6 +257,11 @@ def compile_policy(policy: Policy) -> Dict[str, Any]:
                 "note": "not yet implemented in the reference evaluator",
             })
 
+    return constraints
+
+
+def _assemble(policy: Policy, constraints: list) -> Dict[str, Any]:
+    """约束列表 + 策略身份 → ConstraintSpec（含 ``sha256`` 绑定哈希）。"""
     # 稳定字段：参与哈希的「契约主体」，不含会随序列化方式变化的元信息
     stable = {
         "spec_version": SPEC_VERSION,
@@ -269,3 +273,36 @@ def compile_policy(policy: Policy) -> Dict[str, Any]:
     spec = dict(stable)
     spec["sha256"] = _canonical_hash(stable)  # 绑定哈希：证书据此校验策略一致性
     return spec
+
+
+def compile_policy(policy: Policy) -> Dict[str, Any]:
+    """把 Policy 编译为 ConstraintSpec 字典（含 sha256 绑定哈希）。
+
+    流程：先校验策略 → 逐条规则映射为规范化的约束表示 → 计算稳定字段哈希。
+    关键词/字段/工具名在编译期就做排序去重与小写化，保证跨层一致性。
+    """
+    policy.validate()
+    require_covering_length_bound(policy)   # 语义规则的定长图边界（见该函数）
+    return _assemble(policy, compile_constraints(policy))
+
+
+def compile_slice_policy(policy: Policy) -> Dict[str, Any]:
+    """把**一个角色的策略切片**编译为 ConstraintSpec（P2-11）。
+
+    与 :func:`compile_policy` 的**唯一**差别：不跑
+    :func:`require_covering_length_bound`。理由不是「省事」，而是那条不变式
+    在切片上**没有意义也不该成立** ——
+
+    * 它陈述的是「**整条**策略对任意合法输入都能给全判定」（因为语义规则的
+      特征图是定长的，超长响应会被拒绝而不是截断）；
+    * 定长前提由 ``length_bound`` 提供，而 ``length_bound`` 归**模型方**那段
+      切片。要求部署方那段（只含 ``semantic_bound``）自己也带一条
+      ``length_bound``，会把**每个**含语义规则的策略结构性地变成无法分片。
+
+    所以这条不变式在切片层由 :func:`policydsl.multiparty.shard` 在**整条策略**上
+    检查一次（并集满足即可），切片编译本身不重复检查。除这一条外，校验与
+    规则映射走的是与 :func:`compile_policy` 完全相同的两段代码
+    （``policy.validate`` + :func:`compile_constraints`）—— 不存在第二份编译器。
+    """
+    policy.validate()
+    return _assemble(policy, compile_constraints(policy))

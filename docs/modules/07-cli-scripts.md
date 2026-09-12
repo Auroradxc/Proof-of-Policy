@@ -1,6 +1,6 @@
 # 07 · CLI 与脚本
 
-> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（14 个 Python 入口 + 6 个 shell）。
+> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（15 个 Python 入口 + 6 个 shell）。
 > 这一板块回答：**每个脚本负责哪一段，什么时候该用哪个。**
 > 完整的复现顺序见 [`../reproduce.md`](../reproduce.md)；这里讲的是**脚本内部在做什么**。
 
@@ -22,6 +22,7 @@
 | `ezkl_prove.py` | 语义规则（`semantic_bound`）的 ezkl 出证/验证/自检 | 否（需 ezkl+torch） | 否（ezkl 自己的证明） | setup ~48 s / prove ~77 s |
 | `compose_proof.py` | **组合证明**（P1-6）：策略半 + 推理半各出一份 → 合成 → 联合验证 | `pop-script` | 是（可 `--no-prove` / `--reuse-proofs`） | 两次出证，各 ~2 分钟 |
 | `prove_session.py` | **会话聚合证明**（P2-10）：一个 run 的流式证书 → 一次证明 + 独立验证 | `pop-script` | 是（可 `--no-prove`） | 出证 ~2.5 分钟（3 张证书） |
+| `prove_multiparty.py` | **多证明者**（P2-11）：三个角色各证一段策略切片 → 证书 + 两条验收判据的现场造假演示 | `pop-script` | 是（可 `--no-prove`） | 出证 ~2 分钟 × 非空切片数（示例包 2 段） |
 | `deploy_anchor.py` | 部署 `Anchor.sol`（字节码来自入库 artifact） | 否 | 否 | 秒级 |
 | `make_shots.py` | 从会话产物生成截图/HTML/SVG | 否 | 否 | 秒级 |
 | `anchor_e2e.sh` | 起 anvil → 部署 → demo → `--rpc` 核对 + 反例 | 可选 | 可 `--prove` | ~10 s / ~70 s |
@@ -310,7 +311,42 @@ python3 scripts/prove_session.py \
    （那些 bundle 生成于「每张流式证书都附 `gateway.seal()`」落地之前）。
    用当前代码重跑 `demo_e2e.py` 得到的证书集每张都带 seal。
 
-### 2.9 `demo_e2e.py` —— 一键真实会话
+### 2.9 `prove_multiparty.py` —— 多证明者（P2-11）
+
+```bash
+python3 scripts/prove_multiparty.py \
+  --pack policy_packs/multiparty_demo_v1.json \
+  --response scripts/examples/eu_agent_reply.txt \
+  [--out-dir <d>] [--role-keys <私钥目录>] [--nonce-hex <hex>] \
+  [--receipts receipts.json] [--proof-mode core|compressed|groth16|plonk] [--no-prove]
+```
+
+按**规则类**把一条策略切成三段（模型方 / 工具网关 / 部署方，切割依据见
+`policydsl/multiparty.py::KIND_OWNER`），各角色用**自己的键**对**自己那段**出证并签名，
+合成 `multiparty.json` + `multiparty.keyring.json`（只有公钥）。脚本末尾会拿真工件
+**现场造两个假**，把计划 §P2-11 的两条验收判据跑一遍：
+
+```
+--- 验收 ①：去掉一个角色的签名 ---        → 三个角色各试一次，都必须被拒
+--- 验收 ②：单角色切片被换（用该角色自己的键重签）---  → 必须被拒
+RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按预期被拒
+```
+
+四个容易踩空的点：
+
+1. **`--no-prove` 不产生证书**（不是「证书没有证明」——那种证书根本组不出来，`build` 会
+   fail closed）。这一档只做「切完之后 Python 参考实现与 Rust 宿主校验算的还一不一样」的
+   对拍，输出里**明说**「这不是证明、没有产生证书」。别把它读成出证结论。
+2. **缺省用一次性密钥**，打印时**如实标注**：它们不进任何证据链，重跑一次就再也验不了旧证书。
+   要可复现就用 `--role-keys DIR`（落盘私钥 0600，gitignored）。
+3. **角色密钥必须两两不同**（`verify_multiparty` 第 2 步）。共用一把键会让「这一段是谁证的」
+   无从判定，脚本不拦你生成，但验证会拒。
+4. **三方合谋改 `plan` 是挡不住的** —— 三把键一起改、一起重签，签名层完全自洽。只有拿
+   `policy_pack` 现场重编译并比对 `plan` 才拦得住（`verify_multiparty(..., policy=…)`）。
+   这条边界在 `tests/test_multiparty.py::test_colluding_roles_rewritten_plan_needs_the_pack`
+   里被钉成「不带策略包时**会通过**」。
+
+### 2.10 `demo_e2e.py` —— 一键真实会话
 
 四段，全部用**真实**组件（`--no-prove` 只跳过 SP1 证明）：
 
@@ -342,7 +378,7 @@ python3 scripts/prove_session.py \
 > 「链尾有没有被整条删掉」的唯一依据（见 [`../security-model.md`](../security-model.md) §5.3）。
 末尾提示用 `verify_session.py` 验证。**这是「12 张证书」的来源**。
 
-### 2.10 `verify_session.py` —— 第三方验证整个会话
+### 2.11 `verify_session.py` —— 第三方验证整个会话
 
 ```bash
 python3 scripts/verify_session.py --session S [--keyring 公钥] \
@@ -371,7 +407,7 @@ python3 scripts/verify_session.py --session S [--keyring 公钥] \
   （`N cert(s) labeled, M predate the field`）。`zk_proof` 那一步还会再拿
   **工件自报的模式**核对一次（多来源必须一致）。
 
-### 2.11 `deploy_anchor.py` / `make_shots.py`
+### 2.12 `deploy_anchor.py` / `make_shots.py`
 
 - `deploy_anchor.py`：`--rpc`（默认 `http://127.0.0.1:8545`）、`--private-key`（默认 `anchor.ANVIL_KEY`）、
   `--out`（默认 `.anchor_deploy.json`，gitignored）。**不需要 solc/forge**，字节码来自
@@ -381,7 +417,7 @@ python3 scripts/verify_session.py --session S [--keyring 公钥] \
 
 ---
 
-### 2.12 `gen_key.py` —— 出证方密钥对（P0-3）
+### 2.13 `gen_key.py` —— 出证方密钥对（P0-3）
 
 ```bash
 python3 scripts/gen_key.py [--out-dir D] [--path P] [--name demo] [--force]
