@@ -173,3 +173,134 @@ P0 ─► P1 ─► P2 ─► P3(透明MVP★)
 - 出证 `SP1_PROVER=cpu`（v6 合法值 cpu/cuda/mock/light/network）。
 - sp1-prover 6.7.0 需 `TempDir::keep()` → 本仓库 vendored `circuits/patches/tempfile`（`[patch.crates-io]`），勿直接用官方 tempfile 3.x。
 - Go/GOPROXY 需在构建环境生效（native-gnark）。
+
+---
+
+## 5. 延伸路线：接真 agent + 证明服务（2026-09-13 立）
+
+> **前置**：Phase 0–6 与 P7 全部收尾，测试 **469 全绿 / 13 skip**，
+> `scripts/demo_all.sh` 8 条支路全通。本节是**交付之后**的两步 ——
+> 与仍在外部排队的 **T1**（≥64 GB 云机，见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9）
+> **互不阻塞**，也**不能**靠 T1 替代：T1 补的是链上/云机那一格，这两步补的是
+> 「把已有的东西接到真实世界」。
+>
+> 两步**按顺序做，每步做完独立可演示、可回滚**。
+
+### 5.0 起点的两处「说了但没接上」
+
+2026-09-13 的板块复盘结论是：项目**没有板块性缺失**（规则原语 / 编译器 /
+私有模式 / agent 集成 / 证书 / 锚定 / 评测 / 安全模型 / 论文都齐），
+缺的是**最后一公里**上的两段，且都属「文档里写了、代码里没接」：
+
+| # | 现象 | 位置 | 后果 |
+|---|---|---|---|
+| 1 | LLM 侧仍是假模型 | `demo_e2e.py` 用 `GenericFakeChatModel`，响应写死 `CLEAN_REPLY`/`BAD_REPLY` | 演示能自洽，但**没有一条真实模型输出**进过证书链；「换真 agent 只动适配器层」目前是**推断**而非实测 |
+| 2 | 没有任何服务化层 | 全仓只有一次性 CLI 进程 | 无法被别人调用；论文里的「可验证 agent」缺一个可对接的入口 |
+
+> **MCP 侧其实已经是真的**：`tests/mcp_echo_server.py` 起的是**真实 stdio MCP
+> 服务器**（`MCPServer("pop-echo")`，工具 `search_kb`/`dump_config`），
+> `MCPGuard` 只依赖 `await session.call_tool(...)`，所以换更真实的 MCP 服务器
+> **guard 零改动**，要补的只是「工具清单从硬编码改为 `list_tools()` 发现」。
+> 假的只有 LLM 那一侧。
+
+### 5.1 第一步 · 接真实 agent（把假模型换掉）
+
+#### 5.1.1 为什么不是「只装个依赖、加个 `--model`」那么简单
+
+证书层与模型无关（证书绑的是**一条具体的响应 T**，换模型只动适配器层，
+ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**。但适配器层有 4 个
+真实模型一上来就会踩到的口子：
+
+| # | 缺口 | 现状（代码位置） | 真模型下的后果 |
+|---|---|---|---|
+| 1 | **两条链各持一把网关** | `langchain_adapter.py:122` 与 `mcp_adapter.py:70` 各自 `ToolGateway()` 缺省构造；`demo_e2e.py` 的 handler 与 guard 因此拿到**两把不同的网关** | 内容链与工具链的 `trace_root` 是**两个不同会话**，`trace_seal` 各封各的。真 agent 同时走两条链，这个缝立刻显形 —— 且它**与真模型无关，是既有正确性问题** |
+| 2 | **没有 `on_llm_error`** | `langchain_adapter.py` 只实现 `on_llm_new_token`/`on_llm_end`/`on_tool_start`/`on_tool_end` | 模型超时 / 限流 / 内容拦截（真模型最常见的三件事）**不留任何产物**。「会话无证书」与「会话干净」在输出上无法区分 —— 正是 P0-4 要消灭的那类歧义 |
+| 3 | **早停不是真停** | `stop_on_violation` 只做到「后续 token 不再出证」（`_sstopped` 置位后 `:184-185` 仅忽略） | 流**继续把违规内容吐完**。真模型下这还意味着**继续计费** —— 早停本应是最直接的省钱手段 |
+| 4 | **工具清单硬编码** | 演示里手写工具名 | 真 MCP 服务器要动态发现 |
+
+#### 5.1.2 子任务（按此顺序）
+
+1. **统一网关身份**（先做，纯正确性，与真模型无关）
+   `AgentMonitor` 的两条链显式共用一把 `ToolGateway(signer=…)`；
+   `demo_e2e.py` 里 `content` 与 `tools` 注入同一把。
+   **验收**：新增用例断言「同一次会话里，内容链与工具链的回执在**同一个 seal**
+   下可核对」（`len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root`）；
+   反例：不共用网关时该断言**必须失败**（否则用例是恒真的）。
+2. **装真模型依赖**：`langchain_openai` / `langchain_anthropic`
+   （走 `scripts/install_frameworks.sh` 同一套镜像方案），
+   加 `--model` 参数，形如 `--model openai:gpt-4o-mini`（OpenAI 兼容端点，
+   含 `OPENAI_BASE_URL` ⇒ 可接自备端点）。**缺省仍是 fake** ——
+   CI 与 `demo_all.sh` 不依赖网络，这条不能破。
+3. **实现 `on_llm_error`**：错误也出一张证书（`streaming.error` 或
+   `kind="llm-error"`），带异常类型摘要（**不带**异常全文，避免把 prompt /
+   密钥泄进证书）。
+4. **真早停**：`raise_error=True` + `on_early_stop` 回调真把流断掉。
+5. **MCP `list_tools()` 发现**：工具清单从服务器动态取。
+
+#### 5.1.3 验收
+
+- `demo_e2e.py --model openai:<model>` 端到端跑通，产物与 fake 路径**同构**
+  （同样 14 张证书、同样三条被拦截路径、`verify_session.py` 全 PASS）；
+- **默认（不传 `--model`）行为逐字节不变**（有 diff 级别的对照用例）；
+- 真模型用例进 `POP_TEST_LLM=1` 门控（需要真 key + 网络，不能进 CI）。
+
+### 5.2 第二步 · 证明服务（把出证能力服务化）
+
+#### 5.2.1 唯一的硬约束：两个时间尺度差 4 个数量级
+
+| 阶段 | 耗时 | 内存 |
+|---|---|---|
+| 宿主判定（Python 参考评估器） | **毫秒级** | 可忽略 |
+| SP1 core 证明 | **~2.5 分钟** | **峰值 ~10.2 GiB（固定地板，不是可调的）** |
+
+⇒ **必须拆成两段**，否则服务等于不可用（客户端等 2.5 分钟才拿到一个
+「合规/不合规」）。而 ~10.2 GiB 的地板决定了**一台 12 GB 机器同时只能有一个
+证明器** —— 并发上限是**硬事实**，要写进配置与文档，不能靠假设。
+
+#### 5.2.2 接口（三段）
+
+```
+POST /v1/check          {policy_id, response}          → 毫秒级：宿主判定 + unproven 证书（含 challenge nonce）
+POST /v1/attest         {policy_id, response, nonce}   → 入队，立即返回 job_id（队列深度 1 时即排位）
+GET  /v1/attest/{job}                                  → 轮询：queued | proving | done | failed
+```
+
+- **在线段 `/v1/check` 不需要证明器**，可以在小机器/边缘跑，产出的是诚实标注
+  为 `unproven` 的证书（P0-4 已有现成语义，不新造）；
+- **离线段 `/v1/attest` 复用 `zk_path` 已经验证过的构造**（vectors →
+  `pop-script --proof-out` → `proof.meta.json` 的**真 vkey** → 证书），
+  不新写一条出证路径；
+- **依赖只用标准库 `http.server`**（零新依赖）。这是刻意的：这一步要演示的是
+  **证据链**，不是 web 框架；引入 FastAPI/uvicorn 会把注意力从证据挪到框架上。
+- 队列并发上限**从配置读、默认 1**，排队行为要有测试（第二个请求**排队而非 OOM**）。
+
+#### 5.2.3 验收
+
+- `curl` 串起来：`/v1/check`（拿 unproven 证书）→ `/v1/attest` → 轮询 `done`
+  → **`verify_cert.py` 独立验通 9/9 PASS**（签名 / 策略绑定 / 响应绑定 / 锚定 /
+  真证明密码学验证）；
+- 并发第二个出证请求**排队而非 OOM**（有测试锁住）；
+- 部署文档进 `docs/`（单机 runbook：依赖、内存前提、并发上限、如何换签名钥）。
+
+### 5.3 顺带修掉的口径问题：`demo_e2e.py` 的魔法 `vkey = "demo"`
+
+复盘时发现的**第三个**「说了但没接上」，与上面两步独立，单独修（结论如下）：
+
+- `demo_e2e.py` 顶端的 `vkey = "demo"` 被传给三个地方
+  （`PoPCallbackHandler`、`mcp_path`、`zk_path`），但**只有 zk 路径**会在出证时
+  用 `proof.meta.json` 里的**真 vkey** 覆盖它（`demo_e2e.py:157`）；
+  stream/llm/tool 三类证书保留魔法字符串，且**脚本与文档都没标注这是替身**。
+- **结论：这三类证书不能「接真 vkey」—— 它们根本没有证明，没有真 vkey 可言。**
+  `binding.vkey_hash` 的语义是「哪块电路判定了它」；宿主判定没有电路参与，
+  唯一诚实的取值就是 `"unproven"`（与 `cert.py:66`、`agent.py` 缺省、
+  `issue_cert.py:200`、`zk_path --no-prove` 四处口径一致）。
+- **硬塞一个真 vkey 哈希反而比 `"demo"` 更坏**：`"demo"` 一眼是占位符，
+  真哈希会让它看起来像「由 `pop-program` 判定过」—— 那是**过度声明**，
+  正是 P0-4 要消灭的东西。
+- **真正缺的是防线**：`proof_mode` 有诚实性不变量（`verify_cert.py:2b` +
+  `verify_session.py` 的 `certificates_proof_mode`，两个方向都拦），
+  `vkey_hash` **一条都没有** —— 于是 `"demo"` 这种值今天**可以全绿通过验证**。
+  补法与 `proof_mode` 同构：**没有工件 ⟺ `vkey_hash == "unproven"`**，
+  过度声明（自称 vkey 却无工件）与低报（有工件却标 unproven）都判 FAIL。
+- 「要接真 vkey 需要什么材料」的答案是：**不需要任何新工件** —— 真 vkey 已经
+  在 zk 路径里（本机可证，`--contrast-prove` 即得）；要补的是**零成本的一道校验**。
