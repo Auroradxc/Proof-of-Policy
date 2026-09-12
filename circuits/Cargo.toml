@@ -1,5 +1,5 @@
 [workspace]
-members = ["types", "program", "script", "verifier"]
+members = ["types", "program", "infer-program", "script", "verifier"]
 resolver = "2"
 
 # sp1-prover 6.7.0 calls `TempDir::keep()`, which upstream tempfile 3.x does

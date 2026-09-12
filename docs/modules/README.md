@@ -41,6 +41,8 @@ zk-policy/
 │   ├── keys.py               #   签名密钥：定位/读写 PKCS#8、公钥导出与 keyring 装配（P0-3）
 │   ├── anchor.py             #   锚定后端：文件哈希链账本 / 链上 Anchor 合约
 │   ├── trace.py              #   工具回执链：结构/验签/会话末端 seal（P1-5 / P1-5b）
+│   ├── infer.py              #   代理推理模型（定点 MLP）的 Python 参考实现（P1-6）
+│   ├── compose.py            #   组合证明：键分离 + 8 步联合验证（P1-6 / 引理 L6）
 │   ├── agent.py              #   框架无关钩子 AgentMonitor（生成路径 + 工具路径）
 │   ├── verifier.py           #   verifier-only 快路径判定（core 不能走快路径）
 │   ├── langchain_adapter.py  #   LangChain/LangGraph 回调（含流式证书与早停）
@@ -49,7 +51,8 @@ zk-policy/
 │   └── __main__.py           #   CLI：compile / check
 ├── circuits/                 # Rust + SP1 证明层（workspace）
 │   ├── types/                #   共享判定逻辑（no_std）：evaluate / evaluate_private / NFA
-│   ├── program/              #   zkVM guest：读 Job → run_job → commit(Outcome)
+│   ├── program/              #   zkVM guest①（pop-program）：只收策略任务 → run_job → commit
+│   ├── infer-program/        #   zkVM guest②（pop-infer）：只收推理任务（P1-6 组合证明）
 │   ├── script/               #   宿主驱动 pop-script：--check / --execute / 出证 / --verify
 │   ├── verifier/             #   pop-verify：仅验证器二进制（无证明器状态）
 │   └── patches/              #   tempfile 补丁（sp1-prover 6.7.0 依赖 TempDir::keep）
@@ -57,6 +60,8 @@ zk-policy/
 ├── scripts/                  # 端到端脚本（demo / 交叉验证 / 出证 / 验证 / 安装）
 ├── bench/                    # 评测（cycl数矩阵 / 证明成本 / 验证成本 / 对标）
 ├── tests/                    # 单测与集成测试（220 passed / 5 skip）
+├── bench/                    # 评测（周期数矩阵 / 证明成本 / 验证成本 / ezkl / 组合 / 对标）
+├── tests/                    # 单测与集成测试（348 passed / 11 skip）
 ├── policy_packs/             # 示例策略包（EU AI Act / PII / 金融 / agent 内容与工具）
 └── docs/                     # 文档（本目录为分板块模块文档）
 ```
@@ -112,10 +117,16 @@ zk-policy/
 | 02 | [隐私与承诺](02-privacy-commitment.md) | `commit.py` `challenge.py`（+ `nfa.py` 的区间计算） | 私有模式：承诺、选择性披露、可证明脱敏、证据开示、挑战-响应绑定 |
 | 03 | [合规证书](03-certificate.md) | `cert.py` `agent.py` | 把一次判定包成可签名、可重算哈希的 DSSE 信封 |
 | 04 | [锚定与审计](04-anchoring-audit.md) | `anchor.py` `contracts/` `verifier.py` | 防篡改记录：本地哈希链账本 + 链上存在性证明 |
-| 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/types` `program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
+| 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/types` `program` `infer-program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证；**两个 guest 的键分离**（P1-6）（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
 | 06 | [框架集成](06-frameworks.md) | `langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` | 把两个钩子接到真实 agent 框架上（含流式与飞行前拦截） |
 | 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/*` | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
-| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 220 个测试覆盖什么、评测数字怎么来的 |
+| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 348 个测试覆盖什么、评测数字怎么来的 |
+
+两条**不在本目录**但同样属于实现层的线（各自有独立文档，故未拆成板块）：
+
+| 线 | 文档 | 代码 | 一句话 |
+|---|---|---|---|
+| P1-6 组合证明（引理 L6） | [`../security-model.md`](../security-model.md) §3 L6 | `compose.py` `infer.py` `circuits/infer-program` `scripts/compose_proof.py` | 两份证明（策略合规 ∧ 推理完整性）合成一次会话结论，前提是**键分离** |
 
 推荐阅读路径：
 
@@ -146,7 +157,7 @@ zk-policy/
 
 ```bash
 # 只跑参考层（秒级，无需 Rust）
-python3 -m unittest discover tests -v            # 220 passed / 5 skip
+python3 -m unittest discover tests -v            # 348 passed / 11 skip
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
 python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
 

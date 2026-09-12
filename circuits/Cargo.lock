@@ -2677,6 +2677,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pop-infer"
+version = "0.1.0"
+dependencies = [
+ "pop-types",
+ "sp1-zkvm",
+]
+
+[[package]]
 name = "pop-program"
 version = "0.1.0"
 dependencies = [

@@ -97,6 +97,29 @@ SP1_PROVER=cpu python3 scripts/verify_cert.py \
 > 报告会写明来源仅来自证书本身。
 
 ## 7. 复现：一键端到端 demo + 截图
+## 7. 复现：组合证明（P1-6，可选）
+
+```bash
+# 策略半 + 推理半各出一份真实证明（两个 guest 程序 → 两个 vkey），再合成一张组合证书
+SP1_PROVER=cpu python3 scripts/compose_proof.py \
+  --pack policy_packs/eu_ai_act_v1.json --response scripts/examples/eu_agent_reply.txt \
+  --out-dir scripts/examples/out/compose
+# 期望：RESULT: PASS 且 组合义务(Compose): PASS
+```
+
+**两次出证各 ~2 分钟、峰值 ~10.5 GiB，且必须分进程**（同进程连出两份会在第二份 setup 被 OOM；
+两半的分项数字见 [`../bench/results/compose.md`](../bench/results/compose.md)）。
+改过 `policydsl/compose.py` 后想重跑合成与验证时，加 `--reuse-proofs` 沿用已有证明（秒级），
+不必再花几分钟出证。`--no-prove` 只跑宿主校验（两端判定逻辑对齐 + Rust↔Python 逐位一致），
+**不产组合证书**。
+
+**为什么是两份证明**：组合义务 `Compose = (推理完整性 ∧ 策略合规)` 要求「模型确实算出了这条响应」
+与「这条响应满足策略」两件事各自被证明，且证明**来自不同程序**（不同 vkey）——
+否则「这份证明属于哪一半」无从判断。⚠️ 推理那一半在当前仓库是**代理**（确定性定点 MLP），
+不是 zkAgent；见 [`security-model.md`](security-model.md) 引理 L6 与 `bench/results/compose.md`。
+
+---
+
 
 ```bash
 SP1_PROVER=cpu python3 scripts/demo_e2e.py                 # 真实会话 + 真实 SP1 证明（加 --no-prove 秒级）
@@ -181,11 +204,12 @@ python3 scripts/verify_session.py --session .../session.json \
 ## 验收判据（复现成功）
 
 - `python3 -m unittest discover tests` → **220 passed（5 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = 设计内「依赖已装」用例）；
+- `python3 -m unittest discover tests` → **348 passed（11 skip）**（skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，2 = `POP_TEST_PROOF` 门控的证明层用例，1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = 设计内「依赖已装」用例）；
 - `scripts/prove_policy.py` → **RESULT: PASS**；
 - `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **RESULT: host 14/14  prove 14/14  PASS**
   （真实证明分 4 块跑，见 §4 的说明；`--no-prove` 时跳过真实证明）；
 - `verify_cert.py`（带 `--response T′`）/ `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证与响应绑定核对）；
-- `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 12/12 + 反例对照，见 §10）。
+- `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 12/12 + 反例对照，见 §12）；
 
 ## 故障排查
 

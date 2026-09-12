@@ -1,12 +1,14 @@
 # bench/ — 评测
 
-两组测量，覆盖「成本 vs（响应长度 × 规则数 × 匹配模式）」：
+五个脚本：前三个覆盖「成本 vs（响应长度 × 规则数 × 匹配模式）」，后两个覆盖
+P2-9 的语义规则与 P1-6 的组合证明：
 
 | 脚本 | 测什么 | 用时 | 说明 |
 |---|---|---|---|
 | `bench_cycles.py` | **zkVM 周期数**（`pop-script --execute`，不出证） | 每点数秒 | 多点扫描；含 **pike vs naive** 消融 |
 | `bench_proofs.py` | **证明墙钟时间 + 证明工件大小 + 峰值内存**（真实 SP1 证明） | 每点 ~100–150s | 点数少；每点附 `--verify` 成功确认 |
 | `bench_verify.py` | **验证成本**（冷启动 CLI / vkey setup / 纯验证） | 每次 ~20s | 区分「CLI 冷启动（含构造证明器）」与「纯密码学验证」 |
+| `bench_compose.py` | **组合证明的成本**（`pop-program` / `pop-infer` 两半各自 prove/verify + 组合层开销） | 真出两份 SP1 证明 | **两半分进程**跑；逐条检验「成本 ≈ 两者之和、由推理主导」这句假设 |
 
 运行（需先构建 `circuits`，见 `docs/reproduce.md` §2）：
 
@@ -14,6 +16,8 @@
 python3 bench/bench_cycles.py                                  # → bench/results/cycles.{json,md}
 SP1_PROVER=cpu python3 bench/bench_proofs.py                    # → bench/results/proofs.{json,md}
 SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>  # → bench/results/verify.{json,md}
+SP1_PROVER=cpu python3 bench/bench_compose.py                   # → bench/results/compose.{json,md}
+python3 bench/bench_compose.py --render-only                    # 不出证：由已有 JSON 重渲染 .md
 ```
 
 结果写入 `bench/results/`（**已入库**，供论文/文档引用）；中间产物 `bench/work/` 被忽略。

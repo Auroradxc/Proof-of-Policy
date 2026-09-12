@@ -1,0 +1,9 @@
+[package]
+name = "pop-infer"
+version = "0.1.0"
+edition = "2021"
+description = "SP1 zkVM program: prove a committed small model ran on the committed response (proxy inference proof, P1-6)"
+
+[dependencies]
+sp1-zkvm = "6.7.0"
+pop-types = { path = "../types" }

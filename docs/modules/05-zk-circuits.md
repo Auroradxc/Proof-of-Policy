@@ -1,7 +1,10 @@
 # 05 · ZK 电路层（SP1 / Rust）
 
-> 覆盖 `circuits/` 整个 workspace：`types`、`program`、`script`、`verifier`、`patches/`。
+> 覆盖 `circuits/` 整个 workspace：`types`、`program`、`infer-program`、`script`、`verifier`、`patches/`。
 > 这一板块回答：**Python 侧编译出的契约，怎么在 zkVM 里跑出同一个结论，并变成一份可验证的证明。**
+>
+> **两个 guest 程序**（P1-6 起）：`pop-program` 判策略合规，`pop-infer` 证代理推理的
+> 前向完整性。它们**必须**是两个程序 —— 见 §3.0 的键分离论证。
 
 ---
 
@@ -9,32 +12,40 @@
 
 ```
 circuits/
-├── Cargo.toml          # workspace：members = types / program / script / verifier
+├── Cargo.toml          # workspace：members = types / program / infer-program / script / verifier
 │                       # + [patch.crates-io] tempfile（见 §6）
 ├── types/    pop-types  # 共享判定逻辑（no_std + alloc）：审计对象、NFA、evaluate、evaluate_private
-├── program/  pop-program# zkVM guest：读 Job → run_job → commit(Outcome)
-├── script/   pop-script # 宿主驱动：--check / --execute / 出证 / --verify
+│                        #   + 代理推理域（P1-6）：infer_forward / infer_input / infer_model_hash…
+├── program/  pop-program# zkVM guest①：只收策略任务（Public/Private）→ run_job → commit(Outcome)
+├── infer-program/ pop-infer # zkVM guest②：只收推理任务（P1-6）→ 断言域 → run_infer → commit
+├── script/   pop-script # 宿主驱动：--check / --execute / 出证 / --verify，--job policy|infer
 ├── verifier/ pop-verify # 仅验证器二进制（compressed/groth16/plonk）
 └── patches/tempfile     # 上游补丁（sp1-prover 6.7.0 需要 TempDir::keep()）
 ```
 
-设计核心：**`program` 只做三件事**（读输入、调用 `pop-types`、提交输出），
+设计核心：**guest 只做三件事**（读输入、**断言域**、调用 `pop-types`、提交输出），
 全部判定逻辑放在 `types` 里，因此同一份代码既能编进 RISC-V guest，也能编进宿主驱动
 （`pop-script --check` 就是直接在宿主机上跑 `run_job`，不生成证明）。
 
 ```rust
-// program/src/main.rs —— 全文 26 行，就是这三步
+// program/src/main.rs —— 就是这几步
 sp1_zkvm::entrypoint!(main);
 pub fn main() {
     let job: Job = io::read();       // 私密输入：不进入公开值
+    assert_eq!(job_domain(&job), DOMAIN_POLICY,
+        "pop-program 只接受策略合规任务（Public/Private）；推理任务请交给 pop-infer");
     let out: Outcome = run_job(&job); // 共享判定逻辑
     io::commit(&out);                // 公开值：验证者可读
 }
 ```
 
+`infer-program/src/main.rs` 形状相同，只把断言反过来（`== DOMAIN_INFER`）。
+**这一行断言是 P1-6 键分离的落点**：它让「这个程序能出哪一半的证明」成为
+**vkey 层面的既成事实**，而不是宿主驱动里的一句约定 —— 见 §3.0。
+
 ---
 
-## 2. `pop-types`：共享类型与判定（`types/src/lib.rs`，615 行）
+## 2. `pop-types`：共享类型与判定（`types/src/lib.rs`，1339 行）
 
 ### 2.1 类型清单
 
@@ -54,8 +65,12 @@ pub fn main() {
 | `PrivateOutput { policy_hash, response_binding, response_commitment, trace_root, passed, violations, redaction }` | 私有模式输出 |
 | `Job { Public(ProofRequest), Private(PrivateRequest) }` | 一个 ELF 服务两种模式的调度枚举 |
 | `Outcome { Public(ProofOutput), Private(PrivateOutput) }` | 顶层承诺结果 |
+| `Job { Public(ProofRequest), Private(PrivateRequest), Infer(InferRequest) }` | 调度枚举。前两态属**策略域**、`Infer` 属**推理域**（P1-6）；两个 guest 各只收自己那一域 |
+| `Outcome { Public(ProofOutput), Private(PrivateOutput), Infer(InferOutput) }` | 顶层承诺结果 |
+| `InferRequest { response, nonce }` | 推理任务的输入（P1-6）。**没有**「输入向量」字段 —— 输入由图内从 `response` 导出，见 §2.5c |
+| `InferOutput { model_hash, response_binding, input_binding, output }` | 推理任务的公开值（`output` 是 `OUT_DIM` 个定点数） |
 
-`Constraint` 的六个变体与字段（**与 `01` 的六类规则一一对应**）：
+`Constraint` 的七个变体与字段（**与 `01` 的规则一一对应**）：
 
 ```rust
 KeywordBlock  { name, keywords }
@@ -224,6 +239,35 @@ pub fn response_binding(nonce: &[u8], response: &str) -> String {
 这与「不公开整条响应、只公开承诺」是同一个思路。链尾（而不是整条链的 Merkle 根）够用，是因为
 `prev` 已把整条链串成一条哈希链 —— 链尾摘要**已经**承诺了它之前的所有内容。
 
+### 2.5c 代理推理域 `Infer`（P1-6）
+
+`pop-types` 里另有一小块**与策略判定完全无关**的逻辑：一个**确定性定点 MLP 前向**。
+它回答的不是「T 符不符合 π」，而是「（某张图）在 T 上算出的输出是不是这个」——
+组合义务 `Compose = (推理完整性 ∧ 策略合规)` 的**后一半**。
+
+| 常量 / 函数 | 说明 |
+|---|---|
+| `INFER_DOMAIN = b"pop-infer-v1"` | 推理域的域分隔前缀（与 `BIND_DOMAIN`/`TRACE_DOMAIN` 同思路，保证跨域哈希永不碰撞） |
+| `INFER_FRAC_BITS = 16`，`INFER_{IN,HID,OUT} = 16/32/4` | **Q16 定点**，全整数运算 —— 没有浮点，宿主/guest、Rust/Python 三方才能逐位一致 |
+| `INFER_MODEL_SEED`，`INFER_MODEL_SPEC` | 权重种子与模型规范串。**权重不来自输入**，由编译期常量经 `splitmix64` 生成 |
+| `infer_model_hash()` | `SHA256(domain ‖ "model" ‖ MODEL_SPEC)` —— 模型指纹 |
+| `infer_input(response)` | 由图内从 `response` 导出 `IN_DIM` 个 Q16 输入 |
+| `infer_forward(x)` | `x → ReLU(x·W₁) → (·W₂)`，全部定点 |
+| `infer_input_binding(nonce, x)` | 输入的承诺（含 nonce） |
+| `run_infer(req)` | 组装成 `InferOutput` |
+
+**两个设计点是刻意的**（也就是 L6 的三条信任边界条件的落地）：
+
+1. **权重编进程序** ⇒ 模型身份由 **vkey** 承诺。出证方没有「我用的其实是另一张图」的余地
+同一个 nonce）—— 这就是两半能组合的锚点：「说的是同一条 T」由验证方**现场重算**核对，
+而不是靠证书自述。
+
+**边界（如实标注）**：这是一个 16→32→4 的小 MLP，是**stand-in**，不是 zkAgent（D1）。
+它证明的是「**这张**图在**这条**响应上确实算出**这个**输出」，**不保证模型质量**
+（没有数据训练过它）。成本结论的限度见 `bench/results/compose.md`。
+Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_compose.py::TestInferParity`
+真跑 `pop-script --check --job infer` 钉死。
+
 ### 2.5 `sha256_hex`
 
 手写十六进制输出，**与 `hashlib.sha256().hexdigest()` 字节级一致**（小写、无前缀）——
@@ -231,23 +275,49 @@ pub fn response_binding(nonce: &[u8], response: &str) -> String {
 
 ---
 
-## 3. `pop-program`：zkVM guest
+## 3. 两个 guest：`pop-program` 与 `pop-infer`
 
-26 行，见 §1 的代码。要点：
+### 3.0 为什么必须是**两个**程序（键分离）
+
+组合义务要求「推理完整性 ∧ 策略合规」两个子义务各自成立。若两半由**同一个**程序产生，
+验证方就没有判据回答「这份证明属于哪一半」—— 攻击者可以拿一份策略证明充当推理半
+（或反之）而通过全部逐 half 的检查。所以组合证书的验证（`policydsl/compose.py` 第 4 步）
+**显式要求两个 vkey 不同**。
+
+但只在验证方加这条检查是不够的：vkey 是**程序**的指纹，只有把这条要求钉进**电路**
+才有意义。做法是两个 guest 入口各断言一次自己的域：
+
+| guest | 入口断言 | 只接受 |
+|---|---|---|
+| `pop-program` | `job_domain(&job) == DOMAIN_POLICY` | `Job::Public` / `Job::Private` |
+| `pop-infer` | `job_domain(&job) == DOMAIN_INFER` | `Job::Infer` |
+
+于是 `vkey_policy` **只可能**产出 `Public`/`Private` 结果，`vkey_infer` **只可能**产出
+`Infer` 结果 —— 「这份证明属于哪一半」成了 vkey 层面的既成事实。
+把另一域的任务喂给错的程序，`deny_unknown_fields` + 断言双重拦下
+（`tests/test_compose.py::TestDomainSeparationInGuest`）。
+
+### 3.1 共同形状
+
+每个 guest 都是「读输入 → 断言域 → 调用 `pop-types` → 提交输出」：
 
 - `io::read()` 读入的是 **`Job`（私密输入）**，不进入公开值；
 - `io::commit(&out)` 提交 `Outcome`，即**公开值**；
 - guest 自身不做任何 I/O、不做网络、不做时间读取 —— 判定因此是**确定性**的，
   这正是「健全性」论证的支点（`../security-model.md` §2）。
 
+**代价**：`types` 一改，两个 ELF 都变，两个 vkey 都变，`scripts/examples/out/` 下
+已入库的证明工件随之失效（只有 `POP_TEST_PROOF` 打开的那个测试会用到，默认 skip）。
+
 ---
 
-## 4. `pop-script`：宿主驱动（`script/src/main.rs`，308 行）
+## 4. `pop-script`：宿主驱动（`script/src/main.rs`，394 行）
 
 四种模式（`--check` / `--execute` / 默认出证 / `--verify`），共用一套极简命令行解析。
 
 | 参数 | 说明 |
 |---|---|
+| `--job policy\|infer` | 选哪一半：`policy` → `pop-program`（策略向量，含 `spec_canonical`），`infer` → `pop-infer`（推理向量，含 `response`/`nonce`）。**默认 `policy`**；别的值一律 panic（不静默退回默认域）。⚠️ 旗标是 `infer`，而 part 的 kind 是 `inference` —— 两个名字不同，见 `policydsl/compose.py::JOB_FOR_KIND` |
 | `--vectors <f>` | 输入向量文件（`{"vectors":[...]}` 或裸数组），默认 `vectors.json` |
 | `--out <f>` | 结果 JSON，默认 `results.json` |
 | `--proof-out <f>` | 保存证明（**只支持单向量**）+ 边车 + `.meta.json` |
@@ -259,15 +329,17 @@ pub fn response_binding(nonce: &[u8], response: &str) -> String {
 ### 模式细节
 
 - **`--check`**：直接 `run_job`，不构造任何证明器。**快，CI 与交叉验证的主力**。
-- **`--execute`**：`client.execute(POP_ELF, stdin)`，在结果里附
+- **`--execute`**：`client.execute(elf_for(job), stdin)`，在结果里附
   `"cycles": report.total_instruction_count()` —— `bench/bench_cycles.py` 的取样来源。
-- **出证（默认）**：`client.setup(POP_ELF)` → 按 `--proof-mode` 选 `core/compressed/groth16/plonk`
+- **出证（默认）**：`client.setup(elf_for(job))` → 按 `--proof-mode` 选 `core/compressed/groth16/plonk`
   → 出证 → **立即本地 `verify` 一次**（确保证明有效）→ 写结果。
   若给了 `--proof-out`：`proof.save(path)` + `write_verifier_sidecar(...)` + `.meta.json`
-  （含 `vkey_hash`、`proof_file`、`proof_mode`）。
-- **`--verify`**：从 ELF 重新 `setup` 推导 vkey → 重复 `client.verify(...)` 计时 →
+  （含 `vkey_hash`、`proof_file`、`proof_mode`、`job`）。
+- **`--verify`**：从 `elf_for(job)` 重新 `setup` 推导 vkey → 重复 `client.verify(...)` 计时 →
   读回公开值 `Outcome` → 输出 `{verified, vkey_hash, setup_seconds, verify_times_seconds, outcome}`。
   **不需要任何秘密**，这就是第三方验证的入口（也是 core 证明唯一可用的验证路径）。
+  ⚠️ `--verify` **必须**带上出证时同一个 `--job`：vkey 是**程序**的指纹，
+  用 `--job policy` 去验一份推理证明会得到 vkey 不符（这正是键分离在起作用）。
 
 > ⚠️ **四种证明模式的安全性不同（P0-4 已查证，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)）**：
 > `core` / `compressed` 是**非零知识**的 STARK（Succinct 官方安全模型明文承认；
@@ -296,15 +368,18 @@ pub fn response_binding(nonce: &[u8], response: &str) -> String {
 ### `build.rs`
 
 ```rust
-build_program_with_args("../program", Default::default())
+build_program_with_args("../program", Default::default());
+build_program_with_args("../infer-program", Default::default());
 ```
 
-把 guest 编译成 zkVM ELF，使 `include_elf!("pop-program")` 生效。**改动 `types` 后必须重新构建**，
-否则宿主驱动内嵌的还是旧 ELF（vkey 也会跟着变）。
+把**两个** guest 各编译成 zkVM ELF，使 `include_elf!("pop-program")` 与
+`include_elf!("pop-infer")` 生效。**改动 `types` 后必须重新构建**（两个都要），
+否则宿主驱动内嵌的还是旧 ELF —— 而且 **vkey 会跟着变，两个都变**，
+`scripts/examples/out/` 下已入库的证明工件随之失效。
 
 ---
 
-## 5. `pop-verify`：仅验证器二进制（`verifier/src/main.rs`，125 行）
+## 5. `pop-verify`：仅验证器二进制（`verifier/src/main.rs`，147 行）
 
 ```
 pop-verify --meta <proof>.verify.json [--out result.json]
@@ -349,9 +424,11 @@ pop-verify --meta <proof>.verify.json [--out result.json]
 ## 7. 构建命令
 
 ```bash
-cd circuits/program && cargo prove build                  # 生成 guest ELF
-cd circuits/script  && cargo build --release -p pop-script
+cd circuits/script  && cargo build --release -p pop-script   # build.rs 会连两个 guest 一起编
 cd circuits/verifier && cargo build --release -p pop-verify  # 可选，审计快路径需要
+# 单独编某个 guest（排查 guest 编译错误时）：
+cd circuits/program       && cargo prove build   # → pop-program
+cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
 ```
 
 产物：`circuits/target/release/pop-script`、`pop-verify`（Python 侧按这个路径定位，见 `07`）。
@@ -373,6 +450,10 @@ cd circuits/verifier && cargo build --release -p pop-verify  # 可选，审计�
    `tests/test_binding.py::TestPythonRustParity`。
 9. **类型一改就要重建 guest**：`types`（含新增字段）变了 ⇒ ELF 变 ⇒ vkey 变 ⇒
    `scripts/examples/out/` 下所有旧证明与证书**全部失效**，必须整体重生成。
+    `pop-infer` 断言 `DOMAIN_INFER`。**不要**为了「方便」把它们合成一个 guest ——
+    合并会让两个 vkey 变成同一个，「这份证明属于哪一半」就无从判断，
+    组合义务（L6）随之失效。新增任何一个「要组合进同一张证书」的证明域，
+    都必须**再开一个 guest 程序**。
 
 ---
 
@@ -382,6 +463,7 @@ cd circuits/verifier && cargo build --release -p pop-verify  # 可选，审计�
 |---|---|
 | `tests/test_rules_incircuit.py` | 六类规则在 `--check` 下与 Python golden 逐点对齐（含规范化证据串） |
 | `tests/test_trace.py` | P1-5 四条验收（完整链通过 / 删·换·重排失败 / 伪造回执验签失败 / 旧向量被拒），并实测 `trace_root` 与 Python 逐字节一致 |
+| `tests/test_compose.py`（P1-6） | 代理推理的参考实现逐位一致（`--check --job infer`）、组合绑定的 5 组反例、域分离（两个 guest 互相拒绝对方的向量）、驱动接线（`job` 旗标 / `mode` 不被剥掉） |
 | `tests/test_binding.py::TestPythonRustParity` | `response_binding` 在电路内与 Python 逐字节一致（公开 + 私有，多种 nonce 长度） |
 | `tests/test_ablation.py::TestRustNaivePath` | Rust 侧 `nfa_match` ≡ `nfa_match_naive` |
 | `tests/test_verifier_only.py` | `pop-verify` 的调用与快路径判定 |
@@ -397,6 +479,10 @@ cd circuits/verifier && cargo build --release -p pop-verify  # 可选，审计�
   且**证据字符串必须逐字节一致**。跑 `cross_validate` 验证。
 - **加证明模式**：在 `pop-script` 的 `match proof_mode` 分支与 `write_verifier_sidecar` 里各加一处，
   同时更新 `policydsl.verifier.VERIFIER_ONLY_MODES`（如果新模式支持 verifier-only）。
+- **加一个可组合的证明域**（如日后换掉代理推理、接真 zkAgent）：**新开一个 guest 程序**，
+  在 `pop-types` 里加对应的 `Job`/`Outcome` 变体与 `job_domain` 分支，入口断言自己的域，
+  然后扩 `policydsl/compose.py::KIND_*` 与 `verify_composite`。**不要**往现有 guest 里塞 ——
+  见 §8 不变量 12。
 - **优化证明开销**：当前瓶颈是证明器固定开销与 O(n·states) 的 NFA 扫描。
   `bench/results/` 里有基线数字，改动后用同一脚本复测再对比。
 - **升级 SP1**：`types/program/script/verifier` 四处版本号需一起动，

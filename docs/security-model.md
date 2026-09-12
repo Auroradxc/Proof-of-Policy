@@ -54,7 +54,7 @@
 
 | 环节 | 在哪一层 | 若不成立会怎样 |
 |---|---|---|
-| `T` 确由某个真实 LLM 产出 | **不在任何层**（非目标，见 §6） | 健全性不受影响；这属于「推理完整性」= P1-6 的范围 |
+| `T` 确由某个真实 LLM 产出 | **不在任何层**（非目标，见 §6） | 健全性不受影响。P1-6 提供了一个**代理推理证明**（`pop-infer`，确定性 MLP 前向）来演示组合机制，但那是 stand-in，**不是**"某真实 LLM 跑过"的证据（L6.2） |
 | 回执确由**网关**签发 | **链下** Ed25519 验签（D2） | 见 L3：退化为「证明者自述轨迹」 |
 | 网关**不作恶** | **假设** A4 | 网关可签一条与真实执行不符的回执 —— 这是本模型**最弱的一环**，如实标注 |
 | 链是否**完整**（没被截尾） | **链下 + 证书**：网关会话末端承诺 `ToolSeal{count, trace_root}` + 验签（P1-5b） | 验证方须持网关公钥；见 **§5.3** |
@@ -208,12 +208,72 @@ Pr[G_Bind_trace(A) = 1]
 所以 `ε` 的上界**只能是**「`A` 猜不中 `H(T_γ)`」—— 对**低熵** `T`，`A` 可以离线枚举
 （§5.2）。因此本项目的私有模式**只主张 §5.2 的那条弱性质**。
 
-### L6 组合义务（P1-6）—— ⏳ **规划中，未实现**
+### L6 组合义务（P1-6）—— 归约到 A1 + A2
 
-`Compose = (推理完整性 ∧ 策略合规)`；`Compose` 的证明由两次独立证明经**键分离**
-（不同的 vkey / 不同的域前缀）组合而成，`CompositeCertificate` 同时引用两个证明摘要与两个 vkey。
-**计划命题**：替换任一子证明被拒（`tests/test_compose.py` 的反例）。
-**当前状态**：P1-6 **未开始**，本节是接口约定，不是已证结论 —— 按 D1 如实标注。
+> 代理推理证明（`pop-infer`）是 **stand-in**，验收的是**组合机制**而非成本结构 ——
+> 见 §L6.3 与 [`../bench/results/compose.md`](../bench/results/compose.md)。
+
+**命题**：设 `C` 是验证方接受的组合证书，其两半各自通过验证、绑到**同一条**送达
+`T′`、且来自**不同**的 vkey。若 `C.parts[policy].outcome.passed = true` 且
+T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
+```
+
+其中 `M_infer` **不是**「存在某个模型」，而是 `vkey_infer` 所承诺的**那一个**程序 ——
+代理域里权重由编译期常量种子生成、编进 guest（§2.5c），所以模型身份由 vkey 决定，
+证明者选不了。
+
+**论证**（在 A1、A2 下）：组合证书的每一半都是 zkVM 的确定性执行输出（A1），
+所以每一半的公开值**唯一**等于对应 guest 程序在对应输入上的执行结果。于是：
+
+1. **策略那一半**给出 `T′ ⊨ π` —— 论证与主定理逐字相同（策略半的公开值里
+   `response_binding` 由 `(nonce, T′)` 决定，而验证方的第 6 步*现场重算*它，
+   故被证明的那条串**就是**送达的 `T′`，不是证明者另选的串）。
+2. **推理那一半**给出「图内前向确实是这么算的」：`input_binding` 是
+   `SHA256(domain ‖ "input_binding" ‖ nonce ‖ 各输入分量)`，而验证方第 7 步
+   由 `T′` **重新导出输入、重算绑定**；`model_hash` 同理由本仓库那份模型规格重算。
+   要在此基础上换成别的模型 / 别的输入，需要 A2 下的 SHA256 碰撞。
+
+**为什么键分离是命题的一部分，而不是工程细节**：若两半可以由**同一个**程序产生，
+则「这份证明属于哪一半」在验证方无判据 —— 攻击者可以拿一份策略证明充当推理半
+（或反之）而通过全部逐 half 的检查。`verify_composite` 第 4 步显式要求
+`vkey_policy ≠ vkey_inference`；两个 guest 入口各自断言 `job_domain == DOMAIN_*`
+（`pop-program` 只收 Public/Private，`pop-infer` 只收 Infer），把这条要求钉进
+**电路**而不是只写在 Python 里。给了 `expected_vkeys` 时还额外核「它们就是你信任的
+那两个程序」——没给时 `detail` **如实注明**「未提供期望 vkey」，不假装核过了。
+
+**替换任一子证明为什么被拒**：第 2 步把证明文件字节的 SHA-256 与证书承诺比对
+（换文件即失败）；第 3 步跑验证器，并把**解出的 outcome 与原样转述的 outcome**
+逐字段比对、vkey 逐字节比对（换证明即失败）；第 6 步要求四方 `response_binding`
+一致，其中一方是**现场重算**（两半绑不同 `T`、或送达 `T′` 与证明不符，都失败）。
+
+**代码落点**：`policydsl/compose.py::verify_composite`（8 步）、
+`circuits/types::job_domain`、`circuits/program` 与 `circuits/infer-program` 的入口断言、
+`scripts/compose_proof.py`、`tests/test_compose.py`。
+
+#### L6.1 覆盖率：结论形式与主定理不同
+
+**没被这份证明判定**（P2-9 的语义规则）—— 此时组合层**不下合规结论**，而不是
+"当作过了"。少了这一条，组合证书会成为「把没判的规则当判过了」的新通道，
+#### L6.2 不保证
+
+* **推理那一半是代理**：`pop-infer` 里是一个 16→32→4 的定点 MLP，权重由编译期常量
+#### L6.3 实验能证什么、不能证什么（如实标注）
+
+计划里的假设是「**组合成本 ≈ 两者之和，且由推理证明主导**」。本机实测的结论是
+**前半成立、后半不成立**：合成与联合验证不引入额外证明（合成 5.0 ms，联合验证
+53.8 s —— 主导项是两次 vkey setup，不是比对），出证时间确实是两半之和
+（127.3 + 110.8 = 238.1 s）；但代理模型太小 —— 推理半 **8.3 万**周期，
+反而**低于**策略半的 **64.4 万**周期 —— 两半都被 zkVM 的**固定开销**
+（setup 与证明器启动）主导，「推理主导」在代理规模下**观察不到**。真实 zkAgent
+推理证明的规模与这里差若干数量级（`bench/comparison_zkagent.md`）。
+
+**所以这份实验验证的是组合机制，不是成本结构。** 换上真 prover 后组合层开销仍是
+毫秒级 —— 它不随子证明规模变化。数字见 `bench/results/compose.md`。
+
+**反例（`tests/test_compose.py`）**：①换证明文件 / 缺失文件 ②同 vkey / 非期望 vkey
+③换模型 / 换输入 ④两半绑不同 `T` / 送达 `T′` 与绑定不符 ⑤形状/模式/域/policy_hash
+重编译不符 —— 全部必须被拒。
+
 
 ---
 
@@ -328,7 +388,7 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | **`budget_bound(tokens)` 语义** | 电路内按**固定空白字节集** `{0x20,09,0a,0b,0c,0d}` 切分计数，**不**依赖 Unicode White_Space（该定义随 Unicode 版本漂移），也**不**假称是任何真实分词器。口径变更**不兼容**：`policy_hash` 随之变化 |
 | **规则语义** | 正则为受支持子集 + ASCII 语义；长度按码点；`int`/`float` 仅规范子集（超集输入按子集规则拒绝） |
 | **重放** | 无 `n` 的证书可被重放（危害是会话计数）；带 `n` 的证书重放可被 `NonceStore` 检出 |
-| **非目标** | 不证明「模型推理本身」（P1-6 若落地则部分覆盖）；不覆盖训练数据/模型卡（EU AI Act Art.11 等） |
+| **非目标** | 不证明「模型推理本身」的**通用**命题。P1-6 覆盖的是**代理模型**（`pop-infer` 里那张定点 MLP）的前向完整性 —— 换成真 LLM 的推理证明属于另一件事（D1）；不覆盖训练数据/模型卡（EU AI Act Art.11 等） |
 
 ---
 
@@ -344,9 +404,9 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | **L5** 账本 + 锚定 | `policydsl/anchor.py`、`contracts/Anchor.sol` | `tests/test_anchor.py`（4）、`test_anchor_chain.py`（22） |
 | 证书签名（A3/A7） | `policydsl/cert.py::Ed25519Signer`、`policydsl/keys.py` | `tests/test_cert.py`（19） |
 | 证明模式诚实标注 | `cert.PROOF_MODE_HIDING`、`verifier.artifact_proof_modes` | `tests/test_verifier_only.py`（8） |
-| **L6** 组合义务 | ⏳ 未实现（P1-6） | — |
+| **L6** 组合义务（P1-6） | `policydsl/compose.py`、`circuits/infer-program`（guest）、`circuits/types::job_domain`、`scripts/compose_proof.py` | `tests/test_compose.py`（48，含 5 组反例 + 4 条驱动接线回归；真·端到端由 `POP_TEST_COMPOSE=1` 打开） |
 
-**回归总盘**：`python3 -m unittest discover -s tests -t .` → **261 passed / 5 skipped**（skip 均为设计内）。
+**回归总盘**：`python3 -m unittest discover -s tests -t .` → **348 passed / 11 skipped**（skip 均为设计内，
 
 ---
 
@@ -362,4 +422,5 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | **G_Priv** | Leak 实验（`private_demo`、`test_private_output_no_leak`）；上界论证见 §5.2 |
 | **G_Redact** | `TestMaskCoverage`（伪造 span → `mask_covered=false`） |
 | **G_Ledger** | `TestAnchorLedger`（链篡改检出）、`TestAnvilEndToEnd`（真链读回） |
+| **L6 组合义务** | 五组反例：换证明文件/缺失、同 vkey/非期望 vkey、换模型/换输入、两半绑不同 T/送达 T′ 不符、形状/模式/域/policy_hash 重编译 —— 全部必须被拒（`tests/test_compose.py`）；成本与「推理是否主导」的实测见 `bench/results/compose.md` |
 | 端到端 | `scripts/verify_session.py` 全 PASS（含真实 SP1 证明） |

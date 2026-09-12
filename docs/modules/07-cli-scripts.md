@@ -19,6 +19,7 @@
 | `verify_cert.py` | **第三方**独立验证单张证书 | `pop-script` / `pop-verify` | 验证已有证明 | ~20 s |
 | `demo_e2e.py` | 一键真实会话（LangChain + MCP + zk + 锚定） | `pop-script` | 可 `--no-prove` | 秒级 / ~70 s |
 | `verify_session.py` | **第三方**独立验证整个会话包 | 同上 | 验证已有证明 | 秒级 |
+| `compose_proof.py` | **组合证明**（P1-6）：策略半 + 推理半各出一份 → 合成 → 联合验证 | `pop-script` | 是（可 `--no-prove` / `--reuse-proofs`） | 两次出证，各 ~2 分钟 |
 | `deploy_anchor.py` | 部署 `Anchor.sol`（字节码来自入库 artifact） | 否 | 否 | 秒级 |
 | `make_shots.py` | 从会话产物生成截图/HTML/SVG | 否 | 否 | 秒级 |
 | `anchor_e2e.sh` | 起 anvil → 部署 → demo → `--rpc` 核对 + 反例 | 可选 | 可 `--prove` | ~10 s / ~70 s |
@@ -174,7 +175,45 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 与 `TestVerifyCertTraceBinding::test_forged_last_element_caught_by_gateway_key`），
 详见 [`security-model.md`](../security-model.md) §5。
 
-### 2.6 `demo_e2e.py` —— 一键真实会话
+### 2.7 `compose_proof.py` —— 组合证明（P1-6）
+
+```bash
+SP1_PROVER=cpu python3 scripts/compose_proof.py \
+  --pack policy_packs/eu_ai_act_v1.json \
+  --response scripts/examples/eu_agent_reply.txt \
+  [--out-dir scripts/examples/out/compose] [--nonce auto|none|<hex>] \
+  [--proof-mode core|compressed|groth16|plonk] [--no-prove] [--reuse-proofs]
+```
+
+组合义务 `Compose = (推理完整性 ∧ 策略合规)`：**两份证明** ——
+策略半用 `--job policy`（`pop-program`），推理半用 `--job infer`（`pop-infer`）——
+再合成一张 `composite.json` 并当场独立验证一遍。收尾打印两行，口径与
+`verify_cert.py` 相同：
+
+```
+RESULT: PASS | FAIL           ← 这张**组合证书**是不是真的
+组合义务(Compose): PASS | FAIL ← 策略那一半是不是**确实合规**
+```
+
+四个容易踩空的点：
+
+1. **两半必须分进程跑**。一个进程里连出两份证明会在第二份的 `setup` 阶段被
+   OOM killer 终止（各 ~10.2–10.5 GiB 峰值，12 GB 机器；实测见
+   `bench/results/compose.md`）。脚本本身就是两次 `pop-script`。
+2. **`--reuse-proofs` 沿用已有的两份证明，只重跑合成 + 验证** —— 改
+   `policydsl/compose.py` 后不必再花 4 分钟出证。它不重新校验证明是否对应本次
+   `--response`，但尾部验证会现场重算 `response_binding`，对不上即 FAIL。
+3. **`nonce` 出证时落在 `out-dir/nonce.hex`**。绑定里含 nonce，所以
+   `--reuse-proofs` 必须沿用同一个 —— 脚本会自动读回；读不到就报错退出，
+   **不会**默默换一个（换了必然 FAIL）。
+4. **`--no-prove` 不产组合证书**。它只跑宿主校验（两端判定逻辑对齐 + Rust↔Python
+   参考实现逐位一致），并**如实打印**「未产出组合证书」—— 组合证书的输入是两份
+   **证明**，宿主校验替代不了。
+
+**推理半是代理**（`policydsl/infer.py`，16→32→4 定点 MLP），不是 zkAgent ——
+见 [`../../bench/results/compose.md`](../../bench/results/compose.md) 与 L6.2。
+
+### 2.8 `demo_e2e.py` —— 一键真实会话
 
 四段，全部用**真实**组件（`--no-prove` 只跳过 SP1 证明）：
 

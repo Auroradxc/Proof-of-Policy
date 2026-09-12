@@ -798,11 +798,17 @@ pub struct PrivateOutput {
     pub redaction: Option<RedactionProof>,
 }
 
-/// 程序调度的顶层任务（一个 ELF 服务两种模式）。
+/// 程序调度的顶层任务。
+///
+/// 前两个变体（`Public`/`Private`）服务**策略合规**证明，由 `pop-program`
+/// 承载；第三个（`Infer`，P1-6）服务**推理完整性**证明，由 `pop-infer` 承载。
+/// 两个 guest 各自只接受自己那半边（见 `job_domain`），因此两份证明的 vkey
+/// 天然不同 —— 这正是组合引理 L6 需要的**键分离**。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Job {
     Public(ProofRequest),
     Private(PrivateRequest),
+    Infer(InferRequest),
 }
 
 /// 顶层承诺的结果。
@@ -810,7 +816,26 @@ pub enum Job {
 pub enum Outcome {
     Public(ProofOutput),
     Private(PrivateOutput),
+    Infer(InferOutput),
 }
+
+/// 任务属于哪个**域**（`"policy"` = 策略合规，`"infer"` = 推理完整性）。
+///
+/// 两个 guest 在入口各断言一次：`pop-program` 只收 `"policy"`、`pop-infer`
+/// 只收 `"infer"`。这不是洁癖 —— 没有这道断言，同一个 `Job` 枚举就能被两个
+/// vkey 中任意一个出证，组合引理的「键分离」也就名存实亡（同一个 vkey 既能
+/// 出推理证明又能出策略证明时，验证方无法据 vkey 判断手里这份证明是哪一种）。
+pub fn job_domain(job: &Job) -> &'static str {
+    match job {
+        Job::Public(_) | Job::Private(_) => DOMAIN_POLICY,
+        Job::Infer(_) => DOMAIN_INFER,
+    }
+}
+
+/// 策略合规域（由 `pop-program` 承载）。
+pub const DOMAIN_POLICY: &str = "policy";
+/// 推理完整性域（由 `pop-infer` 承载）。
+pub const DOMAIN_INFER: &str = "infer";
 
 /// 把承诺的 `Outcome` 摊平成验证方可直接比对的 JSON 形状（**唯一真相源**）。
 ///
@@ -840,6 +865,12 @@ pub fn outcome_value(out: &Outcome) -> serde_json::Value {
             "response_commitment": o.response_commitment,
             "violations": o.violations,
             "redaction": o.redaction,
+            "mode": "infer",
+            "domain": INFER_DOMAIN_STR,
+            "model_hash": o.model_hash,
+            "response_binding": o.response_binding,
+            "input_binding": o.input_binding,
+            "output": o.output,
         }),
     }
 }
@@ -983,6 +1014,170 @@ pub fn evaluate_private(req: &PrivateRequest, policy_hash: &str,
 /// 二者都 fail-closed，而不是默默按当前语义判定。Python 侧（`Policy.validate()`
 /// 只接受 `"and"`、`SPEC_VERSION = "v1"`）正常路径不会触发；这道闸门挡住的是
 /// **绕过编译器手搓规范字节**的路径。
+// --------------------------------------------------------------------------- //
+// P1-6 代理推理证明（proxy inference）—— 组合义务 (Compose) 的第二个子证明
+//
+// 真实场景里这一半是 zkAgent 的推理证明（模型前向的完整性）。zkAgent 是外部
+// C++ 系统、源码不可得（见 `docs/plan-p0p1p2.md` 的 D1），所以这里放一个
+// **确定性小模型前向**作 stand-in：结构（输入 → 前向 → 被承诺的输出）与真实
+// 推理证明同构，成本量级不同（如实标注在 `bench/results/compose.md`）。
+//
+// 三条与 P2-9 的 ezkl 委托**刻意不同**的选择，都是为了让它成为可信的代理：
+//   ① 模型**就是程序**：权重由编译期常量种子生成，不来自输入。因此模型被 vkey
+//      承诺 —— 不需要信任出证方「我用的就是那张图」（对比 L7 信任边界 ①）。
+//   ② 输入由图内从**响应**确定性导出（`infer_input`），不是证明者自填的向量
+//      （对比 L7 信任边界 ②）。
+//   ③ 公开值里带**与策略证明同一公式、同一口径**的 `response_binding`，于是
+//      「两份证明说的是同一条 T」可被第三方离线核对（对比 L7 信任边界 ③）。
+// --------------------------------------------------------------------------- //
+
+/// 推理域的域分隔前缀（与策略域的 `pop-bind-v1` 分离）。
+pub const INFER_DOMAIN: &[u8] = b"pop-infer-v1";
+/// 同上的字符串形式（进公开值，便于人读）。
+pub const INFER_DOMAIN_STR: &str = "pop-infer-v1";
+
+/// 定点小数位数：模型内所有数值都是 Q16（scale = `1 << 16`）。
+pub const INFER_FRAC_BITS: u32 = 16;
+/// 输入维度。
+pub const INFER_IN: usize = 16;
+/// 隐藏层维度。
+pub const INFER_HID: usize = 32;
+/// 输出维度。
+pub const INFER_OUT: usize = 4;
+
+/// 模型参数的确定性生成种子（ASCII `"PoP_inf"`）。
+pub const INFER_MODEL_SEED: u64 = 0x0050_6F50_5F69_6E66;
+
+/// 模型的**规范描述串**：`model_hash = SHA256(domain ‖ "model" ‖ spec)`。
+/// 改架构、改维度、改种子都会改哈希 —— 与策略的 `spec_canonical` 同一个思路。
+/// **Python 侧 `policydsl/infer.py::MODEL_SPEC` 必须逐字符相同。**
+pub const INFER_MODEL_SPEC: &str =
+    "pop-proxy-mlp-v1:in=16:hid=32:out=4:q=16:act=relu:prng=splitmix64:seed=0x506f505f696e66";
+
+/// splitmix64：确定性 PRNG（与 Python 侧逐位一致，见 `policydsl/infer.py`）。
+fn splitmix64(z: u64) -> u64 {
+    let mut z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+/// 第 `index` 个权重（Q16，取值 `[-0.0625, 0.0625)`）。
+///
+/// 索引空间按 `[隐藏层权重 ‖ 输出层权重]` 平铺：
+/// `index = j * INFER_IN + i`（层 1）、`INFER_HID * INFER_IN + k * INFER_HID + j`（层 2）。
+pub fn infer_weight(index: u64) -> i64 {
+    let r = splitmix64(INFER_MODEL_SEED.wrapping_add(index.wrapping_mul(0x9E37_79B9_7F4A_7C15)));
+    ((r >> 24) as i64 % 8192) - 4096
+}
+
+/// 模型指纹（进公开值；由 vkey 之外的**规范描述串**派生，便于人读与跨实现核对）。
+pub fn infer_model_hash() -> String {
+    let mut h = Sha256::new();
+    h.update(INFER_DOMAIN);
+    h.update(b"model");
+    h.update(INFER_MODEL_SPEC.as_bytes());
+    hex(&h.finalize())
+}
+
+/// 由响应**确定性导出**的模型输入（`INFER_IN` 个 Q16 值，取值 `[-0.5, 0.5)`）。
+///
+/// 与 `response_binding` 一样带长度前缀与域前缀：前者保单射（防拼接歧义），
+/// 后者防跨域碰撞。特征由图内导出、而不是由证明者填，是这份证明有意义的**前提**
+/// —— 否则「模型输出是被承诺的」只说明「存在某个输入得到这个输出」。
+pub fn infer_input(response: &str) -> Vec<i64> {
+    let mut h = Sha256::new();
+    h.update(INFER_DOMAIN);
+    h.update(b"input");
+    h.update((response.len() as u32).to_be_bytes());
+    h.update(response.as_bytes());
+    let d = h.finalize();
+    (0..INFER_IN)
+        .map(|k| i16::from_be_bytes([d[2 * k], d[2 * k + 1]]) as i64)
+        .collect()
+}
+
+/// 定点前向：`x → ReLU(x·W₁) → (·W₂)`，全部 `i64` 整数运算（无浮点 ⇒ 宿主与
+/// guest、Rust 与 Python 三边结果**逐位相同**）。ReLU 后饱和到 `[0, 1]`，保证
+/// 后续累加不溢出（i64 在此规模下本来也远不会溢出，饱和是为了让「上界」有定义）。
+pub fn infer_forward(x: &[i64]) -> Vec<i64> {
+    let scale = 1i64 << INFER_FRAC_BITS;
+    let mut hid = [0i64; INFER_HID];
+    for j in 0..INFER_HID {
+        let mut acc = 0i64;
+        for i in 0..INFER_IN {
+            acc += x[i] * infer_weight((j * INFER_IN + i) as u64);
+        }
+        let v = acc >> INFER_FRAC_BITS;
+        hid[j] = if v <= 0 { 0 } else { v.min(scale) };
+    }
+    let wbase = (INFER_HID * INFER_IN) as u64;
+    (0..INFER_OUT)
+        .map(|k| {
+            let mut acc = 0i64;
+            for j in 0..INFER_HID {
+                acc += hid[j] * infer_weight(wbase + (k * INFER_HID + j) as u64);
+            }
+            acc >> INFER_FRAC_BITS
+        })
+        .collect()
+}
+
+/// 输入承诺：`SHA256(domain ‖ "input_binding" ‖ len ‖ nonce ‖ 规范输入字节)`。
+///
+/// 规范输入字节 = 每个 Q16 值按 **大端 8 字节** 定长编码（定长 ⇒ 无拼接歧义，
+/// 不需要逐元素长度前缀）。
+pub fn infer_input_binding(nonce: &[u8], input: &[i64]) -> String {
+    let mut h = Sha256::new();
+    h.update(INFER_DOMAIN);
+    h.update(b"input_binding");
+    h.update((nonce.len() as u32).to_be_bytes());
+    h.update(nonce);
+    for v in input {
+        h.update(v.to_be_bytes());
+    }
+    hex(&h.finalize())
+}
+
+/// 推理请求：**响应 + 挑战值**。
+///
+/// 刻意**没有**「模型权重」「输入向量」这些字段 —— 权重来自编译期常量、
+/// 输入由 `response` 导出。证明者能选的只有「证哪条响应」，这正是想要的形状。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InferRequest {
+    /// 被送入模型的那条响应明文（与策略证明里的是同一条 `T`）。
+    pub response: String,
+    /// 一次性挑战值（与策略证明共用同一个，见 `response_binding`）。
+    #[serde(default)]
+    pub nonce: Vec<u8>,
+}
+
+/// 推理证明的公开输出。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct InferOutput {
+    /// 模型指纹（`infer_model_hash()`）。
+    pub model_hash: String,
+    /// 与策略证明**同一公式、同一口径**的挑战-响应绑定。组合验证的第一步就是
+    /// 要求两份证明的这一项相等 —— 否则「合规的响应」与「被推理的响应」可以是两条。
+    pub response_binding: String,
+    /// 输入承诺（对由 `response` 导出的输入向量）。
+    pub input_binding: String,
+    /// 模型输出（`INFER_OUT` 个 Q16 值）。
+    pub output: Vec<i64>,
+}
+
+/// 执行一次推理任务（guest 与宿主检查共用）。
+pub fn run_infer(req: &InferRequest) -> InferOutput {
+    let input = infer_input(&req.response);
+    InferOutput {
+        model_hash: infer_model_hash(),
+        response_binding: response_binding(&req.nonce, &req.response),
+        input_binding: infer_input_binding(&req.nonce, &input),
+        output: infer_forward(&input),
+    }
+}
+
 fn parse_spec(spec_canonical: &str) -> (String, ConstraintSpec) {
     let spec: ConstraintSpec = serde_json::from_str(spec_canonical)
         .expect("spec_canonical is not a valid ConstraintSpec");
@@ -1013,5 +1208,6 @@ pub fn run_job(job: &Job) -> Outcome {
             let (hash, spec) = parse_spec(&r.spec_canonical);
             Outcome::Private(evaluate_private(r, &hash, &spec.constraints))
         }
+        Job::Infer(r) => Outcome::Infer(run_infer(r)),
     }
 }

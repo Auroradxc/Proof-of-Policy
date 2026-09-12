@@ -50,9 +50,26 @@ nonce ─────────── challenge.new_nonce() ──────
 工具轨迹（P1-5）另有一路：**工具网关**在每次调用执行后签发回执并接链，agent 只能原样转发；
 `tool_arg_guard` / `budget_bound(calls)` 判的是这条链，链尾摘要 `trace_root` 进公开值。
 
+组合证明（P1-6）是第四路，方向与前几路都不同 —— 它把**另一个证明系统/程序**的结论与策略合规
+**合取**：
+
+```
+Compose = (推理完整性 ∧ 策略合规)
+  推理半：circuits/infer-program（pop-infer）—— 代理模型前向，vkey_infer
+  策略半：circuits/program      （pop-program）—— 全部策略判定，vkey_policy
+  两半共用同一个 (nonce, T) ⇒ response_binding 相同 ⇒ 验证方现场重算即知「说的是同一条 T」
+  policydsl/compose.py 合成 CompositeCertificate 并跑 8 步验证（含**键分离**）
+```
+
+**键分离**是组合成立的前提：两半必须来自**不同程序**（不同 vkey），否则「这份证明属于哪一半」
+无从判断。做法是两个 guest 入口各断言一次自己的域（`pop-types::job_domain`），
+把这条要求钉进电路。⚠️ 推理半在当前仓库里是**代理**（确定性定点 MLP），
+不是 zkAgent（D1）—— 组合的是**机制**，不是真实 LLM 的推理。见
+[`security-model.md`](security-model.md) 引理 L6 与 `bench/results/compose.md`。
+
 ## 安全模型
 
-- **合规健全性**：不满足 π 的响应无法产出被接受的证明（证明者不能伪造通过）——**六类规则均已入电路**。
+- **合规健全性**：不满足 π 的响应无法产出被接受的证明（证明者不能伪造通过）——**六类可判定规则均已入电路**。
 - **策略绑定（P0-1）**：公开值**必然携带** `policy_hash`，且它与参与判定的约束来自**同一段规范字节**，
   所以「用策略 π′ 判定却声称 π 的哈希」不可能。
 - **响应绑定（P0-2）**：验证者出一次性 `nonce`，电路把 `response_binding = SHA256("pop-bind-v1"‖len‖nonce‖T)`
@@ -65,6 +82,11 @@ nonce ─────────── challenge.new_nonce() ──────
   见 `pop-types::verify_receipt_chain`），链尾摘要 `trace_root` 进公开值；**签发者身份**由**链下**
   Ed25519 验签承担（zkVM 内不验签）。因此信任前提是「网关密钥不被滥用」——网关是被显式信任的第三方。
   详见 [`security-model.md`](security-model.md) §5 与 `docs/modules/05-zk-circuits.md` §2.3a/§2.5b。
+- **组合义务（P1-6）**：`Compose = (推理完整性 ∧ 策略合规)`，由两份**来自不同程序**
+  （不同 vkey）的证明合成，验证方跑 `compose.verify_composite` 的 8 步 ——
+  证明文件哈希、密码学有效性、**键分离**、域绑定、四方 `response_binding`（含现场重算）、
+  **不下合规结论**（那条要合取 ezkl 陪伴证明，见下）；⚠️ 推理半是**代理**，
+  不是真实 LLM 的推理证明（D1）。详见 [`security-model.md`](security-model.md) 引理 L6。
 - **不可伪造**：无原响应的攻击者不能伪造「通过」证明；证据开示需 `SHA256(片段)=承诺`。
 - **记录完整性**：哈希链账本 + 链上锚定（`cert_digest` 登记进 `contracts/Anchor.sol`）。
 

@@ -453,6 +453,33 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
 **分支 B（若拿到 zkAgent 代码）**：把 2 换成真实 zkAgent prover，其余不变。
 
 **验收**：`tests/test_compose.py` + `bench/results/compose.md`；**反例**——替换任一子证明必须被拒。
+**均已达**：`POP_TEST_COMPOSE=1 python3 -m unittest tests.test_compose` → **Ran 47 tests … OK**（563.5 s，
+无一 skip）；`bench/results/compose.{json,md}` 已跑出；全套 `python3 -m unittest discover -s tests -t .`
+→ **348 passed / 11 skipped**。反例的「替换任一子证明必须被拒」在真产物上单独跑过
+（`test_swapping_either_subproof_is_rejected`）。
+
+**记要（分支 A ✅ 2026-09-12 完成）**：
+
+| 步 | 落点 |
+|---|---|
+| 1 形式化 | **引理 L6** 写进 [`security-model.md`](security-model.md) §3（组合义务、键分离、四方 `response_binding`），含「不保证」三条与成本结论的如实标注 |
+| 2 代理实验 | 新增 guest `circuits/infer-program`（包 `pop-infer`）；`pop-types` 加 `Job::Infer` / `InferRequest` / `run_infer` 与 `job_domain`；**两个 guest 入口各断言一次域**，把键分离钉进电路。模型是 16→32→4 定点（Q16）MLP，权重由编译期常量种子生成 ⇒ **模型就是程序**，被 vkey 承诺（比 P2-9 的 ezkl 委托更强）。Python 参考实现 `policydsl/infer.py` 与 Rust 逐位一致 |
+| 3 组合驱动 | `policydsl/compose.py`（8 步验证）+ `scripts/compose_proof.py`（两次独立进程出证 → 合成 → 独立验证）。**必须分进程**：同进程连出两份证明会在第二份 setup 被 OOM |
+| 4 成本表 | `bench/bench_compose.py` → **已跑出** `bench/results/compose.{json,md}`：策略半 127.3 s / 64.4 万周期 / 峰值 10.2 GiB，推理半 110.8 s / 8.3 万周期 / 峰值 10.0 GiB；组合层合成 5.0 ms、联合验证 53.8 s（主导是两次 vkey setup）。两半**分进程** ⇒ 峰值取 max 而非相加 |
+| 反例 | `tests/test_compose.py`（48）：换证明文件/缺失、同 vkey/非期望 vkey、换模型/换输入、两半绑不同 T/送达 T′ 不符、形状/模式/域/policy_hash 重编译 —— 全部被拒 |
+| 驱动接线 | 真出证明才暴露的 4 处（`kind`≠`--job` 旗标、`outcome_without_meta` 连 `mode` 一起剥、`--reuse-proofs` 必须还原同一个 nonce、`_verify_one` 漏给 `--out` 会在仓库根落 `results.json`）已修并各自补了回归用例（`TestDriverWiring`）—— 绑定层全绿但驱动一跑就炸，这个教训写进了测试注释 |
+
+⚠️ **假设检验的结论要如实看**：`bench/results/compose.md` 逐条报了计划里那句
+「组合成本 ≈ 两者之和，**且由推理证明主导**」——**前半成立，后半不成立**。代理模型太小，
+两半都被 zkVM 固定开销（setup 与证明器启动）主导，看不出成本结构。**这份实验验证的是
+组合机制，不是成本结构**；换上真 prover 才轮到「推理主导」。论文按此口径写。
+
+**改动 ELF 的后果**：`infer-program` 与 `pop-program` 都是 guest，任一重编译都会改变 vkey；
+`scripts/examples/out/` 下**本机生成**的证明工件随之失效（该目录被 `.gitignore` 忽略，
+不入库）。唯一会用到它们的是 `POP_TEST_PROOF` 打开的那个测试，默认 skip；
+要用就先重新生成：跑一次
+`SP1_PROVER=cpu python3 scripts/issue_cert.py --pack policy_packs/eu_ai_act_v1.json --response scripts/examples/eu_agent_reply.txt --out-dir scripts/examples/out/cert_public`
+（该用例读的就是这个目录）。
 
 ---
 
@@ -600,6 +627,9 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 > the pairing input computations exceeds 256 bits`），17 通过；`create_evm_vka` 产出的
 > `vka.json` **不是 JSON**（bincode 序列化的 VkArtifact），部署时别 `json.load`。
 
+> ① **引理编号是 L7，不是 L6。** 计划 §9.6 写"新增引理 L6"，但 `L6` 早已分配给了
+> P1-6 的跨证明组合义务（`docs/security-model.md` §3）。两条引理层面不同 ——
+> L6 是**横向拼接**（多份证明合成一次会话结论）、L7 是**纵向下沉**（一次证书内，
 #### 9.3 验收测试（每条都必须有反例 —— 正向检查容易写成恒真）
 
 ```python
@@ -682,8 +712,8 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 | 阶段 | 判据 |
 |---|---|
 | P0 | ① `tests/test_policy_binding.py::test_empty_policy_cannot_certify_real_policy` 通过；② `test_binding.py` 4 例；③ 旧 `DEMO_KEY` 信封被拒（**已达成**，见 P0-3 验收表）；④ `cross_validate` host/prove 14/14 仍绿；⑤ 全量测试无回归（T2 关闭后当前 **261 全绿 / 5 skip**） |
-| P1 | ① `test_trace.py` ✅（**P1-5 已完成**：29 例含四条验收，`cross_validate` host/prove 14/14）/ `test_compose.py` / `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应 |
 | P2 | ① `test_semantic.py` **7 例全绿含 5 条反例**（§9.3）；② `test_session.py`；③ `test_multiparty.py`；④ `bench/results/` 新增三张表（含 ezkl 出证成本）且文档数字同步；⑤ `docs/design-semantic-rules.md` 落盘并与引理 L6 对接 |
+| P1 | ① `test_trace.py` ✅（**P1-5 已完成**：39 例含四条验收 + P1-5b 的 seal/截尾，`cross_validate` host/prove 14/14）/ `test_compose.py` ✅（**P1-6 分支 A 已完成**：48 例含 5 组反例 + 四条驱动接线回归）/ `test_anchor_chain.py` 全绿 + 各自反例；② `anchor_e2e.sh --onchain-verify` 全 PASS；③ 安全模型 v2 落盘且引理与代码一一对应（**L6 已从「规划中」改为已证**） |
 
 ---
 

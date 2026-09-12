@@ -5,11 +5,15 @@
 //!   pop-script          --vectors v.json --out r.json [--proof-out proof.bin]
 //!   pop-script --verify --proof proof.bin [--out r.json]
 //!
+//! `--job policy|infer` 选择任务域（默认 `policy`）：`policy` 走 `pop-program`
+//! ELF（策略合规），`infer` 走 `pop-infer` ELF（P1-6 的代理推理证明）。两种域的
+//! **vkey 不同**，因此 `--verify` 也必须给出同一个 `--job`。
+//!
 //! `--proof-out`（单向量证明）保存证明与一个边车 `<proof-out>.meta.json`，
 //! 携带程序 vkey 哈希（供证书使用）。`--verify` 加载证明、从 ELF 重新推导
 //! 验证密钥、做密码学验证，并打印承诺的 Outcome JSON（无需任何秘密）。
 
-use pop_types::{run_job, Job, Outcome, PrivateRequest, ProofRequest};
+use pop_types::{run_job, InferRequest, Job, Outcome, PrivateRequest, ProofRequest};
 use serde::Deserialize;
 use serde_json::json;
 use sp1_sdk::{
@@ -19,6 +23,16 @@ use sp1_sdk::{
 
 // 内嵌 guest 程序 ELF（由 build.rs 编译生成）
 const POP_ELF: Elf = include_elf!("pop-program");
+/// 推理完整性域的 guest ELF（P1-6）。与 `POP_ELF` 是**两个程序 ⇒ 两个 vkey**。
+const INFER_ELF: Elf = include_elf!("pop-infer");
+
+/// 按 `--job` 选择要跑/要验的 guest ELF。
+fn elf_for(job_kind: &str) -> Elf {
+    match job_kind {
+        "infer" => INFER_ELF,
+        _ => POP_ELF,
+    }
+}
 
 /// 从 vectors.json 反序列化的单个输入向量。
 ///
@@ -53,11 +67,37 @@ struct VectorIn {
     receipts: Vec<pop_types::ToolReceipt>,
 }
 
+/// 推理域（P1-6）的输入向量。**只有响应与挑战值** —— 模型权重来自编译期常量、
+/// 模型输入由图内导出（见 `pop_types::InferRequest`）。`deny_unknown_fields`
+/// 在这里同样关键：它挡住「顺手塞一个 `input`/`weights` 字段」这类改动，否则
+/// 证明者自填输入会让「推理完整性」退化成「存在某个输入得到这个输出」。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InferVectorIn {
+    #[serde(default)]
+    name: Option<String>,
+    response: String,
+    #[serde(default)]
+    nonce: Vec<u8>,
+}
+
 #[derive(Deserialize)]
 struct VectorsFile {
     #[serde(default)]
     vectors: Vec<VectorIn>,
 }
+
+/// 推理域输入文件（与策略域的 `{"vectors":[...]}` 分开，避免为了兼容推理向量
+/// 而把策略向量的 `spec_canonical` 放宽成可选 —— 那条路径的严格性本身是 P0-1
+/// 的一部分）。
+#[derive(Deserialize)]
+struct InferVectorsFile {
+    #[serde(default)]
+    vectors: Vec<InferVectorIn>,
+}
+
+/// 一个待处理的向量：`(name, job)`。
+type NamedJob = (Option<String>, Job);
 
 impl VectorIn {
     /// 根据 private 标志转成对应的 Job（公开/私有）。
@@ -149,6 +189,7 @@ fn main() {
     let mut verify_mode = false;
     let mut verify_reps: u32 = 1;
     let mut proof_mode = "core".to_string();
+    let mut job_kind = "policy".to_string();
 
     // 极简命令行解析
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -179,6 +220,13 @@ fn main() {
                 i += 1;
                 verify_reps = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(1);
             }
+            "--job" => {
+                i += 1;
+                job_kind = args.get(i).cloned().unwrap_or_else(|| "policy".to_string());
+                if !matches!(job_kind.as_str(), "policy" | "infer") {
+                    panic!("--job must be 'policy' or 'infer' (got {job_kind})");
+                }
+            }
             "--check" => check_mode = true,
             "--execute" => execute_mode = true,
             "--verify" => verify_mode = true,
@@ -193,9 +241,11 @@ fn main() {
         let mut proof = SP1ProofWithPublicValues::load(&path)
             .unwrap_or_else(|e| panic!("load proof {path}: {e}"));
         let client = ProverClient::from_env();
-        // 从 ELF 重新 setup 以推导验证密钥（vkey）
+        // 从 ELF 重新 setup 以推导验证密钥（vkey）。
+        // **必须**用与出证时同一个域的 ELF：两个域的 vkey 不同，拿错 ELF 会
+        // 得到另一把钥匙，验证必然失败（这正是键分离在起作用的证据）。
         let t_setup = std::time::Instant::now();
-        let pk = client.setup(POP_ELF).expect("setup elf");
+        let pk = client.setup(elf_for(&job_kind)).expect("setup elf");
         let setup_secs = t_setup.elapsed().as_secs_f64();
         let vk = pk.verifying_key();
         // 重复验证以把 vkey 推导（setup）与 verify 分开计时
@@ -222,17 +272,36 @@ fn main() {
         .unwrap_or_else(|e| panic!("read {vectors_path}: {e}"));
     let value: serde_json::Value = serde_json::from_str(&text)
         .unwrap_or_else(|e| panic!("parse {vectors_path}: {e}"));
-    let data: VectorsFile = if value.is_array() {
-        VectorsFile {
-            vectors: serde_json::from_value(value).expect("vectors array"),
-        }
+    let jobs: Vec<NamedJob> = if job_kind == "infer" {
+        let vectors: Vec<InferVectorIn> = if value.is_array() {
+            serde_json::from_value(value).expect("infer vectors array")
+        } else {
+            serde_json::from_value::<InferVectorsFile>(value)
+                .unwrap_or_else(|e| {
+                    panic!("infer vectors must be {{\"vectors\":[...]}} or [...]: {e}")
+                })
+                .vectors
+        };
+        vectors
+            .into_iter()
+            .map(|v| {
+                (v.name, Job::Infer(InferRequest { response: v.response, nonce: v.nonce }))
+            })
+            .collect()
     } else {
-        serde_json::from_value(value)
-            .unwrap_or_else(|e| panic!("vectors must be {{\"vectors\":[...]}} or [...]: {e}"))
+        let data: VectorsFile = if value.is_array() {
+            VectorsFile {
+                vectors: serde_json::from_value(value).expect("vectors array"),
+            }
+        } else {
+            serde_json::from_value(value)
+                .unwrap_or_else(|e| panic!("vectors must be {{\"vectors\":[...]}} or [...]: {e}"))
+        };
+        data.vectors.into_iter().map(|v| (v.name.clone(), v.to_job())).collect()
     };
     eprintln!(
-        "loaded {} vector(s) (mode={})",
-        data.vectors.len(),
+        "loaded {} vector(s) (job={job_kind}, mode={})",
+        jobs.len(),
         if check_mode { "check" } else { "prove" }
     );
 
@@ -240,10 +309,10 @@ fn main() {
 
     // ---- 宿主校验模式：直接跑共享逻辑，不生成证明 ----
     if check_mode {
-        for (idx, v) in data.vectors.iter().enumerate() {
-            let label = v.name.clone().unwrap_or_else(|| format!("#{idx}"));
-            let out = run_job(&v.to_job());
-            results.push(outcome_json(&v.name, &out));
+        for (idx, (name, job)) in jobs.iter().enumerate() {
+            let label = name.clone().unwrap_or_else(|| format!("#{idx}"));
+            let out = run_job(job);
+            results.push(outcome_json(name, &out));
             eprintln!("[{label}] done");
         }
         write_json(&out_path, &serde_json::Value::Array(results));
@@ -255,14 +324,17 @@ fn main() {
     // ---- 仅执行模式：在 zkVM 内跑并报告 cycle 数（不生成证明） ----
     if execute_mode {
         let client = ProverClient::from_env();
-        for (idx, v) in data.vectors.iter().enumerate() {
-            let label = v.name.clone().unwrap_or_else(|| format!("#{idx}"));
+        for (idx, (name, job)) in jobs.iter().enumerate() {
+            let label = name.clone().unwrap_or_else(|| format!("#{idx}"));
             let mut stdin = SP1Stdin::new();
-            stdin.write(&v.to_job());
-            let (pv, report) = client.execute(POP_ELF, stdin).run().expect("execute");
+            stdin.write(job);
+            let (pv, report) = client
+                .execute(elf_for(&job_kind), stdin)
+                .run()
+                .expect("execute");
             let mut pv = pv;
             let out: Outcome = pv.read::<Outcome>();
-            let mut entry = outcome_json(&v.name, &out);
+            let mut entry = outcome_json(name, &out);
             if let Some(obj) = entry.as_object_mut() {
                 obj.insert("cycles".to_string(), json!(report.total_instruction_count()));
             }
@@ -270,21 +342,21 @@ fn main() {
             results.push(entry);
         }
         write_json(&out_path, &serde_json::Value::Array(results));
-        eprintln!("wrote {} execute result(s) to {out_path}", data.vectors.len());
+        eprintln!("wrote {} execute result(s) to {out_path}", jobs.len());
         println!("done");
         return;
     }
 
     // ---- 证明模式 ----
     let client = ProverClient::from_env();
-    let pk = client.setup(POP_ELF).expect("setup elf");
-    if proof_out.is_some() && data.vectors.len() != 1 {
-        panic!("--proof-out supports exactly one vector (got {})", data.vectors.len());
+    let pk = client.setup(elf_for(&job_kind)).expect("setup elf");
+    if proof_out.is_some() && jobs.len() != 1 {
+        panic!("--proof-out supports exactly one vector (got {})", jobs.len());
     }
-    for (idx, v) in data.vectors.iter().enumerate() {
-        let label = v.name.clone().unwrap_or_else(|| format!("#{idx}"));
+    for (idx, (name, job)) in jobs.iter().enumerate() {
+        let label = name.clone().unwrap_or_else(|| format!("#{idx}"));
         let mut stdin = SP1Stdin::new();
-        stdin.write(&v.to_job());
+        stdin.write(job);
 
         eprintln!("[{label}] generating proof (mode={proof_mode}) ...");
         // 按 --proof-mode 选择 core/compressed/groth16/plonk
@@ -307,16 +379,16 @@ fn main() {
             proof.save(path).unwrap_or_else(|e| panic!("save proof {path}: {e}"));
             write_verifier_sidecar(path, &proof, pk.verifying_key(), &proof_mode);
             let meta = json!({ "vkey_hash": pk.verifying_key().bytes32(), "proof_file": path,
-                               "proof_mode": proof_mode });
+                               "proof_mode": proof_mode, "job": job_kind });
             let meta_path = format!("{path}.meta.json");
             write_json(&meta_path, &meta);
             eprintln!("saved proof to {path} (+ {meta_path}, verifier sidecar)");
         }
-        results.push(outcome_json(&v.name, &out));
+        results.push(outcome_json(name, &out));
         eprintln!("[{label}] proved");
     }
 
     write_json(&out_path, &serde_json::Value::Array(results));
-    eprintln!("wrote {} result(s) to {out_path}", data.vectors.len());
+    eprintln!("wrote {} result(s) to {out_path}", jobs.len());
     println!("done");
 }

@@ -209,6 +209,11 @@ def outcome_without_meta(proof_result: Dict[str, Any]) -> Optional[Dict[str, Any
 
     证书载荷里的 ``outcome`` 是签发时以同样方式剥掉这两个字段存的，因此
     验证方要用相同的剥法才能逐字段比对。取不到 outcome 时返回 None。
+
+    ⚠️ 这里剥掉的 ``mode`` 是**运行模式**（``public``/``private``/``infer``），
+    在证书载荷里它与顶层的 ``payload["mode"]`` 冗余，所以剥了不会有损失。
+    但**别的用途**下 ``mode`` 可能正是要判的东西（组合层就用它做域绑定检查）——
+    那种场合别用本函数，见 ``policydsl/compose.py::_outcome_of``。
     """
     outcome = proof_result.get("outcome")
     if not isinstance(outcome, dict):

@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（20 个模块，261 个用例）与 `bench/`（3 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（22 个模块，348 个用例）与 `bench/`（5 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -33,15 +33,18 @@ python3 -m unittest discover -s tests -t . -v   # 期望 348 passed, 11 skipped
 | `test_verifier_only` | 8 | `prefer_verifier_only` 三条件、core 不走近路；**P0-4**：`artifact_proof_modes` 收齐多来源、缺失不编默认值、来源不一致如实暴露 |
 | `test_demo_e2e` | 2 | 端到端会话产物结构 |
 | `test_ezkl_evm` | 10 | **T2**：`ezkl_evm.run` 对同步/异步/Future 三种可调用对象都成立（5 例，**不依赖 ezkl**）；真实 ezkl 下裸调用必抛 `no running event loop`（把上游坏行为钉死）、包一层即产出 `Halo2Verifier` 源码与 `verifyProof` ABI、连调互不影响、`reusable` 变体 + VK artifact（`vka.json` 实为 bincode，不是 JSON）、**剥空 `PATH` 也不调用 solc** |
-| **合计** | **261** | |
+| `test_compose` | 48 | **P1-6**：组合证明 `Compose = (推理完整性 ∧ 策略合规)`。三层 —— ① 参考实现逐位一致（`pop-script --check --job infer` ↔ `policydsl/infer.py`：模型哈希/响应绑定/输入绑定/输出）② 组合绑定的 **5 组反例**（换证明文件·缺失、同 vkey·非期望 vkey、换模型·换输入、两半绑不同 T·送达 T′ 不符、形状·模式·域·policy_hash 重编译）③ **四条驱动接线回归**（`--job` 旗标 ≠ part 的 kind；`part_from_proof` 得把旗标而不是 kind 传下去；验证结果的 `mode` 不能被当展示元信息剥掉；`pop-script --verify` 必须显式给 `--out`，否则在仓库根落一个 `results.json`）——这几条对应 2026-09-12 真端到端跑出来的真 bug，单测当时全绿。真·端到端 5 例由 `POP_TEST_COMPOSE=1` 打开 |
+| **合计** | **348** | |
 
-### 5 个 skip（都是设计内的）
+### 11 个 skip（都是设计内的）
 
 | skip | 原因 | 怎么启用 |
 |---|---|---|
 | `test_verifier_only` 中 2 例 | `circuits/testdata/audit_proof/` 没有 compressed fixture | 在 ≥16 GB 机器上跑 `SP1_PROVER=cpu bash scripts/make_audit_proof.sh` |
 | `test_frameworks`（或 `test_mcp`）中 1 例 | 依赖已安装而用例本身是「缺依赖时的行为」 | 设计如此，装了框架就会 skip |
-| `test_policy_binding` 中 2 例 | 「证明层」用例默认关闭（每例真出一次 core 证明，~2 分钟） | `POP_TEST_PROOF=1 python3 -m unittest tests.test_policy_binding` |
+| `test_policy_binding` 中 2 例 | 「证明层」用例默认关闭（要 `scripts/examples/out/cert_public/` 下的工件与当前 guest ELF 匹配；改过 ELF 就得重新出证） | `POP_TEST_PROOF=1 python3 -m unittest tests.test_policy_binding`（**已实测通过**：Ran 22 … OK，67.1 s） |
+| `test_compose` 中 5 例 | 「真·端到端」要出**两份** SP1 证明（各 ~2 分钟、峰值 ~10.5 GiB） | `POP_TEST_COMPOSE=1 python3 -m unittest tests.test_compose`（**已实测通过**：47 例全跑、无一 skip，563.5 s；加四条接线回归后共 48 例） |
+
 
 > `test_binding` 的 19 例**全部实际执行**：它靠 `pop-script --check`（秒级、不出证明）做
 > Python↔Rust 逐字节比对，不需要真证明，因此不受 `POP_TEST_PROOF` 门控。
@@ -94,18 +97,20 @@ core 边车不得走快路径 —— 这些保证正向检查**不是恒真**的
 
 ## 3. 评测（`bench/`）
 
-三个脚本，覆盖三种成本：
+五个脚本，覆盖五种成本：
 
 | 脚本 | 测什么 | 用时不出证？ | 输出 |
 |---|---|---|---|
 | `bench_cycles.py` | **zkVM 周期数**（`pop-script --execute`） | 每点数秒 | `bench/results/cycles.{json,md}` |
 | `bench_proofs.py` | **证明墙钟时间 + 工件大小 + 峰值内存** | 每点 ~100–150 s | `bench/results/proofs.{json,md}` |
 | `bench_verify.py` | **验证成本**（冷启动 CLI / vkey setup / 纯验证） | 每次 ~20 s | `bench/results/verify.{json,md}` |
+| `bench_compose.py` | **组合证明的成本**（两半各自 prove/verify + 组合层开销） | 真出两份 SP1 证明 | `bench/results/compose.{json,md}` |
 
 ```bash
 python3 bench/bench_cycles.py
 SP1_PROVER=cpu python3 bench/bench_proofs.py
 SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>
+SP1_PROVER=cpu python3 bench/bench_compose.py
 ```
 
 **设计要点**（都写在 `bench/README.md`，改评测前先读）：
@@ -178,7 +183,40 @@ SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>
 `bench/results/verify.md` 里那句 “A verifier-only path … is future work” 是**写入时的状态**，
 现已实现（`circuits/verifier`、`policydsl/verifier.py`）；重跑该 benchmark 可更新这一行。
 
-### 3.5 对标 zkAgent
+### 3.6 组合证明（P1-6）的成本（`bench/results/compose.md`）
+
+组合义务 `Compose = (推理完整性 ∧ 策略合规)` 要**两份**证明，来自**两个 guest**
+（不同 vkey ⇒ 键分离）。`bench/bench_compose.py` 把两半分开测（各起独立进程），
+再测一次合成 + 联合验证：
+
+| 子证明 | 程序 | zkVM 周期数 | prove | 峰值常驻 | 证明体积 | verify |
+|---|---|---:|---:|---:|---:|---:|
+| 策略合规 | `pop-program` | 643,610 | 127.3 s | 10.2 GiB | 2.72 MiB | 29.6 s |
+| 推理完整性（代理 MLP） | `pop-infer` | 83,492 | 110.8 s | 10.0 GiB | 2.72 MiB | 34.2 s |
+
+组合层本身是**毫秒级**（合成 5.0 ms，纯哈希/绑定比对），联合验证 53.8 s ——
+主导项是两次 vkey setup，不是比对。出证顺序跑合计 238.1 s。
+
+**两半都必须分进程**：峰值内存**不相加**（取 max ≈ 10.2 GiB）；同一进程里连出两份
+会叠加到 ≈ 20 GiB 被 OOM-kill。这是组合在资源上唯一不需要加法的部分。
+
+**计划里那句假设要如实分开看**（`compose.md` 里逐条报）：
+
+1. **「组合成本 ≈ 两者之和」——成立**。合成与联合验证不引入额外证明。
+2. **「由推理证明主导」——本机不成立**。代理模型是 16→32→4 的定点 MLP，
+   周期数（8.3 万）**低于**策略那一半（64.4 万），两半都被 zkVM 的固定开销
+   （setup 与证明器启动）主导。比值 0.87×，看不出成本结构。
+
+> **所以这份实验验证的是组合机制，不是成本结构。** 代理推理证明与真实 zkAgent
+> 推理证明的规模差若干个数量级（§3.6 的下一节）；换上真 prover 后「推理主导」才
+> 可能成立，而那时的组合层代价仍由**同一个** `policydsl/compose.py` 承担 ——
+> 毫秒级，不随子证明规模变化。
+
+⚠️ 表里两半的 `verify` 都含**从 ELF 重推 vkey** 的 setup；验证方缓存了 vkey 就只付
+一次验证器启动。改措辞想重出这份 `.md` 时用 `--render-only`（从已有 JSON 重渲染，
+不再花几分钟出证）。
+
+### 3.7 对标 zkAgent
 
 详见 [`bench/comparison_zkagent.md`](../../bench/comparison_zkagent.md) 与论文 §7.4。
 一句结论：二者**证明义务不同**（推理完整性 vs 策略合规），**不可宣称「PoP 更快」**；
@@ -209,7 +247,7 @@ SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **261 passed / 5 skip**（CI 上 10 skip，见 §1）、`cross_validate` host 14/14 + prove 14/14。
+  当前验收判据是 **348 passed / 11 skip**（CI 上 16 skip，见 §1）、`cross_validate` host 14/14 + prove 14/14。
 
 ---
 

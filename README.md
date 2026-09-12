@@ -27,6 +27,12 @@
 │  circuits/program ：在 zkVM 内读 ProofRequest，判定约束，commit(passed, evidence)       │
 │  circuits/script  ：证明生成 + 宿主机/链上验证                                          │
 └───────────────────────────────────────────────────────────────────────────────────────┘
+                                      │
+┌──────────────────── 第二个 guest（仅 P1-6 的组合证明）─────────────────────────────────┐
+│  circuits/infer-program（pop-infer）：代理推理前向，vkey_infer                          │
+│  与策略半（pop-program，vkey_policy）**必须不同程序**（键分离）→ 合取成一张组合证书       │
+│  Compose = (推理完整性 ∧ 策略合规)；驱动 scripts/compose_proof.py                       │
+└───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **ConstraintSpec**（`policydsl/compile.py` 产出）是两层之间的唯一契约，结构见 `docs/architecture.md`。
@@ -76,9 +82,10 @@ SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附真实 Core 证明（~6
 - 🖼 演示报告（截图）：`docs/demo/session_report.html`、`docs/demo/session_summary.png`、`docs/demo/verify_result.png`
 - 📘 分阶段代码计划：`docs/dev-plan.md` · P7 收尾计划：`docs/plan-p7.md` · 安全模型：`docs/security-model.md` · 信任-成本四象限：`docs/quadrant.md`
 - 🔗 **轨迹绑定（P1-5）**：工具轨迹不再是 agent 自报的 `tool_calls`，而是**工具网关**签发的**回执链**（`policydsl/trace.py` + `pop-types::verify_receipt_chain`）。链**结构**由电路保证（删/换/重排 → `trace_unbound` fail-closed），**签发者身份**由链下 Ed25519 验签 + 公开值 `trace_root` 承担；`budget_bound(tokens)` 改为电路内自算。**截尾**（整条删掉链尾那条违规回执）由网关的**会话末端承诺** `trace_seal{count, trace_root, ts, keyid, sig}` 拦（P1-5b，载荷**顶层**，不在 `outcome` 里——`outcome` 是证明公开值的镜像）；验证方**须给 `--gateway-key`** 才核得了签名。验收见 `tests/test_trace.py`（39 例：四条验收 + `verify_cert.py --receipts` 的第三方核对 + seal 本身 + 截尾三路）；边界如实标注于 `docs/security-model.md` §5
+- 🔗 **组合证明（P1-6）**：`Compose = (推理完整性 ∧ 策略合规)` —— 两份证明合成一张组合证书，回答「**这条 `T` 是被那个模型算出来的吗**」这个策略合规本身不覆盖的问题（`policydsl/compose.py` + `scripts/compose_proof.py`）。**键分离**是前提：两半必须来自**不同程序**（`pop-program` 判策略、`pop-infer` 证推理，两个 guest 入口各断言一次自己的域），否则「这份证明属于哪一半」无从判断。⚠️ 推理半当前是**代理**（确定性定点 MLP，权重由编译期种子生成 ⇒ 被 vkey 承诺），**不是 zkAgent**（其源码不可得，D1）；`bench/results/compose.md` 如实报告「组合成本 ≈ 两者之和**成立**、由推理证明主导**在代理规模下不成立**」。见 `docs/security-model.md` 引理 L6
 - 🔐 **SP1 健全性与零知识性核查（P0-4）**：`docs/sp1-zk-audit.md` —— 健全性成立；**`core`/`compressed` 证明非零知识**（Succinct 官方安全模型明文 + 本机源码审计，两类独立证据）。私有模式因此只能宣称「公开值不泄露明文」，不能宣称「`T` 不可恢复」
-- 🔎 审计路径（verifier-only，免构造证明器）：`circuits/verifier`（bin `pop-verify`）+ `pop-script --proof-mode compressed`；见 `docs/reproduce.md` §9
-- ⛓ 链上锚定（真跑本地 Anvil）：`contracts/Anchor.sol` + `bash scripts/anchor_e2e.sh`（部署 → 每张证书摘要上链 → 第三方 `verify_session --rpc` 核对 + 反例对照）；见 `docs/reproduce.md` §10
+- 🔎 审计路径（verifier-only，免构造证明器）：`circuits/verifier`（bin `pop-verify`）+ `pop-script --proof-mode compressed`；见 `docs/reproduce.md` §11
+- ⛓ 链上锚定（真跑本地 Anvil）：`contracts/Anchor.sol` + `bash scripts/anchor_e2e.sh`（部署 → 每张证书摘要上链 → 第三方 `verify_session --rpc` 核对 + 反例对照）；见 `docs/reproduce.md` §12
 - 📝 论文初稿：`paper/proof-of-policy.md` · 评测脚本与结果：`bench/`（`bench/results/*.md`）· EU AI Act 映射：`docs/eu-ai-act-mapping.md`
 
 依赖（可选，安装后真实框架测试自动启用）：`pip install -r requirements-frameworks.txt`（或 `bash scripts/install_frameworks.sh`）。
@@ -90,6 +97,7 @@ zk-policy/
 ├── policydsl/            # Python DSL + 参考评估 + 私密/证书/锚定 + 框架适配（langchain/langgraph/mcp）
 ├── policy_packs/         # 示例策略包（JSON）
 ├── circuits/             # SP1 程序与驱动（Rust，v6 workspace：types/program/script/verifier）
+├── circuits/             # SP1 程序与驱动（Rust，v6 workspace：types/program/infer-program/script/verifier）
 ├── contracts/            # Anchor.sol + 入库 artifact（Anchor.json，部署无需 solc）
 ├── scripts/              # 交叉验证 / demo / 证书签发与验证 / 链上锚定 / 安装脚本
 ├── tests/                # 单测与集成测试（unittest，stdlib + 可选框架）
