@@ -154,7 +154,8 @@ class AgentMonitor:
                      response: Optional[str] = None, vkey_hash: str = "unproven",
                      proof_mode: Optional[str] = None,
                      chain: Optional[List[Any]] = None,
-                     seal: "Optional[trace.ToolSeal]" = None) -> Dict[str, Any]:
+                     seal: "Optional[trace.ToolSeal]" = None,
+                     extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """工具调用路径钩子：判定并签发工具调用证书（mode 固定 "tool-call"）。
 
         ``receipt`` 由 :class:`policydsl.trace.ToolGateway` 在**本次调用执行后**
@@ -162,11 +163,14 @@ class AgentMonitor:
         重算的 ``trace_root`` 会写进证书，供验证方与网关侧回执比对。
         ``chain`` 见 :meth:`tool_call_outcome`（适配器应传 ``gateway.receipts``），
         ``seal``（P1-5b）是网关的会话末端承诺，落在载荷顶层 ``trace_seal``。
+        ``extra`` 是载荷**顶层**的旁证（与 :meth:`on_generate` 同款），目前用于
+        工具失败时的 ``error`` 块 —— 与 ``seal``/``challenge`` 一样，它**不进**
+        ``outcome``，因为 ``outcome`` 是证明公开值的镜像，而电路里没有这些字段。
         """
         outcome = self.tool_call_outcome(receipt, response, chain=chain)
         payload = cert.build_payload(self.policy.id, self.policy.version, self.spec,
                                      "tool-call", outcome, vkey_hash, None, ts,
-                                     proof_mode=proof_mode,
+                                     proof_mode=proof_mode, extra=extra,
                                      trace_seal=trace.seal_to_json(seal))
         return cert.sign_payload(payload, self.signer)
 

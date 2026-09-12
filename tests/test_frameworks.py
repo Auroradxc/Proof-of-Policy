@@ -127,6 +127,112 @@ class TestCallbackHandlerOffline(unittest.TestCase):
         self.assertEqual(len(seen), 1)
 
 
+class TestErrorCallbacksOffline(unittest.TestCase):
+    """失败也要留痕：``on_llm_error`` / ``on_tool_error``（离线）。
+
+    这是一组**反歧义**用例。此前的回调集只有四个（``on_llm_new_token`` /
+    ``on_llm_end`` / ``on_tool_start`` / ``on_tool_end``）—— 模型超时、限流、
+    内容拦截时**一张证书都不签**，于是产物上「会话失败了」与「会话干净」完全
+    同形。而这三件事对真模型而言是**常态**，不是边角。
+
+    修法不是「出错时补个日志」，是**照常签一张证书**，并在载荷**顶层**附
+    ``error`` 块（不进 ``outcome``，因为 ``outcome`` 是证明公开值的镜像，
+    电路里没有这个字段）。每个正向用例都配一条**非恒真对照**。
+    """
+
+    def setUp(self):
+        self.content = AgentMonitor(load_pack("agent_content_v1.json"))
+        self.tools = AgentMonitor(load_pack("agent_tool_v1.json"))
+
+    # 模型报错（且没有任何 token 到达）→ 仍有一张可验证的证书
+    def test_llm_error_still_issues_a_certificate(self):
+        h = PoPCallbackHandler(self.content)
+        h.on_llm_error(TimeoutError("upstream timed out"), run_id="r1")
+        self.assertEqual(len(h.certificates), 1)
+        ok, payload = cert.verify_envelope(h.certificates[0], ring_of(h))
+        self.assertTrue(ok, "出错签的证书也必须是签名有效的")
+        err = payload["error"]
+        self.assertEqual(err["phase"], "llm")
+        self.assertEqual(err["type"], "TimeoutError")
+        self.assertEqual(err["scope"], "partial-prefix")
+        self.assertEqual(err["tokens"], 0)
+        self.assertEqual(err["text_len"], 0)
+
+    # 反歧义的正题：会话有没有出错，只看 certificates 分不出来 → errors 分得出
+    def test_error_and_clean_session_are_distinguishable(self):
+        clean = PoPCallbackHandler(self.content)
+        clean.on_llm_end(fake_llm_result("A safe, plain reply."), run_id="r1")
+        failed = PoPCallbackHandler(self.content)
+        failed.on_llm_error(RuntimeError("rate limited"), run_id="r1")
+        # 两者都恰好一张证书 —— 这正是「无证书 vs 干净」之外的第二重歧义
+        self.assertEqual(len(clean.certificates), len(failed.certificates))
+        # 区分靠的是 error 块与 errors 清单，而不是「有没有证书」
+        self.assertIsNone(cert.envelope_payload(clean.certificates[0]).get("error"))
+        self.assertIsNotNone(cert.envelope_payload(failed.certificates[0]).get("error"))
+        self.assertEqual(clean.errors, [])
+        self.assertEqual(len(failed.errors), 1)
+
+    # 异常消息**不进**证书（可能带 prompt 片段/请求头/密钥），只留类型名与哈希
+    def test_error_message_is_hashed_not_published(self):
+        import hashlib
+        secret_msg = "401 Unauthorized: Authorization: Bearer sk-abcdefghijklmnopqrstuvwxyz"
+        h = PoPCallbackHandler(self.content)
+        h.on_llm_error(RuntimeError(secret_msg), run_id="r1")
+        blob = json.dumps(h.certificates[0])
+        self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz", blob)
+        self.assertNotIn("Bearer", blob)
+        err = cert.envelope_payload(h.certificates[0])["error"]
+        self.assertEqual(err["message_sha256"],
+                         hashlib.sha256(secret_msg.encode("utf-8")).hexdigest())
+
+    # 流中途出错：判的是**实际收到的前缀**，不是「本次生成」
+    def test_midstream_error_judges_the_prefix_actually_received(self):
+        h = PoPCallbackHandler(self.content)
+        # 密钥被拆在两个 token 之间 —— 它是靠**累积前缀**才补全的
+        h.on_llm_new_token("Leak sk-abcdefghij", run_id="r1")
+        h.on_llm_new_token("klmnopqrstuvwxyz", run_id="r1")
+        h.on_llm_error(ConnectionResetError("stream closed"), run_id="r1")
+        payload = cert.envelope_payload(h.certificates[-1])
+        # 前缀里已经有完整密钥 → 判定为违规（而不是因为「没正常结束」就记成干净）
+        self.assertFalse(payload["outcome"]["passed"])
+        self.assertEqual(payload["error"]["tokens"], 2)
+        self.assertEqual(payload["error"]["text_len"],
+                         len("Leak sk-abcdefghijklmnopqrstuvwxyz"))
+        # scope 把判定范围钉死：这张证书**没有**说「本次生成合规」
+        self.assertEqual(payload["error"]["scope"], "partial-prefix")
+
+    # 出错后流状态要清干净（否则下一轮会接着上一轮的缓冲累积）
+    def test_error_clears_stream_state(self):
+        h = PoPCallbackHandler(self.content)
+        h.on_llm_new_token("partial ", run_id="r1")
+        h.on_llm_error(RuntimeError("boom"), run_id="r1")
+        # 清干净了才会只有新一轮的内容；没清就会是 "partial next round "
+        self.assertEqual(h._sbuf, {})
+        h.on_llm_new_token("next round", run_id="r1")
+        self.assertEqual(h._sbuf["r1"], "next round")
+
+    # 工具报错：照常签回执（失败也是这次调用的结果），并在顶层记 error
+    def test_tool_error_still_issues_receipt_and_certificate(self):
+        h = PoPCallbackHandler(self.tools)
+        h.on_tool_start({"name": "search_kb"}, "{'q': 'x'}", run_id="t1")
+        h.on_tool_error(RuntimeError("tool blew up"), run_id="t1")
+        self.assertEqual(len(h.gateway.receipts), 1, "失败也是这次调用的结果，要留回执")
+        self.assertEqual(len(h.certificates), 1)
+        payload = cert.envelope_payload(h.certificates[0])
+        self.assertEqual(payload["mode"], "tool-call")
+        self.assertEqual(payload["error"]["phase"], "tool")
+        self.assertTrue(verify_certificates(h))
+
+    # 出错的工具回执**明文不进链**：回执里只有摘要（错误消息可能含敏感内容）
+    def test_tool_error_text_is_not_published(self):
+        h = PoPCallbackHandler(self.tools)
+        h.on_tool_start({"name": "search_kb"}, "{'q': 'x'}", run_id="t1")
+        h.on_tool_error(RuntimeError("leaked sk-abcdefghijklmnopqrstuvwxyz"), run_id="t1")
+        rec = h.gateway.receipts[0].to_dict()
+        self.assertNotIn("sk-abcdefghijklmnopqrstuvwxyz", json.dumps(rec))
+        self.assertTrue(rec["result_digest"])
+
+
 class TestProofModePlumbingOffline(unittest.TestCase):
     """适配器把证据档位（P0-4）一路带到载荷：构造参数 → 每条签发路径。
 
@@ -229,6 +335,74 @@ class TestLangGraphHelpersOffline(unittest.TestCase):
             self.skipTest("langgraph installed")
         with self.assertRaises(RuntimeError):
             lg.require_langgraph()
+
+
+class TestLangGraphErrorEventsOffline(unittest.TestCase):
+    """`LangGraphEventCertifier` 的错误事件（离线，直接喂事件）。
+
+    与 :class:`TestErrorCallbacksOffline` 同一件事的另一半：回调式插桩有
+    ``on_llm_error``，而事件式插桩是**手写路由**（``_handle`` 按事件名分发），
+    它不会自动继承那边的新分支 —— 少了这个分支，一次失败的图运行同样会
+    「一张证书都不留」。所以这条路由要单独锁住。
+    """
+
+    def setUp(self):
+        self.content = AgentMonitor(load_pack("agent_content_v1.json"))
+        self.tools = AgentMonitor(load_pack("agent_tool_v1.json"))
+
+    def _err_event(self, name, **kw):
+        ev = {"event": name, "run_id": "r1", "name": "m"}
+        ev.update(kw)
+        return ev
+
+    def test_chat_model_error_issues_error_certificate(self):
+        c = lg.LangGraphEventCertifier(self.content, vkey_hash="vk1")
+        err = TimeoutError("model timed out")
+        c._handle(self._err_event("on_chat_model_error", data={"error": err}))
+        self.assertEqual(len(c.certificates), 1)
+        ok, payload = cert.verify_envelope(c.certificates[0], ring_of(self.content))
+        self.assertTrue(ok)
+        self.assertEqual(payload["error"]["phase"], "llm")
+        self.assertEqual(payload["error"]["type"], "TimeoutError")
+        self.assertEqual(c.errors, [err])
+
+    def test_llm_error_alias_is_routed_too(self):
+        # astream_events v2 对聊天模型用 on_chat_model_error；纯 LLM 用 on_llm_error。
+        # 两条都要认，否则「哪种模型」会决定「出错有没有留痕」。
+        c = lg.LangGraphEventCertifier(self.content)
+        c._handle(self._err_event("on_llm_error", data={"error": RuntimeError("x")}))
+        self.assertEqual(len(c.certificates), 1)
+
+    def test_model_error_judges_the_partial_prefix(self):
+        # 出错前流式 handler 已经收到分片 → 判的是**实际收到的前缀**，不是空串。
+        h = PoPCallbackHandler(self.content)
+        h.on_llm_new_token("Leak sk-abcdefghijklmnopqrstuvwxyz", run_id="r1")
+        c = lg.LangGraphEventCertifier(self.content, stream_handler=h)
+        c._handle(self._err_event("on_chat_model_error", data={"error": RuntimeError("boom")}))
+        payload = cert.envelope_payload(c.certificates[-1])
+        self.assertFalse(payload["outcome"]["passed"])
+        self.assertEqual(payload["error"]["scope"], "partial-prefix")
+        self.assertEqual(payload["error"]["text_len"], len("Leak sk-abcdefghijklmnopqrstuvwxyz"))
+
+    def test_tool_error_still_issues_receipt_and_certificate(self):
+        c = lg.LangGraphEventCertifier(self.content, tool_monitor=self.tools)
+        err = RuntimeError("tool blew up")
+        c._handle(self._err_event("on_tool_error", data={"error": err, "input": {"q": "x"}}))
+        self.assertEqual(len(c.gateway.receipts), 1)
+        self.assertEqual(len(c.certificates), 1)
+        payload = cert.envelope_payload(c.certificates[0])
+        self.assertEqual(payload["mode"], "tool-call")
+        self.assertEqual(payload["error"]["phase"], "tool")
+
+    # 非恒真对照：没有错误事件时，errors 必须是空的（否则上面几条不说明问题）
+    def test_clean_run_has_no_errors(self):
+        c = lg.LangGraphEventCertifier(self.content)
+        c._handle({"event": "on_chat_model_end", "run_id": "r1",
+                   "data": {"output": types.SimpleNamespace(
+                       content="A safe, plain reply.")}})
+        self.assertEqual(len(c.certificates), 1)
+        self.assertEqual(c.errors, [])
+        self.assertIsNone(cert.envelope_payload(c.certificates[0]).get("error"))
 
 
 @unittest.skipUnless(langchain_available(), "langchain not installed")

@@ -24,7 +24,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from .agent import AgentMonitor
 from .langchain_adapter import (  # noqa: F401
-    PoPCallbackHandler, _extract_text, langgraph_available,
+    PoPCallbackHandler, _extract_text, error_block, langgraph_available,
 )
 from .trace import ToolGateway, extract_result_text
 
@@ -159,6 +159,9 @@ class LangGraphEventCertifier:
                            else getattr(stream_handler, "proof_mode", None))
         self.stream_handler = stream_handler
         self.certificates: List[Dict[str, Any]] = []
+        # 出错时也会往 certificates 里放一张（见 ``_handle`` 的 error 分支）；
+        # 另留一份异常清单，否则「正常结束」与「带错结束」在产物上同形。
+        self.errors: List[BaseException] = []
         self.events: List[str] = []
 
     async def run(self, graph: Any, inputs: Any, config: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
@@ -211,3 +214,31 @@ class LangGraphEventCertifier:
                                                proof_mode=self.proof_mode,
                                                chain=self.gateway.receipts,
                                                seal=self.gateway.seal()))
+        elif name in ("on_chat_model_error", "on_llm_error"):
+            # 模型报错（超时/限流/内容拦截 —— 真模型的常态）：也签一张，并在
+            # 载荷顶层记 error 块。不签的话，一次失败的运行在产物上与一次
+            # 「什么都没发生」的运行完全同形（见 langchain_adapter.error_block）。
+            err = data.get("error") or RuntimeError("llm error")
+            # 先把已收到的分片交给流式 handler 判一次，好让这张证书判的是
+            # **实际收到的前缀**，而不是一段凭空的空串。
+            buf = ""
+            if self.stream_handler is not None:
+                buf = self.stream_handler._sbuf.get(run_id, "")
+            self.errors.append(err)
+            self.certificates.append(self.monitor.on_generate(
+                buf, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode,
+                receipts=self.gateway.receipts, seal=self.gateway.seal(),
+                extra={"error": error_block("llm", err, text_len=len(buf))}))
+        elif name == "on_tool_error":
+            tool = str(event.get("name") or "tool")
+            args = data.get("input") or {}
+            if not isinstance(args, dict):
+                args = {"input": args}
+            err = data.get("error") or RuntimeError("tool error")
+            # 失败也是这次调用的结果：照常签回执（明文只留摘要），照常出证。
+            receipt = self.gateway.issue(tool, args, result=str(err))
+            self.errors.append(err)
+            self.certificates.append(self.tool_monitor.on_tool_call(
+                receipt, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode,
+                chain=self.gateway.receipts, seal=self.gateway.seal(),
+                extra={"error": error_block("tool", err, text_len=len(str(err)))}))

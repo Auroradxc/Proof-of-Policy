@@ -17,6 +17,7 @@ callbacks 配置。
 from __future__ import annotations
 
 import ast
+import hashlib
 from typing import Any, Dict, List, Optional
 
 from .agent import AgentMonitor
@@ -100,6 +101,39 @@ def _parse_args(input_str: Any) -> Dict[str, Any]:
     return {"input": input_str}
 
 
+def error_block(phase: str, error: BaseException,
+                tokens: int = 0, text_len: int = 0) -> Dict[str, Any]:
+    """构造载荷**顶层**的 ``error`` 块（失败也要留痕）。
+
+    真模型最常见的三件事是超时、限流与内容拦截 —— 它们**不是异常情况，
+    是常态**。而这套回调此前只认「正常结束」：模型报错时一张证书都不签，
+    于是产物上「会话失败了」与「会话干净」长得一模一样。这正是 P0-4 要消灭的
+    那类歧义，只不过这次藏在「什么都没发生」里。
+
+    **为什么不复用 ``streaming.partial``**：那类证书判的是「到此刻为止的
+    前缀合规」，读起来像一次正常的增量快照，不带任何「这里断了」的信息。
+
+    **为什么不把异常消息原文写进去**：异常消息里常有 prompt 片段、URL、
+    偶尔还有密钥（HTTP 客户端的报错尤其容易带上请求头）。这里只放
+    **类型名**与**消息的 SHA-256** —— 与证书其余部分「只放承诺、不放明文」
+    的口径一致（见 ``docs/security-model.md`` §2）。要核对具体是哪次失败，
+    让持有原文的一方自己算哈希来比。
+
+    ``tokens``/``text_len`` 是**实际收到**的量。它把这张证书的判定范围钉死成
+    「截断处的前缀」，而不是「本次生成的全文」—— 模型本会继续吐出的部分
+    **不在**这张证书的判定范围内，这个字段就是那句免责声明的可核对形式。
+    """
+    msg = str(error)
+    return {
+        "phase": phase,
+        "type": type(error).__name__,
+        "message_sha256": hashlib.sha256(msg.encode("utf-8")).hexdigest(),
+        "scope": "partial-prefix",   # 判的是截断处的前缀，不是全文
+        "tokens": tokens,
+        "text_len": text_len,
+    }
+
+
 class PoPCallbackHandler(BaseCallbackHandler):
     """在 LLM 结束与工具结束事件上签发证书。
 
@@ -127,6 +161,10 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self.proof_mode = proof_mode
         self.on_cert = on_cert
         self.certificates: List[Dict[str, Any]] = []
+        # 出错时**也**会往 certificates 里放一张证书（见 on_llm_error）；这里
+        # 另留一份异常清单，供调用方区分「正常结束」与「带错结束」——
+        # 只看 certificates 是分不出来的，那正是这个回调要修的问题。
+        self.errors: List[BaseException] = []
         self._tool_starts: Dict[str, Dict[str, Any]] = {}
         # 流式状态
         self.stream_check = stream_check
@@ -213,16 +251,19 @@ class PoPCallbackHandler(BaseCallbackHandler):
                     self.on_early_stop(stop_env)
                 self._sstopped[run_id] = True
 
+    def _clear_stream_state(self, run_id: str) -> None:
+        """清掉该 run 的流式状态（正常结束与报错两条路都要走这一步）。"""
+        self._sbuf.pop(run_id, None)
+        self._scount.pop(run_id, None)
+        self._sverdict.pop(run_id, None)
+        self._sstopped.pop(run_id, None)
+
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:
         """LLM 完成：签发权威证书（优先用流式缓冲，回退到结构提取）。"""
         run_id = str(kwargs.get("run_id") or "")
         # 优先用流式缓冲（所见 token 精确）；否则从 response 结构提取
         text = self._sbuf.get(run_id) or _extract_text(response)
-        # 清理该 run 的流式状态
-        self._sbuf.pop(run_id, None)
-        self._scount.pop(run_id, None)
-        self._sverdict.pop(run_id, None)
-        self._sstopped.pop(run_id, None)
+        self._clear_stream_state(run_id)
         if text:
             # 权威证书：绑本会话的整条回执链 + 网关的会话末端承诺（P1-5b）——
             # 一张不带 seal 的证书在 ``verify_cert.py`` 的 ``trace_seal`` 卡上
@@ -232,6 +273,52 @@ class PoPCallbackHandler(BaseCallbackHandler):
                                                 proof_mode=self.proof_mode,
                                                 receipts=self.gateway.receipts,
                                                 seal=self.gateway.seal()))
+
+    # -- 错误路径（真模型的常态，不是边角） --
+    def on_llm_error(self, error: BaseException, **kwargs: Any) -> None:
+        """LLM 报错：**也签一张证书**，把「失败」变成产物上的事实。
+
+        没有这个回调时，模型超时/限流/内容拦截会让这次生成**一张证书都不留**
+        —— 于是「会话失败了」与「会话干净」在 session.json 上完全同形。
+        这正是 P0-4 要消灭的那类歧义，只不过这次藏在「什么都没发生」里。
+
+        判定的是**实际收到的前缀**（流式缓冲里已有的 token），并在载荷顶层
+        附 ``error`` 块把判定范围钉死（见 :func:`error_block`）。一个 token 都
+        没收到时前缀是空串，判定自然是「合规」—— 但那张证书**不是**在说
+        「本次生成合规」，``error.scope == "partial-prefix"`` 与
+        ``text_len == 0`` 一起把它说成「这次生成没有产出任何可判定的内容」。
+        """
+        run_id = str(kwargs.get("run_id") or "")
+        text = self._sbuf.get(run_id, "")
+        tokens = self._scount.get(run_id, 0)
+        self._clear_stream_state(run_id)
+        self._emit(self.monitor.on_generate(
+            text, vkey_hash=self.vkey_hash, proof_sha256=self.proof_sha256,
+            proof_mode=self.proof_mode,
+            receipts=self.gateway.receipts, seal=self.gateway.seal(),
+            extra={"error": error_block("llm", error, tokens=tokens,
+                                        text_len=len(text))}))
+        self.errors.append(error)
+
+    def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
+        """工具报错：网关照常签回执，工具路径照常出证。
+
+        工具失败**不是**「这次调用没发生过」—— MCP 服务器把执行失败当作一次
+        正常返回（``isError: true`` + 错误消息），而那条错误消息本身就是内容
+        规则要审的对象（错误里回显一段凭证是真事）。所以这里照常
+        :meth:`ToolGateway.issue` 一条回执，正文明文**不进**回执（只有摘要），
+        与其余工具回执同款。
+        """
+        run_id = str(kwargs.get("run_id") or "")
+        rec = self._tool_starts.pop(run_id, None) or {"name": _tool_name(None, kwargs),
+                                                      "args": {}}
+        text = str(error)
+        receipt = self.gateway.issue(rec["name"], rec["args"], result=text)
+        self._emit(self.monitor.on_tool_call(
+            receipt, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode,
+            chain=self.gateway.receipts, seal=self.gateway.seal(),
+            extra={"error": error_block("tool", error, text_len=len(text))}))
+        self.errors.append(error)
 
     # -- 工具（工具调用路径） --
     def on_tool_start(self, serialized: Any, input_str: Any, **kwargs: Any) -> None:

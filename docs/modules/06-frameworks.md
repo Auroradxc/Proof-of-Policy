@@ -53,9 +53,46 @@ handler.certificates           # 每个 LLM/工具事件一张证书
 | `on_llm_end(response, **kw)` | 签发**权威**证书（优先用流式缓冲的精确 token 流，回退到 `_extract_text` 结构提取） |
 | `on_tool_start(serialized, input_str, **kw)` | 记录工具名与参数（供 `on_tool_end` 使用） |
 | `on_tool_end(output, **kw)` | 签发工具调用证书 |
+| `on_llm_error(error, **kw)` | **失败也留痕**：照常签一张证书，并在载荷**顶层**附 `error` 块（见 §2.1.1） |
+| `on_tool_error(error, **kw)` | 工具失败**也是这次调用的结果**：网关照常签回执，工具路径照常出证 + `error` 块 |
 
 工具名/参数的提取做了兼容：`_tool_name` 从序列化信息或 kwargs 取；`_parse_args` 接受 dict、
 `ast.literal_eval` 字面量字符串、或任意对象（兜底 `{"input": ...}`）。
+
+#### 2.1.1 错误路径：为什么非签不可
+
+真模型最常见的三件事是**超时、限流、内容拦截** —— 它们不是异常情况，是常态。而这套回调
+此前只认「正常结束」：模型报错时**一张证书都不签**，于是产物上「会话失败了」与「会话干净」
+长得一模一样。这正是 P0-4 要消灭的那类歧义，只不过这次藏在**「什么都没发生」**里。
+
+`error_block(phase, error, tokens, text_len)`（`langchain_adapter.py`）构造的顶层块：
+
+```json
+"error": {"phase": "llm|tool", "type": "TimeoutError",
+          "message_sha256": "…", "scope": "partial-prefix",
+          "tokens": 12, "text_len": 43}
+```
+
+三个刻意的取舍：
+
+- **只放类型名与消息的 SHA-256，不放消息原文** —— 异常消息里常有 prompt 片段、URL，偶尔
+  还有密钥（HTTP 客户端报错尤其容易带上请求头）。要核对具体是哪次失败，让持有原文的一方
+  自己算哈希来比。与证书其余部分「只放承诺、不放明文」同口径。
+- **放载荷顶层，不进 `outcome`** —— `outcome` 是**证明公开值的镜像**，验证方会逐字段比对，
+  而电路里没有 `error` 这个东西。放进去会让每一张带真实证明的证书都对不上（同 `trace_seal`
+  与 `challenge` 的理由，见 `cert.build_payload`）。
+- **`scope: "partial-prefix"`** —— 判的是**截断处的前缀**，不是「本次生成的全文」。一个 token
+  都没收到时前缀是空串、判定自然「合规」，但那张证书**不是**在说「本次生成合规」；`scope`
+  与 `text_len == 0` 一起把它读成「这次生成没有产出任何可判定的内容」。模型本会继续吐出的
+  部分**不在**这张证书的判定范围内 —— 这个字段就是那句免责声明的可核对形式。
+
+`handler.errors` / `certifier.errors` 另存一份异常清单：**只看 `certificates` 是分不出
+「正常结束」与「带错结束」的**（两者都恰好一张证书），那正是这个分支要修的问题。
+
+> 事件式插桩（`LangGraphEventCertifier`）不会自动继承这些分支 —— 它按事件名手写路由，
+> 所以 `on_chat_model_error` / `on_llm_error` / `on_tool_error` 要**各自**认一遍。
+> 用例见 `tests/test_frameworks.py::TestErrorCallbacksOffline` 与
+> `::TestLangGraphErrorEventsOffline`，每条正向都配了非恒真对照。
 
 ### 2.2 流式（增量）证书与早停
 
@@ -137,6 +174,8 @@ tool     = guard_node(monitor, my_tool_node,     kind="tool")
 | `on_chat_model_stream` / `on_llm_stream` | 把分片喂给（可选的）`stream_handler` → 产出**流式**证书 |
 | `on_chat_model_end` / `on_llm_end` | 生成路径证书 |
 | `on_tool_end` | 工具路径证书 |
+| `on_chat_model_error` / `on_llm_error` | 生成路径**失败**证书（顶层 `error` 块，见 §2.1.1） |
+| `on_tool_error` | 工具路径失败证书（照常签回执 + `error` 块） |
 
 用法：`agenc = certifier.run(graph, inputs)`（异步）或 `run_sync(...)`（内部 `asyncio.run`）。
 `certifier.events` 记录见过的事件名，便于可观测性。
@@ -217,6 +256,8 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
 | `PoPCallbackHandler.on_tool_end` | 工具 | `tool-call` | `tool-args` | 有 |
 | `MCPGuard.check` | 工具 | `tool-call` | `tool-args` | **无**（预检告知，见上） |
 | `MCPGuard.judge_result` | 生成（结果侧） | `public` + `extra.tool` | `tool-result` | 有 |
+| `PoPCallbackHandler.on_llm_error` | 生成（**失败**） | `public` + `error` | — | 有（绑报错那一刻的链） |
+| `PoPCallbackHandler.on_tool_error` | 工具（**失败**） | `tool-call` + `error` | — | 有 |
 | `LangGraphEventCertifier` | 两者 | 同上 | — | 有 |
 
 `scripts/demo_e2e.py` 一次会话产出 **14 张证书**：流式（含早停）、LLM、MCP 参数 + 结果、zk 各若干。
