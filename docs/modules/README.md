@@ -40,6 +40,7 @@ zk-policy/
 │   ├── cert.py               #   合规证书（DSSE 风格信封 + Ed25519 签名，按 keyid 前缀分发）
 │   ├── keys.py               #   签名密钥：定位/读写 PKCS#8、公钥导出与 keyring 装配（P0-3）
 │   ├── anchor.py             #   锚定后端：文件哈希链账本 / 链上 Anchor 合约
+│   ├── trace.py              #   工具回执链：结构/验签/会话末端 seal（P1-5 / P1-5b）
 │   ├── agent.py              #   框架无关钩子 AgentMonitor（生成路径 + 工具路径）
 │   ├── verifier.py           #   verifier-only 快路径判定（core 不能走快路径）
 │   ├── langchain_adapter.py  #   LangChain/LangGraph 回调（含流式证书与早停）

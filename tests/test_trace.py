@@ -85,6 +85,31 @@ def vector_for(policy: Policy, receipts, response: str = "") -> dict:
             "receipts": trace.receipts_to_json(receipts)}
 
 
+def issue_and_anchor(tmp: Path, receipts, seal=None) -> Path:
+    """签一张带 trace_root（+ 载荷顶层 trace_seal）的证书并锚定，返回证书路径。
+
+    无证明 —— host-check 层足以验证绑定。``seal`` 缺省 `None` 表示「出证方
+    没有承诺会话末端」，那正是 P1-5b 要判 FAIL 的形态之一（前提是验证方给了
+    网关公钥 —— 没有公钥时无从判断 seal 真伪，见 ``verify_cert.py`` 的 3d）。
+    """
+    spec = compile_policy(policy_for())
+    outcome = {"policy_hash": spec["sha256"],
+               "trace_root": trace.trace_root(receipts),
+               "passed": True, "violations": []}
+    payload = cert.build_payload("t", "1", spec, "public", outcome,
+                                 vkey_hash="unproven", ts="2026-01-01T00:00:00Z",
+                                 trace_seal=trace.seal_to_json(seal))
+    signer = cert.Ed25519Signer.generate()
+    (tmp / "key.json").write_text(json.dumps(keys.public_record(signer.public_key)))
+    (tmp / "cert.json").write_text(json.dumps(cert.sign_payload(payload, signer)))
+    (tmp / "pack.json").write_text(json.dumps({
+        "id": "t", "version": "1",
+        "rules": [{"kind": r.kind, "name": r.name, "params": r.params}
+                  for r in policy_for().rules]}))
+    anchor.append_anchor(tmp / "ledger.jsonl", cert.cert_digest(payload))
+    return tmp / "cert.json"
+
+
 # --------------------------------------------------------------------------- #
 # 编码层：规范字节 / 摘要 / 链尾
 # --------------------------------------------------------------------------- #
@@ -141,6 +166,173 @@ class TestReceiptEncoding(unittest.TestCase):
         # U+00A0（NBSP）与 U+3000（全角空格）**不**算分隔符 —— 它们是 token 的一部分
         self.assertEqual(trace.token_count("a b"), 1)
         self.assertEqual(trace.token_count("a　b"), 1)
+
+
+# --------------------------------------------------------------------------- #
+# 会话末端承诺（seal，P1-5b）
+# --------------------------------------------------------------------------- #
+
+class TestSeal(unittest.TestCase):
+    """``ToolSeal``：把「这条链到此为止」变成网关签过的一句话。
+
+    它存在的**唯一**理由是截尾 —— 只查链本身永远发现不了「后面还有没有」。
+    所以这里的用例刻意围绕「换个 count / 换个链尾 / 换把钥匙都会露馅」写。
+    """
+
+    # 确定性：Ed25519 无随机化，同一条链重复签出逐字节相同的 seal。
+    # 调用方因此不必缓存它。
+    def test_seal_is_deterministic(self):
+        gw = gateway()
+        gw.issue("a", {"q": "1"}, "x")
+        self.assertEqual(gw.seal().to_dict(), gw.seal().to_dict())
+
+    # 空链也要能签：**一次工具都没调用**同样是一次会话，「0 条的链」与
+    # 「链被删空」必须可区分 —— 这正是截尾攻击最极端的一步。
+    def test_empty_chain_seals_to_genesis(self):
+        gw = gateway()
+        seal = gw.seal()
+        self.assertEqual(seal.count, 0)
+        self.assertEqual(seal.trace_root, trace.GENESIS)
+        ok, why = trace.verify_seal(seal, gw.keyring(), [])
+        self.assertTrue(ok, why)
+        # 但它拒绝"链里有东西"的那种核对
+        gw.issue("a", {}, "x")
+        ok, why = trace.verify_seal(seal, gw.keyring(), gw.receipts)
+        self.assertFalse(ok)
+        self.assertIn("截尾", why)
+
+    # count / trace_root / ts / keyid 四个字段都在被签的字节里：改任何一个，
+    # 原像就变，签名随即失效（这是"seal 不能被改写"的全部依据）。
+    def test_every_field_is_covered(self):
+        base = trace.ToolSeal(count=3, trace_root="a" * 64, ts="2026-01-01T00:00:00Z",
+                              keyid="ed25519:aa")
+        variants = [
+            dataclasses.replace(base, count=2),
+            dataclasses.replace(base, trace_root="b" * 64),
+            dataclasses.replace(base, ts="2026-01-02T00:00:00Z"),
+            dataclasses.replace(base, keyid="ed25519:bb"),
+        ]
+        for v in variants:
+            with self.subTest(field=v):
+                self.assertNotEqual(trace.canonical_seal_bytes(base),
+                                    trace.canonical_seal_bytes(v))
+
+    # 域分隔：回执的签名不能被搬到 seal 上（反之亦然）。没有 SEAL_DOMAIN，
+    # 两条不同用途的签名就可能在同一段字节上互相顶替。
+    def test_receipt_signature_cannot_be_replayed_as_seal(self):
+        gw = gateway()
+        r = gw.issue("a", {}, "x")
+        seal = trace.ToolSeal(count=1, trace_root=trace.trace_root([r]),
+                              ts=GW_TS, keyid=r.keyid, sig=r.sig)   # 拿回执的签名冒充
+        ok, why = trace.verify_seal(seal, gw.keyring())
+        self.assertFalse(ok)
+        self.assertIn("签名验证失败", why)
+
+    # 三项核对各自的失败形态：没有 / 条数不符 / 链尾不符。
+    def test_verify_seal_failure_modes(self):
+        gw = gateway()
+        gw.issue("a", {}, "x")
+        gw.issue("b", {}, "y")
+        seal = gw.seal()
+        ok, why = trace.verify_seal(None, gw.keyring(), gw.receipts)
+        self.assertFalse(ok)
+        self.assertIn("没有 trace_seal", why)
+        ok, why = trace.verify_seal(seal, gw.keyring(), gw.receipts[:1])
+        self.assertFalse(ok)
+        self.assertIn("seal.count=2 != 交付链长 1", why)
+        # 链尾对不上（条数相同、内容不同）
+        other = gateway()
+        other.issue("a", {}, "x")
+        other.issue("b", {}, "z")
+        ok, why = trace.verify_seal(seal, gw.keyring(), other.receipts)
+        self.assertFalse(ok)
+        self.assertIn("截尾", why)
+
+    # 会话还没结束时取的 seal，在又发生一次调用之后**必须**失效 ——
+    # 这正是它有意义的地方（seal 说的是"到此为止"，而不是"至少这么多"）。
+    def test_seal_taken_early_invalidates_after_more_calls(self):
+        gw = gateway()
+        gw.issue("a", {}, "x")
+        early = gw.seal()
+        gw.issue("b", {"token": "secret"}, "leak")     # 又来了一次（违规的）调用
+        ok, why = trace.verify_seal(early, gw.keyring(), gw.receipts)
+        self.assertFalse(ok, "早期 seal 不该还能证明现在的链")
+        self.assertIn("seal.count=1 != 交付链长 2", why)
+        # 现在取的 seal 才是对的
+        self.assertEqual(trace.verify_seal(gw.seal(), gw.keyring(), gw.receipts),
+                         (True, f"seal 已由 {gw.signer.keyid} 签出（count=2）"))
+
+    # 不给网关公钥时：结构/一致性照核，签名**如实说明没验**（不假装验过）。
+    def test_verify_seal_without_key_reports_unverified(self):
+        gw = gateway()
+        gw.issue("a", {}, "x")
+        ok, why = trace.verify_seal(gw.seal(), None, gw.receipts)
+        self.assertTrue(ok)
+        self.assertIn("seal 签名未验", why)
+
+    # seal 走**载荷顶层**，不进 outcome。这一条是结构性约束，不是风格问题：
+    # 验证方在 `proof_outcome` 卡上逐字段比对公开值，而电路里根本没有 seal ——
+    # 一旦写进 outcome，**每一张带真实证明的证书**都会对不上
+    # （见 ``docs/security-model.md`` §5.3）。
+    def test_seal_lives_at_payload_level_not_in_outcome(self):
+        from policydsl.agent import AgentMonitor
+
+        pol = Policy("p", "1", rules=[
+            Rule("keyword_block", "no_secret", {"keywords": ["sk-"]})])
+        gw = gateway()
+        gw.issue("search_kb", {"query": "ok"}, "hit")
+
+        for m in (AgentMonitor(pol), AgentMonitor(pol, mode="private")):
+            with self.subTest(mode=m.mode):
+                # 公开模式与私有模式的 outcome 都不带 seal
+                self.assertNotIn("trace_seal",
+                                 m.generate_outcome("hello", receipts=gw.receipts))
+                env = m.on_generate("hello", ts=GW_TS, receipts=gw.receipts,
+                                    seal=gw.seal())
+                p = cert.envelope_payload(env)
+                self.assertNotIn("trace_seal", p["outcome"],
+                                 "outcome 必须仍是证明公开值的镜像")
+                self.assertEqual(p["trace_seal"], gw.seal().to_dict())
+
+        m = AgentMonitor(pol)
+        # 工具路径同理：判的是整条链，seal 也在载荷顶层
+        env2 = m.on_tool_call(gw.receipts[-1], chain=gw.receipts, response="hello",
+                              ts=GW_TS, seal=gw.seal())
+        p2 = cert.envelope_payload(env2)
+        self.assertNotIn("trace_seal", p2["outcome"])
+        self.assertEqual(p2["trace_seal"], gw.seal().to_dict())
+        # 没给 seal 就**没有这个字段**（不给一个看着像承诺的缺省值）
+        self.assertNotIn("trace_seal", cert.envelope_payload(
+            m.on_generate("hello", ts=GW_TS, receipts=gw.receipts)))
+
+    # 验证方**没给**网关公钥时，缺 seal 只能如实报告（「截尾不可排除」），
+    # 不能判 FAIL —— 没有公钥就分不开「出证方没承诺」与「承诺了但没给我看」；
+    # 也不能判成「截尾已排除」那种假 PASS。给了公钥就是另一回事（见下一条）。
+    def test_missing_seal_without_gateway_key_is_reported_honestly(self):
+        gw = gateway()
+        gw.issue("search_kb", {"query": "refund"}, "hit")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            cert_file = issue_and_anchor(tmp, gw.receipts, seal=None)  # 没承诺会话末端
+            (tmp / "receipts.json").write_text(
+                json.dumps(trace.receipts_to_json(gw.receipts)))
+            base = [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+                    "--cert", str(cert_file), "--pack", str(tmp / "pack.json"),
+                    "--ledger", str(tmp / "ledger.jsonl"),
+                    "--receipts", str(tmp / "receipts.json")]
+            # 不给 --gateway-key：如实说明「截尾不可排除」，其余照过
+            proc = subprocess.run(base, cwd=str(REPO), capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            self.assertIn("[PASS] trace_seal", proc.stdout)
+            self.assertIn("截尾不可排除", proc.stdout)
+            self.assertNotIn("已排除", proc.stdout)
+            # 给了 --gateway-key（且链也对得上）却仍然没有 seal ⇒ 矛盾 ⇒ FAIL
+            (tmp / "gw.pub.hex").write_text(gw.signer.public_hex)
+            proc2 = subprocess.run([*base, "--gateway-key", str(tmp / "gw.pub.hex")],
+                                   cwd=str(REPO), capture_output=True, text=True)
+            self.assertNotEqual(proc2.returncode, 0)
+            self.assertIn("[FAIL] trace_seal", proc2.stdout)
+            self.assertIn("没有 trace_seal", proc2.stdout)
 
 
 # --------------------------------------------------------------------------- #
@@ -405,23 +597,9 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
     验证方拿自己手上的回执重算链尾即可 —— 与 ``--response`` 之于响应对称。
     """
 
-    def _issue(self, tmp: Path, receipts) -> Path:
-        """签一张带 trace_root 的证书（无证明，host-check 层足以验证绑定）并锚定。"""
-        spec = compile_policy(policy_for())
-        outcome = {"policy_hash": spec["sha256"],
-                   "trace_root": trace.trace_root(receipts),
-                   "passed": True, "violations": []}
-        payload = cert.build_payload("t", "1", spec, "public", outcome,
-                                     vkey_hash="unproven", ts="2026-01-01T00:00:00Z")
-        signer = cert.Ed25519Signer.generate()
-        (tmp / "key.json").write_text(json.dumps(keys.public_record(signer.public_key)))
-        (tmp / "cert.json").write_text(json.dumps(cert.sign_payload(payload, signer)))
-        (tmp / "pack.json").write_text(json.dumps({
-            "id": "t", "version": "1",
-            "rules": [{"kind": r.kind, "name": r.name, "params": r.params}
-                      for r in policy_for().rules]}))
-        anchor.append_anchor(tmp / "ledger.jsonl", cert.cert_digest(payload))
-        return tmp / "cert.json"
+    #: 签一张带 trace_root（+ 载荷顶层 trace_seal）的证书并锚定。见
+    #: :func:`issue_and_anchor`（本类各用例与 :class:`TestSeal` 共用同一份实现）。
+    _issue = staticmethod(issue_and_anchor)
 
     def _verify(self, tmp: Path, cert_file: Path, receipts, gateway, extra=None):
         """跑 verify_cert.py；``receipts`` 是验证方**自己手上**的回执（JSON 形状）。"""
@@ -443,12 +621,14 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
         gw.issue("http_get", {"url": "https://example.com"}, "ok")
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            cert_file = self._issue(tmp, gw.receipts)
+            cert_file = self._issue(tmp, gw.receipts, seal=gw.seal())
             proc = self._verify(tmp, cert_file, gw.receipts, gw)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("[PASS] trace_binding", proc.stdout)
         self.assertIn("[PASS] receipt_chain", proc.stdout)
         self.assertIn("网关侧 2 条回执重算", proc.stdout)
+        self.assertIn("[PASS] trace_seal", proc.stdout)
+        self.assertIn("seal 已由", proc.stdout)
 
     # ② 换一条链（内容不同、签名有效）：摘要当场对不上 —— 说明证明绑的不是这条链。
     def test_different_chain_is_rejected(self):
@@ -458,7 +638,7 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
         other.issue("search_kb", {"query": "别的"}, "hit")
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            cert_file = self._issue(tmp, gw.receipts)      # 证书绑的是 gw 的链
+            cert_file = self._issue(tmp, gw.receipts, seal=gw.seal())  # 绑的是 gw 的链
             proc = self._verify(tmp, cert_file, other.receipts, other)
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("[FAIL] trace_binding", proc.stdout)
@@ -472,7 +652,7 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
         shuffled = [gw.receipts[1], gw.receipts[0]]
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            cert_file = self._issue(tmp, gw.receipts)
+            cert_file = self._issue(tmp, gw.receipts, seal=gw.seal())
             proc = self._verify(tmp, cert_file, shuffled, gw)
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("[FAIL] receipt_chain", proc.stdout)
@@ -491,7 +671,7 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
         self.assertEqual(trace.chain_ok(chain), (True, ""), "结构上确实看不出来")
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            cert_file = self._issue(tmp, chain)     # 证书绑的是**伪造后**的链
+            cert_file = self._issue(tmp, chain, seal=gw.seal())  # 绑的是**伪造后**的链
             proc = self._verify(tmp, cert_file, chain, gw)
         self.assertNotEqual(proc.returncode, 0)
         self.assertIn("[FAIL] receipt_chain", proc.stdout)
@@ -500,36 +680,104 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
         # 「来源」是两道关：这一步只证明后者。
         self.assertIn("[PASS] trace_binding", proc.stdout)
 
-    # ⚠️ 已知缺口（缺口用例，不是"应有的行为"）：**截尾**。
+    # ⑤ 截尾（P1-5b）：把链尾那条**违规**回执整条删掉 —— 必须被拒。
     #
-    #    前三层都拦不住「把链尾那条违规回执**整条删掉**」：删掉之后剩下的仍是一条
-    #    结构自洽、逐条签名有效的**真链**，只是短了。摘要比对也过 —— 因为比较的是
-    #    「证书绑的链」与「送检的链」，而攻击者让两边同时是那条截断的链。
+    #    P1-5 的前三层拦不住它：删掉之后剩下的仍是一条结构自洽、逐条签名有效的
+    #    **真链**，只是短了；`trace_binding` 也过 —— 它比的是「证书绑的链」与
+    #    「送检的链」，而攻击者让两边同时是那条截断的链。任何只看**交付链本身**
+    #    的检查都无从知道「后面还有没有」。
     #
-    #    这不是"再比一次"能补的：任何只基于**交付链本身**的检查都无法知道"后面还有没有"。
-    #    要堵住它，必须让网关对**会话末端**做一次承诺（如会话结束回执
-    #    `seal{count, trace_root}`），验证方核对 `len == count ∧ trace_root == seal.trace_root`。
-    #    **本仓库尚未实现该 seal**，因此：`--receipts` 只有在验证方**自己**从网关取链
-    #    （且该渠道不被出证方控制）时才可信；若链与证书来自同一条由出证方转交的渠道，
-    #    截尾可过。缺口登记见 `docs/plan-p0p1p2.md` §9 待办 T4（P1-5b）。
-    #
-    #    这条用例把缺口钉死：哪天 seal 落地，它会失败 —— 那不是回归，是提醒把它改成
-    #    "截尾必须被拒"并更新文档。
-    def test_tail_truncation_is_a_known_gap(self):
+    #    唯一的补法是网关对会话末端签字（`seal{count, trace_root}`）。于是攻击者
+    #    只有两条路，都不通：
+    #      (a) 拿**原始** seal（count=3）配截断的链（2 条）→ count/链尾对不上；
+    #      (b) 为截断的链**新签**一条 seal → 没有网关私钥，签不出来。
+    #    这条用例把两条都钉死（外加「索性不带 seal」这第三条）。
+    def test_tail_truncation_is_rejected(self):
         gw = trace.ToolGateway(ts=GW_TS)
         gw.issue("search_kb", {"query": "ok"}, "hit")
         gw.issue("write_file", {"path": "/tmp/a"}, "ok")
         gw.issue("http_get", {"url": "https://ex", "token": "sk-secret"}, "leak")
+        full_seal = gw.seal()
         truncated = list(gw.receipts[:2])            # 丢掉那条违规的尾
+        # 前置：截断后的链自身**完全自洽**，签名也逐条有效 —— 缺口之所以成立
         self.assertEqual(trace.chain_ok(truncated), (True, ""), "结构与签名都是真的")
         self.assertEqual(trace.verify_chain(truncated, gw.keyring()), (True, ""))
+
+        # (a) 原始 seal + 截断的链
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            cert_file = self._issue(tmp, truncated)
+            cert_file = self._issue(tmp, truncated, seal=full_seal)
             proc = self._verify(tmp, cert_file, truncated, gw)
-        self.assertEqual(proc.returncode, 0, "缺口：截尾后验证方仍全 PASS")
-        self.assertIn("[PASS] trace_binding", proc.stdout)
-        self.assertIn("[PASS] receipt_chain", proc.stdout)
+        self.assertNotEqual(proc.returncode, 0, "截尾必须被拒")
+        self.assertIn("[FAIL] trace_seal", proc.stdout)
+        self.assertIn("截尾", proc.stdout)
+
+        # (b) 为截断的链伪造一条 seal：字段全对、**连 keyid 都冒充网关的**
+        #     （否则验证方一句「keyid 不在 keyring 里」就挡掉了，测不到签名那一关）。
+        attacker = trace.ToolGateway(ts=GW_TS)
+        unsigned = trace.ToolSeal(count=len(truncated),
+                                  trace_root=trace.trace_root(truncated),
+                                  ts=GW_TS, keyid=gw.signer.keyid)
+        forged_seal = dataclasses.replace(
+            unsigned, sig=attacker.signer.sign(trace.canonical_seal_bytes(unsigned)).hex())
+        self.assertEqual(forged_seal.count, 2)       # 看着"自洽"
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            cert_file = self._issue(tmp, truncated, seal=forged_seal)
+            proc = self._verify(tmp, cert_file, truncated, gw)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("[FAIL] trace_seal", proc.stdout)
+        self.assertIn("seal 签名验证失败", proc.stdout)
+
+        # (c) 索性不带 seal —— 「没有承诺」同样不能当成「没有截尾」
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            cert_file = self._issue(tmp, truncated, seal=None)
+            proc = self._verify(tmp, cert_file, truncated, gw)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("[FAIL] trace_seal", proc.stdout)
+        self.assertIn("没有 trace_seal", proc.stdout)
+
+        # 对照：**没截尾**时同一条路径全 PASS —— 说明上面三例不是"恒 FAIL"。
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            cert_file = self._issue(tmp, gw.receipts, seal=full_seal)
+            proc = self._verify(tmp, cert_file, gw.receipts, gw)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("[PASS] trace_seal", proc.stdout)
+
+    # 验证方**手上没有链**时，seal 依然可核：它自带 count/链尾与签名。
+    # 这正是「链与证书都由出证方转交」那种场景 —— 恰恰是缺口最容易发生的地方。
+    def test_seal_checked_without_receipts(self):
+        gw = trace.ToolGateway(ts=GW_TS)
+        gw.issue("search_kb", {"query": "ok"}, "hit")
+        gw.issue("http_get", {"url": "https://ex", "token": "sk-secret"}, "leak")
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            cert_file = self._issue(tmp, gw.receipts, seal=gw.seal())
+            (tmp / "gw.pub.hex").write_text(gw.signer.public_hex)
+            base = [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+                    "--cert", str(cert_file), "--pack", str(tmp / "pack.json"),
+                    "--ledger", str(tmp / "ledger.jsonl")]
+            # 不给 --receipts，只给网关公钥：seal 依然可核 —— 它自带 count/链尾，
+            # 验签 + 「seal 承诺的链尾 == 被证明的链尾」两步都不需要第二份检材。
+            # （`trace_binding` 则如实报「只有一份来源、无法比对」——它比的是
+            # 两份检材，而这里只有证书自己那一份。这正是二者分工的体现。）
+            proc = subprocess.run(
+                [*base, "--gateway-key", str(tmp / "gw.pub.hex")],
+                cwd=str(REPO), capture_output=True, text=True)
+            self.assertIn("[PASS] trace_seal", proc.stdout)
+            self.assertIn("seal 已由", proc.stdout)
+            self.assertIn("only 1 source(s) available", proc.stdout)
+
+            # 换一把网关钥（同一把链、别人的命）：seal 签名当场失败。
+            other = trace.ToolGateway(ts=GW_TS)
+            (tmp / "other.pub.hex").write_text(other.signer.public_hex)
+            proc2 = subprocess.run(
+                [*base, "--gateway-key", str(tmp / "other.pub.hex")],
+                cwd=str(REPO), capture_output=True, text=True)
+            self.assertNotEqual(proc2.returncode, 0)
+            self.assertIn("[FAIL] trace_seal", proc2.stdout)
 
     # 只给 --receipts 不给 --gateway-key：如实说明「签名未验」，不假装验过。
     def test_without_gateway_key_reports_unverified(self):
@@ -537,7 +785,7 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
         gw.issue("search_kb", {"query": "refund"}, "hit")
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)
-            cert_file = self._issue(tmp, gw.receipts)
+            cert_file = self._issue(tmp, gw.receipts, seal=gw.seal())
             (tmp / "receipts.json").write_text(
                 json.dumps(trace.receipts_to_json(gw.receipts)))
             proc = subprocess.run(
@@ -548,6 +796,8 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
                 cwd=str(REPO), capture_output=True, text=True)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn("回执签名未验", proc.stdout)
+        self.assertIn("seal 签名未验", proc.stdout)
+        self.assertNotIn("[FAIL]", proc.stdout)
 
 
 if __name__ == "__main__":

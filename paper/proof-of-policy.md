@@ -124,7 +124,13 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 >
 > ⚠️ **另一道更弱的口子：整条删除链尾（截尾）**。上面两道关都是按"收到的链"逐条核对的——
 > 若出证方把链尾那条违规回执**整条删掉**再转交，剩下的仍是一条真签、自洽、更短的链，两关都会 PASS。
-> 该缺口已复现并钉成用例（`test_tail_truncation_is_a_known_gap`），**尚未修复**，对策与使用前提见 §5 安全模型
+> 该缺口已复现并钉成用例（`TestVerifyCertTraceBinding::test_tail_truncation_is_rejected`），
+> **已由网关的会话末端承诺堵上（P1-5b）**：网关在会话结束时签发一次 `ToolSeal{count, trace_root, ts, keyid, sig}`
+> （域分隔 `pop-trace-seal-v1`，落在载荷**顶层** `trace_seal`），验证方核对签名、`seal.trace_root`
+> 与证书公开值一致、以及（有回执时）`len(chain) == seal.count` 且链尾摘要逐字节相同 —— 出证方拿不出
+> 一个"数与根都对得上截断链"的真 seal（原 seal 数对不上，伪造 seal 须破 Ed25519）。**残留边界如实标注**：
+> 验证方**必须持有网关公钥**（`--gateway-key`）才核得了签名，否则 3d 只记 `PASS + 「截尾不可排除」(skipped)`；
+> 且 seal 仍是**网关的**陈述（信任假设 A4），它把担保移到了网关而不是取消它。详见 §5 安全模型
 > 与 `docs/security-model.md` §5.3。
 
 `budget_bound(unit="tokens")` 同步改为**电路内自算**：按固定空白集合 `{0x20,09,0a,0b,0c,0d}` 把响应切成
@@ -179,19 +185,25 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
   健全性以「网关密钥不被滥用」为前提——网关是被显式信任的第三方，不是被证明的对象。
 - **边界**：工具路径证书的 `zk:true` 意指「规则可证」，是否附证明看 `binding.vkey_hash`；而"回执链确由网关
   签发"这一步在**链下**完成（见上条），不在电路内。
-- **已知缺口：回执链的「截尾」（⚠️ 未修复，如实记录）**：删除链尾那条**违规**回执后，剩下的仍是一条
-  结构自洽、逐条签名有效的**真链**——它比真实轨迹短，但对验证方而言是"网关签过的完整轨迹"。此时
-  `trace_binding`（证书绑的链 == 送检的链）与 `receipt_chain`（逐条验签）**双双 PASS**，验证方退出码为 0。
-  我们端到端复现了这一攻击（`tests/test_trace.py::test_tail_truncation_is_a_known_gap`），并提供形式化定位
-  （`docs/security-model.md` §5.3、§4 主定理中单列的 `+ Pr[截尾攻击]` 项）。**对策尚未落地**：需网关在会话末端
-  签发一次带计数的承诺 `seal{count, trace_root}`，验证方核对 `len(chain) == seal.count`。**在 seal 落地前，
-  `verify_cert.py --receipts` 只有在验证方自己从网关取链（且该渠道不被出证方控制）时才可信**；由出证方随证书
-  一并转交的链，其"完整性"不构成任何保证。
+- **回执链的「截尾」：已堵（P1-5b，残留边界如实记录）**：删除链尾那条**违规**回执后，剩下的仍是一条
+  结构自洽、逐条签名有效的**真链**——它比真实轨迹短，而 `trace_binding`（证书绑的链 == 送检的链）与
+  `receipt_chain`（逐条验签）**双双 PASS**，两关都对它无能为力（它们核的都是"收到的链"）。
+  对策是**网关的会话末端承诺** `ToolSeal{count, trace_root, ts, keyid, sig}`（`policydsl/trace.py`，
+  域分隔 `pop-trace-seal-v1`）：验证方核对签名、seal 的 `trace_root` 与证书公开值一致、以及（有回执时）
+  `len(chain) == seal.count` 与链尾摘要。截尾者要么交出**原** seal（`count` 立刻对不上），要么伪造一条
+  （须破 Ed25519）——该概率即形式化定位中单列的 `Adv^{forge}_{Ed25519}(B)` 项
+  （`docs/security-model.md` §5.3、§4 主定理）。**残留边界（如实标注）**：① 验证方**必须持有网关公钥**
+  （`--gateway-key`）才核得了签名——只给 `--receipts` 时 3d 记 `PASS + 「截尾不可排除」(skipped)`，
+  因此「只给链不给公钥」**仍不构成截尾保证**；② seal 是**网关的**陈述，担保被移到网关（信任假设 A4）
+  而非取消；③ 无网关的会话（`issue_cert.py` 等独立出证路径）本就没有 seal，3d 在没给 `--gateway-key`
+  时同样只报 skipped。三路截尾拒绝（原 seal + 截断链 / 伪造 seal / 索性不带 seal）钉于
+  `TestVerifyCertTraceBinding::test_tail_truncation_is_rejected`，seal 自身的语义边界钉于 `TestSeal`。
 
 ## 6. Implementation
 
 Python 参考层（DSL/编译/NFA/私密/证书/锚定/框架适配）+ Rust（SP1 v6 workspace：`types` 共享判定、`program` guest、`script` 驱动）。
 单测 + 集成测试 **261 全绿（5 skip 均为设计内）**，其中 `tests/test_trace.py`（29 例）覆盖 §4.2.1 的四条验收，
+与 P1-5b 的截尾对策（`TestSeal` + `test_tail_truncation_is_rejected`）；
 `tests/test_rules_incircuit.py` 钉死 Python 参考层与电路内实现的逐点对齐；`scripts/` 提供交叉验证、
 demo、证书签发/验证、截图；`docs/reproduce.md` 复现指南。
 

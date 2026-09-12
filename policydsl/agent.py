@@ -66,6 +66,12 @@ class AgentMonitor:
         公开模式暴露明文证据；私有模式只暴露证据承诺 + 脱敏信息。
         ``receipts`` 是本次会话的工具回执链（P1-5）：工具类规则判它，其链尾
         摘要进 ``trace_root``。``nonce`` 是挑战值（P0-2），两者都参与承诺。
+
+        **这里没有 seal**：本方法返回的是**证明公开值的镜像**，电路里产不出
+        P1-5b 的会话末端承诺。seal 由 :meth:`on_generate` / :meth:`on_tool_call`
+        从调用方传进 ``build_payload``，落在证书载荷的**顶层**
+        （``payload["trace_seal"]``），与 ``challenge`` 块同级。见
+        ``policydsl/trace.py`` 的「截尾与 ToolSeal」一节。
         """
         rs = [commit.as_receipt(r) for r in (receipts or [])]
         if self.mode == "public":
@@ -84,7 +90,8 @@ class AgentMonitor:
                     extra: Optional[Dict[str, Any]] = None,
                     proof_mode: Optional[str] = None,
                     receipts: Optional[List[Any]] = None,
-                    nonce: bytes = b"") -> Dict[str, Any]:
+                    nonce: bytes = b"",
+                    seal: "Optional[trace.ToolSeal]" = None) -> Dict[str, Any]:
         """生成路径钩子：判定响应并签发证书。
 
         vkey_hash 默认 "unproven" 表示「未附加真实证明」；附加了 SP1 证明时会
@@ -92,12 +99,17 @@ class AgentMonitor:
 
         ``receipts``/``nonce``（P1-5/P0-2）：本会话的工具回执链与挑战值，
         一并进 outcome（``trace_root`` / ``response_binding``）。
+        ``seal``（P1-5b）：网关的会话末端承诺（``gateway.seal()``），落在载荷
+        **顶层** ``trace_seal``。**不传它的证书会在 ``verify_cert.py`` 的
+        ``trace_seal`` 卡上被判 FAIL**（验证方给了网关公钥时）——没有它就无法
+        排除「链尾那条违规回执被整条删掉」，所以这里不给缺省值兜底。
         """
         outcome = self.generate_outcome(response, mask, redacted, spans,
                                         receipts=receipts, nonce=nonce)
         payload = cert.build_payload(self.policy.id, self.policy.version, self.spec,
                                      self.mode, outcome, vkey_hash, proof_sha256, ts,
-                                     extra=extra, proof_mode=proof_mode)
+                                     extra=extra, proof_mode=proof_mode,
+                                     trace_seal=trace.seal_to_json(seal))
         return cert.sign_payload(payload, self.signer)
 
     # -- 工具调用路径（Python 参考层规则类型） --
@@ -120,6 +132,11 @@ class AgentMonitor:
         工具调用证书都会继续判失败。这是刻意的保守取侧 —— 一张写 ``passed=True``
         的证书绝不该出现在一条脏轨迹上。因此「本次调用的参数是否干净」不能由
         这张证书单独回答；要问这个，请对这条回执单独建链（新网关）判一次。
+
+        **seal 不在这里**（P1-5b）：本方法返回证明公开值的镜像，而 seal 是链下
+        网关签的旁证 —— 它由 :meth:`on_tool_call` 放进载荷顶层 ``trace_seal``。
+        要紧的是：**判的是整条链，所以承诺的也必须是整条链** —— 少了它，删掉
+        链尾那条违规回执就无从发现。
         """
         ch = list(chain) if chain is not None else [receipt]
         tx = Transcript(response=response, receipts=ch)
@@ -136,18 +153,21 @@ class AgentMonitor:
     def on_tool_call(self, receipt: "trace.ToolReceipt", ts: Optional[str] = None,
                      response: Optional[str] = None, vkey_hash: str = "unproven",
                      proof_mode: Optional[str] = None,
-                     chain: Optional[List[Any]] = None) -> Dict[str, Any]:
+                     chain: Optional[List[Any]] = None,
+                     seal: "Optional[trace.ToolSeal]" = None) -> Dict[str, Any]:
         """工具调用路径钩子：判定并签发工具调用证书（mode 固定 "tool-call"）。
 
         ``receipt`` 由 :class:`policydsl.trace.ToolGateway` 在**本次调用执行后**
         签发。签名本层不再校验（它是网关的职责，验证方会独立验一遍）：这里
         重算的 ``trace_root`` 会写进证书，供验证方与网关侧回执比对。
-        ``chain`` 见 :meth:`tool_call_outcome`（适配器应传 ``gateway.receipts``）。
+        ``chain`` 见 :meth:`tool_call_outcome`（适配器应传 ``gateway.receipts``），
+        ``seal``（P1-5b）是网关的会话末端承诺，落在载荷顶层 ``trace_seal``。
         """
         outcome = self.tool_call_outcome(receipt, response, chain=chain)
         payload = cert.build_payload(self.policy.id, self.policy.version, self.spec,
                                      "tool-call", outcome, vkey_hash, None, ts,
-                                     proof_mode=proof_mode)
+                                     proof_mode=proof_mode,
+                                     trace_seal=trace.seal_to_json(seal))
         return cert.sign_payload(payload, self.signer)
 
 

@@ -155,7 +155,9 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
                   extra: Optional[Dict[str, Any]] = None,
                   public_values_sha256: Optional[str] = None,
                   challenge: Optional[Dict[str, str]] = None,
-                  proof_mode: Optional[str] = None) -> Dict[str, Any]:
+                  proof_mode: Optional[str] = None,
+                  trace_seal: Optional[Dict[str, Any]] = None,
+                  semantic: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """组装证书载荷（给定输入 + ts 后即为确定性结构）。
 
     ``extra`` 携带可选注解，例如 ``{"streaming": {"partial": true, "tokens": N}}``
@@ -171,6 +173,17 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
     它公开 nonce 与证明承诺的 ``response_binding``，让持 T′ 的一方能离线确认
     「被证明的 T」就是「送达的 T′」。**nonce 是公开的**（它必须公开，否则没人
     能核对）；它的一次性由协议使用方保证，不是秘密。
+
+    ``trace_seal`` 是 P1-5b 的会话末端承诺（``ToolGateway.seal()``）：网关签的
+    ``{count, trace_root}``，用来说明「这条回执链到此为止」。它放在**载荷顶层**
+    而不是 ``outcome`` 里 —— ``outcome`` 是**证明公开值的镜像**（验证方会逐字段
+    比对，见 ``scripts/verify_cert.py`` 的 ``proof_outcome`` 卡），而电路里没有
+    seal 这个东西：它是链下网关签的，与 ``challenge`` 块同属「主机层随证书附上
+    的旁证」。放进 ``outcome`` 的后果是**每一张带真实证明的证书都对不上**
+    （公开值里没有这个字段）。见 ``policydsl/trace.py`` 的「截尾与 ToolSeal」。
+
+    ``trace_seal`` 完全相同）：
+
     """
     if proof_mode is None and proof_sha256 is None:
         proof_mode = PROOF_MODE_UNPROVEN      # 没有工件 → 只能自称「未证明」
@@ -188,6 +201,8 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
     }
     if challenge is not None:
         payload["challenge"] = challenge
+    if trace_seal is not None:
+        payload["trace_seal"] = trace_seal
     if extra:
         payload.update(extra)
     return payload

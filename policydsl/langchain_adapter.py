@@ -154,7 +154,13 @@ class PoPCallbackHandler(BaseCallbackHandler):
         return list(self.stream_chains.get(run_id, []))
 
     def _stream_cert(self, run_id: str, text: str, partial: bool, extra_stream: Dict[str, Any]):
-        """签发一张流式证书，链接到上一张（形成哈希链）。"""
+        """签发一张流式证书，链接到上一张（形成哈希链）。
+
+        这张证书绑的是**签发那一刻**的网关回执链，并附上那一刻的 seal（P1-5b）。
+        ``partial=True`` 的证书本来就是「到此刻为止」的快照：后续再有工具调用，
+        它的 seal 自然会被新回执作废（``count`` 对不上），这是**如实**的 ——
+        最终结论以 :meth:`on_llm_end` 那张为准。
+        """
         chain = self.stream_chains.setdefault(run_id, [])
         index = len(chain)
         prev = chain[-1] if chain else "genesis"
@@ -164,6 +170,8 @@ class PoPCallbackHandler(BaseCallbackHandler):
         env = self.monitor.on_generate(text, vkey_hash=self.vkey_hash,
                                        proof_sha256=self.proof_sha256,
                                        proof_mode=self.proof_mode,
+                                       receipts=self.gateway.receipts,
+                                       seal=self.gateway.seal(),
                                        extra={"streaming": stream})
         chain.append(_cert_digest(env))
         return env
@@ -179,7 +187,10 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self._scount[run_id] = self._scount.get(run_id, 0) + 1
         if not self.stream_check or self._scount[run_id] % self.stream_every != 0:
             return
-        outcome = self.monitor.generate_outcome(self._sbuf[run_id])
+        # 判定带上本会话的回执链：工具类规则（tool_arg_guard/budget_bound）也要
+        # 参与「这次流式前缀算不算合规」，否则脏轨迹上还会签出 passed=True 的前缀证书。
+        outcome = self.monitor.generate_outcome(self._sbuf[run_id],
+                                                receipts=self.gateway.receipts)
         verdict = bool(outcome["passed"])
         prev = self._sverdict.get(run_id)
         if prev is None or prev != verdict:
@@ -213,9 +224,14 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self._sverdict.pop(run_id, None)
         self._sstopped.pop(run_id, None)
         if text:
+            # 权威证书：绑本会话的整条回执链 + 网关的会话末端承诺（P1-5b）——
+            # 一张不带 seal 的证书在 ``verify_cert.py`` 的 ``trace_seal`` 卡上
+            # 无法排除链尾被删（见 policydsl/trace.py 的「截尾与 ToolSeal」）。
             self._emit(self.monitor.on_generate(text, vkey_hash=self.vkey_hash,
                                                 proof_sha256=self.proof_sha256,
-                                                proof_mode=self.proof_mode))
+                                                proof_mode=self.proof_mode,
+                                                receipts=self.gateway.receipts,
+                                                seal=self.gateway.seal()))
 
     # -- 工具（工具调用路径） --
     def on_tool_start(self, serialized: Any, input_str: Any, **kwargs: Any) -> None:
@@ -232,7 +248,8 @@ class PoPCallbackHandler(BaseCallbackHandler):
                                      result=extract_result_text(output))
         self._emit(self.monitor.on_tool_call(receipt, vkey_hash=self.vkey_hash,
                                              proof_mode=self.proof_mode,
-                                             chain=self.gateway.receipts))
+                                             chain=self.gateway.receipts,
+                                             seal=self.gateway.seal()))
 
 
 def verify_certificates(handler: "PoPCallbackHandler", keyring: Any = None) -> bool:

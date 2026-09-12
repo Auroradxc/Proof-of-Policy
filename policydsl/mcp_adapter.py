@@ -100,6 +100,13 @@ class MCPGuard:
         起的每次筛查都会被自己的 seq 判成 ``trace_unbound``。因为预览还没入链，
         这张证书里的 ``trace_root`` 是**「链 + 这次待执行调用」**的摘要，
         与真出证时的链尾（``call_tool`` 第 4 步）不是同一个值。
+
+        也因此它**天然没有 seal**（P1-5b）：网关只对**真实发生过**的链签会话
+        末端承诺，而这次调用还没执行 —— 给它配一条 seal 等于让网关为一次尚未
+        发生的调用背书。所以筛查证书是**预检告知**而不是证据：验证方**给了
+        --gateway-key** 时（=它知道这段会话有网关），``verify_cert.py`` 会对它报
+        ``trace_seal`` FAIL（连带 ``trace_binding`` 也对不上真链），这是**正确**的
+        结论，不是缺陷。要可核验的轨迹证据，请看 ``call_tool`` 第 4 步出的那张。
         """
         preview = self.gateway.preview(name, arguments or {})
         return self.monitor.on_tool_call(preview, vkey_hash=self.vkey_hash,
@@ -113,7 +120,7 @@ class MCPGuard:
         text = extract_result_text(result)
         env = self.result_monitor.on_generate(
             text, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode,
-            receipts=self.gateway.receipts,
+            receipts=self.gateway.receipts, seal=self.gateway.seal(),
             extra={"tool": {"name": name, "phase": "result"}})
         self.result_certificates.append(env)
         if self.on_result_cert is not None:
@@ -156,7 +163,8 @@ class MCPGuard:
         #    判全链：既有结构校验，也让 trace_root 落在真实链尾上。
         env = self.monitor.on_tool_call(receipt, vkey_hash=self.vkey_hash,
                                         proof_mode=self.proof_mode,
-                                        chain=self.gateway.receipts)
+                                        chain=self.gateway.receipts,
+                                        seal=self.gateway.seal())
         self.certificates.append(env)
         if self.on_cert is not None:
             self.on_cert(env)

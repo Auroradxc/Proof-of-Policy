@@ -250,6 +250,11 @@ def private_output(spec: Dict, response: str,
     通过判定的 T」；把 T 拴到这次会话上的是 ``response_binding``。
     二者是不同的问题，所以都保留。
 
+    本字典是 ``pop-types::PrivateOutput`` 的**镜像**，所以**不含** P1-5b 的
+    ``trace_seal``：会话末端承诺是链下网关签的旁证，电路里没有这个东西。
+    它随证书走的是载荷**顶层**的 ``trace_seal`` 字段（见
+    ``policydsl.cert.build_payload``）。
+
     ⚠️ **隐藏性的上界（P0-4 查证后收紧，见 ``docs/sp1-zk-audit.md``）**：
     这里的「承诺」只保证**公开值不出现明文**，**不保证 T 不可恢复**。
     ``response_binding`` 与 ``response_commitment`` 都是**公开且可离线重算**的 T 的函数，

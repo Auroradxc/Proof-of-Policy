@@ -1,6 +1,6 @@
 # 07 · CLI 与脚本
 
-> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（9 个 Python + 4 个 shell）。
+> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（13 个 Python 入口 + 5 个 shell）。
 > 这一板块回答：**每个脚本负责哪一段，什么时候该用哪个。**
 > 完整的复现顺序见 [`../reproduce.md`](../reproduce.md)；这里讲的是**脚本内部在做什么**。
 
@@ -138,6 +138,7 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 | `response_binding` | P0-2：证书 `challenge` 块 / `outcome` 内嵌 / 证明公开值 / **由送达的 `--response` 现场重算** 四者比对（≥2 来源才算过） |
 | `trace_binding` | P1-5：证书 `outcome` 内嵌 / 证明公开值 / **由 `--receipts` 给的网关侧回执链现场重算** 的 `trace_root` 三者比对。链长不必塞进公开值 —— 验证方本来就持有网关发给它的回执 |
 | `receipt_chain`（可选） | P1-5：对 `--receipts` 的链**逐条 Ed25519 验签**（链下那一关）。只给 `--receipts` 不给 `--gateway-key` 时如实记「未给 --gateway-key，回执签名未验」，**不假装验过** |
+| `trace_seal` | P1-5b：载荷**顶层** `trace_seal`（网关在会话末端签的 `{count, trace_root}`）——验签 + `seal.trace_root == outcome.trace_root` +（有 `--receipts` 时）`len(chain) == seal.count` 与链尾摘要。**这一卡拦的是截尾**：`trace_binding` 比的是两份检材，二者可以同时是那条被截断的链。**只给 `--receipts` 而没给 `--gateway-key` 时**核不了签名、也分不开「出证方没承诺」与「没给我看」，故如实记 `PASS + 「截尾不可排除」(skipped)`；**给了 `--gateway-key` 却没有 `trace_seal`** 的证书判 FAIL（既然知道这段会话有网关，就该有它的末端承诺） |
 | `anchor` | 账本链完整 + 摘要存在于账本 |
 | `anchor_on_chain`（可选） | 链上 `anchoredAt` 读回，且与本地 meta 的 `chain_ts` 一致 |
 | `proof_mode` | P0-4：证书自称的 `binding.proof_mode` 与**工件自报的模式**（边车 `*.verify.json` / `*.meta.json` / 验证器输出）比对，多来源必须指向同一档。没有工件的证书只能标 `unproven` —— 自称 `core` 却拿不出证明即判 FAIL；P0-4 之前的旧证书（无此字段）**如实跳过**，不倒过来判它失败 |
@@ -198,12 +199,14 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 （多一项 `challenge_bound`、`zk_proof_mode` 与 `tool_trace`）、顶层的 `challenge` 记录、
 以及有链时的 `chain` 坐标），
 
-> `summary.tool_trace`（P1-5）= `{receipts, trace_root, gateway_keyid, gateway_public_hex}`：
-> 链长、链尾摘要与工具网关公钥。三者都是**公开坐标** —— 验证方拿网关侧收到的回执重算
-> 最后一条的 `SHA256`，即可核对「这份证明绑的是哪条链」，与 `challenge` 之于响应完全对称。
+> `summary.tool_trace`（P1-5）= `{receipts, trace_root, gateway_keyid, gateway_public_hex, seal}`：
+> 链长、链尾摘要、工具网关公钥与**会话末端承诺**（`seal`，P1-5b）。前四项都是**公开坐标** ——
+> 验证方拿网关侧收到的回执重算最后一条的 `SHA256`，即可核对「这份证明绑的是哪条链」，
+> 与 `challenge` 之于响应完全对称；`seal` 更进一步回答「这条链**到此为止**」，因此是
+> 「链尾有没有被整条删掉」的唯一依据（见 [`../security-model.md`](../security-model.md) §5.3）。
 末尾提示用 `verify_session.py` 验证。**这是「12 张证书」的来源**。
 
-### 2.7 `verify_session.py` —— 第三方验证整个会话
+### 2.9 `verify_session.py` —— 第三方验证整个会话
 
 ```bash
 python3 scripts/verify_session.py --session S [--keyring 公钥] \
@@ -232,7 +235,7 @@ python3 scripts/verify_session.py --session S [--keyring 公钥] \
   （`N cert(s) labeled, M predate the field`）。`zk_proof` 那一步还会再拿
   **工件自报的模式**核对一次（多来源必须一致）。
 
-### 2.8 `deploy_anchor.py` / `make_shots.py`
+### 2.10 `deploy_anchor.py` / `make_shots.py`
 
 - `deploy_anchor.py`：`--rpc`（默认 `http://127.0.0.1:8545`）、`--private-key`（默认 `anchor.ANVIL_KEY`）、
   `--out`（默认 `.anchor_deploy.json`，gitignored）。**不需要 solc/forge**，字节码来自
@@ -242,7 +245,7 @@ python3 scripts/verify_session.py --session S [--keyring 公钥] \
 
 ---
 
-### 2.9 `gen_key.py` —— 出证方密钥对（P0-3）
+### 2.11 `gen_key.py` —— 出证方密钥对（P0-3）
 
 ```bash
 python3 scripts/gen_key.py [--out-dir D] [--path P] [--name demo] [--force]
@@ -314,6 +317,7 @@ bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 | 复核整个会话 | `verify_session.py --session session.json [--keyring <公钥>]`（公钥通常已在 `signers` 里） |
 | **核对送达的 T′ 就是被证明的 T** | 上一条再加 `--response T′.txt`（P0-2，见 §2.5） |
 | **核对被证明的轨迹就是我手上这条链** | 上一条再加 `--receipts receipts.json [--gateway-key gw.pub.hex]`（P1-5，见 §2.5） |
+| **核对链有没有被截尾** | 上一条的 `--gateway-key` 是必要条件：seal 的签名与「会话末端承诺」都要它才立得住（P1-5b，见 `verify_cert.py` 的 3d 与安全模型 §5.3） |
 | 全链路最小复现 | `bash scripts/anchor_e2e.sh` |
 | 生成论文/文档用的截图 | `python3 scripts/make_shots.py --run-demo` |
 
@@ -342,7 +346,7 @@ bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 | `tests/test_verifier_only.py` | `verify_cert.py` / `verify_session.py` 的快路径判定 |
 | `tests/test_demo_e2e.py` | `demo_e2e.py` 的会话产物结构 |
 | `tests/test_binding.py::TestChallengedCertificateEndToEnd` | `issue_cert.py --nonce` → `verify_cert.py --response` 的完整闭环（含失败分支） |
-| `tests/test_trace.py::TestVerifyCertTraceBinding` | P1-5 的第三方核对闭环：`verify_cert.py --receipts [--gateway-key]` 的 `trace_binding` / `receipt_chain`（含换链 / 重排 / 伪造链尾 / 缺公钥四个分支） |
+| `tests/test_trace.py::TestVerifyCertTraceBinding` | P1-5 的第三方核对闭环：`verify_cert.py --receipts [--gateway-key]` 的 `trace_binding` / `receipt_chain` / `trace_seal`（含换链 / 重排 / 伪造链尾 / 截尾三路 / 缺公钥五个分支） |
 | `tests/test_anchor_chain.py::TestAnvilEndToEnd` | `deploy_anchor.py` 的部署与读回 |
 | （间接）`tests/test_rules_incircuit.py` | `cross_validate.py` 所用路径的单元版 |
 

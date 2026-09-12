@@ -380,7 +380,8 @@ class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 
 > **落地结果**（下面的设计稿保留作对照，实现与原稿的差异见文末「与设计稿的差异」）：
 > `policydsl/trace.py`（回执/网关/链校验）+ `pop-types` 镜像 + 三个适配器接线 + `tests/test_trace.py`
-> （四条验收 + 六例第三方核对，29 例全绿）+ `cross_validate.py` 全部向量改为回执驱动（host 14/14、prove 14/14）。
+> （四条验收 + 六例第三方核对，29 例全绿；**P1-5b 落地后同文件增至 39 例**，见 T4 行）
+> + `cross_validate.py` 全部向量改为回执驱动（host 14/14、prove 14/14）。
 
 **问题**：`tool_calls` 与 `token_count` 是 `ProofRequest` 里由证明者自填的私有输入
 （`circuits/types/src/lib.rs:112-119,390`）。`tool_arg_guard`/`budget_bound` 因此**语义上不健全**。
@@ -508,8 +509,10 @@ function anchorWithProof(bytes32 digest, bytes calldata proof, bytes calldata pu
 >    并把**截尾**作为独立项 `+ Pr[截尾攻击](A)` 单列 —— 见 §5.3。
 > 3. 新增**口径纪律 D1–D3**（不主张未证之事 / 不把链下步骤算作电路内 / 「公开值无明文」≠「内容不可恢复」）。
 > 4. **本次工作产出一个新的健全性发现**：P1-5 回执链存在**截尾缺口**，已实跑复现、钉成用例
->    （`test_tail_truncation_is_a_known_gap`）并登记为待办 **T4**（对策：网关会话末端 seal）。
->    这正是「先写形式化模型」的价值 —— 缺口是形式化过程发现的，不是事后补的。
+>    （当时用例名 `test_tail_truncation_is_a_known_gap`）并登记为待办 **T4**（对策：网关会话末端 seal）。
+>    这正是「先写形式化模型」的价值 —— 缺口是形式化过程发现的，不是事后补的。**该待办已于
+>    2026-09-11 关闭**（seal 落地，用例翻转为 `TestVerifyCertTraceBinding::test_tail_truncation_is_rejected`），
+>    见上方 T4 行。
 
 `docs/security-model.md` 重写为**游戏式定义 + 归约**：
 
@@ -848,12 +851,14 @@ verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 | **T1** | **租一台一次性 ≥64 GB 云机**（**外部资源，人工动作**），产出 groth16 证明 + 测通验证合约（D2 已拍板） | `P1-7` 链上证明验证的**硬前置**：**本机 12 GB 必 OOM**（compressed 与 groth16 实测都在峰值 ~11.0 GB 被 OOM killer 终止 —— 递归包装的固定开销就超了本机内存，`SHARD_SIZE`/`MEMORY_LIMIT` 无效），groth16/plonk 出不来 | 需要人工租机（约数小时窗口）+ 一次环境搭建（Rust/SP1 工具链或直接搬 `circuits/` 目标目录）；产出入库后本机可离线复核 | ⬜ **未开始（阻塞中）** —— P1-5 完成后，本项是 **P1 段内唯一剩余任务**，也是唯一的外部阻塞；**不解决它，P1 段无法收尾**。建议立即排期租机 |
 | **T2** | 解开 ezkl `create_evm_verifier()` 的 `RuntimeError: no running event loop` | `P2-9`（D3 选定的全量 ezkl 集成）的最后一个阻塞 | 先试 ezkl 12.x；或绕开该 API，直接由编译产物手写 Solidity verifier | ✅ **已完成（2026-09-11）** —— 两条预设备选都不需要：真因是**调用方式**（API 内部走 `pyo3-async-runtimes`，须在事件循环内调用并 await 其返回的 Future），非版本、非依赖。解见 `policydsl/ezkl_evm.py` + `tests/test_ezkl_evm.py`（10 例）、记要见 §P2-9 子任务表 9.0 |
 | **T3** | 真实 SP1 证明的**全量**回归改为「出证 + 验证」两条腿都在 CI 之外定期跑 | 论文 §7 的证明时间/内存数字 | 单次 `cross_validate --prove` ≈ 24 分钟；本机跑即可 | ⬜ 未开始 |
-| **T4** | **P1-5b：堵住回执链的「截尾」缺口**（做 P1-8 时发现，见 [`security-model.md`](security-model.md) §5.3） | `P1-5` 的**健全性缺口**：把链尾那条违规回执**整条删掉**后，剩下的仍是一条结构自洽、逐条签名有效的**真链**，`trace_binding`（证书绑的链 == 送检的链）与 `receipt_chain`（逐条验签）**双双 PASS** —— 实测可复现（`tests/test_trace.py::TestVerifyCertTraceBinding::test_tail_truncation_is_a_known_gap`）。**当链与证书由出证方一起转交时，违规尾巴可被静默截掉** | 需**网关对会话末端做一次承诺**：会话结束回执 `seal{count, trace_root}`（签名），验证方核对 `len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root`。改动面：`policydsl/trace.py`（+ 电路内对 seal 的结构校验）+ `verify_cert.py` 3c + 上述缺口用例**翻转为「截尾必须被拒」** | ⬜ 未开始 —— **在 seal 落地前，`--receipts` 只有在验证方自己从网关取链（渠道不被出证方控制）时才可信**，这一点已写进文档与缺口用例 |
+| **T4** | **P1-5b：堵住回执链的「截尾」缺口**（做 P1-8 时发现，见 [`security-model.md`](security-model.md) §5.3） | `P1-5` 的**健全性缺口**：把链尾那条违规回执**整条删掉**后，剩下的仍是一条结构自洽、逐条签名有效的**真链**，`trace_binding`（证书绑的链 == 送检的链）与 `receipt_chain`（逐条验签）**双双 PASS**；**当链与证书由出证方一起转交时，违规尾巴可被静默截掉**。**这不是「再比一次」能补的** —— 任何只看交付链的检查都无从知道「后面还有没有」 | **网关对会话末端做一次承诺**：`ToolSeal{count, trace_root, ts, keyid, sig}`（域分隔 `pop-trace-seal-v1`），验证方核对 `len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root` + 验签。截尾者只剩两条路：拿原 seal 配截断链（`count` 对不上）或为截断链新签一条（无网关私钥） | ✅ **已完成（2026-09-11，纯代码）** —— 见 `tests/test_trace.py::TestSeal`（9 例）与 `::TestVerifyCertTraceBinding::test_tail_truncation_is_rejected`（原 seal / 伪造 seal / 不带 seal 三路 + 正对照）。改动面：`policydsl/trace.py`（`ToolSeal`/`verify_seal`/`ToolGateway.seal`）+ `cert.build_payload`（载荷**顶层** `trace_seal`）+ `verify_cert.py` **3d** + 各适配器出证点。**两点与原设想的偏离，如实登记**：① **没有做「电路内对 seal 的结构校验」** —— 链尾摘要本就在电路内算并进公开值，「证明绑的是哪条链」已有电路保证；seal 要补的是「网关说这条链到此为止」，那是一个**签名**问题，按本项目「结构入电路、签名在链下」的既有分工放在链下；② **seal 放载荷顶层而不是 `outcome`** —— `outcome` 是证明公开值的镜像（验证方逐字段比对），放进去会让每一张带真实证明的证书都对不上。**残留边界**：验证方须持网关公钥（`--gateway-key`）才拿得到这个保证；只给 `--receipts` 而没给公钥时，3d 记 `PASS + 「截尾不可排除」(skipped)`；且 seal 仍是**网关的**陈述（A4），它把信任挪向网关而非消除信任 |
 
 > **T2 已于 2026-09-11 关闭**（理由见上表与 §P2-9 的 9.0 记要）。
 > **T1 仍开着，且现在没有别的并行项了** —— 它是 P1 段收尾的唯一障碍，也是**外部队列**
 > （要人工去租机、等机器就绪），**越早排队越好**：租机窗口本身可能就要等，
 > 而它一到手，P1-7 的代码侧工作（§P7-C 已有可运行基础）就能立刻接上。
+
+**T4 已于 2026-09-11 关闭**（纯代码落地，见上表）。它不阻塞 `P1-7`，也不阻塞 `P2`。
 
 ```bash
 # 现在就能做的两件事

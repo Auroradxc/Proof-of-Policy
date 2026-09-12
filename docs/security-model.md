@@ -13,8 +13,12 @@
 > | D3 | **「公开值不含明文」≠「内容不可恢复」** | 「零知识」口碑；见 §5.2 |
 >
 > **v2 最重要的产出不是把已做的说清楚，而是发现了一个真缺口**：回执链的**截尾**
-> 攻击三层防线全不设防，实测可复现。见 **§5.3** 与待办 T4 —— 这正是"把安全模型写成
+> 攻击三层防线全不设防，实测可复现。见 **§5.3** —— 这正是"把安全模型写成
 > 游戏"的价值：清单式的 v1 永远问不出"链短了一条会怎样"。
+>
+> **本次（P1-5b）把该缺口堵上**（`ToolSeal`）：网关在会话末端签 `{count, trace_root}`，
+> 验证方核对链长/链尾即无从截尾。**残留边界同样如实登记**：验证方必须持有网关公钥
+> （`--gateway-key`）才拿得到这个保证，且 seal 把信任挪向网关（A4）而非消除信任。
 
 ---
 
@@ -53,7 +57,7 @@
 | `T` 确由某个真实 LLM 产出 | **不在任何层**（非目标，见 §6） | 健全性不受影响；这属于「推理完整性」= P1-6 的范围 |
 | 回执确由**网关**签发 | **链下** Ed25519 验签（D2） | 见 L3：退化为「证明者自述轨迹」 |
 | 网关**不作恶** | **假设** A4 | 网关可签一条与真实执行不符的回执 —— 这是本模型**最弱的一环**，如实标注 |
-| 链是否**完整**（没被截尾） | ⚠️ **目前无人保证** | 见 **§5.3 缺口** |
+| 链是否**完整**（没被截尾） | **链下 + 证书**：网关会话末端承诺 `ToolSeal{count, trace_root}` + 验签（P1-5b） | 验证方须持网关公钥；见 **§5.3** |
 
 ### 0.4 对手能力（统一约定）
 
@@ -155,13 +159,14 @@ G_Ledger(A):                                ; 事后篡改审计记录
 Pr[G_Bind_trace(A) = 1]
    ≤ Adv^{EUF-CMA}_{Ed25519}(B)          ← 来源：链下验签（A3）
    + Adv^{CR}_{SHA256}(B)                ← 结构：seq/prev 咬合 + 链尾摘要（A1+A2）
-   + Pr[截尾攻击](A)                     ← ⚠️ 未覆盖，见 §5.3
+   + Adv^{forge}_{Ed25519}(B)             ← 截尾：伪造会话末端承诺 seal（P1-5b）
 ```
 
 | 层 | 保证 | 落点 | **不保证** |
 |---|---|---|---|
 | **电路内** `verify_receipt_chain` | 链**结构**自洽：`seq` 从 0 连续、`prev` 逐条咬合、摘要由内容重算；不自洽 → `trace_unbound` **fail-closed** | `circuits/types`（guest 与宿主共用） | **不验签**；改动**链尾**那条的内容，结构上仍自洽 |
-| **链下** `trace.verify_chain` | 每条回执确由 keyring 里 `keyid` 对应的 Ed25519 钥签过；非白名单方案前缀**结构性拒绝** | `policydsl/trace.py`、`verify_cert.py --gateway-key` | 不防**网关自身**作恶（A4）；也不提供"完整性"（见 §5.3） |
+| **链下** `trace.verify_chain` | 每条回执确由 keyring 里 `keyid` 对应的 Ed25519 钥签过；非白名单方案前缀**结构性拒绝** | `policydsl/trace.py`、`verify_cert.py --gateway-key` | 不防**网关自身**作恶（A4）；**完整性**由下一行的 seal 层提供（见 §5.3） |
+| **链下 + 证书** `trace.verify_seal` | 链**没有被截尾**：网关会话末端承诺的 `count`/`trace_root` 与交付链一致、签名有效（P1-5b） | `policydsl/trace.py::verify_seal`、`verify_cert.py` 3d | 须持网关公钥；seal 仍是**网关的**陈述（A4） |
 | **公开值** `trace_root` | 链尾摘要随证明承诺；验证方拿**自己手上**的链重算即可核对「证明绑的是哪条链」 | `pub.trace_root`、`verify_cert.py --receipts` | 公开的只是摘要，不是链本身 |
 
 **为什么结构层会落到 A2**：删/换/重排任一条回执，都会让它**后继**那条的 `prev` 对不上
@@ -174,7 +179,8 @@ Pr[G_Bind_trace(A) = 1]
 `trace_binding` **PASS** 而 `receipt_chain` **FAIL**
 （`test_forged_last_element_caught_by_gateway_key`）。
 
-**不保证（**必须与上述三条并列陈述**）**：**链的完整性**。见 §5.3。
+**链的完整性**由第四层（`verify_seal`，P1-5b）承担 —— 但**有前提**：验证方必须持网关
+公钥，且 seal 是网关的陈述（A4）。**少了前提就退回"完整性无保证"**，见 §5.3。
 
 ### L4 脱敏健全性 —— 归约到电路内的匹配见证
 
@@ -264,30 +270,53 @@ Pr[G_Bind_trace(A) = 1]
 `verify_cert.py` 把它与**工件自报的模式**交叉核对，无工件只能标 `unproven`，未知模式一律
 `"unknown"` 而不猜。
 
-### 5.3 ⚠️ **回执链的「截尾」缺口（v2 新发现，未修复）**
+### 5.3 ✅ **回执链的「截尾」缺口（v2 发现 → P1-5b 堵上）**
 
-**攻击**：`A` 跑到第 `m` 次调用时产生了一条违规回执 `r_{m-1}`（比如带了 `token` 参数）。
-`A` **把这条整条删掉**，用前 `m-1` 条出证，并把**同一条截断链**交给验证者。
+**攻击（v2 发现时未修复，此处保留）**：`A` 跑到第 `m` 次调用时产生了一条违规回执
+`r_{m-1}`（比如带了 `token` 参数）。`A` **把这条整条删掉**，用前 `m-1` 条出证，
+并把**同一条截断链**交给验证者。
 
-**为什么三层都拦不住**：剩下的 `m-1` 条是一条**真链** —— 结构自洽（`seq` 0..m-2 连续、
-`prev` 咬合）、逐条签名有效、`trace_root` 由它自己算出。`trace_binding` 比较的是
-「证书绑的链」与「送检的链」，而攻击者让**两边同时**是截断的那条，于是相等。
-
-**实测（可复现）**：`tests/test_trace.py::TestVerifyCertTraceBinding::test_tail_truncation_is_a_known_gap`
-—— 3 条回执（第 3 条带 `token`），交付前 2 条，`verify_cert.py` 输出
-`[PASS] trace_binding` + `[PASS] receipt_chain` + `RESULT: PASS`。
-
+**为什么原三层都拦不住**：剩下的 `m-1` 条是一条**真链** —— 结构自洽（`seq` 0..m-2
+连续、`prev` 咬合）、逐条签名有效、`trace_root` 由它自己算出。`trace_binding` 比较的
+是「证书绑的链」与「送检的链」，而攻击者让**两边同时**是截断的那条，于是相等。
 **这不是"再比一次"能补的**：任何只基于**交付链本身**的检查都无法知道「后面还有没有」。
-要堵住它，必须让**网关对会话末端做一次承诺**：会话结束回执 `seal{count, trace_root}`（签名），
-验证方核对 `len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root`。
-**本仓库尚未实现该 seal**，因此：
 
-> **在 seal 落地前，`verify_cert.py --receipts` 只有在验证方
-> 自己从网关取链、且该渠道不被出证方控制时才可信。**
-> 若链与证书由出证方**一起转交**（同一条渠道），截尾可过。
+**对策（已实现）**：网关在**会话末端**签一条 `ToolSeal{count, trace_root, ts, keyid, sig}`
+（`policydsl/trace.py::ToolGateway.seal`，域分隔 `pop-trace-seal-v1`），随证书载荷顶层
+`trace_seal` 字段一起走。验证方（`verify_cert.py` 卡 **3d**）核对三件事：
+
+1. `seal.sig` 由网关钥签出（链下 Ed25519，与回执验签同一道关）；
+2. `seal.trace_root == 证书/证明承诺的 trace_root`；
+3. 手上有链时（`--receipts`）：`len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root`。
+
+攻击者于是只剩两条路，都不通：拿**原始** seal 配截断链（`count`/链尾对不上），
+或为截断链**新签**一条 seal（没有网关私钥）。**缺口用例已翻转为「截尾必须被拒」**：
+`tests/test_trace.py::TestVerifyCertTraceBinding::test_tail_truncation_is_rejected`
+（(a) 原 seal + 截断链、(b) 冒充 keyid 的伪造 seal、(c) 索性不带 seal，外加"没截尾时全 PASS"的对照）。
+
+**设计取舍（如实登记）**：
+
+- **不改电路**：`trace_root` 本来就在电路内计算并进公开值，「这条证明绑的是哪条链」
+  已有电路保证；seal 补的是「网关说这条链到此为止」，那是一个**签名**问题。按本项目
+  「结构入电路、签名在链下」的既有分工放在链下（`policydsl/trace.py` 的"三层"表因此
+  多出第四行"链下 + 证书"）。这偏离了计划稿 `plan-p0p1p2.md` 待办 T4 里
+  「+ 电路内对 seal 的结构校验」的设想。
+- **seal 在载荷顶层，不在 `outcome` 里**：`outcome` 是**证明公开值的镜像**（验证方逐字段
+  比对），而电路里没有 seal —— 放进 `outcome` 会让**每一张带真实证明的证书**都对不上。
+- **残留信任边界 A4 传染**：seal 是**网关的**陈述。网关作恶（签一条与真实执行不符的回执，
+  §5.4 已列为最弱一环）时，它可以为截断链直接签 seal。**seal 把"信不信证明者"换成
+  "信不信网关"，没有消除信任**，只是把它挪到一个本来就必须被显式信任的实体上。
+- **没有网关公钥就核不了**：`--gateway-key` 缺席时，验证方分不开「出证方没承诺」与
+  「承诺了但没给我看」，此时 3d 记为 **PASS + 「截尾不可排除」(skipped)** —— 与 3c
+  「只有一份检材」的诚实口径一致。**给了网关公钥却没有 `trace_seal` 的证书判 FAIL**
+  （既然知道这段会话有网关，就该有它的末端承诺）。所以：
+
+> **结论：验证方要拿到截尾保证，必须持有网关公钥（`--gateway-key`）。
+> 只给 `--receipts` 时，链尾摘要可比对，但「有没有被截尾」仍未排除。**
 
 登记见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9 待办 **T4（P1-5b）**；
-L3 的命题已把 `Pr[截尾攻击]` 单列一项，而不是藏进"可忽略概率"里。
+L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{forge}_{Ed25519}` 界定
+（伪造 seal 的代价），而不是"无覆盖"。
 
 ### 5.4 其它
 
@@ -329,7 +358,7 @@ L3 的命题已把 `Pr[截尾攻击]` 单列一项，而不是藏进"可忽略�
 | **G_Sound** | 违规向量出证得到 `passed=false`；「空策略证明 + 真策略哈希」攻击回归必须失败 |
 | **G_Bind_pol** | `verify_cert.py` 的 `policy_hash` 卡；`test_policy_binding.py`（含证明层 opt-in） |
 | **G_Bind_resp** | `verify_cert.py --response T′`（3b）；换 `T′`/换 `n`/域分离/空 nonce 四组反例 |
-| **G_Bind_trace** | `verify_cert.py --receipts [--gateway-key]`（3c）；删/换/重排/伪造链尾四组反例；**截尾缺口用例**（§5.3） |
+| **G_Bind_trace** | `verify_cert.py --receipts [--gateway-key]`（3c）；删/换/重排/伪造链尾四组反例；`verify_cert.py --gateway-key`（3d）**截尾必须被拒**（原 seal+截断链 / 伪造 seal / 不带 seal 三路，§5.3） |
 | **G_Priv** | Leak 实验（`private_demo`、`test_private_output_no_leak`）；上界论证见 §5.2 |
 | **G_Redact** | `TestMaskCoverage`（伪造 span → `mask_covered=false`） |
 | **G_Ledger** | `TestAnchorLedger`（链篡改检出）、`TestAnvilEndToEnd`（真链读回） |

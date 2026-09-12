@@ -36,8 +36,9 @@
   "mode": "public",                       // public | private | tool-call
   "outcome": {                            // 即 SP1 承诺的 ProofOutput / PrivateOutput
     "response_binding": "<64hex>",        // P0-2：SHA256("pop-bind-v1"‖len‖nonce‖T)
+    "trace_root": "<64hex>|\"genesis\"",   // P1-5：工具回执链的链尾摘要（空链为 genesis）
     "passed": true,
-    "violations": [{"rule": "...", "kind": "...", "evidence": "..."}]
+    "violations": [{"rule": "...", "kind": "...", "evidence": "..."}],
   },
   "binding": {
     "vkey_hash": "<hex>",                 // "unproven" 表示未附证明（仅链下判定）
@@ -50,6 +51,13 @@
     "scheme": "pop-bind-v1",
     "nonce": "<64hex>",                   // 一次性挑战值（公开）
     "response_binding": "<64hex>"         // 必须与 outcome 内嵌的那个逐字节相同
+  },
+  "trace_seal": {                         // 可选（P1-5b），见下
+    "count": 2,                           // 链上一共几条回执
+    "trace_root": "<64hex>",              // 必须与 outcome.trace_root 逐个字节相同
+    "ts": "2026-09-10T12:00:00Z",
+    "keyid": "ed25519:<hex>",             // 工具网关的钥匙（与出证方钥匙是两把）
+    "sig": "<128hex>"                     // 网关对规范字节的签名
   },
   "ts": "2026-09-10T12:00:00Z",
   "streaming": { /* 可选，见 §5 */ }
@@ -76,6 +84,25 @@
 > （`challenge.NonceStore` 是最小参考实现）；
 > ③不带 `--nonce` 出证 / 不附 `challenge` 的旧路径**不报错也不假装绑定了**：
 > `verify_cert` 显式打印 `not challenge-bound — skipped`，`ai_act` 里对应字段为 `false`。
+
+### 会话末端承诺（`trace_seal`）—— P1-5b
+
+`outcome.trace_root` 说「证明绑的是哪条链」，但它拦不住**截尾**：把链尾那条违规回执
+**整条删掉**，剩下的仍是一条结构自洽、逐条签名有效的**真链**，证书与送检链两边同时
+是截断的那条，`trace_binding` 照样 PASS。能发现「后面还有没有」的只有**网关对会话末端
+的承诺**：`ToolSeal{count, trace_root, ts, keyid, sig}`（`policydsl/trace.py`，域分隔
+`pop-trace-seal-v1`），由 `ToolGateway.seal()` 签发，落在载荷**顶层**。
+
+> **为什么在顶层、不在 `outcome` 里**：`outcome` 是**证明公开值的镜像** ——
+> `verify_cert.py` 的 `proof_outcome` 卡拿它与 `pop-verify` 解出的公开值**逐字段**比对，
+> 而电路里没有 seal 这个东西（它是链下网关签的）。放进 `outcome` 会让**每一张带真实
+> 证明的证书**都对不上。它与 `challenge` 块同属「主机层随证书附上的旁证」。
+
+验证方在 `verify_cert.py` 的 **3d** 卡核对：seal 签名（须 `--gateway-key`）、
+`seal.trace_root == outcome.trace_root`、以及（有 `--receipts` 时）`len(chain) == seal.count`
+与链尾摘要。**没有 `--gateway-key` 就核不了签名，也分不开「出证方没承诺」与「没给我看」** ——
+此时 3d 如实记 `PASS + 「截尾不可排除」(skipped)`；给了网关公钥却**没有** `trace_seal` 的
+证书判 FAIL。详细边界与信任假设见 [`../security-model.md`](../security-model.md) §5.3。
 
 ### 证明模式标注（`binding.proof_mode`）—— P0-4
 
@@ -180,10 +207,10 @@
 build_payload(policy_id, policy_version, spec, mode, outcome,
               vkey_hash, proof_sha256=None, ts=None,
               extra=None, public_values_sha256=None,
-              challenge=None, proof_mode=None) -> dict
+              challenge=None, proof_mode=None, trace_seal=None) -> dict
 ```
 
-`challenge`（P0-2）与 `proof_mode`（P0-4）都是**末位可选参数**，这样更早的所有
+`challenge`（P0-2）、`proof_mode`（P0-4）与 `trace_seal`（P1-5b）都是**末位可选参数**，这样更早的所有
 位置参数调用点（`agent.py` 的第 8 位 `ts`、测试里的 `"TS"`）都无需改动。传了
 `challenge`，载荷才多出上面那个 `challenge` 块，`ai_act.art12_record_keeping.response_bound`
 才为 `true`；`proof_mode` 缺省时按 `proof_sha256` 是否为空推断（空 ⇒ `unproven`）。
@@ -246,10 +273,10 @@ build_payload(policy_id, policy_version, spec, mode, outcome,
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| `generate_outcome(response, mask=None, redacted=None, spans=None)` | 生成 | 算「承诺的判定结果」：public → `canonical_violations`；private → `private_output` |
-| `on_generate(response, ts=None, vkey_hash="unproven", proof_sha256=None, mask=None, redacted=None, spans=None, extra=None, proof_mode=None)` | 生成 | 判定 + 出证（`mode` 沿用构造值） |
-| `tool_call_outcome(name, args, response=None)` | 工具 | 用 `evaluate.check` 判定；结果含 `"zk": True` |
-| `on_tool_call(name, args, ts=None, response=None, vkey_hash="unproven", proof_mode=None)` | 工具 | 判定 + 出证（`mode` 固定为 `"tool-call"`） |
+| `generate_outcome(response, mask=None, redacted=None, spans=None, receipts=None, nonce=b"")` | 生成 | 算「承诺的判定结果」：public → `canonical_violations`；private → `private_output`。**不含 seal**：它返回的是证明公开值的镜像 |
+| `on_generate(response, ts=None, vkey_hash="unproven", proof_sha256=None, mask=None, redacted=None, spans=None, extra=None, proof_mode=None, receipts=None, nonce=b"", seal=None)` | 生成 | 判定 + 出证（`mode` 沿用构造值）；`seal` 落载荷顶层 `trace_seal`（P1-5b） |
+| `tool_call_outcome(receipt, response=None, chain=None)` | 工具 | 用 `evaluate.check` 判定**网关签发的回执**（P1-5）；结果含 `"zk": True` |
+| `on_tool_call(receipt, ts=None, response=None, vkey_hash="unproven", proof_mode=None, chain=None, seal=None)` | 工具 | 判定 + 出证（`mode` 固定为 `"tool-call"`） |
 | `mock_agent()` | — | 确定性、免 LLM 的会话生成器（先工具调用、后生成），供 demo/测试 |
 
 关键语义：

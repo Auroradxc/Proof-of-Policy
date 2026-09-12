@@ -16,6 +16,16 @@
      == 由**网关侧收到的回执链**现场重算的（带 --receipts 时这一路才齐全）。
      另：带 --gateway-key 时对回执链**逐条验签**（链下验签，与电路内的结构校验
      是两道独立的关）—— 摘要对得上只说明内容一致，不说明网关签过；
+  3d. 会话末端承诺（P1-5b）：证书**载荷顶层**的 trace_seal（网关在会话结束时签的
+     `{count, trace_root}`）验签通过，且其 trace_root == 被证明的 trace_root；带
+     --receipts 时再核对 len(链) == seal.count 与链尾摘要。这一卡拦的是**截尾**：
+     3c 比的是「证书绑的链」与「送检的链」两份检材，二者可以同时是那条被截断的
+     链 —— 只有网关签过的 count/链尾能发现「后面还有没有」。
+     **它不依赖 --receipts**（seal 自带 count/链尾），但**要求 --gateway-key**：
+     没有网关公钥就无从判断 seal 真伪，此时「没有 seal」与「出证方没承诺会话末端」
+     分不开，按 3c 的同类做法如实记 PASS + 说明（截尾不可排除），而不是假装核过；
+     给了网关公钥却**没有** trace_seal 的证书则是 FAIL —— 验证方既然知道这段会话
+     有网关，就该有它的末端承诺；
   4. 证书摘要存在于锚定账本中、且账本链完整（记录留存/防篡改）；
   5. （带 --rpc/--contract 时）证书摘要能在 Anchor 合约上读回（链上存在性 + 时间戳）。
 
@@ -88,7 +98,8 @@ def main() -> int:
                     help="P1-5：**网关侧收到的**工具回执链（JSON 数组）。给了才能把"
                          "「证明承诺的链尾」与「自己手上这条链」对上")
     ap.add_argument("--gateway-key", default=None,
-                    help="工具网关公钥（P1-5，形式同 --keyring）：给了就对回执链逐条验签")
+                    help="工具网关公钥（P1-5，形式同 --keyring）：给了就对回执链逐条验签，"
+                         "并核对会话末端承诺 trace_seal（P1-5b，拦截尾）")
     args = ap.parse_args()
 
     env = json.loads(args.cert.read_text(encoding="utf-8"))
@@ -256,7 +267,19 @@ def main() -> int:
     #     验证方本来就持有网关发给它的回执，重算链尾即可。
     tr_cert = (payload.get("outcome") or {}).get("trace_root")
     tr_proof = verifier.committed_trace_root(proof_result) if proof_result else None
+
+    # 网关公钥只加载一次，3c 的回执验签与 3d 的 seal 验签共用。**3d 不依赖
+    # --receipts**：seal 自带 count/trace_root 与签名，所以「验证方手上没有链」
+    # 时仍然能核对「被证明的那条链有没有被截尾」。
+    gw_ring, gw_note = None, ""
+    if args.gateway_key:
+        try:
+            gw_ring = keys.load_keyring(args.gateway_key)
+        except (OSError, ValueError, TypeError) as exc:
+            gw_note = f"网关公钥无法加载：{exc}"
+
     tr_gateway, tr_note = None, ""
+    receipts = None
     if args.receipts is not None:
         receipts = trace.receipts_from_json(
             json.loads(args.receipts.read_text(encoding="utf-8")))
@@ -264,20 +287,16 @@ def main() -> int:
         tr_note = f" — 网关侧 {len(receipts)} 条回执重算"
         # 验签是**另一件事**：摘要对得上只说明内容一致，不说明网关签过。
         # 给了网关公钥就顺带验一遍（这与电路内的结构校验是两道独立的关）。
-        if args.gateway_key:
-            try:
-                gw_ring = keys.load_keyring(args.gateway_key)
-            except (OSError, ValueError, TypeError) as exc:
-                results.append(("receipt_chain", False, f"网关公钥无法加载：{exc}"))
-                gw_ring = None
-            if gw_ring:
-                ok_chain, why = trace.verify_chain(receipts, gw_ring)
-                results.append(("receipt_chain", ok_chain,
-                                f"{len(receipts)} 条回执验签通过" if ok_chain else why))
-        # 单独给了 --receipts 却没给网关公钥：如实说明「结构未验、签名未验」
         if not args.gateway_key:
+            # 单独给了 --receipts 却没给网关公钥：如实说明「签名未验」
             results.append(("receipt_chain", True,
                             "只重算了链尾摘要；未给 --gateway-key，回执签名未验"))
+        elif gw_ring is None:
+            results.append(("receipt_chain", False, gw_note))
+        else:
+            ok_chain, why = trace.verify_chain(receipts, gw_ring)
+            results.append(("receipt_chain", ok_chain,
+                            f"{len(receipts)} 条回执验签通过" if ok_chain else why))
     if tr_cert is None and tr_proof is None:
         results.append(("trace_binding", True,
                         "certificate has no trace_root — skipped（P1-5 之前签发的证书）"))
@@ -290,6 +309,49 @@ def main() -> int:
         if not ok_tr and tr_gateway is not None:
             tr_note = " — 网关侧回执链与证书对不上"
         results.append(("trace_binding", ok_tr, tr_detail + tr_note))
+
+        # 3d) 会话末端承诺（P1-5b）：这条链**有没有被截尾**。
+        #
+        #     3c 回答「证明绑的是不是我手上这条链」，但它比的是**两份检材**，
+        #     而两份都可以是那条被截断的链 —— 任何只看交付链的检查都无从知道
+        #     「后面还有没有」。唯一的补法是让网关对会话末端签字：seal 里带
+        #     `count` 与 `trace_root`，截尾必然让其中之一对不上。
+        #
+        #     三处一起比：seal 自称的链尾 == 证书/证明承诺的 trace_root（说明
+        #     这条 seal 说的就是被证明的那条链）；再（有 --receipts 时）核对手上
+        #     这条检材的长度与链尾。签名那一关与回执验签同级，都靠 --gateway-key。
+        #
+        #     它在载荷**顶层**而不是 outcome 里：outcome 是证明公开值的镜像
+        #     （上面 proof_outcome 卡逐字段比过），而 seal 是链下网关签的，
+        #     电路里没有这个东西。
+        seal = trace.seal_from_json(payload.get("trace_seal"))
+        if seal is None and args.gateway_key:
+            # 验证方给了网关公钥 ⇒ 它知道这段会话由一个（这把钥匙的）网关经手，
+            # 证书却没有任何末端承诺 —— 「链尾被整条删掉」无从排除。这是**矛盾**，
+            # 不是「旧版证书」，所以判 FAIL 而不是跳过。
+            results.append(("trace_seal", False,
+                            "证书没有 trace_seal（P1-5b 之前签发，或出证方未承诺会话末端）"
+                            "—— 无法排除链尾被整条删掉；请重签"))
+        elif seal is None:
+            # 没给网关公钥：seal 的真伪本来就核不了，「没有 seal」与「出证方没承诺」
+            # 也分不开。如实记一条 PASS + 说明（与 3c 的「只有一份来源」同类），
+            # 绝不写成「截尾已排除」。
+            results.append(("trace_seal", True,
+                            "证书未附 trace_seal —— 会话末端未被承诺，**截尾不可排除**；"
+                            "未给 --gateway-key，此处无从进一步核对 (skipped)"))
+        elif tr_cert is not None and seal.trace_root != tr_cert:
+            results.append(("trace_seal", False,
+                            f"seal.trace_root={seal.trace_root[:12]}… != 证书承诺的 "
+                            f"trace_root={tr_cert[:12]}…"
+                            "（seal 承诺的链尾与证书承诺的不一致：链被截尾或换成了另一条）"))
+        elif args.gateway_key and gw_ring is None:
+            # 给了钥匙却加载不了：不能降级成「结构对就算过」——那等于假装验过。
+            results.append(("trace_seal", False, gw_note))
+        else:
+            ok_seal, why_seal = trace.verify_seal(seal, gw_ring, receipts)
+            if ok_seal and not gw_ring:
+                why_seal = ("seal 与链长/链尾一致；未给 --gateway-key，seal 签名未验")
+            results.append(("trace_seal", ok_seal, why_seal))
 
     # 4) 锚定账本：链完整 + 证书摘要确实在账本中
     ok_chain, reason = anchor.verify_ledger(args.ledger)

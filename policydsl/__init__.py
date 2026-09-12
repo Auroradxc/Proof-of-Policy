@@ -12,11 +12,12 @@ from .model import (  # noqa: F401
 )
 from .compile import compile_policy, SPEC_VERSION  # noqa: F401
 from .evaluate import check  # noqa: F401
-from .trace import ToolGateway, ToolReceipt, verify_chain  # noqa: F401
+from .trace import (  # noqa: F401
+    ToolGateway, ToolReceipt, ToolSeal, verify_chain, verify_seal,
+)
 
 __all__ = [
     "Policy", "Rule", "Transcript", "Violation", "CheckResult",
-    "PolicyError",
     "compile_policy", "SPEC_VERSION", "check",
-    "ToolGateway", "ToolReceipt", "verify_chain",
+    "ToolGateway", "ToolReceipt", "ToolSeal", "verify_chain", "verify_seal",
 ]

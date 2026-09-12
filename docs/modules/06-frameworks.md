@@ -181,6 +181,9 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
   的事），但仍会签出一张筛查证书存证 —— 「曾经试图调用」不该查无实据。
 - **预览回执的诚实边界**：`_screen` 时工具还没执行，`result_digest` 无从谈起，所以那张证书（以及
   单独调用 `guard.check()` 得到的证书）里 `trace_root` 是**临时值**；随证明走的是第 ⑤ 步那张。
+  同理它**天然没有 `trace_seal`**（P1-5b）：网关只对**真实发生过**的链签会话末端承诺 ——
+  给预览配 seal 等于让网关为一次尚未发生的调用背书。验证方给了 `--gateway-key` 时，
+  `verify_cert.py` 会对筛查证书报 `trace_seal` FAIL，这是**正确**的结论（它是预检告知，不是证据）。
 - **结果侧证书是独立的**：`result_monitor` 是**另一个** `AgentMonitor`（内容策略包），
   `on_generate(..., extra={"tool": {"name": ..., "phase": "result"}})`，
   保证「工具的返回文本」也被内容策略判定。
@@ -195,7 +198,7 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
 | 名称 | 说明 |
 |---|---|
 | `MCPGuard(monitor, vkey_hash, block_on_violation=False, on_cert=None, result_monitor=None, block_on_result_violation=False, on_result_cert=None, proof_mode=None, gateway=None)` | 守护（`gateway` 缺省用进程内临时 Ed25519 钥的工具网关） |
-| `guard.receipts` | 当前回执链（交给生成路径出证；`trace_root` 进公开值） |
+| `guard.receipts` / `guard.gateway.seal()` | 当前回执链 / 会话末端承诺（P1-5b）。交给生成路径出证：`trace_root` 进 `outcome`、`seal` 进载荷顶层 `trace_seal` |
 | `guard.check(name, args)` | 只判定参数并出证（不调用工具） |
 | `guard.judge_result(name, result)` | 只判定返回文本（未配 `result_monitor` 时返回 `None`） |
 | `guard.call_tool(session, name, args)` / `call_tool_sync(...)` | 完整流程，返回 `(result, args_cert)` |
@@ -207,14 +210,14 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
 
 ## 5. 三者的证书形态对照
 
-| 适配器 | 路径 | 证书 `mode` | `kind`（demo_e2e 里） |
-|---|---|---|---|
-| `PoPCallbackHandler.on_llm_end` | 生成 | `public`（沿用 monitor 的 mode） | `llm` |
-| `PoPCallbackHandler.on_llm_new_token` | 生成（流式） | `public` + `streaming` | `stream` |
-| `PoPCallbackHandler.on_tool_end` | 工具 | `tool-call` | `tool-args` |
-| `MCPGuard.check` | 工具 | `tool-call` | `tool-args` |
-| `MCPGuard.judge_result` | 生成（结果侧） | `public` + `extra.tool` | `tool-result` |
-| `LangGraphEventCertifier` | 两者 | 同上 | — |
+| 适配器 | 路径 | 证书 `mode` | `kind`（demo_e2e 里） | `trace_seal`（P1-5b） |
+|---|---|---|---|---|
+| `PoPCallbackHandler.on_llm_end` | 生成 | `public`（沿用 monitor 的 mode） | `llm` | 有（绑该时刻的链 + 网关 seal） |
+| `PoPCallbackHandler.on_llm_new_token` | 生成（流式） | `public` + `streaming` | `stream` | 有（**签发那一刻**的快照；后续调用会让它作废 —— 这正是 `partial` 的含义） |
+| `PoPCallbackHandler.on_tool_end` | 工具 | `tool-call` | `tool-args` | 有 |
+| `MCPGuard.check` | 工具 | `tool-call` | `tool-args` | **无**（预检告知，见上） |
+| `MCPGuard.judge_result` | 生成（结果侧） | `public` + `extra.tool` | `tool-result` | 有 |
+| `LangGraphEventCertifier` | 两者 | 同上 | — | 有 |
 
 `scripts/demo_e2e.py` 一次会话产出 **12 张证书**：流式（含早停）、LLM、MCP 参数 + 结果、zk 各若干。
 
@@ -227,17 +230,22 @@ result, args_cert = await guard.call_tool(session, "search_kb", {"query": "refun
 2. **流式状态按 `run_id` 隔离**：`_sbuf`/`_scount`/`_sverdict`/`_sstopped` 都是 per-run 字典；
    `on_llm_end` 会清理该 run 的全部流式状态（避免长会话内存泄漏）。
 3. **早停只影响「是否继续出证」**，不改变最终判定的健全性。
-4. **`vkey_hash` 默认 `"unproven"`**：框架路径签发的证书默认**不绑定证明**；
+4. **生成路径也绑轨迹（P1-5b）**：`on_llm_end` / `on_llm_new_token` / `guard_node(generate)` /
+   `LangGraphEventCertifier` 出的**内容**证书同样带 `receipts=gateway.receipts` 与
+   `seal=gateway.seal()` —— 一张写着 `trace_root` 却没有 seal 的证书，验证方无从排除
+   「链尾（乃至整条链）被删」。代价是内容证书的 `passed` 也**涵盖整条链**：脏轨迹上不会再
+   出现 `passed=true` 的内容证书（与工具路径同一口径）。
+5. **`vkey_hash` 默认 `"unproven"`**：框架路径签发的证书默认**不绑定证明**；
    附证明的证书由 `scripts/issue_cert.py` / `demo_e2e.py` 的 zk 路径产出。
    `vkey_hash` 与 `proof_mode`（P0-4 的**证据档位诚实标注**）必须**成对**给出：
    只说「绑了哪个程序」而不说「这档证据隐藏了什么」，第三方就无从判断
    「响应内容被隐藏」是否成立。适配器把 `proof_mode` 作为构造参数（`guard_node`
    则作为关键字参数）一路带给 `build_payload`，缺省 `None` ⇒ 载荷按「未附工件」
    记 `unproven`。全部适配器的 `proof_mode` 语义见 [`03`](03-certificate.md) §2。
-5. **工具路径的 `zk: True` 是「规则可证」**，不是「这张证书附了证明」（见 `03` §6）。
-6. **缺失框架时的行为**：`PoPCallbackHandler` 回退到鸭子类型基类（可离线单测）；
+6. **工具路径的 `zk: True` 是「规则可证」**，不是「这张证书附了证明」（见 `03` §6）。
+7. **缺失框架时的行为**：`PoPCallbackHandler` 回退到鸭子类型基类（可离线单测）；
    `require_langgraph()` 抛明确错误；`MCPGuard` 本身不 import mcp（对 fake 也适用）。
-7. **不要翻译工具函数的 docstring**：`test_frameworks.py` 与 `mcp_echo_server.py` 里
+8. **不要翻译工具函数的 docstring**：`test_frameworks.py` 与 `mcp_echo_server.py` 里
    `@tool` 函数的 docstring 会被框架当作**工具描述**发给模型，属于功能性字符串而非注释。
 
 ---

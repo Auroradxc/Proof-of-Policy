@@ -48,7 +48,6 @@ pub fn main() {
 | `Constraint` | 六种变体的枚举（见下表） |
 | `ProofRequest { response, constraints, nonce, receipts }` | 公开模式输入（`nonce` 为 P0-2 挑战值，`serde(default)`；`receipts` 为 P1-5 回执链）。**`deny_unknown_fields`** |
 | `Violation { rule, kind, evidence }` | 违规（证据为**字符串**） |
-| `ProofOutput { policy_hash, response_binding, trace_root, passed, violations }` | 公开模式输出（提交为公开值；`trace_root` 为链尾摘要，空链为 `"genesis"`） |
 | `PrivateViolation { rule, kind, evidence_commitment }` | 私有模式的违规（只有承诺） |
 | `RedactionProof { redacted_commitment, mask_count, redaction_ok, mask_covered }` | 脱敏证明 |
 | `PrivateRequest { response, constraints, nonce, mask, redacted, spans, receipts }` | 私有模式输入（`nonce` 同上）。**`deny_unknown_fields`** |

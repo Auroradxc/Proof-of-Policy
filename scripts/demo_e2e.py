@@ -265,6 +265,9 @@ def main() -> int:
                 "trace_root": guard.gateway.trace_root,
                 "gateway_keyid": guard.gateway.signer.keyid,
                 "gateway_public_hex": getattr(guard.gateway.signer, "public_hex", None),
+                # P1-5b：网关对**会话末端**的签名承诺。验证方拿它核对链长与链尾，
+                # 从而能发现「链尾那条违规回执被整条删掉」。
+                "seal": guard.gateway.seal().to_dict(),
             },
             "zk_passed": zk_passed,
             # 诚实标注（P0-4）：这张 zk 证书到底附了哪一档证据

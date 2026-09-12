@@ -92,9 +92,13 @@ def guard_node(monitor: AgentMonitor, node: Callable[..., Any], kind: str = "gen
         if kind == "generate":
             raw = result.get(key, "")
             text = raw if isinstance(raw, str) else str(raw)
+            # 与工具路径同源：生成证书也绑整条回执链并附网关的会话末端承诺——
+            # 否则它在 verify_cert.py 的 trace_seal 卡上无从排除链尾被删（P1-5b）。
             certs.append(monitor.on_generate(text, vkey_hash=vkey_hash,
                                              proof_sha256=proof_sha256,
-                                             proof_mode=proof_mode))
+                                             proof_mode=proof_mode,
+                                             receipts=gw.receipts,
+                                             seal=gw.seal()))
         elif kind == "tool":
             name = str(result.get(tool_name_key, "tool"))
             targs = result.get(tool_args_key, {}) or {}
@@ -102,7 +106,8 @@ def guard_node(monitor: AgentMonitor, node: Callable[..., Any], kind: str = "gen
                                result=extract_result_text(result.get(key, "")))
             certs.append(monitor.on_tool_call(receipt, vkey_hash=vkey_hash,
                                               proof_mode=proof_mode,
-                                              chain=gw.receipts))
+                                              chain=gw.receipts,
+                                              seal=gw.seal()))
         else:
             raise ValueError("kind must be 'generate' or 'tool'")
         out = dict(result)
@@ -189,8 +194,10 @@ class LangGraphEventCertifier:
             # 模型完成：签发生成证书
             text = _extract_text(data.get("output")) or _content_text(data.get("output"))
             if text:
+                # 同 ``guard_node``：生成证书也绑链 + 附会话末端承诺（P1-5b）。
                 self.certificates.append(self.monitor.on_generate(
-                    text, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode))
+                    text, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode,
+                    receipts=self.gateway.receipts, seal=self.gateway.seal()))
         elif name == "on_tool_end":
             # 工具结束：签发工具证书
             tool = str(event.get("name") or "tool")
@@ -202,4 +209,5 @@ class LangGraphEventCertifier:
             self.certificates.append(
                 self.tool_monitor.on_tool_call(receipt, vkey_hash=self.vkey_hash,
                                                proof_mode=self.proof_mode,
-                                               chain=self.gateway.receipts))
+                                               chain=self.gateway.receipts,
+                                               seal=self.gateway.seal()))

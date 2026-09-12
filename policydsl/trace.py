@@ -33,10 +33,34 @@ agent（连同它要证明的响应）只能把这些回执**原样转发**。�
 | 电路内 | 链**结构**自洽：``seq`` 连续、``prev`` 逐条咬合、每条回执的摘要由**它自己的内容**重算 | ``chain_ok`` ↔ ``pop_types::verify_receipt_chain`` |
 | 链下 | 每条回执确实由**网关**签发（Ed25519 验签） | ``verify_chain``（Python）/ 验证方离线执行 |
 | 公开值 | ``trace_root``（链尾摘要）随证明一起承诺，验证方拿**网关侧收到的回执**重算即可比对 | ``ProofOutput::trace_root`` |
+| 链下 + 证书 | 这条链**没有被截尾**：网关在会话末端签发的 ``ToolSeal{count, trace_root}``（P1-5b） | ``verify_seal`` / ``ToolGateway.seal`` |
 
 **电路内不验 Ed25519**（zkVM 内验签代价高，见 `docs/plan-p0p1p2.md` §P1-5 的
 取舍说明），所以「回执链可信」这一步依赖**链下验签 + 公开值里的 ``trace_root``**。
 论文 §4.2 如实标注了这一点，不宣称电路内完成了签名验证。
+
+## 截尾与 ``ToolSeal``（P1-5b）
+
+上面三层都拦不住一种攻击：把链尾那条**违规**回执**整条删掉**。剩下的仍是一条
+结构自洽、逐条签名有效的**真链**，只是短了；而任何只基于**交付链本身**的检查都
+无从知道「后面还有没有」—— ``trace_root`` 比对也一样（攻击者让证书与检材同时
+是那条截断的链）。
+
+补法只有一条：让网关对**会话末端**做一次承诺。:meth:`ToolGateway.seal` 在会话
+结束时签一条 :class:`ToolSeal`：``{count, trace_root, ts, keyid, sig}``。验证方
+拿到它（它随证书一起走，载荷顶层的 ``trace_seal`` 字段）后核对：
+
+1. ``sig`` 由网关钥签过（**链下**，与回执验签同一道关）；
+2. ``seal.trace_root == 证书/证明承诺的 trace_root``；
+3. 手上若真有链（``--receipts``）：``len(chain) == seal.count`` 且
+   ``trace_root(chain) == seal.trace_root``。
+
+截尾的攻击者要么拿原始 seal（``count`` 对不上 ⇒ 拒），要么为截断的链伪造一条
+seal（网关签名伪造不了 ⇒ 拒）。**这一步不需要改电路**：链尾摘要本来就已经在
+电路内计算并进公开值了，「这条证明绑的是哪条链」已有电路保证；seal 要补的是
+「网关说这条链到此为止」，那是一个签名问题，按本项目「结构入电路、签名在链下」
+的既有分工放在链下。这偏离了计划稿里「+ 电路内对 seal 的结构校验」的设想，
+理由与代价见 `docs/plan-p0p1p2.md` 待办 T4。
 
 ## 确定性分词（``token_count`` 语义变更）
 
@@ -65,6 +89,9 @@ from . import cert
 
 #: 回执摘要与签名的域分隔前缀（对应 ``pop_types::TRACE_DOMAIN``）。
 TRACE_DOMAIN = b"pop-trace-v1"
+#: 会话末端承诺（seal）的域分隔前缀 —— 与回执的域**不同**，所以一条 seal 的
+#: 签名不可能被当成一条回执的签名用（反之亦然）。
+SEAL_DOMAIN = b"pop-trace-seal-v1"
 #: 空链的链尾（对应 ``pop_types::TRACE_GENESIS``）。
 GENESIS = "genesis"
 
@@ -128,6 +155,148 @@ class ToolReceipt:
             keyid=str(d.get("keyid", "")),
             sig=str(d.get("sig", "")),
         )
+
+
+@dataclass(frozen=True)
+class ToolSeal:
+    """网关对**一次会话的整条链**签发的末端承诺（P1-5b）。
+
+    它只承诺两件事，而这两件事恰好是「截尾」攻击必须破坏的：
+
+    - ``count``：这条链一共几条回执（= 真实发生过的工具调用次数）；
+    - ``trace_root``：链尾摘要（与 :func:`trace_root` 同一算法）。
+
+    验证方核对 ``count``/``trace_root`` 与手上的链是否一致、``sig`` 是否由网关
+    签出，即可判断「我拿到的链是不是完整的那条」。**没有它，删掉链尾的一条违规
+    回执是无法被发现的**（见模块 docstring 的「截尾与 ToolSeal」一节）。
+    """
+
+    #: 链的回执条数（可以为 0：一次工具都没调用也是一次合法的会话）。
+    count: int
+    #: 链尾摘要（空链为 ``"genesis"``）。
+    trace_root: str
+    ts: str = ""
+    keyid: str = ""
+    #: 网关签名的十六进制（不参与摘要计算）。
+    sig: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转成可 JSON 化的字典（随证书载荷顶层的 ``trace_seal`` 一起走）。"""
+        return {
+            "count": self.count,
+            "trace_root": self.trace_root,
+            "ts": self.ts,
+            "keyid": self.keyid,
+            "sig": self.sig,
+        }
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "ToolSeal":
+        """从字典还原（缺字段给缺省值）。"""
+        return cls(
+            count=int(d["count"]),
+            trace_root=str(d["trace_root"]),
+            ts=str(d.get("ts", "")),
+            keyid=str(d.get("keyid", "")),
+            sig=str(d.get("sig", "")),
+        )
+
+
+def canonical_seal_bytes(s: ToolSeal) -> bytes:
+    """seal 的规范字节编码（**签名的唯一原像**）。
+
+    编码 = ``SEAL_DOMAIN ‖ u32_be(count) ‖ lp(trace_root) ‖ lp(ts) ‖ lp(keyid)``。
+    与 :func:`canonical_receipt_bytes` 同构（长度前缀、字段顺序写死、不用 JSON），
+    且带上 ``keyid`` —— 换钥匙就要换签名。
+    """
+    return b"".join([
+        SEAL_DOMAIN,
+        int(s.count).to_bytes(4, "big"),
+        _lp_str(s.trace_root),
+        _lp_str(s.ts),
+        _lp_str(s.keyid),
+    ])
+
+
+def seal_digest(s: ToolSeal) -> str:
+    """seal 的摘要（十六进制）—— 需要把「用的是哪条 seal」压成一个值时用它。"""
+    return hashlib.sha256(canonical_seal_bytes(s)).hexdigest()
+
+
+def seal_for(receipts: Sequence[ToolReceipt], gateway: "ToolGateway",
+             ts: Optional[str] = None) -> ToolSeal:
+    """用 ``gateway`` 给一条**已经签好的链**补一条 seal（便捷函数）。
+
+    正常路径是 :meth:`ToolGateway.seal`（网关自己知道自己的链）；这个函数是给
+    「链与网关分离」的调用方（测试、离线复算）用的。
+    """
+    return gateway.seal(receipts=receipts, ts=ts)
+
+
+def verify_seal(seal: Optional[ToolSeal], keyring: Any = None,
+                receipts: Optional[Sequence[ToolReceipt]] = None) -> Tuple[bool, str]:
+    """seal 的三项核对：链长、链尾摘要、（给了钥匙时）签名。
+
+    三项各自回答一个不同的问题，缺一项结论就不完整 —— 与 :func:`verify_chain`
+    一样返回 ``(是否成立, 说明)``，说明会原样进证书/CLI 输出：
+
+    - ``receipts`` 不为 None：核对 ``count`` 与 ``len(receipts)``、
+      ``trace_root`` 与 :func:`trace_root`\\ (receipts)——**这两项是截尾的检测点**；
+    - ``keyring`` 不为 None：核对方案前缀、``keyid`` 在 ring 里、``sig`` 验签通过
+      ——**这一项是「seal 是不是网关签的」**，没有它，前两项只说明检材自洽
+      （攻击者可以给截断的链配一条自己造的 seal）。
+
+    ``keyring is None`` 时会**如实说明签名未验**，但结构/一致性能核的先核 ——
+    这与 ``verify_cert.py`` 里「只给 --receipts 不给 --gateway-key」的处理一致。
+    """
+    if seal is None:
+        return False, "证书没有 trace_seal（会话末端未被网关承诺）—— 无法排除截尾"
+    if receipts is not None:
+        if int(seal.count) != len(receipts):
+            return False, (f"seal.count={seal.count} != 交付链长 {len(receipts)}"
+                           "（链被截尾或换了另一条链）")
+        root = trace_root(list(receipts))
+        if seal.trace_root != root:
+            return False, (f"seal.trace_root={_short(seal.trace_root)} != 交付链链尾"
+                           f" {_short(root)}（链被截尾或换了另一条链）")
+    if keyring is None:
+        return True, "只核对了 count/trace_root；未给网关公钥，seal 签名未验"
+    scheme = seal.keyid.split(":", 1)[0]
+    if scheme not in _ALLOWED_SCHEMES:
+        return False, f"不接受的 keyid 方案 '{scheme}'"
+    ring = cert._normalize_keyring(keyring)
+    verifier = ring.get(seal.keyid)
+    if verifier is None:
+        return False, f"keyid 不在 keyring 里（{seal.keyid}）"
+    try:
+        sig = bytes.fromhex(seal.sig)
+    except ValueError:
+        return False, "seal 签名不是合法十六进制"
+    data = canonical_seal_bytes(seal)
+    try:
+        good = bool(cert._ed25519_verify(verifier, data, sig)
+                    if isinstance(verifier, cert.Ed25519PublicKey)
+                    else verifier.verify(data, sig))
+    except Exception:
+        good = False
+    if not good:
+        return False, "seal 签名验证失败"
+    return True, f"seal 已由 {seal.keyid} 签出（count={seal.count}）"
+
+
+def _short(digest: str, n: int = 12) -> str:
+    """摘要截断显示（只在**说明文字**里用，不参与任何判定）。"""
+    return digest if len(digest) <= n else digest[:n] + "…"
+
+
+def seal_to_json(seal: Optional[ToolSeal]) -> Optional[Dict[str, Any]]:
+    """seal → 证书载荷顶层 ``trace_seal`` 的 JSON 形状（None 原样透传）。"""
+    return None if seal is None else seal.to_dict()
+
+
+def seal_from_json(d: Any) -> Optional[ToolSeal]:
+    """证书载荷顶层 ``trace_seal`` → seal（``None``/缺失 → ``None``）。"""
+    return None if not d else ToolSeal.from_dict(d)
 
 
 def arg_str(value: Any) -> str:
@@ -427,6 +596,31 @@ class ToolGateway:
         receipt = replace(unsigned, sig=sig.hex())
         self._receipts.append(receipt)
         return receipt
+
+    def seal(self, receipts: Optional[Sequence[ToolReceipt]] = None,
+             ts: Optional[str] = None) -> ToolSeal:
+        """对**会话末端**做一次承诺（P1-5b）—— 让截尾可被发现。
+
+        缺省对当前链（:attr:`receipts`）签发；``receipts`` 可以让调用方指定
+        另一条链（离线复算用）。返回的对象应随证书一起走
+        （载荷顶层 ``trace_seal``），验证方拿它核对链长与链尾。
+
+        签名是**确定性**的（Ed25519 无随机化），所以对同一条链重复调用会得到
+        逐字节相同的 seal —— 调用方不必缓存它。
+
+        ⚠️ 会话中途再调 :meth:`issue` 会让之前那条 seal 的 ``count``/``trace_root``
+        对不上（这正是想要的：seal 说的是「到此为止」）。要出证请在**最后一次
+        工具调用之后**取 seal。
+        """
+        chain = list(self._receipts if receipts is None else receipts)
+        unsigned = ToolSeal(
+            count=len(chain),
+            trace_root=trace_root(chain),
+            ts=ts or self._fixed_ts or utc_now(),
+            keyid=self.signer.keyid,
+        )
+        return replace(unsigned,
+                       sig=self.signer.sign(canonical_seal_bytes(unsigned)).hex())
 
 
 def make_chain(entries: Sequence[Sequence[Any]],
