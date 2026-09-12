@@ -99,7 +99,7 @@ SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附真实 Core 证明（~6
 - 🔐 **SP1 健全性与零知识性核查（P0-4）**：`docs/sp1-zk-audit.md` —— 健全性成立；**`core`/`compressed` 证明非零知识**（Succinct 官方安全模型明文 + 本机源码审计，两类独立证据）。私有模式因此只能宣称「公开值不泄露明文」，不能宣称「`T` 不可恢复」
 - 🔎 审计路径（verifier-only，免构造证明器）：`circuits/verifier`（bin `pop-verify`）+ `pop-script --proof-mode compressed`；见 `docs/reproduce.md` §11
 - ⛓ 链上锚定（真跑本地 Anvil）：`contracts/Anchor.sol` + `bash scripts/anchor_e2e.sh`（部署 → 每张证书摘要上链 → 第三方 `verify_session --rpc` 核对 + 反例对照）；见 `docs/reproduce.md` §12
-- 📝 论文初稿：`paper/proof-of-policy.md` · 评测脚本与结果：`bench/`（`bench/results/*.md`）· EU AI Act 映射：`docs/eu-ai-act-mapping.md`
+- 📝 论文初稿：**`paper/proof-of-policy.tex`（权威源，`xelatex` 编译）**；`paper/proof-of-policy.md` 是**便于阅读的镜像**，两者不一致时以 `.tex` 为准 · 评测脚本与结果：`bench/`（`bench/results/*.md`）· EU AI Act 映射：`docs/eu-ai-act-mapping.md`
 
 依赖（可选，安装后真实框架测试自动启用）：`pip install -r requirements-frameworks.txt`（或 `bash scripts/install_frameworks.sh`）。
 

@@ -1,0 +1,785 @@
+% !TEX program = xelatex
+%
+% Proof-of-Policy —— 论文 LaTeX 源（本文件是论文的**权威源**）。
+%
+% 编译（需要 XeLaTeX + ctex；中文字体由 ctex 宏包自动配置）：
+%     xelatex proof-of-policy.tex
+%     xelatex proof-of-policy.tex        % 第二遍解析目录/交叉引用
+% 或：
+%     latexmk -xelatex proof-of-policy.tex
+%
+% 依赖的宏包（TeX Live 里的包名）：
+%     ctex          ← texlive-lang-chinese / texlive-lang-cjk
+%     booktabs, enumitem, fancyvrb, caption, geometry, hyperref, xcolor
+%     （后几个在 texlive-latex-recommended / texlive-latex-extra 里）
+% 一次性安装：
+%     sudo apt-get install texlive-xetex texlive-lang-chinese texlive-latex-extra latexmk
+%
+% 正文里的代码/标识符统一走 \code{}（内部 \detokenize），因此下划线等
+% 特殊字符**不必**转义；唯一不能写的是花括号，遇到时手写成 \{ \}。
+%
+% 与 paper/proof-of-policy.md 的关系：**本文件是权威源**。那边是同内容的
+% Markdown 版（便于在 GitHub 上直接阅读），若两者不一致以本文件为准。
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[UTF8]{ctex}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{fancyvrb}
+\usepackage{xcolor}
+\usepackage{pifont}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage[hidelinks,bookmarksnumbered]{hyperref}
+\hypersetup{
+  pdftitle={Proof-of-Policy: Policy-Zero-Knowledge Compliance Certificates for LLM Agent Responses without Trusted Hardware},
+  pdfkeywords={zero-knowledge, policy compliance, LLM agent, zkVM, SP1, compliance certificate}
+}
+
+% —— 统一标识符排版：\code{keyword_block} 不必转义下划线 ——
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+% 域/引理名（小体大写 + 间距），如 \lem{L8}、\assump{A1}
+\newcommand{\lem}[1]{\texorpdfstring{\textsc{L#1}}{L#1}}
+\newcommand{\assump}[1]{\texorpdfstring{\textsc{A#1}}{A#1}}
+
+\title{\bfseries Proof-of-Policy: Policy-Zero-Knowledge Compliance\\ Certificates for LLM Agent Responses without Trusted Hardware}
+\author{}
+\date{\today\quad（工作稿 \texttt{Phase 6 / W8}）}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+面向 LLM 智能体的合规声明当前无法被独立核验：TEE 方案只证明「护栏执行过」而非「输出满足策略」，
+且引入硬件信任与厂商依赖；形式化方法需要人工形式化政策且难覆盖模糊规则；现有 ZK 积木
+（zk-regex、PII 脱敏证明）只是单条原语，未构成策略级系统。
+我们提出 \textbf{Proof-of-Policy（PoP）}：证明「响应 $T$ 满足公开策略 $\pi$」，
+\textbf{无 TEE、无硬件信任}，并支持\textbf{双隐私模式}——透明模式公开响应，
+私有模式只公开响应承诺、违规定位与证据承诺，并可证明\textbf{带脱敏的选择性披露}。
+PoP 以\textbf{通用策略 DSL}（黑名单/长度/格式/正则-PII/工具参数/预算/同形异义归一化，AND 组合）
+编译为可序列化 \code{ConstraintSpec}，在 \textbf{SP1 zkVM} 内确定性判定并提交结果；
+证书以 DSSE 信封绑定策略哈希、电路 \code{vkey} 与证明，并锚定到防篡改账本。
+在此之上，PoP 把证明从「单条响应」推广到\textbf{跨证书}与\textbf{跨角色}：
+会话聚合证明（\lem{8}）把一组流式证书的「同一策略、链无缝、无缺口」压进一次证明；
+多证明者（\lem{9}）把一条策略按「谁手上有那段证据」切成三段，模型方 / 工具网关 / 部署方各证一段、
+各签一段，缺任一段即不成立。
+我们在单机 CPU 上实测：20k 字符 $\times$ 6 条规则的判定约 $1.1\times 10^{8}$ 周期，
+真实 STARK 证明 $\sim$\textbf{1--2 分钟}、工件 $\sim$\textbf{2.7 MiB}（峰值内存 $\sim$10 GB）；
+并提出首个针对「策略合规」的 NFA 匹配消融，显示 Pike VM 相对朴素逐起点重跑在
+对抗输入上避免二次退化（$n{=}400$ 时已达 90$\times$，且该比值随 $n$ 继续翻倍）。
+\textbf{本文同时给出证明侧的规模上界}：SP1 \code{core} 证明的峰值常驻有一条
+$\sim$10.15 GiB 的固定地板，本机 12 GB 上的可行域因此是\textbf{两级台阶}
+（1 条规则 $\le$10k 字符、2 条规则 $\sim$200 字符，3 条及以上 OOM）——
+\textbf{受限的是内存而非周期数}。PoP 与 LangChain/LangGraph/MCP 集成，可对生成路径与
+工具调用（参数与响应侧）逐次出证。
+与同期 \textbf{zkAgent}（证「provider 执行了声明的模型与工具轨迹」，ePrint 2026/199）
+\textbf{正交且可组合}：zkAgent 证明推理完整性、PoP 证明策略合规，二者组合得到全栈可验证 agent；
+对标显示 PoP 在\textbf{低一个数量级的硬件}（24 核/12 GB vs 32 核/512 GB）上达到同量级证明时间，
+证明大小 2.7 MiB 与 zkAgent(LogUp) 的 3.1 MiB 相当、远小于 zkAgent(Shout) 的 $\sim$96 MiB，
+并额外提供承诺式隐私（口径见 \S\ref{sec:privacy-scope}）。
+\end{abstract}
+
+\begin{center}
+\small
+仓库：\code{zk-policy}（开源，含复现指南 \code{docs/reproduce.md}）。
+\end{center}
+
+\medskip
+\noindent\fcolorbox{black!25}{black!3}{%
+\begin{minipage}{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}
+\small
+\textbf{标题口径说明（2026-09-11 核查后收紧）}：「Zero-Knowledge」在本系统中限定为
+\textbf{策略零知识（policy-zero-knowledge）}——合规性可被证明而\textbf{违规内容不泄露}
+（违规只以证据承诺披露，证据开示为选择性）。\textbf{这不等于响应内容不可恢复}：
+私有模式保证「公开值不含明文」，但公开的响应承诺可被离线枚举猜测--验证；
+且底层 SP1 \code{core}/\code{compressed} 证明本身并非零知识。
+完整核查见 \S\ref{sec:privacy-scope} 与仓库 \code{docs/sp1-zk-audit.md}。
+\end{minipage}}
+\medskip
+
+\section{Introduction}
+\label{sec:intro}
+
+LLM 智能体正在执行越来越敏感的动作（客服答复、工具调用、金融/医疗内容）。监管（如 EU AI Act
+Art.12/13）与企业治理要求「合规可审计」，但现实中合规性只能\textbf{听信}运营方：
+日志可伪造、护栏声明不可验证、内容隐私又要求不留明文。
+
+现有四派各占一角但互不贯通：
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{TEE 执行证明}（Proof-of-Guardrail [arXiv 2603.05786]）证明护栏代码确被执行、
+        输入输出被签名——\textbf{执行 $\neq$ 合规}（作者自述），且约 34\% 延迟、依赖硬件；
+  \item \textbf{TEE 治理栈}（Agentrust/cMCP/cA2A）同样依赖 TEE 与厂商设施；
+  \item \textbf{形式化验证}（Lean-Agent 等）需人工形式化整个政策，且对黑盒响应不适用；
+  \item \textbf{ZK 正则/PII 原语}（zk-regex V2、VDR/IACR 2024/813、ZK Email）是\textbf{积木}，
+        无「策略级」系统。
+\end{itemize}
+
+最接近的 WITNESS（Midnight）仅支持 2 类策略且闭源、无内容隐私；\code{@brivora/verify} 非 ZK；
+DeepProve 证的是\textbf{模型计算}层而非\textbf{策略合规}层。
+\textbf{「通用策略 DSL $\to$ ZK 约束编译 + 无 TEE + 响应隐私选择性披露 + 形式化安全模型 + 开源」
+的组合是明确空位。}
+
+\paragraph{本文贡献。}
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+  \item \textbf{PoP 系统}：首个通用策略 DSL $\to$ ZK 判定 $\to$ 双隐私模式 $\to$ 合规证书的
+        开源实现（\S\ref{sec:system}）；
+  \item \textbf{可序列化 NFA 契约}：正则子集编译为跨层（Python 参考 $\leftrightarrow$ zkVM）
+        一致的 NFA，含 fail-fast 语法子集与 Pike VM 判定（\S\ref{sec:dsl}）；
+  \item \textbf{形式化安全模型}：以游戏 + 归约写成，含健全性、承诺式隐私、不可伪造、绑定、
+        记录完整性，以及三条把证明推广到单条响应之外的引理——组合义务（\lem{6}）、
+        跨证书一致性（\lem{8}）、多证明者责任划分（\lem{9}）；每条都配可复现实验（\S\ref{sec:security}、\S\ref{sec:eval}）；
+  \item \textbf{评测}：zkVM 周期数矩阵（长度 $\times$ 规则数）、\textbf{NFA 消融}
+        （pike vs naive，含对抗二次退化证据）、真实证明时间/大小/内存，以及信任--成本四象限对比（\S\ref{sec:eval}）。
+\end{enumerate}
+
+\section{Background \& Related Work}
+\label{sec:related}
+
+（见 \S\ref{sec:intro} 四派；补充）ZK 在 agent 侧的相邻工作：zkML（证明推理）、可验证 DP
+（Noisette）、zkAgent（整轨迹证明）。PoP 与它们\textbf{正交且可组合}：PoP 证的是
+「输出/轨迹满足\textbf{策略}」，不证模型计算。zk-regex 的「离线匹配 + 电路内验证路径」
+启发了我们的 NFA 契约；VDR 的位选择器启发了 \code{mask_covered} 的脱敏证明。
+
+\subsection{与 zkAgent 的关系（最贴近的同期工作）}
+\label{sec:zkagent}
+
+\textbf{zkAgent}（SJTU，ePrint 2026/199）是首个证明\textbf{完整推理管线}的 SNARK 系统：
+把 GPT-2 的一次推理 + 长程自回归生成 + 外部工具调用（zkTLS/zkVM 证工具真实性）打包成
+\textbf{one-shot transcript 证明}，用于消除「provider 替换模型/伪造工具观测」的端到端完整性缺口。
+其报告（32 核 / 512 GB CPU 服务器）：$T=512$ 时 Shout 后端 \textbf{194.40 s} / 验证 \textbf{0.42 s} /
+证明 $\approx$ \textbf{96 MiB}；LogUp 后端 \textbf{3.1 MiB} / 验证 \textbf{38 ms}（证明慢 5.5$\times$）；
+逐步基线 zkGPT 需 149{,}192.6 s / $\sim$933 MB。
+
+\paragraph{差异与互补。}
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}p{0.20\linewidth}p{0.36\linewidth}p{0.36\linewidth}@{}}
+\toprule
+ & \textbf{zkAgent} & \textbf{PoP（本文）} \\
+\midrule
+证明的义务 & provider 执行了声明的\textbf{模型+工具}（推理完整性）
+           & 响应/轨迹\textbf{满足策略 $\pi$}（合规性） \\
+是否依赖模型 & 是（需权重与算术化/查表） & \textbf{否}（与模型无关，仅判策略） \\
+成本增长 & 随模型/序列长度 & 随「响应长度 $\times$ 规则数」 \\
+内容隐私 & 否（证推理与工具轨迹）
+         & \textbf{承诺式}（双模式 + 可证明脱敏；\textbf{准确性口径见 \S\ref{sec:privacy-scope}}） \\
+组合 & 推理层证明
+     & \textbf{策略层证明}；\code{zkAgent} $\oplus$ \code{PoP} = 全栈可验证 agent
+       （组合\textbf{机制}已落地，推理那一半用代理，见 \S\ref{sec:vs-zkagent}） \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+因此我们\textbf{不主张}「更快」，而是主张：\emph{对「合规」这一义务，PoP 在不涉模型的前提下
+以同量级时间、更小内存、可比的证明大小完成，并补上 zkAgent 未覆盖的策略合规与承诺式隐私；
+二者组合覆盖「推理执行 + 策略合规」的完整义务}（对应计划中的 M1）。
+详细对标数据见仓库 \code{bench/comparison_zkagent.md}。
+
+\paragraph{关于 M1 的进展口径。} 组合义务已按 P1-6 \textbf{分支 A} 落地——形式化引理（\lem{6}）、
+\textbf{三个} guest 程序（键分离，见 \S\ref{sec:security}）、组合驱动 \code{scripts/compose_proof.py}
+与反例测试（\code{tests/test_compose.py}）都在仓库里，\textbf{推理那一半是代理}
+（确定性定点 MLP，权重编进程序 $\Rightarrow$ 被 \code{vkey} 承诺），不是 zkAgent，其源码不可得。
+所以这里证的是\textbf{组合机制}而非端到端的真实推理证明；见 \S\ref{sec:vs-zkagent} 与 \S\ref{sec:limitations}。
+
+\section{Threat Model \& Goals}
+\label{sec:threat}
+
+\paragraph{参与方。} 证明者 = agent 运营方（不可信）；验证者 = 监管/审计/第三方；策略作者（发布 $\pi$）。
+
+\paragraph{目标。}
+\begin{description}[leftmargin=1.4em,itemsep=2pt]
+  \item[(G1)] 健全性——违反 $\pi$ 的 $T$ 无法产出被接受的证明；
+  \item[(G2)] \textbf{承诺式隐私}——私有模式下公开值不含 $T$ 的明文
+        （\textbf{注意}：这不是「$T$ 不可恢复」；对低熵 $T$，公开可重算的绑定与内容隐藏互斥，
+        见 \S\ref{sec:privacy-scope}）；
+  \item[(G3)] 可溯源绑定——策略版本、电路与证明工件绑定；
+  \item[(G4)] 选择性披露——可证明的带脱敏与证据开示；
+  \item[(G5)] 记录完整性——审计日志防篡改。
+\end{description}
+
+\paragraph{非目标。} 不证明模型推理本身；不覆盖训练数据/模型卡。
+
+\section{System}
+\label{sec:system}
+
+\subsection{架构（双层 + 契约）}
+\label{sec:arch}
+
+\begin{Verbatim}[fontsize=\small,frame=single,framesep=4pt]
+策略包 JSON ──compile──▶ ConstraintSpec(JSON, sha256) ──serialize──▶ ProofRequest
+响应/轨迹 ───────────────────────────────────────────────────────────┘
+        └──▶ SP1 zkVM: run_job → evaluate(确定性) → commit(Outcome)
+                     └── host verify → 证书(DSSE) → 锚定账本 → 第三方验证
+\end{Verbatim}
+
+\code{ConstraintSpec} 是\textbf{唯一跨层契约}（含编译后的 NFA），Python 参考层与 Rust/zkVM 层
+消费同一份，保证一致性。
+
+\subsection{策略 DSL 与 NFA 契约}
+\label{sec:dsl}
+
+规则子集共 \textbf{8 类：7 类在电路内判定，1 类委托给陪伴证明}。
+
+\begin{itemize}[leftmargin=1.4em,itemsep=3pt]
+  \item \textbf{电路内}（\code{pop-types::evaluate}）：
+        \code{keyword_block} /
+        \code{normalized_keyword_block}（先按\textbf{随约束走的}折叠表把响应规范化——
+        同形异义字 $\to$ ASCII、删零宽字符、全角 $\to$ 半角——再做与前者相同的子串判定；
+        表进 \code{policy_hash}，故可审计且跨层漂移在结构上不可能，P2-9b）/
+        \code{length_bound} /
+        \code{pattern_block}（编译后 NFA）/
+        \code{format_check}（json/int/float 规范子集）/
+        \code{tool_arg_guard}（含 \code{tools} 限定）/
+        \code{budget_bound}（calls / tokens）。
+  \item \textbf{委托}（P2-9）：\code{semantic_bound}（「有害概率 $\le$ 阈值」这类
+        \textbf{学不出形式证明}的规则）\textbf{不在电路内判定}，电路只把「这条被委托了」
+        登记进公开值 \code{delegated}；验证方必须\textbf{合取} ezkl/halo2 陪伴证明——
+        \textbf{只验 SP1 一侧不等于合规}。
+\end{itemize}
+
+\subsubsection{轨迹绑定：工具回执链（P1-5）}
+\label{sec:trace}
+
+轨迹类规则原先判的是 \code{ProofRequest} 里由\textbf{证明者自填}的 \code{tool_calls} /
+\code{token_count}——电路只能证明「若轨迹如我所述，则策略通过」，把列表填空即可通过
+\code{tool_arg_guard}。P1-5 把这两个字段\textbf{删除}，代之以\textbf{工具网关}签发的\textbf{回执链}：
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item 网关在每次调用\textbf{执行后}签发一条回执
+        $\{$\code{seq}, \code{tool}, \code{args}, \code{result_digest}, \code{ts}, \code{prev}, \code{keyid}, \code{sig}$\}$；
+        \code{seq} 从 0 起，\code{prev} 是前一条回执的 \code{SHA256}（首条为 \code{genesis}）——
+        链把「哪次调用先发生」钉死。
+  \item agent 只能\textbf{原样转发}回执链；电路内 \code{verify_receipt_chain} 校验\textbf{结构}
+        （\code{seq} 连续、\code{prev} 逐条咬合、每条摘要由其自身内容重算），
+        结构不自洽时工具规则一律 \textbf{fail-closed} 记为 \code{trace_unbound}，
+        而不是退化成「读不出来 = 零次调用」。参数以\textbf{明文}入回执（是私有输入、不进公开值）：
+        摘要无法支撑 \code{forbidden_fields} 判定，而防篡改靠的是签名而非保密。
+  \item 链尾摘要 \code{trace_root} 进公开值，与 \code{response_binding} 对称——验证方拿
+        \textbf{网关侧收到的回执}重算即可独立核对「这份证明绑定的是哪条链」。这条路径已落成
+        可执行命令：\code{verify_cert.py --receipts R.json} 由验证方\textbf{自己手上}的回执
+        重算链尾，\code{--gateway-key} 再补一遍链下逐条验签；两道关独立，摘要对得上并不等于网关签过。
+\end{itemize}
+
+\begin{quote}\small\itshape
+$\triangle$ \textbf{语义边界（如实标注）}：Ed25519 \textbf{验签在链下}完成（zkVM 内验签代价高），
+电路内只做结构校验。因此「回执确由网关签发」这一步依赖 \textbf{链下验签 + 公开值里的
+\code{trace_root}}，本文\textbf{不}宣称电路内完成了签名验证。结构校验挡住删/换/重排
+（改动任一条会使其后继的 \code{prev} 对不上），\textbf{但改动链尾那条的内容结构上仍自洽}——
+电路内对此完全是盲的。这一条实际由\textbf{两道链下的关}分别承担，且不可互相替代：
+摘要比对回答「这份证明绑的是不是同一条链」，验签回答「这条链是不是网关签的」。
+只比摘要，一个把链与证书一并伪造的人仍能「自洽」通过；只验签，则无从知道被证明的是哪条链。
+该边界由 \code{tests/test_trace.py} 的 \code{test_in_circuit_blind_to_last_element_forgery} 与
+\code{TestVerifyCertTraceBinding::test_forged_last_element_caught_by_gateway_key} 显式钉死。
+
+\medskip
+$\triangle$ \textbf{另一道更弱的口子：整条删除链尾（截尾）}。上面两道关都是按「收到的链」
+逐条核对的——若出证方把链尾那条违规回执\textbf{整条删掉}再转交，剩下的仍是一条真签、自洽、
+更短的链，两关都会 PASS。该缺口已复现并钉成用例
+（\code{TestVerifyCertTraceBinding::test_tail_truncation_is_rejected}），
+\textbf{已由网关的会话末端承诺堵上（P1-5b）}：网关在会话结束时签发一次
+\code{ToolSeal}$\{$\code{count}, \code{trace_root}, \code{ts}, \code{keyid}, \code{sig}$\}$（域分隔 \code{pop-trace-seal-v1}，
+落在载荷\textbf{顶层} \code{trace_seal}），验证方核对签名、\code{seal.trace_root}
+与证书公开值一致、以及（有回执时）\code{len(chain) == seal.count} 且链尾摘要逐字节相同——
+出证方拿不出一个「数与根都对得上截断链」的真 seal（原 seal 数对不上，伪造 seal 须破 Ed25519）。
+\textbf{残留边界如实标注}：验证方\textbf{必须持有网关公钥}（\code{--gateway-key}）才核得了签名，
+否则 3d 只记 \code{PASS + 「截尾不可排除」(skipped)}；且 seal 仍是\textbf{网关的}陈述
+（信任假设 \assump{4}），它把担保移到了网关而不是取消它。
+详见 \S\ref{sec:security} 与 \code{docs/security-model.md} \S5.3。
+\end{quote}
+
+\code{budget_bound(unit="tokens")} 同步改为\textbf{电路内自算}：按固定空白集合
+$\{$\code{0x20,09,0a,0b,0c,0d}$\}$ 把响应切成非空白 run 并计数（\textbf{不}依赖 Unicode
+White\_Space：该定义随 Unicode 版本漂移，而两端必须永远给出同一个数；也\textbf{不}假称是
+任何真实分词器）。语义变更对既有策略是\textbf{不兼容}的：\code{tokens} 的数值口径变了，
+\code{policy_hash} 随之变化，旧证书不再与同一策略包对应。旧向量里的 \code{tool_calls} /
+\code{token_count} 现在是\textbf{未知字段}，\code{ProofRequest} / \code{PrivateRequest} /
+驱动层输入都标了 \code{deny_unknown_fields}——拿旧向量出证会\textbf{直接解析失败}，
+而不是被静默当成零次调用后照样出证。
+
+正则编译为 \textbf{Thompson NFA}（可序列化：states/eps/edges/ranges），受支持子集 + ASCII 语义，
+\textbf{不支持即 fail-fast}（锚点/反向引用/环视）。判定用 \textbf{Pike VM} 单趟状态并集
+（unanchored 存在性，对齐 \code{re.search}）。
+
+\subsection{双隐私模式}
+\label{sec:modes}
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{透明模式}：公开响应 + 判定（\code{passed}、违规 \code{rule/kind/evidence}）。
+  \item \textbf{私有模式}：只公开 \code{response_commitment = SHA256(T)}、每条违规的
+        \code{rule/kind/evidence_commitment}，以及\textbf{脱敏证明}：\code{redaction_ok}
+        （\code{R} 与 \code{T} 仅掩码位不同）+ \textbf{\code{mask_covered}}（掩码位落在
+        \textbf{电路内验证为真实完整匹配}的见证 span 内）。证据开示为链下核验
+        （\code{SHA256(fragment) = commitment}）。
+  \item \textbf{口径提醒}：私有模式保证的是「\textbf{公开值不含明文}」。承诺是 $T$ 的公开函数，
+        第三方可枚举猜测--验证；且 \code{response_binding}（\S\ref{sec:cert}）\textbf{必须}
+        公开可重算才能让验证者独立核对送达的 $T'$——二者对低熵 $T$ 互斥。
+        详见 \S\ref{sec:privacy-scope}。
+\end{itemize}
+
+\subsection{合规证书与锚定}
+\label{sec:cert}
+
+证书 payload：
+$\{$\code{cert_version}, \code{policy}$\{$\code{id}, \code{version}$\}$, \code{policy_hash}, \code{mode}, \code{outcome}, \code{binding}$\{$\code{vkey_hash}, \code{proof_sha256}, \code{proof_mode}$\}$, \code{ai_act}, \code{ts}$\}$，
+以 \textbf{DSSE 信封}签名（Ed25519：私钥留在出证方，验证方只持公钥因而无法伪造；旧的共享密钥
+HMAC demo signer 已被结构性拒绝），\code{cert_digest} 写入\textbf{哈希链锚定账本}；
+流式证书额外构成\textbf{流式链}（\code{streaming.chain} = $\{$\code{index}, \code{prev}$\}$）并支持\textbf{早停}。
+
+锚定支持两种后端（\code{policydsl/anchor.py}，上层接口一致）：\textbf{文件账本}（默认，
+离线可验，条目哈希链 $\{$\code{seq}, \code{prev}, \code{digest}, \code{ts}, \code{meta}, \code{hash}$\}$）与\textbf{链上登记}
+（\code{RpcAnchorBackend} 调用 \code{contracts/Anchor.sol} 的 \code{anchor(bytes32)}——
+首次即最终、事件 \code{Anchored(digest, ts, by, seq)}、链上只存 32 字节摘要）。
+链上成功后把 \code{tx_hash}/区块/链上时间戳回写本地条目 \code{meta.on_chain}，
+使「离线可验的哈希链」与「公共时间戳」彼此可交叉核对，任一被篡改都能被发现。
+
+\subsection{框架集成}
+\label{sec:frameworks}
+
+\code{AgentMonitor}（框架无关钩子）产证书；\textbf{LangChain 回调}
+（\code{on_llm_end}/\code{on_tool_start}/\code{on_tool_end}/\code{on_llm_new_token}）；
+\textbf{LangGraph}（同一回调 + \code{guard_node} 包装 + \code{astream_events} 全事件）；
+\textbf{MCP}（\code{MCPGuard} 对工具\textbf{参数}与\textbf{响应}判定，可预检拦截）。
+三个适配器共用同一 \code{ToolGateway}：工具\textbf{执行后}由网关签发回执（\S\ref{sec:trace}），
+故轨迹证书与证明走的是同一条链。真实框架（langchain 1.4 / langgraph 1.2 / mcp 2.2）
+均通过端到端测试。
+
+\section{Security Model}
+\label{sec:security}
+
+完整定义与归约见仓库 \code{docs/security-model.md}（游戏式定义 + 归约，含代码落点与
+「不保证什么」）。本节是摘要，并把三条\textbf{把证明推广到单条响应之外}的引理如实列出。
+
+\paragraph{Soundness。} \textbf{8 类规则中 7 类在电路内判定}（keyword / normalized-keyword /
+length / pattern / format / tool-arg / budget）后，\code{pub} 等于 zkVM 确定性执行输出
+$J(\pi, T)$；第 8 类 \code{semantic_bound} 不在电路内判定，电路只承诺「它被委托了」
+（公开值 \code{delegated}），该部分的健全性由验证方\textbf{合取} ezkl/halo2 陪伴证明承担——
+\textbf{只验 SP1 一侧不等于合规}。伪造需攻破 zkVM 或哈希（或陪伴证明系统）。
+
+\paragraph{Privacy（承诺式）。} 验证者视图仅含承诺；Leak 实验验证无明文泄露。
+\textbf{上界见 \S\ref{sec:privacy-scope}}——公开可重算的承诺对低熵 $T$ 构成猜测--验证 oracle，
+且底层 SP1 \code{core} 证明并非零知识。
+
+\paragraph{Other properties。} \textbf{Redaction soundness}：\code{redaction_ok} $\wedge$
+\code{mask_covered} $\Rightarrow$ 只遮蔽真实命中内容。\textbf{Unforgeability/binding}：
+证据开示需 \code{SHA256(f) = e}；策略/电路/证明哈希绑定并在验证时\textbf{重算}。
+\textbf{Integrity}：账本与流式链的篡改/重排可检出。\textbf{Trace binding}（\S\ref{sec:trace}）：
+轨迹类规则判的是\textbf{网关签发的回执链}，\code{trace_root} 进公开值；链的\textbf{结构}由电路保证
+（删/换/重排即 \code{trace_unbound} fail-closed），\textbf{签发者身份}由链下 Ed25519 验签 +
+公开值比对保证。健全性以「网关密钥不被滥用」为前提——网关是被显式信任的第三方，不是被证明的对象。
+\textbf{边界}：工具路径证书的 \code{zk:true} 意指「规则可证」，是否附证明看 \code{binding.vkey_hash}；
+而「回执链确由网关签发」这一步在\textbf{链下}完成（见上条），不在电路内。
+
+\paragraph{截尾：已堵（P1-5b，残留边界如实记录）。} 见 \S\ref{sec:trace} 的引文：
+对策是网关的会话末端承诺 \code{ToolSeal}，其伪造概率即形式化定位中单列的
+$\mathrm{Adv}^{\mathrm{forge}}_{\mathrm{Ed25519}}(B)$ 项。残留边界三条：
+\emph{(i)} 验证方\textbf{必须持有网关公钥}才核得了签名——只给 \code{--receipts} 时 3d 记
+\code{PASS + 「截尾不可排除」(skipped)}，因此「只给链不给公钥」\textbf{仍不构成截尾保证}；
+\emph{(ii)} seal 是\textbf{网关的}陈述，担保被移到网关（\assump{4}）而非取消；
+\emph{(iii)} 无网关的会话（\code{issue_cert.py} 等独立出证路径）本就没有 seal，
+3d 在没给 \code{--gateway-key} 时同样只报 skipped。
+
+\subsection{\lem{6} 组合义务（P1-6）：推理完整性 $\wedge$ 策略合规}
+\label{sec:l6}
+
+\code{Compose} = $($推理完整性 $\wedge$ 策略合规$)$ 由两份\textbf{来自不同程序}（不同 \code{vkey}）
+的证明合成，验证方现场重算四方 \code{response_binding} 以确认「两半说的是同一条 $T$」。
+\textbf{键分离}是命题的一部分（同一个程序出两半，「这属于哪一半」无从判断），做法是两个 guest
+入口各断言一次自己的域（\code{pop-types::job_domain}），把要求钉进电路。
+$\triangle$ 推理那一半在本仓库里是\textbf{代理}（确定性定点 MLP），不是真实 LLM 的推理证明——
+详见 \S\ref{sec:vs-zkagent} 与 \code{docs/security-model.md} 引理 \lem{6}。
+
+\subsection{\lem{8} 跨证书一致性（P2-10）：一组证书的「同一策略、链无缝、无缺口」}
+\label{sec:l8}
+
+针对多轮会话（一次 agent run 会产出一串\textbf{流式证书}），单张证书的正确性不足以说明
+「整条会话没被动过手脚」。\code{session} 域（第三个 guest，独立 \code{vkey}）把三条义务
+压进\textbf{一次}证明：
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+  \item 每张被覆盖证书的 \code{policy_hash} 相同，且（给了策略包时）等于验证方\textbf{现场重编译}
+        得到的那个；
+  \item 流式链\textbf{无缝}：\code{chain.index} 与 \code{chain.prev} 逐张咬合，中间没有缺口；
+  \item 覆盖\textbf{完整}：交付的证书集就是被证明的那一组，不多不少。
+\end{enumerate}
+
+做法是把每张证书规范载荷的\textbf{文本}哈希成叶子，用 \textbf{Merkle 根}把 $N$ 张证书摘要
+聚合成一个承诺进公开值。三个设计要点每一个都是「换个做法就出漏洞」的那种：
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{叶子 = 载荷文本的 \code{sha256}}。guest 收到的就是每张证书
+        \code{cert.canonical(payload)} 的\textbf{文本}，直接对它求哈希——与 \code{policy_hash}
+        同一招。Rust 侧因此\textbf{不需要}任何 JSON 规范化，跨语言漂移在结构上不可能
+        （只有一种「字节」）。
+  \item \textbf{Merkle 奇数末位「提升」而非「复制」}。复制会让 $[a,b,c]$ 与 $[a,b,c,c]$
+        得到同一个根，于是「删掉链尾那张」多出一条伪造路径——正好毁掉本域要防的东西。
+  \item \textbf{尾截断只有 Merkle 根拦得住}（已实测）。$[0..k]$ 前缀的 \code{chain.index} /
+        \code{prev} \textbf{依然连续}，电路内三条义务全部成立，所以\textbf{电路本身接受一个
+        被砍过尾巴的证书集}；拦住它的是验证侧「证明承诺的根 vs 由\textbf{交付的}证书集重算的根」
+        这一步。中间挖洞 / 换序则相反——\code{chain.index} / \code{prev} 当场就断，出不了证明。
+        这个分工与 \S\ref{sec:trace} 的截尾问题同源，也是它为什么必须写成\textbf{两}条独立的拦截机制。
+\end{itemize}
+
+\textbf{不保证}：电路内\textbf{不验网关签名}（zkVM 里没有网关公钥），它只断言「每张证书都带
+seal」且 \code{keyid} 全同；「这条链网关真的签过」仍是链下 \code{trace.verify_seal} 判的，
+不给 \code{keyring} 时验证方会\textbf{如实注明「seal 签名未验」}。覆盖范围\textbf{只有一个 run、
+且只有链上证书}——没有 \code{streaming.chain} 的证书（含一个 run 的权威 \code{on_llm_end}）
+不属于任何 run，那部分仍是 \code{verify_session.py} 的职责。
+
+\subsection{\lem{9} 多证明者责任划分（P2-11）：三个角色，各证一段、各签一段}
+\label{sec:l9}
+
+一条策略的不同规则，其证据本来就在\textbf{不同参与方}手上：内容类规则只看响应文本，
+工具类规则要读\textbf{工具网关}签发的回执链，而语义规则要用\textbf{部署方}手里的模型与阈值。
+把整条策略交给一方去证，等于要求这一方持有全部证据——既不现实，也让「谁为哪一段负责」
+无从判定。多证明者把策略按\textbf{规则类}切成三段，三个角色各证一段、各签一段：
+
+\begin{center}
+\small
+\begin{tabular}{@{}p{0.16\linewidth}p{0.30\linewidth}p{0.44\linewidth}@{}}
+\toprule
+\textbf{角色} & \textbf{规则类} & \textbf{为什么是它} \\
+\midrule
+模型方 / \code{model} &
+\code{keyword_block}, \code{normalized_keyword_block}, \code{pattern_block},
+\code{format_check}, \code{length_bound} &
+只看响应文本，不需要任何外部证据 \\
+工具网关 / \code{gateway} &
+\code{tool_arg_guard}, \code{budget_bound} &
+这两条要读 P1-5 的回执链，而链只有网关有 \\
+部署方 / \code{deployer} &
+\code{semantic_bound} &
+它才持有模型与阈值（委托给陪伴证明，见 \S\ref{sec:dsl}） \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+切片\textbf{两两不交、并集是全策略}；空切片\textbf{仍然要签名}——「这一段我不负责」必须是
+\textbf{显式}的，不能靠「没出现」暗示。
+
+\paragraph{输出形态。} 一份 \code{multiparty.json} 携带：共享的 \code{policy_hash}（整条策略）、
+共享的 \code{response_binding}（同一条 $T$）、共享的 \code{trace_root}（同一条回执链）、
+一份 \code{plan}（\code{角色} $\to$ $\{$规则, \code{slice_sha256}$\}$）及其摘要，$N$ 份切片证明，
+以及每个角色对自己那部分的 Ed25519 签名。
+
+$\triangle$ \textbf{「聚合证明」不是递归聚合}：它是 $N$ 份切片证明（共享同一个 \code{vkey}）
+\textbf{加}一份把它们拴在一起的证书，验证成本 $O(N)$；本文不主张做到了递归聚合。
+同理，三个角色各持一把键只是\textbf{责任划分}，不是「不同角色用不同的电路」——
+切片对一个 guest 而言就是一条普通策略，因此\textbf{在盘的旧证明继续有效}
+（改 \code{circuits/types} 会换 ELF $\Rightarrow$ 换 \code{vkey} $\Rightarrow$ 旧证明全废，
+所以「不改电路」是刻意保住的）。
+
+\paragraph{「单角色切片被换」有三道独立的拦网。}
+\begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
+  \item part 自报的 \code{rules} / \code{slice_sha256} 与 \code{plan} 对不上 $\to$ 当场拒；
+  \item 改写 \code{plan} 会\textbf{破坏另外两个角色的签名}（它们签的 \code{plan_digest} 覆盖改前的 plan）；
+  \item 于是只剩\textbf{三方合谋}能改得自洽——三把键一起改 plan、一起重签，签名层是
+        \textbf{完全自洽}的，光看证书查不出来。拦住它的唯一办法是拿策略包\textbf{现场重编译}
+        并与证书里的 \code{plan} 比对。
+\end{enumerate}
+
+$\triangle$ 第 3 条是必须\textbf{如实写下来}的边界：\textbf{三方合谋在签名层不可检出}，
+因为「谁拥有哪几把键」这件事本身就在证书之外。它被钉成一条会\textbf{通过}（不给策略包时）
+的用例，免得日后有人把它读成「签名能挡住合谋」。
+
+\textbf{不保证}：本模块不自己产生陪伴证明（语义切片只把规则记进 \code{delegated}，
+合规结论要另外合取 \lem{7} 的陪伴证明）；\code{ok} 与 \code{satisfied} 分开读
+（一张如实记录违规的证书\textbf{同样是真}的，只是不构成合规）。
+
+\section{Implementation}
+\label{sec:impl}
+
+Python 参考层（DSL/编译/NFA/私密/证书/锚定/框架适配）+ Rust（SP1 v6 workspace：
+\code{types} 共享判定，\textbf{三个} guest——\code{program}（策略域）、\code{infer-program}
+（推理域）、\code{session-program}（会话域），各有一个入口断言自己的域，因此
+\textbf{三个不同的 \code{vkey}}——外加 \code{script} 驱动与 \code{verifier}）。
+
+单测 + 集成测试 \textbf{469 全绿（13 skip 均为设计内）}。与本文各条义务对应的模块：
+\code{tests/test_semantic.py}（30 例）覆盖 P2-9 的语义规则委托（陪伴证明的逐字段绑定、
+四类换料攻击、私有模式 fail closed）；\code{tests/test_normalize.py}（28 例）覆盖 P2-9b
+的折叠表与其 13 种非法声明；\code{tests/test_trace.py}（39 例）覆盖 \S\ref{sec:trace} 的四条
+验收与 P1-5b 的截尾对策；\code{tests/test_compose.py}（48 例）与 \code{tests/test_session.py}
+（38 例）分别覆盖 \lem{6} 与 \lem{8}，各含真·端到端用例（后者实测 152.5 s，含一次出证、
+一次独立验证与四条拒绝路径）；\code{tests/test_multiparty.py}（44 例）覆盖 \lem{9} 的切分、
+绑定与两条验收判据；\code{tests/test_rules_incircuit.py}（13 例）钉死 Python 参考层与
+电路内实现的逐点对齐。\code{scripts/} 提供交叉验证、demo、证书签发/验证、会话聚合、组合、
+多证明者、截图；\code{docs/reproduce.md} 是复现指南。
+
+\section{Evaluation}
+\label{sec:eval}
+
+\subsection{zkVM 周期数：长度 $\times$ 规则数（\code{pop-script --execute}）}
+\label{sec:eval-cycles}
+
+把响应长度从 200 推到 \textbf{100{,}000 字符}、规则数从 1 推到 6，共 40 个测量点
+（\code{bench/bench_cycles.py}；完整矩阵见 \code{bench/results/cycles.md}）。
+响应文本取自仓库内\textbf{真跑出来的}评测语料（\code{demo_e2e} 产出的 372 字符工件，
+三段按内容去重后拼接），长于语料的点由平铺得到 —— 因此量的是扫描成本的\textbf{曲线}，
+不是「一段 100k 字符的真实文本」；每个点都先确认\textbf{不命中}任何规则（不命中才不短路，
+命中的成本没有意义）。
+
+\textbf{（1）固定规则集时，周期数对长度是精确线性的。} 5 个规则集各自 6 个长度点，
+$R^2$ 全部 $\approx 1.0000$：
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}rrrrrr@{}}
+\toprule
+规则数 & \code{keyword} & \code{pattern} & 斜率（周期/字符） & 截距 & $R^2$ \\
+\midrule
+1 & 0 & 0 & 73.9      & 50{,}137   & 1.0000 \\
+2 & 1 & 0 & 105.3     & 65{,}942   & 1.0000 \\
+3 & 1 & 1 & 4{,}289.8 & 387{,}501  & 1.0000 \\
+4 & 2 & 1 & 4{,}048.8 & 405{,}785  & 1.0000 \\
+6 & 3 & 2 & 5{,}403.5 & 993{,}257  & 1.0000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{（2）扫描成本由 NFA 主导，不是由规则条数主导。} 一条关键词规则的边际单价约
+\textbf{+31.6 周期/字符}；一条 NFA 正则（email）的边际约 \textbf{+3{,}634 周期/字符} ——
+\textbf{约为关键词规则的 115 倍}。换个说法：含正则的规则集每字符斜率（4{,}289.8）
+是不含字符串规则的规则集（73.9）的 \textbf{58 倍}。
+
+\textbf{（3）单价不可加：单价是「规则 $+$ 上下文」的属性，不是规则的属性。}
+把斜率进一步拆成 \code{keyword} / \code{pattern} 的单价（$R^2 = 0.9169$）会拟出
+\textbf{负的关键词单价}（$-477.2$ 周期/字符）。这不是噪声，两条探针直接给出了机制：
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{顺序探针}（同一批规则、同一段文本，$L = 10^5$）：声明顺序
+        $541{,}342{,}069$ 周期 vs 逆序 $570{,}736{,}989$ 周期，差 \textbf{+5.43\%}，
+        而两者的 \code{passed} 完全一致 —— \emph{判定的语义与顺序无关，成本不是}。
+  \item \textbf{边际探针}（$L = 10^5$，补上矩阵没走到的「只有正则、没有关键词」一格）：
+        \code{[len,pat]} 相对 \code{[len]} 的边际单价为 $3{,}633.7$，而「再加一条
+        关键词规则」有两个不同的答案 —— 单独加 \textbf{+31.6}，在\textbf{已有正则}的
+        策略里加 \textbf{+585.6}（加在正则之前则为 $-153.7$）。同一个动作，单价在
+        $-154 \sim +586$ 之间变号。
+\end{itemize}
+
+机制在 zkVM 的内存分配：每次 \code{ascii_lower} 与 Pike VM 匹配都要分配，
+\textbf{分配器状态依赖先前的分配}。因此本文引用的是\textbf{按规则集的斜率}（上表，
+可直接引用的量），而不是任何「单价 $\times$ 条数」的加式。计划中设想的简式
+$\text{cycles} \approx a \cdot |T| \cdot \text{rules} + b$ 被数据否掉
+（$R^2 = 0.872$，且截距为负），如实报告于此 —— \textbf{模型被自己的数据否掉，本身
+就是评测的产出}。
+
+\subsection{匹配器消融：病理输入下的二次退化}
+\label{sec:eval-ablation}
+
+\textbf{构造}：模式 \code{a+b}，输入 \code{a}$^{\times n}$（整段没有 \code{b}）
+$\Rightarrow$ 必然不匹配 $\Rightarrow$ 两种实现都必须扫到底。朴素实现
+（\code{nfa_match_naive}）对\textbf{每个起点}重新锚定跑一遍，故为 $\Theta(n^2)$；
+pike 一次线性扫描即判定（\code{bench/bench_ablation.py}）。
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+$n$ & pike (cycles) & naive (cycles) & 比值 & naive 每字符涨幅 \\
+\midrule
+100 & 643{,}894   & 12{,}382{,}720  & 19.2$\times$ & --- \\
+200 & 1{,}145{,}209 & 48{,}638{,}946 & 42.5$\times$ & $+96.4\%$ \\
+400 & 2{,}143{,}617 & 193{,}207{,}130 & 90.1$\times$ & $+98.6\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+看\textbf{每字符成本}而不是绝对值：$n$ 翻倍时 pike 每字符成本基本不变
+（$-11.1\%$、$-6.4\%$），naive 则近乎翻倍（$+96.4\%$、$+98.6\%$）—— naive 的
+绝对代价是 $O(n^2)$，pike 保持线性。到 $n=400$ 时 naive 已是 pike 的 \textbf{90 倍}，
+且该比值本身随 $n$ 继续翻倍。\textbf{这是一个攻击面}：策略合规的输入长度由外部
+决定（agent 回复、拼接会话），对手只要把回复写长，朴素实现的成本就二次增长。
+
+该比较有意义的前提是两种模式的判定语义\textbf{完全等价}，否则比值不说明任何事情 ——
+这一前提由 \code{tests/test_ablation.py} 钉死（Python 与 Rust 两侧的
+\code{match_search} $\equiv$ \code{match_search_naive}）。这是首个针对策略合规
+匹配的消融证据。
+
+\subsection{真实证明：时间 / 大小 / 内存 —— 以及天花板（本机 CPU，24 核/12GB）}
+\label{sec:eval-proofs}
+
+采样点与 \S\ref{sec:eval-cycles} 共用同一份语料；\textbf{每个点一个独立子进程}
+（SP1 的内存是进程内累积的，同进程连出两份并不代表单份的成本），失败如实入表。
+标 ``OOM'' 的行是\textbf{结论}而不是故障：它量的是这台机器\textbf{到不了哪}。
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}lrrrl@{}}
+\toprule
+配置（响应字符 $\times$ 规则数） & 证明时间 & 证明大小 & 峰值内存 & 结论 \\
+\midrule
+200 $\times$ 1       & 123.5 s & 2716.4 KiB & 10{,}389 MB & \checkmark \\
+200 $\times$ 2       & 118.9 s & 2716.9 KiB & 10{,}438 MB & \checkmark \\
+2{,}000 $\times$ 1   & 138.1 s & 2718.6 KiB & 10{,}449 MB & \checkmark \\
+10{,}000 $\times$ 1  & 172.5 s & 2726.6 KiB & 10{,}506 MB & \checkmark \\
+200 $\times$ 3       & ---     & ---        & ---         & OOM \\
+20{,}000 $\times$ 1  & ---     & ---        & ---         & OOM \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}[leftmargin=1.4em,itemsep=2pt]
+  \item \textbf{固定地板 $\sim$10.15 GiB。} 200 字符 $\times$ 1 条规则这种最小配置
+        峰值常驻就已 10{,}389 MB —— prover 自身的开销（\code{core} 证明的 trace /
+        permutation 结构）与 trace \textbf{几乎无关}。四个成功点全落在
+        10{,}389--10{,}506 MB 这条窄带里：长度与规则数在内存上的边际很小，
+        \emph{但余量太窄}。
+  \item \textbf{两级台阶，不是一条斜线。} 1 条规则 $\le$ 10k 字符可证；2 条规则约
+        200 字符可证；\textbf{3 条及以上出不来}。第 3 条规则恰是 \code{pattern_block}：
+        正则匹配激活另一族 AIR chip，trace area 一次性抬高一截，故\textbf{规则数在
+        $2 \to 3$ 断崖}；\textbf{长度则在 $10\text{k} \to 20\text{k}$ 断崖}。
+  \item \textbf{卡的是内存，不是 CPU。} \S\ref{sec:eval-cycles} 的周期表能一路扫到
+        100k 字符 $\times$ 6 规则，因为那只跑 zkVM 执行、不出证；100k 字符时周期数
+        也才 $10^7$ 量级，CPU 完全跑得动。\textbf{证明侧与周期侧的天花板不在同一个
+        地方} —— 「能证明多大的策略」在本机上不是一条成本曲线，而是\textbf{一条固定
+        地板加两级台阶}。
+  \item \textbf{工件大小与配置几乎无关}：从 200 字符到 10k 字符，证明只从 2716.4
+        涨到 2726.6 KiB。纯验证 $\sim$90 ms（\code{vkey} setup 1.5 s，一次性）。
+  \item \textbf{可复现性口径}：墙的\emph{位置}可复现（两个失败点各失败两次），
+        墙上的\emph{耗时}不可复现 —— 同一组点单跑复核，时间有 $\pm 10\%$ 抖动，
+        内存只有 $\pm 1\%$。故本文引用时间只给量级。
+  \item \textbf{跨证书与多证明者}：会话聚合证明（3 张证书，\lem{8}）实测 \textbf{152.5 s}；
+        多证明者（\lem{9}）要出\textbf{每段一份}证明，故成本随非空切片数线性增长——
+        示例策略（模型方 + 网关各一段、部署方空切片）为两份证明。
+        两者都\textbf{不引入新的证明系统}：切片与会话对 guest 而言都是普通输入。
+        \emph{但二者都受这条地板约束}：每多一份证明就多一次 $\sim$10 GiB 的峰值，
+        所以多证明者在本机必须\textbf{分进程串行}，不能并发。
+\end{itemize}
+
+\subsection{对标 zkAgent（ePrint 2026/199）}
+\label{sec:vs-zkagent}
+
+zkAgent 证明「provider 执行了声明的模型与工具轨迹」（推理完整性），与 PoP 的「策略合规」
+\textbf{正交且可组合}：
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{@{}p{0.14\linewidth}rrp{0.22\linewidth}@{}}
+\toprule
+维度 & zkAgent (Shout) & zkAgent (LogUp) & \textbf{PoP（本文）} \\
+\midrule
+义务 & 推理+工具完整性 & 同左 & \textbf{策略合规} \\
+规模 & GPT-2, $T$=512 & 同左 & 200--10{,}000 字符 $\times$ 1--2 规则 \\
+证明时间 & 194.40 s & $\sim$1069 s & \textbf{118.9--172.5 s} \\
+验证时间 & 0.42 s & \textbf{0.038 s} & \textbf{$\sim$0.090 s} \\
+证明大小 & $\sim$96 MiB & \textbf{3.1 MiB} & \textbf{$\sim$2.7 MiB} \\
+硬件 & 32 核 / 512 GB & 同左 & \textbf{24 核 / 12 GB} \\
+内容隐私 & \ding{55} & \ding{55} & $\triangle$ 承诺式双模式（口径见 \S\ref{sec:privacy-scope}） \\
+依赖模型 & \checkmark & \checkmark & \ding{55} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{可比性声明。} 二者证明义务不同，\textbf{不可宣称「PoP 更快」}。正确结论是：
+\emph{对「合规」义务，PoP 在不涉模型的前提下，以同量级证明时间、\textbf{低一个数量级的硬件}、
+与 LogUp 相当的证明/验证规模完成，并补上 zkAgent 未覆盖的\textbf{承诺式隐私}
+（\S\ref{sec:privacy-scope}）；\code{zkAgent} $\oplus$ \code{PoP} 则覆盖「推理执行 + 策略合规」
+的完整义务（成本 $\approx$ 推理证明 + 合规证明，由前者主导）}。
+详见 \code{bench/comparison_zkagent.md}。
+
+\paragraph{$\triangle$ 关于组合成本的那句结论（P1-6 实测后收紧）。} 我们用\textbf{代理}推理证明
+把组合链路跑通了，实测结果是「\textbf{成本 $\approx$ 两者之和}」成立（合成与联合验证是毫秒级，
+不引入额外证明），但「\textbf{由推理证明主导}」在代理规模下\textbf{不成立}——
+16$\to$32$\to$4 的定点 MLP 只有 \textbf{8.3 万}周期（110.8 s / 峰值 10.0 GiB），
+反而\textbf{低于}策略那一半的 \textbf{64.4 万}周期（127.3 s / 峰值 10.2 GiB），
+两半都被 zkVM 的固定开销（setup 与证明器启动）主导（\code{bench/results/compose.md}）。
+因此上句中的「由前者主导」是\textbf{对真实 zkAgent 的预期}，不是本次实验证到的结论；
+代理实验验证的是\textbf{组合机制}，不是成本结构。
+
+\subsection{信任--成本四象限（实现 vs TEE/形式验证/hash-chain）}
+\label{sec:eval-quadrant}
+
+见 \code{docs/quadrant.md}：PoP 落在「密码学健全 + 证性质」象限，代价由「硬件延迟」变为
+「证明时间」，换取\textbf{无硬件信任 + 承诺式隐私}（口径见 \S\ref{sec:privacy-scope}）。
+
+\subsection{端到端与审计}
+\label{sec:eval-e2e}
+
+\code{scripts/demo_e2e.py} 产生 12 张证书（流式链+早停、MCP 参数+响应、zk 证明）并锚定；
+\code{scripts/verify_session.py} 第三方仅凭公开产物验证：
+\code{ledger_chain / signature / policy_hash / anchored / stream_chains / zk_proof} 全 PASS。
+
+链上变体（\code{bash scripts/anchor_e2e.sh}：本地 Anvil $\to$ 部署 \code{Anchor.sol} $\to$
+12 张证书摘要上链）：第三方 \code{verify_session --rpc} 逐证书 \code{anchoredAt} 读回并交叉核对
+本地账本，\code{chain_anchored 12/12} PASS；反例对照（未登记摘要读回 0）确认该检查非恒真。
+\code{--prove} 变体在真实 Core 证明（2.78 MB）下同样通过。
+
+\paragraph{交叉验证（I1）。} \code{scripts/cross_validate.py} 把 \textbf{19 条向量}同时交给
+Python 参考判定（golden）与 SP1 宿主/证明两条路径，逐条比对 \code{passed} 与违规规则集合。
+2026-09-12 整批重跑（真实 Core 证明，分块以隔离峰值内存）：\textbf{host 19/19、prove 19/19}。
+
+\section{Limitations \& Future Work}
+\label{sec:limitations}
+
+\subsection{「内容隐私」的准确口径（P0-4 核查结论）}
+\label{sec:privacy-scope}
+
+本文与 \S\ref{sec:zkagent} 对比表中的「内容隐私」应读作「\textbf{不对外公开明文}」，
+\textbf{不应}读作「响应内容不可恢复」。两条独立的理由（仓库 \code{docs/sp1-zk-audit.md}）：
+
+\begin{enumerate}[leftmargin=1.6em,itemsep=3pt]
+  \item \textbf{证明系统层面}：本项目默认出证模式为 SP1 的 \code{core}，而 SP1 官方安全模型
+        明文承认 \emph{``individual STARK proofs in SP1 do not currently satisfy the
+        zero-knowledge property''}；源码侧独立印证（SLOP 证明栈无任何盲化；\code{ShardProof}
+        明文携带轨迹 Merkle 根与轨迹开值）。即 (G1) 健全性成立，但\textbf{证明工件本身不隐藏见证}。
+        \code{groth16}/\code{plonk} 把内部 STARK 证明作为私有见证（公开输入仅 5 个），
+        是唯一可能隐藏见证的模式——但属包装器层面声明、非后量子，且需 $\ge$16 GB 内存，本文未实测。
+  \item \textbf{设计层面（更根本，与证明系统无关）}：公开值中的 \code{response_binding} /
+        \code{response_commitment} 均为\textbf{公开且可离线重算}的 $T$ 的函数。
+        \code{response_binding} 必须公开可重算，这正是验证者能独立核对「送达的 $T'$ 即被证明的 $T$」
+        的原因（本文的换响应防御，\assump{6}）；而该性质本身即构成一个\textbf{猜测--验证 oracle}：
+        自然语言响应的熵远低于 SHA-256 的 256 bit，枚举可行。换言之，在「验证者独立重算绑定」的前提下，
+        \textbf{响应绑定与响应内容隐藏在低熵 $T$ 上互斥}。\S\ref{sec:threat} 的 (G2) 应据此重述为：
+        \emph{私有模式下公开值不含 $T$ 的明文}（已由 Leak 实验验证）。
+\end{enumerate}
+
+对 zkAgent 的对比结论不变（PoP 无需将输入交由第三方硬件、且证明对象不同），但两侧的
+「内容隐私」单元格都不应被读成「内容不可恢复」。
+
+\subsection{其他}
+\label{sec:future}
+
+生产签名（Ed25519/HSM）与密钥托管（当前上链用明文私钥参数，demo 为 Anvil 公开测试键）、
+公共测试网/主网部署（当前为本地 Anvil）；
+\textbf{语义级规则的模型质量}（P2-9 已打通 ezkl 委托链路，但随包模型是\textbf{演示用}的
+小型代理，不是可用的学习型护栏——「$P(\text{有害})$ 低」只说明\textbf{这个模型}如此，
+不构成语义安全保证；且陪伴证明的公开实例含 \code{encode(T)}，故语义规则\textbf{只支持公开模式}，
+见 \code{docs/security-model.md} \S5.4 与 \code{docs/design-semantic-rules.md}）；
+\textbf{推理证明的真实性}（P1-6 分支 A 已给出组合\textbf{机制}与形式化引理 \lem{6}，
+但推理那一半是确定性定点 MLP 代理——权重由编译期种子生成、编进程序因而被 \code{vkey} 承诺，
+证明的是「\textbf{这张}图在\textbf{这条}响应上确实算出\textbf{这个}输出」，与「这张图好不好」无关；
+换上真 zkAgent 只需替换 prover，组合层不动。代理规模下「组合成本由推理证明主导」\textbf{未被验证}，
+见 \code{bench/results/compose.md}）；
+
+多证明者当前\textbf{不覆盖三方合谋}（见 \S\ref{sec:l9}）；切片共享\textbf{同一个} guest
+（各持一把键只是责任划分，本仓库没有做「每个角色一条电路」）；
+递归聚合未做，验证成本仍是 $O(N)$；
+正则子集与 ASCII 语义扩展；证明开销优化（lookup/并行/预计算）；
+与 zkAgent 轨迹证明、可验证 DP 的组合。
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+PoP 首次把「智能体响应满足公开策略」做成\textbf{无硬件信任、可选择性披露、可审计锚定}的开源系统，
+并给出安全模型与（含对抗消融的）系统评测；它不止覆盖单条响应——会话聚合证明与多证明者把
+「一组证书」与「多个责任方」也纳入了可证范围，且都是\textbf{在同一套既有原语上}完成的
+（新增的是约束与绑定，不是新的证明系统）。它是可插拔的「合规证明原语」，
+可嵌入推理证明、隐私机制、流式证明与监管流程。
+
+\appendix
+\section{Reproduction}
+\label{app:repro}
+
+见 \code{docs/reproduce.md}：环境 $\to$ 一次合规证明 $\to$ 交叉验证 $\to$ 私有模式 $\to$
+证书 $\to$ 一键 demo $\to$ 第三方验证（关键命令与期望输出）。
+
+\end{document}
