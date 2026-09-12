@@ -217,6 +217,8 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
 | 2 | **没有 `on_llm_error`** | `langchain_adapter.py` 只实现 `on_llm_new_token`/`on_llm_end`/`on_tool_start`/`on_tool_end` | 模型超时 / 限流 / 内容拦截（真模型最常见的三件事）**不留任何产物**。「会话无证书」与「会话干净」在输出上无法区分 —— 正是 P0-4 要消灭的那类歧义 |
 | 3 | **早停不是真停** | `stop_on_violation` 只做到「后续 token 不再出证」（`_sstopped` 置位后 `:184-185` 仅忽略） | 流**继续把违规内容吐完**。真模型下这还意味着**继续计费** —— 早停本应是最直接的省钱手段 |
 | 4 | **工具清单硬编码** | 演示里手写工具名 | 真 MCP 服务器要动态发现 |
+| 5 | **流式分片的切分口径未定** | `on_llm_new_token` 按「回调触发」累积前缀 | 假模型的分片是**构造出来的**（一个小 chunk 一个 token），真模型的 chunk 边界由网络与 provider 决定。同一句话在两家 provider 下会切出不同的**部分证书序列** —— 增量证书的粒度因此不可比。要在适配器层把口径钉死（按字符？按判定变化？），否则「流式早停抢在几个 token 内」这个卖点跨 provider 不成立 |
+| 6 | **早停时半截响应的界定未定** | 早停只置位 `_sstopped`，不停流 | 真早停会停在**响应中途**。停在「半句话」上时那张 `streaming.stop` 证书判的是**前缀**，而模型本会继续吐出违规内容 —— 必须写清证书断言的是「**截至此点的前缀**违规」，不能读成「本次生成违规」。这是一个**语义**问题，不是实现问题 |
 
 #### 5.1.2 子任务（按此顺序）
 
@@ -284,7 +286,8 @@ GET  /v1/attest/{job}                                  → 轮询：queued | pro
 
 ### 5.3 顺带修掉的口径问题：`demo_e2e.py` 的魔法 `vkey = "demo"`
 
-复盘时发现的**第三个**「说了但没接上」，与上面两步独立，单独修（结论如下）：
+复盘时发现的**第三个**「说了但没接上」，与上面两步独立，**已单独修完**
+（2026-09-13，见下方结论）：
 
 - `demo_e2e.py` 顶端的 `vkey = "demo"` 被传给三个地方
   （`PoPCallbackHandler`、`mcp_path`、`zk_path`），但**只有 zk 路径**会在出证时
@@ -304,3 +307,21 @@ GET  /v1/attest/{job}                                  → 轮询：queued | pro
   过度声明（自称 vkey 却无工件）与低报（有工件却标 unproven）都判 FAIL。
 - 「要接真 vkey 需要什么材料」的答案是：**不需要任何新工件** —— 真 vkey 已经
   在 zk 路径里（本机可证，`--contrast-prove` 即得）；要补的是**零成本的一道校验**。
+
+**已落地的修法**（三个文件 + 一组用例）：
+
+- `policydsl/cert.py`：新增 `VKEY_HASH_UNPROVEN`（**故意**等于 `PROOF_MODE_UNPROVEN`
+  同一个字符串 —— 二者说的是同一件事），把「vkey 没有真值可指」这件事从一条
+  注释升级为一个**具名常量**；
+- `scripts/demo_e2e.py`：`vkey = "demo"` → `cert.VKEY_HASH_UNPROVEN`；
+- `scripts/verify_cert.py`：新增 `vkey_label` 卡（2c），与 `proof_mode` 卡（2b）同构；
+- `scripts/verify_session.py`：新增 `certificates_vkey_label` 卡，两个方向都拦；
+- `tests/test_policy_binding.py`：`TestVkeyLabelHonestyRejected`（4 例，**反例就是
+  `"demo"` 本身**）+ `TestSessionVkeyLabelHonesty`（2 例）。
+
+> **这道校验当场抓出了两处既有问题**，说明它不是恒真的：
+> ① `tests/test_policy_binding.py::TestVerifierEndToEnd` 的 fixture 里，
+> 那条名为 `test_honest_certificate_passes` 的**诚实对照组**所用的证书
+> `vkey_hash` 恰恰是随手编的 `"deadbeef"` —— 与 `demo_e2e.py` 是同一个毛病；
+> ② `issue_cert.py`、三个适配器的缺省值、`zk_path --no-prove` 分支都已经是对的
+> （`unproven`），唯独演示脚本例外。现已一并订正。

@@ -99,6 +99,7 @@ CI（`.github/workflows/ci.yml`）跑的是**最轻的一档**：Python 套件 +
 | Provenance | `scripts/verify_cert.py` 的 `policy_hash`/`vkey`/`proof_sha256` 卡；`test_cert.py`；`test_policy_binding.py`（P0-1 攻击回归） |
 | Response binding (A6) | `scripts/verify_cert.py --response` 卡；`test_binding.py`（换 T′/换 nonce/域分离）；`demo_e2e` 的 challenge 实验 |
 | 证据档位诚实标注 (P0-4) | `scripts/verify_cert.py` 的 `proof_mode` 卡（与工件自报模式比对）；`verify_session.py` 的 `certificates_proof_mode`；`test_cert.py::TestProofModeLabeling`、`test_policy_binding.py::TestProofModeOverclaimRejected`（自称某档却无工件 ⇒ FAIL）、`test_verifier_only.py::TestArtifactProofModes` |
+| vkey 诚实标注（同构的第二条） | `scripts/verify_cert.py` 的 `vkey_label` 卡；`verify_session.py` 的 `certificates_vkey_label`；`test_policy_binding.py::TestVkeyLabelHonestyRejected`（**用 `demo_e2e.py` 写过的魔法值 `"demo"` 本身作反例**）+ `::TestSessionVkeyLabelHonesty`。此前 `vkey_hash` **一条不变量都没有**，那个字段可以被写成任意字符串而全绿通过 |
 | Ledger integrity | `test_anchor.py`（链篡改检出）、`verify_session.py::ledger_chain` |
 | Stream chain | `test_frameworks.py`（链路验证/篡改/早停） |
 | 链上锚定 | `test_anchor_chain.py`（离线 fake + anvil e2e）、`anchor_e2e.sh` 的 `chain_anchored` 与反例 |

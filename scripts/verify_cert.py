@@ -217,6 +217,37 @@ def main() -> int:
         results.append(("proof_mode", True,
                         f"cert={declared_mode} — no --proof given, 无法核对 (skipped)"))
 
+    # 2c) vkey 标注的诚实性 —— 与 2b 的 proof_mode **同构**的那条不变量。
+    #
+    #     ``binding.vkey_hash`` 的语义是「**哪块电路**判定了它」。宿主判定
+    #     （Python 参考评估器在进程内判的 stream/llm/tool 三类证书）根本没有
+    #     电路参与，没有验证密钥可指，唯一诚实的取值就是 ``unproven``。
+    #
+    #     这一卡此前**不存在**：上面几条只比对「证书 vs 证明」（``vkey_hash`` /
+    #     ``proof_vkey``），从不问这个值**本身**是否可能是真的。于是
+    #     ``demo_e2e.py`` 里写过的魔法值 ``"demo"`` 可以全绿通过验证 ——
+    #     一个有内容、却没有任何东西能证伪的字段。
+    #
+    #     注意反向同样要拦：附了工件却标 ``unproven`` 是**低报**，会让这个字段
+    #     失去意义（与 2b 的「低报也算失败」同一条理由）。
+    declared_vk = (payload.get("binding") or {}).get("vkey_hash")
+    if declared_vk is None:
+        # 缺字段（早期证书）如实跳过，而不是「因为缺字段」判失败 —— 与 2b 同款。
+        results.append(("vkey_label", True, "certificate predates the field — skipped"))
+    else:
+        claims_proof = (payload.get("binding") or {}).get("proof_sha256") is not None
+        honest = (declared_vk != cert.VKEY_HASH_UNPROVEN) == claims_proof
+        if honest:
+            note = ("指向某块 guest 电路的 vkey，与所附工件一致" if claims_proof
+                    else "未附证明 —— 没有电路参与判定，故无验证密钥可指")
+        elif claims_proof:
+            note = (f"{declared_vk} — 附了证明工件却把 vkey 标成未证明，是低报；"
+                    "该字段指向哪块电路必须如实声明")
+        else:
+            note = (f"{declared_vk} — 未附任何证明工件，却声明了一个 vkey；"
+                    "宿主判定的证书只能标 unproven（没有电路参与，无 vkey 可指）")
+        results.append(("vkey_label", honest, note))
+
     # 3) 策略绑定（三方比对）：
     #      a. 证书载荷声明的 policy_hash
     #      b. 证书 outcome 内嵌的 policy_hash（证书内部两处声称必须自洽）

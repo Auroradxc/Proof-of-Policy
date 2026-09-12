@@ -230,8 +230,13 @@ class TestVerifierEndToEnd(unittest.TestCase):
         """用 ``claimed_hash`` 组装并签名一张证书，跑一次独立验证。"""
         spec = compile_policy(pack)
         outcome = {"policy_hash": claimed_hash, "passed": True, "violations": []}
+        # vkey_hash 用 unproven 而不是随手一个假哈希：这张证书没有证明工件，
+        # 「宿主判定、无电路参与」才是它的诚实标注。用 `"deadbeef"` 会让它同时
+        # 踩中 vkey_label 卡（见 TestVkeyLabelHonestyRejected），于是
+        # `test_honest_certificate_passes` 这条**对照**就不再是诚实的了。
         payload = cert.build_payload(pack.id, pack.version, {"sha256": claimed_hash},
-                                     "public", outcome, vkey_hash="deadbeef", ts="2026-01-01T00:00:00Z")
+                                     "public", outcome,
+                                     vkey_hash=cert.VKEY_HASH_UNPROVEN, ts="2026-01-01T00:00:00Z")
         # P0-3：用 Ed25519 正常签名，并把公钥写到证书旁边 —— 这样被测的是
         # 「格式完备、签名正确但策略绑定对不上」，而不是签名本身挡没挡住。
         signer = cert.Ed25519Signer.generate()
@@ -283,7 +288,7 @@ class TestVerifierEndToEnd(unittest.TestCase):
                                          "public",
                                          {"policy_hash": _hash(EMPTY), "passed": True,
                                           "violations": []},
-                                         vkey_hash="deadbeef")
+                                         vkey_hash=cert.VKEY_HASH_UNPROVEN)
             signer = cert.Ed25519Signer.generate()
             (tmp / "key.json").write_text(json.dumps(keys.public_record(signer.public_key)))
             cert_file = tmp / "cert.json"
@@ -423,6 +428,133 @@ class TestSessionProofModeOverclaim(unittest.TestCase):
             proc = self._verify(self._session(Path(tmp), cert.PROOF_MODE_UNPROVEN, "aa" * 32))
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
         self.assertIn("[FAIL] certificates_proof_mode", proc.stdout)
+
+
+class TestVkeyLabelHonestyRejected(unittest.TestCase):
+    """``vkey_hash`` 标注的诚实性 —— 与 ``proof_mode`` **同构**的那条不变量。
+
+    ``binding.vkey_hash`` 的语义是「**哪块电路**判定了它」：它指向
+    ``pop-program`` / ``pop-infer`` / ``pop-session`` 三块 guest ELF 各自派生
+    出的验证密钥。而宿主判定的三类证书（stream/llm/tool）**根本没有电路参与**
+    —— 没有证明，就没有验证密钥可指，唯一诚实的取值就是 ``unproven``。
+
+    这条不变量此前**一条都不存在**：验证方只比对「证书 vs 证明」
+    （``vkey_hash`` / ``proof_vkey`` 两张卡），从不问这个值**本身**是否可能是
+    真的。于是 ``scripts/demo_e2e.py`` 里写过的魔法值 ``"demo"`` 可以**全绿
+    通过验证** —— 一个有内容、却没有任何东西能证伪的字段。修法就是这一组用例
+    锁住的两条：**过度声明**（未附工件却声明 vkey）与**低报**（附了工件却标
+    ``unproven``）都判 FAIL。
+    """
+
+    def _run(self, vkey, proof_sha, tmp: Path, drop: bool = False):
+        tmp = Path(tmp)
+        pack_file = tmp / "pack.json"
+        pack_file.write_text(json.dumps({
+            "id": REAL.id, "version": REAL.version,
+            "rules": [{"kind": r.kind, "name": r.name, "params": r.params} for r in REAL.rules]}))
+        payload = cert.build_payload(REAL.id, REAL.version, compile_policy(REAL),
+                                     "public", {"passed": True, "violations": []},
+                                     vkey_hash=vkey, proof_sha256=proof_sha,
+                                     ts="2026-01-01T00:00:00Z")
+        if drop:
+            payload["binding"].pop("vkey_hash", None)
+        signer = cert.Ed25519Signer.generate()
+        (tmp / "key.json").write_text(json.dumps(keys.public_record(signer.public_key)))
+        cert_file = tmp / "cert.json"
+        cert_file.write_text(json.dumps(cert.sign_payload(payload, signer)))
+        ledger = tmp / "ledger.jsonl"
+        anchor.append_anchor(ledger, cert.cert_digest(payload))
+        return subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+             "--cert", str(cert_file), "--pack", str(pack_file), "--ledger", str(ledger)],
+            cwd=str(REPO), capture_output=True, text=True)
+
+    def test_honest_unproven_vkey_passes(self):
+        # 非恒真对照：诚实标 unproven 的证书必须通过（否则下面的 FAIL 不说明问题）。
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._run(cert.VKEY_HASH_UNPROVEN, None, Path(tmp))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("[PASS] vkey_label", proc.stdout)
+
+    def test_placeholder_vkey_is_rejected(self):
+        # **这就是原缺陷本身**：demo_e2e.py 写过的魔法值 "demo"。
+        # 它没有任何证明工件，却往这个字段里写了一个看着有内容的值。
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._run("demo", None, Path(tmp))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("[FAIL] vkey_label", proc.stdout)
+        self.assertIn("RESULT: FAIL", proc.stdout)
+
+    def test_underclaimed_vkey_is_rejected(self):
+        # 反向也要拦：附了工件却标 unproven 是**低报**，同样让这个字段失去意义
+        # （与 proof_mode 的「低报也算失败」同一条理由）。
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._run(cert.VKEY_HASH_UNPROVEN, "aa" * 32, Path(tmp))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("[FAIL] vkey_label", proc.stdout)
+
+    def test_missing_field_is_skipped_not_failed(self):
+        # 缺字段的证书如实跳过，而不是「因为缺字段」判失败 —— 与 2b 同款。
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._run(None, None, Path(tmp), drop=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("[PASS] vkey_label", proc.stdout)
+        self.assertIn("predate", proc.stdout)
+
+
+class TestSessionVkeyLabelHonesty(unittest.TestCase):
+    """会话级（``verify_session.py``）的 vkey 标注核对。
+
+    单张证书那一层由 :class:`TestVkeyLabelHonestyRejected` 覆盖；这里补的是
+    **会话级**那条：一张包里混进一张夸张的证书必须让整个会话 FAIL ——
+    否则「逐张都查过了」在会话层并没有真的发生。
+    """
+
+    PACK = "policy_packs/eu_ai_act_v1.json"
+
+    def _session(self, tmp: Path, vkey: str) -> Path:
+        sys.path.insert(0, str(REPO / "scripts"))
+        from verify_session import load_policy  # 与验证脚本共用同一套加载逻辑
+
+        pack = load_policy(REPO / self.PACK)
+        payload = cert.build_payload(pack.id, pack.version, compile_policy(pack),
+                                     "public", {"passed": True, "violations": []},
+                                     vkey, None, "2026-01-01T00:00:00Z")
+        signer = cert.Ed25519Signer.generate()
+        ledger = tmp / "ledger.jsonl"
+        anchor.append_anchor(ledger, cert.cert_digest(payload))
+        session = {
+            "session_id": "t",
+            "ledger": ledger.name,
+            "packs": [self.PACK],
+            "signers": [keys.public_record(signer.public_key)],
+            "certificates": [{"kind": "llm", "policy_pack": self.PACK,
+                              "envelope": cert.sign_payload(payload, signer)}],
+            "summary": {},
+        }
+        path = tmp / "session.json"
+        path.write_text(json.dumps(session))
+        return path
+
+    def _verify(self, path: Path):
+        return subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "verify_session.py"),
+             "--session", str(path)],
+            cwd=str(REPO), capture_output=True, text=True)
+
+    def test_honest_session_passes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._verify(self._session(Path(tmp), cert.VKEY_HASH_UNPROVEN))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("[PASS] certificates_vkey_label", proc.stdout)
+
+    def test_placeholder_vkey_fails_the_session(self):
+        # 非恒真对照：同一份会话包，只把这个字段改成魔法值 "demo"。
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = self._verify(self._session(Path(tmp), "demo"))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("[FAIL] certificates_vkey_label", proc.stdout)
+        self.assertIn("RESULT: FAIL", proc.stdout)
 
 
 @unittest.skipUnless(os.environ.get("POP_TEST_PROOF") == "1",

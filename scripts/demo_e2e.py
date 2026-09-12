@@ -312,7 +312,23 @@ def main() -> int:
     out_dir: Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     ledger = out_dir / "ledger.jsonl"
-    vkey = "demo"
+    # 宿主三类证书（stream/llm/tool）的 `binding.vkey_hash`。
+    #
+    # 这里**不是**一个「暂时还没接上真值」的占位符 —— 这三类证书根本没有证明，
+    # 也就没有验证密钥可指，`unproven` 就是它们的**正确**取值（与 `cert.py`
+    # 的 VKEY_HASH_UNPROVEN、`agent.py` 的缺省、`issue_cert.py:200`、
+    # `zk_path --no-prove` 四处口径一致）。
+    #
+    # 此前的魔法值 `"demo"` 不只是不好看：`vkey_hash` 的语义是「哪块电路判定了
+    # 它」，`"demo"` 让这个字段看起来像有内容，而验证方只比对「证书 vs 证明」，
+    # 从不问这个值本身是否可能是真的 —— 于是它**全绿通过**。反过来说，给这三类
+    # 证书塞一个**真** vkey 哈希（比如从 pop-program 的工件里取）会更坏：
+    # `"demo"` 一眼是占位符，真哈希会让人读成「由 pop-program 判定过」，
+    # 而实际判定是宿主 Python 做的 —— 那是过度声明，正是 P0-4 要消灭的东西。
+    #
+    # 真 vkey 只属于 zk 路径，而那条路径已经是真的：`zk_path` 出证后用
+    # `proof.meta.json` 里的 `vkey_hash` **覆盖**这个值（见 zk_path 的 no_prove 分支）。
+    vkey = cert.VKEY_HASH_UNPROVEN
     session_entries = []
 
     # ---- 0) 出证方签名密钥（P0-3）：Ed25519。验证方只需公钥 ----

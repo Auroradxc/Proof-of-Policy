@@ -166,8 +166,9 @@ python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] 
 | `anchor` | 账本链完整 + 摘要存在于账本 |
 | `anchor_on_chain`（可选） | 链上 `anchoredAt` 读回，且与本地 meta 的 `chain_ts` 一致 |
 | `proof_mode` | P0-4：证书自称的 `binding.proof_mode` 与**工件自报的模式**（边车 `*.verify.json` / `*.meta.json` / 验证器输出）比对，多来源必须指向同一档。没有工件的证书只能标 `unproven` —— 自称 `core` 却拿不出证明即判 FAIL；P0-4 之前的旧证书（无此字段）**如实跳过**，不倒过来判它失败 |
+| `vkey_label` | **`vkey_hash` 标注的诚实性** —— 与 `proof_mode` 同构的第二条不变量（见 §2.11 的说明）。`binding.vkey_hash` 的语义是「哪块电路判定了它」；宿主判定的证书没有电路参与，只能标 `unproven`。未附工件却声明 vkey = 过度声明，附了工件却标 `unproven` = 低报，两者都 FAIL；缺字段的旧证书如实跳过 |
 | `proof_verify` / `proof_outcome` / `proof_vkey` / `proof_sha256` | 证明有效 + 承诺的 outcome/vkey/工件哈希都匹配 |
-| `verify_only` / `public_values` / `vkey_hash` | 走快路径时的对应三项 |
+| `verify_only` / `public_values` / `vkey_hash` | 走快路径时的对应三项（**注意与 `vkey_label` 是两回事**：这几项比的是「证明的 vkey == 证书声称的 vkey」，而 `vkey_label` 问的是「证书声称的 vkey 本身可不可能为真」） |
 
 签名失败会**提前返回**（`print_fail`），因为后面所有检查都建立在「载荷可信」之上。
 拿不到公钥时同样提前返回并提示用 `--keyring` 指明（**不会**静默降级为「跳过签名」）。
@@ -428,8 +429,8 @@ python3 scripts/verify_session.py --session S [--keyring 公钥] \
 
 检查项：`keyring`（**P0-3 前置**：拿不到公钥就直接 FAIL，不静默跳过）/ `ledger_chain` /
 `certificates_signature` / `certificates_policy_hash` / `certificates_response_binding` /
-`certificates_proof_mode` / `certificates_anchored` / `stream_chains` / `zk_proof`
-（+ 可选 `chain_anchored`）。
+`certificates_proof_mode` / `certificates_vkey_label` / `certificates_anchored` /
+`stream_chains` / `zk_proof`（+ 可选 `chain_anchored`）。
 
 细节：
 
@@ -447,6 +448,18 @@ python3 scripts/verify_session.py --session S [--keyring 公钥] \
   （`proof_sha256` 非空），附了工件就不许标 `unproven`；缺字段的旧证书单独计数
   （`N cert(s) labeled, M predate the field`）。`zk_proof` 那一步还会再拿
   **工件自报的模式**核对一次（多来源必须一致）。
+- `certificates_vkey_label` 是**同构的第二条**（`verify_cert.py` 对应 `vkey_label` 卡）。
+  `binding.vkey_hash` 的语义是「**哪块电路**判定了它」—— 指向 `pop-program` /
+  `pop-infer` / `pop-session` 三块 guest ELF 各自派生的验证密钥。而宿主判定的三类
+  证书（stream/llm/tool）**没有电路参与**，没有验证密钥可指，唯一诚实的取值就是
+  `unproven`。判据同样双向：未附工件却声明 vkey = **过度声明**；附了工件却标
+  `unproven` = **低报**，两者都 FAIL。
+  > **这条卡是补上的**：在此之前 `vkey_hash` **一条不变量都没有** —— 上面几张卡
+  > 只比对「证书 vs 证明」，从不问这个值**本身**是否可能是真的。于是
+  > `demo_e2e.py` 里写过的魔法值 `"demo"` 可以**全绿通过验证**：一个有内容、
+  > 却没有任何东西能证伪的字段。现在它会被当场判 FAIL
+  > （`tests/test_policy_binding.py::TestVkeyLabelHonestyRejected` 用 `"demo"`
+  > 本身作为反例锁住）。
 
 ### 2.12 `deploy_anchor.py` / `make_shots.py`
 

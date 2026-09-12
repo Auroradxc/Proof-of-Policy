@@ -66,6 +66,23 @@ HMAC_TEST_SCHEME = "test-hmac-sha256"
 #: 「未附证明」的 ``proof_mode`` 取值（与 ``vkey_hash="unproven"`` 同义）。
 PROOF_MODE_UNPROVEN = "unproven"
 
+#: 「未附证明」的 ``vkey_hash`` 取值 —— **故意**与 :data:`PROOF_MODE_UNPROVEN`
+#: 同一个字符串，因为二者说的是同一件事。
+#:
+#: ``binding.vkey_hash`` 的语义是「**哪块电路**判定了它」：它指向
+#: `pop-program` / `pop-infer` / `pop-session` 三块 guest ELF 各自派生出的
+#: 验证密钥，验证方拿它核对「证明确实来自声明的那块电路」。而**宿主判定**
+#: （Python 参考评估器在进程内判的 stream/llm/tool 三类证书）根本没有电路
+#: 参与 —— 没有证明，就没有验证密钥可指，唯一诚实的取值只能是这个。
+#:
+#: 这个常量存在的理由是一条**曾经不成立的**不变量：``proof_mode`` 有诚实性
+#: 校验（``verify_cert.py`` 的 2b 卡 + ``verify_session.py`` 的
+#: ``certificates_proof_mode``），``vkey_hash`` 却一条都没有，于是
+#: ``demo_e2e.py`` 写的魔法值 ``"demo"`` 可以**全绿通过验证** ——
+#: 验证方只比对「证书 vs 证明」，从不问这个值本身是否可能是真的。
+#: 不变量与 ``proof_mode`` 同构：**没有工件 ⟺ 取值为此常量**。
+VKEY_HASH_UNPROVEN = PROOF_MODE_UNPROVEN
+
 #: 证明模式 → **证明工件对见证的隐藏程度**。
 #:
 #: 这张表是 P0-4 审计结论的落地（见 ``docs/sp1-zk-audit.md`` §2）：它把「私有模式」

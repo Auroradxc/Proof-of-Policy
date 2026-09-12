@@ -365,6 +365,7 @@ SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附带真实 Core 证明�
 
 ```
 [PASS] ledger_chain / certificates_signature / certificates_policy_hash / certificates_anchored
+[PASS] certificates_proof_mode / certificates_vkey_label    # P0-4 的两条诚实性不变量，互为姊妹
 [PASS] stream_chains 2 run(s)
 [PASS] zk_proof      SP1 proof verified (pop-script)      # --no-prove 时为 unproven (host-check only)
 [PASS] chain_anchored 14/14 digests on chain 0x5fbdb231… (14 cross-checked)

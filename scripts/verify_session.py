@@ -114,13 +114,17 @@ def main() -> int:
     mode_ok = True
     mode_bad: list[str] = []
     mode_marked = mode_skipped = 0
+    # vkey 标注的诚实性（与 mode_* 同构，见循环里那一段的说明）
+    vk_ok = True
+    vk_bad: list[str] = []
+    vk_marked = vk_skipped = 0
     kinds = {}
     for e in entries:
         env = e["envelope"]
         ok, payload = cert.verify_envelope(env, keyring)
         sig_ok &= ok
         if not ok or payload is None:
-            pol_ok = anch_ok = bind_ok = False
+            pol_ok = anch_ok = bind_ok = vk_ok = False
             continue
         kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
         # policy_hash 三方比对（链下部分）：证书载荷、证书 outcome 内嵌值、
@@ -160,6 +164,26 @@ def main() -> int:
                 mode_bad.append(
                     f"{e['kind']}: proof_mode={declared_mode} 但 proof_sha256="
                     f"{'有' if has_proof else 'null'}")
+        # vkey 标注的诚实性 —— 与上面 proof_mode **同构**的那条不变量，此前一条
+        # 都没有。单张证书那一层由 verify_cert.py 的 2c 卡覆盖；这里补会话级那条，
+        # 否则一张会话包里混进一张「声称有 vkey 却拿不出工件」的证书仍会全绿。
+        #
+        # ``binding.vkey_hash`` 的语义是「哪块电路判定了它」：宿主判定
+        # （stream/llm/tool 三类证书）没有电路参与，唯一诚实的取值就是 unproven。
+        # 没有这条，那张证书可以往这个字段里写任意字符串而无人过问 ——
+        # demo_e2e.py 此前写的魔法值 "demo" 就是这么全绿通过的。
+        declared_vk = (payload.get("binding") or {}).get("vkey_hash")
+        if declared_vk is None:
+            vk_skipped += 1
+        else:
+            vk_marked += 1
+            has_proof_vk = payload["binding"].get("proof_sha256") is not None
+            ok_vk_label = ((declared_vk != cert.VKEY_HASH_UNPROVEN) == has_proof_vk)
+            vk_ok &= ok_vk_label
+            if not ok_vk_label:
+                vk_bad.append(
+                    f"{e['kind']}: vkey_hash={declared_vk} 但 proof_sha256="
+                    f"{'有' if has_proof_vk else 'null'}")
         anch_ok &= anchor.find_anchor(ledger, cert.cert_digest(payload)) is not None
     results.append(("certificates_signature", sig_ok,
                     f"{len(entries)} certs, {len(keyring)} key(s) in ring"))
@@ -171,6 +195,9 @@ def main() -> int:
     results.append(("certificates_proof_mode", mode_ok,
                     f"{mode_marked} cert(s) labeled, {mode_skipped} predate the field"
                     if mode_ok else "; ".join(mode_bad[:2])))
+    results.append(("certificates_vkey_label", vk_ok,
+                    f"{vk_marked} cert(s) labeled, {vk_skipped} predate the field"
+                    if vk_ok else "; ".join(vk_bad[:2])))
     results.append(("certificates_anchored", anch_ok, "digest present in ledger"))
 
     # 2) 流式链：在 chain.index == 0 处拆成多个 run
