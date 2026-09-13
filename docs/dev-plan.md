@@ -143,7 +143,7 @@
   —— ⚠️ **初稿已由 LaTeX 版取代**：权威源是 `paper/proof-of-policy.tex`（xelatex + ctex），
   `.md` 只是阅读镜像且已落后（缺 L8/L9）。以 `.tex` 为准。
 - [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；
-  测试 **550 全绿 / 15 skip**（2026-09-13 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
+  测试 **554 全绿 / 15 skip**（2026-09-13 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
 - [x] **待办（延伸）—— 三项均已完成**（此前误记为待办，2026-09-12 订正）：
   verifier-only 二进制（`pop-verify`，见 Phase P7-a）；链上锚定 RPC 后端（`RpcAnchorBackend`，见 P7-c）；
   format/budget/tool 规则入电路（见 P7-b）
@@ -178,7 +178,7 @@ P0 ─► P1 ─► P2 ─► P3(透明MVP★)
 
 ## 5. 延伸路线：接真 agent + 证明服务（2026-09-13 立）
 
-> **前置**：Phase 0–6 与 P7 全部收尾，测试 **550 全绿 / 15 skip**，
+> **前置**：Phase 0–6 与 P7 全部收尾，测试 **554 全绿 / 15 skip**，
 > `scripts/demo_all.sh` 8 条支路全通。本节是**交付之后**的两步 ——
 > 与仍在外部排队的 **T1**（≥64 GB 云机，见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9）
 > **互不阻塞**，也**不能**靠 T1 替代：T1 补的是链上/云机那一格，这两步补的是
