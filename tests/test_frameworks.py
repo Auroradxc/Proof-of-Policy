@@ -308,9 +308,11 @@ class TestRealHardStop(unittest.TestCase):
 
         content = AgentMonitor(load_pack("agent_content_v1.json"))
         h = PoPCallbackHandler(content, stop_on_violation=True, hard_stop=True,
-                               stream_every=1)
+                               stream_step_chars=1)
         # GenericFakeChatModel 按空白切分：['Leak', ' ', 'sk-…', ' ', 'now']
-        # 密钥在**第 3 个** chunk 才补全 —— 早停应当恰好停在这里。
+        # 密钥在**第 3 个** chunk 内补全 —— 采样网格是逐字符的，所以早停就发生在
+        # 那个 chunk **内部**（而旧口径只会在 chunk 末尾看见它）；被截住的是同一个
+        # chunk，所以调用方看到的仍然是 "Leak " 两片。
         model = GenericFakeChatModel(
             messages=iter([AIMessage(content="Leak sk-abcdefghijklmnopqrstuvwxyz now")]))
         seen = []
@@ -648,6 +650,96 @@ class TestStreamingOffline(unittest.TestCase):
         h.on_llm_end(types.SimpleNamespace(generations=[]), run_id="s1")
         self.assertEqual(len(h.certificates), 1)          # 最终（权威）证书
         self.assertEqual(h._sbuf, {})                     # 流式状态已清空
+
+
+class TestStreamingGranularity(unittest.TestCase):
+    """流式采样口径：**锚在文本上，不锚在回调边界上**。
+
+    真模型的 chunk 边界由网络与 provider 决定。若「在哪些前缀长度上判过」取决于
+    回调次数，部分证书序列就跨 provider 不可比 —— 而「早停抢在几个 token 内」这个
+    卖点正是建立在这串序列上的。这一组用例把口径钉死成可判定的东西。
+    """
+
+    def setUp(self):
+        self.monitor = AgentMonitor(load_pack("agent_content_v1.json"))
+        # 违规在后半段才凑齐（密钥模式），且前面有一大段干净文本
+        self.text = "Leak sk-abcdefghijklmnopqrstuvwxyz now"
+
+    def _onset(self):
+        """违规**最早**在第几个字符上成立 —— 独立于 handler 算出来，当判据用。"""
+        return next(i for i in range(1, len(self.text) + 1)
+                    if not self.monitor.generate_outcome(self.text[:i])["passed"])
+
+    def _sequence(self, chunks, step=1):
+        """喂任意分片方式，返回「部分证书序列」的可比形状。"""
+        h = PoPCallbackHandler(self.monitor, stop_on_violation=True,
+                               stream_step_chars=step)
+        for chunk in chunks:
+            h.on_llm_new_token(chunk, run_id="s1")
+        out = []
+        for env in h.stream_certificates:
+            _, payload = cert.verify_envelope(env, ring_of(h))
+            out.append((payload["streaming"]["chars"],           # 判到第几个字符
+                        payload["streaming"]["partial"],
+                        payload["outcome"]["passed"],
+                        [v["rule"] for v in payload["outcome"]["violations"]]))
+        return out
+
+    def test_chunking_does_not_change_the_certificate_sequence(self):
+        """**这是本组的核心**：同一段文本，无论被切成几片，序列逐条相同。
+
+        三种切法覆盖了真 provider 的极端：逐字符（最细）、整段一次（最粗）、
+        以及一个不整除的步长（最常见的中间态）。
+        """
+        one_char = self._sequence(list(self.text))
+        whole = self._sequence([self.text])
+        stride = self._sequence([self.text[i:i + 7] for i in range(0, len(self.text), 7)])
+        self.assertEqual(one_char, whole)
+        self.assertEqual(one_char, stride)
+        # 非恒真对照：序列本身得**有内容**，否则上面三条相等只是因为都空
+        self.assertGreaterEqual(len(one_char), 2)
+        self.assertFalse(one_char[-1][2], "末条应当判出违规")
+        self.assertEqual(one_char[-1][3], ["no_secret"])
+
+    def test_violation_inside_one_chunk_is_seen_at_the_right_prefix(self):
+        """整段一次性喂进来时，违规仍被定位到**它凑齐的那个字符**上。
+
+        旧口径（在回调边界采样）在这里只能报出「整段结束时违规」—— 前半截干净、
+        违规在第 30 个字符才出现这件事整个丢了。
+        """
+        seq = self._sequence([self.text])
+        # 停止证书（``partial=False`` 那张）指的正是违规**凑齐的那个字符**
+        self.assertFalse(seq[-1][1], "末条应当是停止证书")
+        self.assertEqual(seq[-1][0], self._onset())
+        self.assertEqual(seq[0], (1, True, True, []))   # 第 1 个字符上就判过：None -> True
+
+    def test_coarser_step_delays_detection_but_never_beyond_one_step(self):
+        """``stream_step_chars`` 是把网格调粗，**不是**回到回调边界。
+
+        这就是粗步长的全部代价，而且它是**有界的**：检测点落在「违规成立之后的
+        第一个网格点」上，最多晚 ``step - 1`` 个字符 —— 与 provider 无关。步长 5
+        而违规在第 24 个字符成立，所以停止证书指在 25。
+        """
+        onset = self._onset()
+        step = 5
+        coarse = self._sequence([self.text], step=step)
+        by_char = self._sequence([self.text], step=1)
+        whole = self._sequence([self.text], step=step)
+        self.assertEqual(coarse, whole, "网格与切法无关")
+        self.assertNotEqual(coarse[-1][0], by_char[-1][0],
+                            "这一组用例的前提是 step 与 onset 不整除（否则测不出延迟）")
+        expected = (onset + step - 1) // step * step          # onset 之后的第一个网格点
+        self.assertEqual(coarse[-1][0], expected)
+        self.assertLess(coarse[-1][0] - onset, step, "延迟必然小于一个步长")
+        for chars, _partial, _passed, _rules in coarse[:-1]:
+            self.assertEqual(chars % step, 0, "除停止证书外，采样点都该落在网格上")
+
+    def test_clean_text_still_emits_exactly_one_partial(self):
+        """口径变细不等于变吵：判定不翻转就只出第一张（None -> True）。"""
+        h = PoPCallbackHandler(self.monitor)
+        for ch in "A safe reply":
+            h.on_llm_new_token(ch, run_id="s1")
+        self.assertEqual(len(h.stream_certificates), 1)
 
 
 class TestStreamingChain(unittest.TestCase):

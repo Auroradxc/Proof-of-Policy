@@ -164,11 +164,25 @@ class PoPCallbackHandler(BaseCallbackHandler):
     累积响应前缀；每当合规判定**发生变化**（例如某秘密模式在流中途补全），
     就签发一张**部分**证书（``streaming.partial = true``），使监控方能
     提前告警/早停。``on_llm_end`` 签发的证书仍是权威的那一张。
+
+    **采样网格锚在文本上，不锚在回调边界上**（``stream_step_chars``）。这一条是
+    刻意的，不是实现细节：真模型的 chunk 边界由网络与 provider 决定，同一句话在
+    两家 provider 下会切出不同的回调序列。若「在哪些前缀长度上判过」取决于回调
+    次数，那么部分证书序列 --- 以及「早停抢在几个 token 内」这个说法 --- 就
+    **跨 provider 不可比**，它变成了「抢在几个 chunk 内」而不是「抢在几个字符内」。
+    因此采样点固定为 ``step, 2*step, 3*step, …``（累计前缀的**字符**长度），
+    与这一句话被切成几片无关：同一文本 + 同一 ``step`` ⇒ 同一串部分证书。
+
+    代价是每个采样点都要对**完整前缀**跑一次参考评估器（实测 ~0.07 ms/字符，
+    10k 字符的响应约 0.7 s）。``stream_check=False`` 关掉整条流式路径。
+
+    ⚠️ ``streaming.tokens`` 是**回调次数**，仍然 provider 相关，只作诊断用；
+    要跨 provider 比较，用 ``streaming.chars``（累计前缀的字符数）。
     """
 
     def __init__(self, monitor: AgentMonitor, vkey_hash: str = "unproven",
                  proof_sha256: Optional[str] = None, on_cert=None,
-                 stream_check: bool = True, stream_every: int = 1,
+                 stream_check: bool = True, stream_step_chars: int = 1,
                  on_stream_cert=None, stop_on_violation: bool = False,
                  on_early_stop=None, proof_mode: Optional[str] = None,
                  gateway: Optional[ToolGateway] = None,
@@ -192,7 +206,8 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self._tool_starts: Dict[str, Dict[str, Any]] = {}
         # 流式状态
         self.stream_check = stream_check
-        self.stream_every = max(1, stream_every)
+        # 采样步长（**字符**，不是回调次数 —— 见类 docstring）
+        self.stream_step_chars = max(1, int(stream_step_chars))
         self.on_stream_cert = on_stream_cert
         self.stop_on_violation = stop_on_violation
         self.on_early_stop = on_early_stop
@@ -208,7 +223,8 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self.stream_certificates: List[Dict[str, Any]] = []
         self.stream_chains: Dict[str, List[str]] = {}   # run_id -> [载荷摘要]
         self._sbuf: Dict[str, str] = {}                 # run_id -> 累积的流式前缀
-        self._scount: Dict[str, int] = {}               # run_id -> token 计数
+        self._scount: Dict[str, int] = {}               # run_id -> token 计数（回调次数）
+        self._sscan: Dict[str, int] = {}                # run_id -> 已判到第几个字符（网格锚点）
         self._sverdict: Dict[str, bool] = {}            # run_id -> 上次判定
         self._sstopped: Dict[str, bool] = {}            # run_id -> 是否已早停
 
@@ -235,7 +251,11 @@ class PoPCallbackHandler(BaseCallbackHandler):
         chain = self.stream_chains.setdefault(run_id, [])
         index = len(chain)
         prev = chain[-1] if chain else "genesis"
+        # ``chars`` 判的是**这个前缀有多长**。公开模式下它可由证书里的响应数出来，
+        # 但私有模式下响应只剩一份承诺 —— 那时它是**唯一**能说明「判到哪了」的
+        # 字段，也正是跨 provider 可比的那个数（``tokens`` 不是，见类 docstring）。
         stream = {"partial": partial, "tokens": self._scount.get(run_id, 0),
+                  "chars": len(text),
                   "chain": {"index": index, "prev": prev}}
         stream.update(extra_stream)
         env = self.monitor.on_generate(text, vkey_hash=self.vkey_hash,
@@ -249,62 +269,83 @@ class PoPCallbackHandler(BaseCallbackHandler):
 
     # -- LLM（生成路径） --
     def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
-        """累积流式前缀；判定变化时签发链式部分证书，
-        并在（可选的）首次违规时签早停证书。"""
+        """累积流式前缀；在**文本锚定**的采样网格上判定，判定变化时签发链式
+        部分证书，并在（可选的）首次违规时签早停证书。"""
         run_id = str(kwargs.get("run_id") or "")
         if self._sstopped.get(run_id):
             return  # 已早停：忽略后续 token
-        self._sbuf[run_id] = self._sbuf.get(run_id, "") + (token or "")
+        buf = self._sbuf.get(run_id, "") + (token or "")
+        self._sbuf[run_id] = buf
         self._scount[run_id] = self._scount.get(run_id, 0) + 1
-        if not self.stream_check or self._scount[run_id] % self.stream_every != 0:
+        if not self.stream_check:
             return
+        # 一个回调可能要跨过**多个**采样点（provider 的 chunk 可能很长，甚至是一整段）。
+        # 这正是旧口径会漏掉的东西：它只在回调边界上看一眼，于是「判定在 chunk 内部
+        # 翻转」这件事要么被推迟到 chunk 末尾，要么（若在同一个 chunk 里翻转两次）
+        # 整个看不见。
+        for pos in self._sample_positions(run_id, len(buf)):
+            self._evaluate_prefix(run_id, buf[:pos])
+
+    def _sample_positions(self, run_id: str, length: int) -> range:
+        """本回调需要判定的前缀长度集合（累计字符数）。
+
+        网格锚在**文本**上：``step, 2*step, …`` 一直推到当前收到的地方。它只依赖
+        「已经收到多少字符」与 ``step``，**不依赖这是第几次回调** —— 这就是
+        「口径钉死」的全部含义。
+        """
+        step = self.stream_step_chars
+        return range(self._sscan.get(run_id, 0) + step, length + 1, step)
+
+    def _evaluate_prefix(self, run_id: str, text: str) -> None:
+        """判一个采样点上的**前缀**；判定翻转才出证，首次违规可选早停。"""
+        self._sscan[run_id] = len(text)
         # 判定带上本会话的回执链：工具类规则（tool_arg_guard/budget_bound）也要
         # 参与「这次流式前缀算不算合规」，否则脏轨迹上还会签出 passed=True 的前缀证书。
-        outcome = self.monitor.generate_outcome(self._sbuf[run_id],
-                                                receipts=self.gateway.receipts)
+        outcome = self.monitor.generate_outcome(text, receipts=self.gateway.receipts)
         verdict = bool(outcome["passed"])
         prev = self._sverdict.get(run_id)
-        if prev is None or prev != verdict:
-            # 判定首次出现或发生翻转 → 签发部分证书
-            env = self._stream_cert(run_id, self._sbuf[run_id], partial=True, extra_stream={})
-            self.stream_certificates.append(env)
-            if self.on_stream_cert is not None:
-                self.on_stream_cert(env)
-            self._sverdict[run_id] = verdict
-            if verdict is False and self.stop_on_violation:
-                # 首次违规：再签一张「停止」证书并标记早停
-                idx = len(self.stream_chains[run_id]) - 1
-                stop_env = self._stream_cert(
-                    run_id, self._sbuf[run_id], partial=False,
-                    extra_stream={"stop": {
-                        "reason": "violation",
-                        "at_index": idx,
-                        "chain_head": self.stream_chains[run_id][idx],
-                        # ``partial=False`` 说的是「这是本 run 的**结论**」，
-                        # **不是**「判的是完整生成」：早停本来就停在中途，
-                        # 这张证书判的是截至此点的**前缀**。少了这一条，
-                        # "passed=false" 会被读成「本次生成违规」—— 而模型
-                        # 本会继续吐什么，谁都还没看见（与 error_block 的
-                        # ``scope`` 同一套口径）。
-                        "scope": "partial-prefix",
-                    }})
-                self.stream_certificates.append(stop_env)
-                if self.on_early_stop is not None:
-                    self.on_early_stop(stop_env)
-                self._sstopped[run_id] = True
-                if self.hard_stop:
-                    # **先出证，后掐断**：异常一旦抛出，这次调用的控制流就交还给
-                    # 调用方（LangChain 会把它路由成一次「失败」）。顺序反过来的话
-                    # 那张 stop 证书就得建在异常处理里，而此刻流式状态已经清了。
-                    raise EarlyStop(
-                        f"policy violation at token {self._scount.get(run_id, 0)}; "
-                        f"stream aborted (certificate attached)",
-                        certificate=stop_env)
+        if prev is not None and prev == verdict:
+            return  # 判定没变：不出证（否则每个采样点都签一张，等于刷屏）
+        env = self._stream_cert(run_id, text, partial=True, extra_stream={})
+        self.stream_certificates.append(env)
+        if self.on_stream_cert is not None:
+            self.on_stream_cert(env)
+        self._sverdict[run_id] = verdict
+        if verdict is False and self.stop_on_violation:
+            # 首次违规：再签一张「停止」证书并标记早停
+            idx = len(self.stream_chains[run_id]) - 1
+            stop_env = self._stream_cert(
+                run_id, text, partial=False,
+                extra_stream={"stop": {
+                    "reason": "violation",
+                    "at_index": idx,
+                    "chain_head": self.stream_chains[run_id][idx],
+                    # ``partial=False`` 说的是「这是本 run 的**结论**」，
+                    # **不是**「判的是完整生成」：早停本来就停在中途，
+                    # 这张证书判的是截至此点的**前缀**。少了这一条，
+                    # "passed=false" 会被读成「本次生成违规」—— 而模型
+                    # 本会继续吐什么，谁都还没看见（与 error_block 的
+                    # ``scope`` 同一套口径）。
+                    "scope": "partial-prefix",
+                }})
+            self.stream_certificates.append(stop_env)
+            if self.on_early_stop is not None:
+                self.on_early_stop(stop_env)
+            self._sstopped[run_id] = True
+            if self.hard_stop:
+                # **先出证，后掐断**：异常一旦抛出，这次调用的控制流就交还给
+                # 调用方（LangChain 会把它路由成一次「失败」）。顺序反过来的话
+                # 那张 stop 证书就得建在异常处理里，而此刻流式状态已经清了。
+                raise EarlyStop(
+                    f"policy violation at char {len(text)}; "
+                    f"stream aborted (certificate attached)",
+                    certificate=stop_env)
 
     def _clear_stream_state(self, run_id: str) -> None:
         """清掉该 run 的流式状态（正常结束与报错两条路都要走这一步）。"""
         self._sbuf.pop(run_id, None)
         self._scount.pop(run_id, None)
+        self._sscan.pop(run_id, None)
         self._sverdict.pop(run_id, None)
         self._sstopped.pop(run_id, None)
 

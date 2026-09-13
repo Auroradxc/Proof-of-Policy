@@ -105,15 +105,38 @@ handler.certificates           # 每个 LLM/工具事件一张证书
 
 ```python
 self._sbuf[run_id]      # 累积的流式前缀
-self._scount[run_id]    # token 计数（stream_every 控制采样频率）
+self._scount[run_id]    # 回调次数（诊断用，**不是**采样口径 —— 见下）
+self._sscan[run_id]     # 已判到第几个字符（采样网格的锚点）
 self._sverdict[run_id]  # 上一次判定（用于检测「翻转」）
 self._sstopped[run_id]  # 是否已早停
 ```
 
-判定逻辑：**只在判定发生变化时**（首次出现或翻转）签发部分证书 —— 避免每个 token 都出一张。
+判定逻辑：**只在判定发生变化时**（首次出现或翻转）签发部分证书 —— 避免每个采样点都出一张。
 早停（`stop_on_violation=True`）在**首次** `verdict is False` 时额外签发一张
 `streaming.stop = {"reason": "violation", "at_index", "chain_head", "scope"}` 的证书，并置位
 `_sstopped`（后续 token 直接 return）。
+
+#### 采样网格锚在**文本**上，不锚在回调边界上（`stream_step_chars`）
+
+**在哪些前缀长度上判过**，只取决于「已经收到多少字符」——采样点是
+`step, 2*step, 3*step, …`（累计前缀的**字符**数），与这一段文本被 provider 切成几片无关。
+一个回调因此可能跨过多个采样点（chunk 可以很长，甚至是一整段），循环会把它们都判一遍。
+
+> **为什么这不是实现细节**：真模型的 chunk 边界由网络与 provider 决定。若采样点取决于
+> 回调次数，部分证书序列 —— 以及「早停抢在几个 token 内」这个说法 —— 就**跨 provider
+> 不可比**：它变成了「抢在几个 chunk 内」，而 chunk 大小是别人定的。
+> 实测（2026-09-13，旧口径）：同一句 `"Leak sk-abcdefghijklmnopqrstuvwxyz now"`，
+> 逐字符喂出 **3** 张部分证书，整段一次喂只出 **2** 张（连第一张「干净前缀」都丢了）；
+> 新口径下三种切法**逐条相同**（用例
+> `tests/test_frameworks.py::TestStreamingGranularity`）。
+
+**代价是明确的、有界的**：每个采样点要对**完整前缀**跑一次参考评估器（实测 ~0.07 ms/字符，
+10k 字符的响应约 0.7 s）；把 `stream_step_chars` 调粗只会把检测推迟到「违规成立之后的
+第一个网格点」，**最多晚 `step - 1` 个字符**，仍然与 provider 无关。
+
+载荷里的两个数字口径不同，别用错：`streaming.chars` 是**判到第几个字符**（跨 provider 可比，
+私有模式下响应只剩承诺时它是唯一说明「判到哪了」的字段）；`streaming.tokens` 是**回调次数**
+（provider 相关，只作诊断）。
 
 > **`scope` 为什么是 `"partial-prefix"`**：这张证书写 `partial=false`，但那说的是
 > 「这是本 run 的**结论**」，**不是**「判的是完整生成」—— 早停本来就停在中途。
@@ -170,7 +193,7 @@ def verify_chain(certs) -> bool      # 序号连续 + prev 链接
 
 | 名称 | 说明 |
 |---|---|
-| `PoPCallbackHandler(monitor, vkey_hash="unproven", proof_sha256=None, on_cert=None, stream_check=True, stream_every=1, on_stream_cert=None, stop_on_violation=False, on_early_stop=None, proof_mode=None, gateway=None, hard_stop=False)` | 回调处理器 |
+| `PoPCallbackHandler(monitor, vkey_hash="unproven", proof_sha256=None, on_cert=None, stream_check=True, stream_step_chars=1, on_stream_cert=None, stop_on_violation=False, on_early_stop=None, proof_mode=None, gateway=None, hard_stop=False)` | 回调处理器（`stream_step_chars` = 采样步长，**字符**而非回调次数） |
 | `EarlyStop(RuntimeError)` | `hard_stop` 掐断流用的异常；`.certificate` = 那张停止证书 |
 | `error_block(phase, error, tokens=0, text_len=0)` | 构造载荷顶层的 `error` 块（`scope` 固定 `"partial-prefix"`） |
 | `handler.errors` | 本 handler 见到的异常清单（含 `EarlyStop`）—— 只看 `certificates` 分不出「正常结束」与「带错结束」 |
