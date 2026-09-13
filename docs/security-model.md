@@ -566,7 +566,7 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | **L8** 跨证书一致性（P2-10） | `circuits/session-program`（guest③）、`circuits/types::run_session`、`policydsl/session.py::verify_session_proof`、`scripts/prove_session.py` | `tests/test_session.py`（38，含两种挖法的反例；真·端到端由 `POP_TEST_SESSION=1` 打开） |
 | **L9** 多证明者责任划分（P2-11） | `policydsl/multiparty.py::verify_multiparty`、`policydsl/compile.py::compile_slice_policy`、`scripts/prove_multiparty.py` | `tests/test_multiparty.py`（44，含两条验收判据与「三方合谋」边界；真·端到端由 `POP_TEST_MULTIPARTY=1` 打开） |
 
-**回归总盘**：`python3 -m unittest discover -s tests -t .` → **581 passed / 15 skipped**（2026-09-13 复跑；
+**回归总盘**：`python3 -m unittest discover -s tests -t .` → **612 passed / 15 skipped**（2026-09-13 复跑；
 skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— 由 `POP_TEST_EZKL=1` 打开；P1-6 那 5 例
 要真出两份 SP1 证明 —— 由 `POP_TEST_COMPOSE=1` 打开；P2-10 那例要真出一份会话聚合证明 ——
 由 `POP_TEST_SESSION=1` 打开。三组均已单独实测通过；另有 3 例由 `POP_TEST_PROOF=1` 打开

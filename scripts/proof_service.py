@@ -44,7 +44,7 @@ from typing import Any, Dict, Optional, Tuple
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import auth, challenge, keys, service
+from policydsl import anchor, auth, challenge, keys, service
 from policydsl.service import ProofService, ServiceError
 
 #: 请求体上限。这是**防御**而不是配额：``http.server`` 会把 ``Content-Length``
@@ -246,6 +246,18 @@ class Handler(BaseHTTPRequestHandler):
             _error(self, 404, str(exc))
         except (service.PolicyNotServiceable, ServiceError) as exc:
             _error(self, 400, str(exc))
+        except anchor.AnchorError as exc:
+            # 账本后端（链上）不可用 → **503**，不是 500。这两者对调用方的意思
+            # 完全不同：500 是「这个服务坏了，别重试了」，503 是「依赖暂时不可用，
+            # 退避重试或换台机器」。而且必须说清**没有证书被签发** —— 否则调用方
+            # 会去产物目录里找一份不存在的 cert.json。
+            #
+            # 产物落在哪儿两个入口不一样：``/v1/attest`` 有作业目录，``/v1/check``
+            # 写的是 ``checks/`` 下面的一次性目录。一句话套两个入口会指向一个
+            # 不存在的路径。
+            where = "作业目录" if self.path.startswith("/v1/attest") else "产物目录"
+            _error(self, 503, f"账本后端不可用，**本次没有签发证书**（{where}里不会"
+                              f"有 cert.json）：{exc}")
         except Exception as exc:                     # noqa: BLE001
             _error(self, 500, f"{type(exc).__name__}: {exc}")
 
@@ -353,12 +365,20 @@ def main() -> int:
               f"${auth.ENV_TOKENS}）—— 拒不启动", file=sys.stderr)
         return 2
 
-    svc = ProofService(
-        registry, args.out_dir, ledger=args.ledger,
-        signer=keys.signer_from_env(args.key),
-        concurrency=args.concurrency, max_queue=args.max_queue,
-        host_check=args.host_check, mode=args.mode, proof_mode=args.proof_mode,
-        rpc_url=args.rpc, contract=args.contract, private_key=args.private_key)
+    try:
+        svc = ProofService(
+            registry, args.out_dir, ledger=args.ledger,
+            signer=keys.signer_from_env(args.key),
+            concurrency=args.concurrency, max_queue=args.max_queue,
+            host_check=args.host_check, mode=args.mode, proof_mode=args.proof_mode,
+            rpc_url=args.rpc, contract=args.contract, private_key=args.private_key)
+    except anchor.AnchorError as exc:
+        # 账本后端配不全**当场拒绝启动**，与上面鉴权那条同一个处置：带着半套链上
+        # 配置跑起来的服务，运维会以为证书上链了。同样要的是**一句人话 + 退出码
+        # 2**，而不是 Python 栈回溯 —— 一个参数写错不该让人去读 traceback 才知道
+        # 自己漏了什么（systemd 的日志里弹一次栈，看着像服务崩了）。
+        print(f"账本后端配置有误：{exc}", file=sys.stderr)
+        return 2
     httpd = make_server(svc, args.host, args.port, authn)
     actual_host, actual_port = httpd.server_address[0], httpd.server_address[1]
     svc.start()
@@ -370,7 +390,21 @@ def main() -> int:
             print(f"    ⚠ {row['id']} 不可出证（{', '.join(row['unserviceable_rules'])}）"
                   f"—— 调用会被拒，见 ProofService 的 PolicyNotServiceable")
     print(f"  out-dir   : {args.out_dir}")
-    print(f"  账本      : {svc.ledger}")
+    print(f"  账本      : {svc.ledger}（后端 {svc.backend.name}）")
+    if getattr(svc.backend, "remote", False):
+        # 走 ``chain_health(refresh=True)`` 而不是 ``backend.healthy()``：前者会把
+        # 结果写进 TTL 缓存。直接问后端的后果是启动时探一次、第一次 ``/v1/attest``
+        # 又探一次 —— 而 ``cast call`` 在一个半死的 RPC 上会一直等到超时（默认
+        # 120 秒），那 120 秒是**卡在请求线程里**的。
+        chain = svc.chain_health(refresh=True) or {}
+        ok, why = chain.get("healthy"), chain.get("detail")
+        print(f"  链上      : {svc.backend.contract} @ {svc.backend.rpc_url}"
+              f"  →  {'✅ 连通' if ok else '❌ ' + str(why)}")
+        if getattr(svc.backend, "private_key", None) == anchor.ANVIL_KEY:
+            # 缺省那把是**公开的**测试私钥。真链上它签不动（那个地址没 gas），
+            # 但「谁登记的」这件事会变成一个众所周知的地址 —— 说出来的成本是一行。
+            print("              ⚠ 上链用的是公开的 Anvil 测试私钥 —— 生产必须显式给 "
+                  "--private-key（否则锚定记录无法归属到任何一方）")
     print(f"  并发      : {args.concurrency} 证明器 + 队列 {args.max_queue}"
           + ("   （--host-check：作业只做宿主校验，标注 unproven）"
              if args.host_check else "   （真实证明：~2.5 分钟/次，峰值 ~10.2 GiB）"))

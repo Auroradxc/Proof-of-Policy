@@ -150,6 +150,99 @@ class TestFileBackend(unittest.TestCase):
             self.assertTrue(anchor.verify_ledger(led)[0])
 
 
+class TestLedgerTail(unittest.TestCase):
+    """账本尾部缓存：``append_anchor`` 从 O(n) 全表重读变成 O(1) 摊销。
+
+    这一条不是「优化」而是正确性的一部分：``/v1/check`` **每调用一次就锚定一条**，
+    全表重读意味着账本越长、这个毫秒级接口越慢。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.led = Path(self.tmp.name) / "l.jsonl"
+        # 每个用例从干净的缓存开始：缓存是**模块级**的（服务里多个作业共用），
+        # 不清的话上一个用例的戳记会漏进来，测的就不是这里造的场景了。
+        with anchor._TAIL_LOCK:
+            anchor._TAIL_CACHE.clear()
+
+    def tearDown(self):
+        with anchor._TAIL_LOCK:
+            anchor._TAIL_CACHE.clear()
+        self.tmp.cleanup()
+
+    def test_missing_file_is_genesis(self):
+        self.assertEqual(anchor.ledger_tail(self.led), (0, anchor.GENESIS, False))
+
+    def test_append_then_tail_hits_the_cache(self):
+        """**判据是命中**，不只是「答案对」。
+
+        只断言「尾部值正确」的用例，在缓存从未生效时也会通过 —— 那样的测试守不住
+        任何东西。所以这里同时断言 ``hit=True``，并且下一例直接数
+        ``read_ledger`` 被调了几次。
+        """
+        for i in range(3):
+            anchor.append_anchor(self.led, f"d{i}")
+        count, last, hit = anchor.ledger_tail(self.led)
+        self.assertEqual(count, 3)
+        self.assertTrue(hit)
+        self.assertEqual(last, anchor.read_ledger(self.led)[-1]["hash"])
+        self.assertTrue(anchor.verify_ledger(self.led)[0])       # 链仍然自洽
+
+    def test_cached_tail_does_not_read_the_file_at_all(self):
+        """数调用次数：命中的那次**一次都不该读全表**。
+
+        这是「O(1)」唯一站得住的证据 —— 光看返回值分不出「读了一遍又算出同样的
+        结果」和「压根没读」。
+        """
+        for i in range(3):
+            anchor.append_anchor(self.led, f"d{i}")
+        calls = []
+        real = anchor.read_ledger
+
+        def counting(path):
+            calls.append(path)
+            return real(path)
+
+        anchor.read_ledger = counting
+        try:
+            anchor.ledger_tail(self.led)
+        finally:
+            anchor.read_ledger = real
+        self.assertEqual(calls, [], "命中的尾部仍然把整个账本读了一遍")
+
+    def test_external_append_invalidates_the_cache(self):
+        """**别人的进程**追加之后，缓存必须失效 —— 否则会写出重复的 ``seq``。
+
+        这是这个缓存唯一危险的地方：拿旧尾部的 hash 当 ``prev``，哈希链就断了。
+        这里绕过 ``append_anchor`` 直接写文件，模拟另一个进程。
+        """
+        anchor.append_anchor(self.led, "d0")
+        anchor.ledger_tail(self.led)                             # 先把缓存暖起来
+        other = {"seq": 1, "prev": anchor.read_ledger(self.led)[-1]["hash"],
+                 "digest": "d1", "ts": "2026-01-01T00:00:00Z", "meta": {}}
+        other["hash"] = anchor._entry_hash(other)
+        with self.led.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(other, sort_keys=True) + "\n")
+        count, last, hit = anchor.ledger_tail(self.led)
+        self.assertEqual((count, hit), (2, False))               # 老实重读了
+        self.assertEqual(last, other["hash"])
+        # 缓存失效这件事**要能反映到写入上**：接着追加的那条 seq 必须是 2
+        rec = anchor.append_anchor(self.led, "d2")
+        self.assertEqual(rec["seq"], 2)
+        self.assertTrue(anchor.verify_ledger(self.led)[0])
+
+    def test_rewriting_shorter_invalidates_too(self):
+        """截断（比如归档）之后也不能拿旧尾部 —— 尾部必须跟着**变短**。"""
+        for i in range(3):
+            anchor.append_anchor(self.led, f"d{i}")
+        anchor.ledger_tail(self.led)                              # 先把缓存暖起来
+        kept = self.led.read_text(encoding="utf-8").splitlines()[0]
+        self.led.write_text(kept + "\n", encoding="utf-8")        # 模拟另一个进程归档
+        count, last, hit = anchor.ledger_tail(self.led)
+        self.assertEqual((count, hit), (1, False))
+        self.assertEqual(last, json.loads(kept)["hash"])
+
+
 class TestRpcBackendOffline(unittest.TestCase):
     """RpcAnchorBackend 的行为（幂等、竞态、账本回写、健康检查）用假链覆盖。"""
 
@@ -373,6 +466,59 @@ class TestAnvilEndToEnd(unittest.TestCase):
 
         # 合约的 count 与登记数一致
         self.assertEqual(b.client.call_uint(info["address"], "count()(uint256)"), 1)
+
+
+    # 服务层与真链的接线。上面几条测的是 ``RpcAnchorBackend`` 这个**对象**，
+    # 这一条测的是服务真的把它用起来之后那条路 —— 中间隔着 ``backend_from_env``
+    # 的选择、``_require_healthy_chain`` 的前置检查、``issue_certificate`` 里
+    # 「先锚定再落证书文件」的顺序，以及账本锁。任何一处接错，锚定都不会发生，
+    # 而在假客户端下**看不出来**（假客户端本来就不碰链）。
+    def test_the_service_anchors_through_a_real_chain(self):
+        from policydsl import cert, service                # noqa: PLC0415
+
+        info = anchor.deploy_anchor_contract(self.RPC)
+        svc_dir = Path(self.tmp.name) / "svc"
+        reg = service.registry_from_paths([REPO / "policy_packs" / "agent_content_v1.json"])
+        svc = service.ProofService(reg, svc_dir, host_check=True,
+                                   rpc_url=self.RPC, contract=info["address"])
+
+        # ① 后端选对了，且**真的**探到链（不是「配了就当连上」）
+        self.assertEqual(svc.backend.name, "rpc")
+        self.assertEqual(svc.backend.contract, info["address"])
+        self.assertTrue(svc.chain_health(refresh=True)["healthy"])
+
+        # ② 走完一次真实作业（host_check ⇒ 毫秒级，不出证明）
+        svc.start()
+        try:
+            job = svc.submit("agent-content-v1", "This reply says nothing incriminating.")
+            deadline = time.time() + 60
+            while job.state not in service.STATE_TERMINAL_STATES and time.time() < deadline:
+                time.sleep(0.05)
+        finally:
+            svc.stop()
+        self.assertEqual(job.state, service.STATE_DONE, getattr(job, "error", ""))
+
+        # ③ 证书摘要**真的**在链上 —— 用一个独立的只读客户端核对，
+        #    而不是读服务自己记的那份记录（读自己的记录等于什么都没验）
+        digest = cert.cert_digest(job.issued.payload)
+        from_chain = anchor.verify_digest_on_chain(digest, self.RPC, info["address"])
+        self.assertIsNotNone(from_chain, "证书摘要没上链")
+        self.assertEqual(from_chain["contract"], info["address"])
+
+        # ④ 服务落盘的 anchor.json 记的是**链上的那一条**：链上时间戳与一次
+        #    全新只读查询对得上。只断言「有个 tx_hash」是不够的 —— 本地凭空写
+        #    一个哈希也能过。
+        written = json.loads((job.issued.out_dir / "anchor.json").read_text())
+        self.assertEqual(written["contract"], info["address"])
+        self.assertEqual(written["chain_ts"], from_chain["chain_ts"])
+        self.assertRegex(written["tx_hash"], r"^0x[0-9a-f]{64}$")
+        self.assertGreater(written["block"], 0)
+
+        # ⑤ 本地账本那条记录带着同一个 tx，且哈希链仍自洽
+        entry = anchor.find_anchor(svc.ledger, digest)
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["meta"]["on_chain"]["tx_hash"], written["tx_hash"])
+        self.assertTrue(anchor.verify_ledger(svc.ledger)[0])
 
 
 if __name__ == "__main__":

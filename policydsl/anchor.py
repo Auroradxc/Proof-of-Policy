@@ -25,6 +25,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -92,16 +93,70 @@ def read_ledger(path: Path) -> List[Dict[str, Any]]:
     return out
 
 
+#: 账本尾部缓存：``path`` → ``(st_size, st_mtime_ns, 条数, 末条 hash)``。
+#:
+#: 见 :func:`ledger_tail`。缓存的是**能被校验的东西**（文件大小 + mtime），
+#: 任何外部追加/截断都会让戳记失效，于是退回老实重读一遍。
+_TAIL_CACHE: Dict[str, Tuple[int, int, int, str]] = {}
+_TAIL_LOCK = threading.Lock()
+
+
+def ledger_tail(path: Path) -> Tuple[int, str, bool]:
+    """返回 ``(条数, 末条 hash, 是否命中缓存)``；文件不存在时是 ``(0, "genesis", False)``。
+
+    **为什么需要它**：``append_anchor`` 原本每次都要 ``read_ledger`` 全表 ——
+    而 ``/v1/check`` **每调用一次就锚定一条**（毫秒级接口），账本越长它越慢，
+    是 O(n)。runbook §3.1 把「换成 RPC 后端」当作高并发的解法，但
+    :class:`RpcAnchorBackend` 在给了 ``ledger_path`` 时**照样走这个本地追加** ——
+    也就是说那条建议并没有真的解决 O(n)。这里从根上把它变成 O(1) 摊销。
+
+    **它凭什么是对的**：拿缓存回答案的前提是「文件与上次读到的完全一样」，
+    判据是 ``(st_size, st_mtime_ns)`` 两个戳记同时未变。任何**别人的**追加都会
+    改变大小；就地改写（同大小）会改变 mtime。两者都没变却内容不同，需要一次
+    把 mtime 精确复原的编辑 —— 那种情况下哈希链本来就会被 :func:`verify_ledger`
+    抓住，而「手动编辑账本」在 runbook §6 里已经写明是**契约之外**的操作。
+
+    返回值里带 ``hit`` 是为了让测试能证明缓存**真的命中了**：只断言「答案对」
+    的用例在缓存从未生效时也会通过，那样的测试守不住任何东西。
+    """
+    p = Path(path)
+    try:
+        st = p.stat()
+    except FileNotFoundError:
+        with _TAIL_LOCK:
+            _TAIL_CACHE.pop(str(p), None)
+        return 0, GENESIS, False
+    key = str(p)
+    stamp = (st.st_size, st.st_mtime_ns)
+    with _TAIL_LOCK:
+        cached = _TAIL_CACHE.get(key)
+        if cached is not None and cached[:2] == stamp:
+            return cached[2], cached[3], True
+    entries = read_ledger(p)
+    # 读完**再**取一次戳记：中间又被人追加的话，存下来的戳记要对应更新后的文件，
+    # 否则下一次调用会拿着旧戳记返回旧的尾部。变了就重读一次（只重试一次，
+    # 一直追不上说明有人在狂写，那时候退回「读全表」本来就是唯一正确的做法）。
+    st2 = p.stat()
+    if (st2.st_size, st2.st_mtime_ns) != stamp:
+        entries = read_ledger(p)
+        st2 = p.stat()
+    count = len(entries)
+    last = entries[-1]["hash"] if entries else GENESIS
+    with _TAIL_LOCK:
+        _TAIL_CACHE[key] = (st2.st_size, st2.st_mtime_ns, count, last)
+    return count, last, False
+
+
 def append_anchor(path: Path, digest: str, meta: Optional[Dict[str, Any]] = None,
                   ts: Optional[str] = None) -> Dict[str, Any]:
     """为 ``digest`` 追加一条锚定记录并返回该记录。
 
     ``prev`` 取上一条记录的 hash，首条取 "genesis"，从而形成哈希链。
+    尾部从 :func:`ledger_tail` 的缓存取（O(1) 摊销），不再全表重读。
     """
-    entries = read_ledger(path)
-    prev = entries[-1]["hash"] if entries else GENESIS
+    count, prev, _ = ledger_tail(path)
     entry = {
-        "seq": len(entries),
+        "seq": count,
         "prev": prev,
         "digest": digest,
         "ts": ts or utc_now(),
@@ -112,6 +167,16 @@ def append_anchor(path: Path, digest: str, meta: Optional[Dict[str, Any]] = None
     p.parent.mkdir(parents=True, exist_ok=True)
     with p.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, sort_keys=True) + "\n")
+    # 自己刚写完就顺手把缓存推进到新尾部。少了这一步，**下一次**追加会看到戳记
+    # 变了而退回全表重读 —— 每次都是「写 → 失效 → 重读」，缓存等于白做。
+    try:
+        st = p.stat()
+    except OSError:
+        with _TAIL_LOCK:
+            _TAIL_CACHE.pop(str(p), None)
+    else:
+        with _TAIL_LOCK:
+            _TAIL_CACHE[str(p)] = (st.st_size, st.st_mtime_ns, count + 1, entry["hash"])
     return entry
 
 
@@ -148,12 +213,26 @@ class AnchorBackend:
     """锚定后端接口：``anchor`` 写入 / ``get`` 读回。"""
 
     name = "abstract"
+    #: 这个后端是不是「外面的世界」—— 文件账本是本地的（永远可用），
+    #: 链上后端依赖 RPC（会连不上）。``/v1/health`` 靠它决定要不要报连通性。
+    remote = False
 
     def anchor(self, digest: str, meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         raise NotImplementedError
 
     def get(self, digest: str) -> Optional[Dict[str, Any]]:
         raise NotImplementedError
+
+    def healthy(self) -> Tuple[bool, str]:
+        """连通性自检。
+
+        缺省是**不知道**，不是「好」。原先这里返回 ``(True, "local")``，本意是
+        照顾文件账本（它确实没有可断的东西），但这个默认值会被**任何新写的远端
+        后端**继承：漏写 ``healthy()`` 的链上后端会让 ``/v1/health`` 报
+        ``chain.healthy: true`` —— 而这句话正是运维决定「要不要信这次签发的
+        账本」的依据。假 ok 比不知道更坏，它会把排查引到别的方向去。
+        """
+        return False, f"{type(self).__name__} 不支持连通性自检（没有实现 healthy）"
 
 
 class FileLedgerBackend(AnchorBackend):
@@ -163,6 +242,10 @@ class FileLedgerBackend(AnchorBackend):
 
     def __init__(self, path: Path):
         self.path = Path(path)
+
+    def healthy(self) -> Tuple[bool, str]:
+        """本地文件永远是健康的：没有可断的东西。"""
+        return True, "local"
 
     def anchor(self, digest: str, meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         entry = append_anchor(self.path, digest, meta)
@@ -330,6 +413,7 @@ class RpcAnchorBackend(AnchorBackend):
     """
 
     name = "rpc"
+    remote = True
 
     def __init__(self, rpc_url: str, contract: str, private_key: Optional[str] = None,
                  ledger_path: Optional[Path] = None, client: Any = None,
@@ -401,11 +485,21 @@ class RpcAnchorBackend(AnchorBackend):
             return None
 
     def healthy(self) -> Tuple[bool, str]:
-        """连通性自检：链上有合约字节码。"""
+        """连通性自检：链上有合约字节码。
+
+        拿不到 ``_run``（测试里注入的假 client）时**如实报 False** 而不是报健康 ——
+        「自检不了」与「自检通过」是两件事，把它们混起来会让 ``/v1/health`` 上那行
+        `chain: ok` 变成一句没有依据的话。
+        """
+        run = getattr(self.client, "_run", None)
+        if run is None:
+            return False, f"{type(self.client).__name__} 不支持连通性自检（没有 _run）"
         try:
-            code = self.client._run("code", self.contract)
+            code = run("code", self.contract)
         except AnchorError as exc:
             return False, str(exc)
+        except Exception as exc:              # noqa: BLE001 —— 网络层的异常五花八门
+            return False, f"{type(exc).__name__}: {exc}"
         if not code or code in ("0x", "0x0"):
             return False, f"no contract code at {self.contract}"
         return True, "ok"

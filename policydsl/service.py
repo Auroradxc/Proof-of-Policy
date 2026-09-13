@@ -52,6 +52,10 @@ from .compile import compile_policy
 from .model import Policy, PolicyError, Rule, Transcript
 from .serialize import build_vectors, vector_entry
 
+#: 链上连通性自检的缓存时长（秒）。自检要起一个 ``cast`` 子进程，而
+#: ``/v1/health`` 是运维会反复打的接口 —— 30 秒的陈旧度换来它一直是廉价的。
+CHAIN_HEALTH_TTL = 30.0
+
 #: 作业状态。``done`` / ``failed`` 是终态，其余是中间态。
 STATE_QUEUED = "queued"
 STATE_PROVING = "proving"
@@ -391,6 +395,14 @@ def failure_reason(exc: BaseException) -> str:
     仍然是**如实**而不是断言：SIGKILL 也可能是别人 ``kill -9``，所以说「多半」
     并给出核实方法。
     """
+    if isinstance(exc, anchor.AnchorError):
+        # 账本后端挂了（链上 RPC 连不上、nonce 重放、gas 不够）。这一条与下面的
+        # 内存那条是同一类问题：原始异常（`cast ... failed: ...`）里有排查线索，
+        # 但**不说**「证书没签发」，而那是读这条记录的人最需要知道的一句话 ——
+        # 会不会在磁盘上找到一份半成品证书，取决于它。
+        return (f"账本后端失败：**本次没有签发证书**（作业目录里不会有 cert.json）。"
+                f"{exc}。核实：`/v1/health` 的 chain.healthy；缓解：链上后端挂了改回"
+                f"文件账本（去掉 --rpc/--contract）或修 RPC 后重试")
     if (isinstance(exc, subprocess.CalledProcessError)
             and exc.returncode is not None and exc.returncode < 0):
         sig = -exc.returncode
@@ -474,16 +486,22 @@ def issue_certificate(out_dir: Path, packed: PackedPolicy, response: str, nonce:
         challenge=challenge.challenge_block(nonce, outcome.get("response_binding") or ""),
         proof_mode=proof_mode)
     envelope = cert.sign_payload(payload, signer)
+    digest = cert.cert_digest(payload)
+    meta = {"policy": packed.policy.id, "mode": mode, "proved": bool(prove)}
+
+    # **先锚定，再落证书文件**。顺序是刻意的：锚定是唯一会**对外失败**的一步
+    # （链上后端连不上 RPC、nonce 重放、gas 不够），而它失败时磁盘上不该留下一份
+    # 看起来已经签好、发得出去的证书。反过来的顺序会让一次链上故障留下一份
+    # 「有据无账」的产物 —— verify_cert 确实会判 FAIL（fail-closed，不是假证据），
+    # 但**它已经是一份完整的、带签名的证书了**，而发证书的人未必会先跑验证。
+    # 摘要只依赖 payload，不需要文件先落盘，所以这个顺序是免费的。
+    entry = _anchor(backend, digest, meta, lock=lock)
+    (out_dir / "anchor.json").write_text(json.dumps(entry, indent=2), encoding="utf-8")
     (out_dir / "cert.json").write_text(json.dumps(envelope, indent=2), encoding="utf-8")
     (out_dir / "payload.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     # 公钥不是秘密：放在证书旁边，第三方缺省就读它。
     (out_dir / "key.json").write_text(json.dumps(
         {"keyid": signer.keyid, "public_hex": signer.public_hex}, indent=2), encoding="utf-8")
-
-    digest = cert.cert_digest(payload)
-    meta = {"policy": packed.policy.id, "mode": mode, "proved": bool(prove)}
-    entry = _anchor(backend, digest, meta, lock=lock)
-    (out_dir / "anchor.json").write_text(json.dumps(entry, indent=2), encoding="utf-8")
 
     return Issued(payload=payload, envelope=envelope, digest=digest, out_dir=out_dir,
                   proof_mode=proof_mode, vkey_hash=vkey_hash, proof_sha256=proof_sha,
@@ -580,7 +598,8 @@ class ProofService:
                  host_check: bool = False, mode: str = "public",
                  proof_mode: str = "core",
                  rpc_url: Optional[str] = None, contract: Optional[str] = None,
-                 private_key: Optional[str] = None):
+                 private_key: Optional[str] = None,
+                 backend: Optional[anchor.AnchorBackend] = None):
         if concurrency < 1:
             raise ServiceError("concurrency 至少是 1 —— 0 个工作线程的服务只会排队")
         self.registry = registry
@@ -608,10 +627,21 @@ class ProofService:
         # key.json 里，换钥意味着同一个 out_dir 里的证书出自两个签名者 ——
         # 验证方按证书旁的 key.json 验签是对的，但运维会以为「服务就一把钥」。
         self.signer = signer or keys.signer_from_env(None)
-        self.backend = anchor.backend_from_env(self.ledger, rpc_url=rpc_url,
-                                               contract=contract, private_key=private_key)
+        # ``backend`` 是**注入点**，只为让链上这条路径离线可测（真
+        # RpcAnchorBackend + 假 client，见 tests/test_proof_service.py）：
+        # 生产上走的是下面 backend_from_env 那条。
+        self.backend = backend if backend is not None else anchor.backend_from_env(
+            self.ledger, rpc_url=rpc_url, contract=contract, private_key=private_key,
+            # require：**只要点名了链上，就必须配全**。少了这一句，`--rpc` 而忘带
+            # `--contract` 会**静默退回文件账本** —— 运维以为证书上链了，其实只有
+            # 本机一个文件。这是 `backend_from_env` 的 require 存在的原因，服务这
+            # 条路径上此前没用它。
+            require=bool(rpc_url or contract))
         # 账本锁：见 issue_certificate 的 lock 参数。
         self._ledger_lock = threading.Lock()
+        #: ``chain_health`` 的缓存：(取数时刻, 结果)。链上自检要起一个 `cast`
+        #: 子进程（秒级），不能挂在每次 ``/v1/health`` 上。
+        self._chain_cache: Optional[Tuple[float, Dict[str, Any]]] = None
 
     # ---------------------------------------------------------------- 生命周期
 
@@ -669,11 +699,33 @@ class ProofService:
                     "不是慢")
             self._outstanding += 1
 
+    def _require_healthy_chain(self) -> None:
+        """链上账本已知断了就**别收这个作业**。
+
+        真证明要 ~2.5 分钟 + ~10.2 GiB，而锚定发生在**证明之后** —— 让调用方排上
+        队、烧完一次证明、再看到作业 failed，等于用最贵的一段路去回答一个启动时
+        就答得出来的问题。而且它还占着一个队列位（``capacity`` 通常只有 1~2）。
+
+        只拦 ``remote`` 后端且**已经探明**不健康的情况：本地文件账本没有可断的东西，
+        而链上的自检结果有 30 秒 TTL —— 一次瞬时抖动最多造成 30 秒的 503，
+        调用方退避重试即可；比起白烧一次证明，这个代价是划算的。
+        """
+        chain = self.chain_health()
+        if chain is not None and not chain["healthy"]:
+            # 措辞与 ``failure_reason`` 的 AnchorError 分支保持一致（都点名
+            # ``chain.healthy``）：同一种故障在两个入口给出两个说法，读的人会
+            # 以为是两回事。
+            raise anchor.AnchorError(
+                f"账本后端（链上）当前不可用：{chain['detail']}；"
+                f"核查 `/v1/health` 的 chain.healthy。本次**没有入队、没有签发证书**")
+
     def submit(self, policy_id: str, response: str, nonce: bytes = b"",
                receipts: Optional[Sequence[Any]] = None, owner: str = "") -> Job:
         """入队一次出证。返回的 :class:`Job` 处于 ``queued``，**不等于**已开工。"""
         packed = self.registry.get(policy_id)          # 未注册的策略当场 4xx
         _require_serviceable(packed)
+        # 排在 ``_reserve()`` **之前**：被这条拦下的请求不该吃掉一个队列位
+        self._require_healthy_chain()
         self._reserve()
         job: Optional[Job] = None      # 下面 except 里要读 job_id，先给它一个绑定
         try:
@@ -731,17 +783,46 @@ class ProofService:
             return sum(1 for j in self._jobs.values()
                        if j.seq < job.seq and j.state == STATE_QUEUED)
 
+    def chain_health(self, *, refresh: bool = False) -> Optional[Dict[str, Any]]:
+        """链上后端的连通性；文件账本返回 ``None``（**没有可断的东西**）。
+
+        带 TTL 缓存：自检要起一个 ``cast`` 子进程（秒级），挂在每次
+        ``/v1/health`` 上会让一个本该廉价的运维接口变成负载。缓存里带上
+        ``checked_at`` / ``stale`` —— 一个**看不出多旧**的健康值比没有更糟，
+        它会把「十分钟前链是好的」读成「链是好的」。
+        """
+        if not getattr(self.backend, "remote", False):
+            return None
+        now = time.time()
+        if not refresh and self._chain_cache is not None:
+            at, cached = self._chain_cache
+            if now - at < CHAIN_HEALTH_TTL:
+                return {**cached, "checked_at": at, "age": round(now - at, 1), "stale": False}
+        ok, why = self.backend.healthy()
+        out = {"backend": self.backend.name, "healthy": ok, "detail": why,
+               "contract": getattr(self.backend, "contract", None),
+               "rpc_url": getattr(self.backend, "rpc_url", None)}
+        self._chain_cache = (now, out)
+        return {**out, "checked_at": now, "age": 0.0, "stale": False}
+
     def snapshot(self) -> Dict[str, Any]:
         with self._lock:
             counts: Dict[str, int] = {}
             for j in self._jobs.values():
                 counts[j.state] = counts.get(j.state, 0) + 1
-        return {"concurrency": self.concurrency, "max_queue": self.max_queue,
-                "capacity": self.capacity, "outstanding": self.queue_depth(),
-                "jobs": counts, "host_check": self.host_check,
-                "proof_mode": cert.PROOF_MODE_UNPROVEN if self.host_check else self.proof_mode,
-                "policies": self.registry.ids(), "out_dir": str(self.out_dir),
-                "ledger": str(self.ledger)}
+        out = {"concurrency": self.concurrency, "max_queue": self.max_queue,
+               "capacity": self.capacity, "outstanding": self.queue_depth(),
+               "jobs": counts, "host_check": self.host_check,
+               "proof_mode": cert.PROOF_MODE_UNPROVEN if self.host_check else self.proof_mode,
+               "policies": self.registry.ids(), "out_dir": str(self.out_dir),
+               "ledger": str(self.ledger),
+               # 账本落在哪儿是**运维第一眼要看**的东西：本地文件与链上在
+               # 「谁能改」「凭谁信」上是两件完全不同的事。
+               "anchor_backend": self.backend.name}
+        chain = self.chain_health()
+        if chain is not None:
+            out["chain"] = chain
+        return out
 
     # ---------------------------------------------------------------- 工作线程
 

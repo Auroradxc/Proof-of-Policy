@@ -576,6 +576,439 @@ class TestHttpEndpoint(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
+# 账本 RPC 后端（加固②）
+# --------------------------------------------------------------------------- #
+
+CONTRACT = "0x" + "33" * 20
+
+
+class _DeadClient:
+    """连不上的 RPC：每个调用都抛 ``AnchorError``，**不带任何兜底返回值**。
+
+    刻意做成「全挂」而不是「部分挂」：如果某个方法偷偷返回了默认值，
+    这次测试就会变成在验一个不存在的场景。
+    """
+
+    def __init__(self, how="connection refused"):
+        self.how = how
+        self.calls = []
+
+    def _fail(self, name):
+        self.calls.append(name)
+        raise anchor.AnchorError(f"cast {name}: {self.how}")
+
+    def call_uint(self, *a):
+        return self._fail("call anchoredAt")
+
+    def call_address(self, *a):
+        return self._fail("call anchoredBy")
+
+    def send_anchor(self, *a):
+        return self._fail("send anchor")
+
+    def address_of_key(self, *a):
+        return self._fail("wallet address")
+
+    def _run(self, *a, **kw):
+        return self._fail("rpc")
+
+
+def _dead_rpc(*, ledger=None, how="connection refused"):
+    """真的 ``RpcAnchorBackend`` + 挂掉的客户端 —— 用生产对象，不用替身。"""
+    return anchor.RpcAnchorBackend("http://127.0.0.1:1", CONTRACT, ledger_path=ledger,
+                                   client=_DeadClient(how))
+
+
+class _LiveClient(_DeadClient):
+    """**只读活**的链：``code`` 有返回（合约在），写不动（登记必挂）。"""
+
+    def _run(self, *a, **kw):
+        self.calls.append("code")
+        return "0x60806040"
+
+    def send_anchor(self, *a):
+        return self._fail("send anchor")
+
+
+def _live_rpc(*, ledger=None):
+    return anchor.RpcAnchorBackend("http://127.0.0.1:1", CONTRACT, ledger_path=ledger,
+                                   client=_LiveClient())
+
+
+@contextlib.contextmanager
+def _no_chain_env():
+    """把 ``POP_ANCHOR_*`` 摘干净。
+
+    没有它，「不配链上 → 走文件账本」这条会在**恰好设了这几个环境变量**的
+    机器上翻车 —— 而 CI/开发机恰恰是最容易残留这种变量的地方。
+    """
+    strip = {k: "" for k in (anchor.ENV_RPC, anchor.ENV_CONTRACT, anchor.ENV_KEY)}
+    with mock.patch.dict(os.environ, strip):
+        for k in strip:
+            os.environ.pop(k, None)
+        yield
+
+
+class TestChainBackendWiring(unittest.TestCase):
+    """链上后端接线：**配了链上就必须配全**，以及 health 要报得出来。"""
+
+    def _svc(self, **kw):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        reg = service.registry_from_paths([CONTENT_PACK])
+        with _no_chain_env():
+            return ProofService(reg, Path(tmp.name), host_check=True, **kw)
+
+    def test_rpc_without_contract_refuses_to_start(self):
+        """**这是本次修掉的真 bug**：``--rpc`` 而忘带 ``--contract`` 以前会
+        静默退回文件账本 —— 运维以为自己上链了，其实只有本机一个文件。
+
+        这种错最坏的地方是它**没有症状**：证书照样签得出来、账本照样自洽、
+        ``/v1/health`` 也照样说 ok。等到有人去链上查那份摘要，才发现从来没有过。
+        """
+        with self.assertRaises(anchor.AnchorError) as ctx:
+            self._svc(rpc_url="http://127.0.0.1:8545", contract=None)
+        self.assertIn("--contract", str(ctx.exception))     # 报错要说清缺哪个
+
+    def test_contract_without_rpc_refuses_too(self):
+        with self.assertRaises(anchor.AnchorError):
+            self._svc(rpc_url=None, contract=CONTRACT)
+
+    def test_env_supplied_chain_config_is_accepted(self):
+        """走环境变量的那条路也得通 —— 拒绝逻辑不该把正确配置一起拦掉。"""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        reg = service.registry_from_paths([CONTENT_PACK])
+        with mock.patch.dict(os.environ, {anchor.ENV_RPC: "http://127.0.0.1:1",
+                                          anchor.ENV_CONTRACT: CONTRACT}):
+            svc = ProofService(reg, Path(tmp.name), host_check=True,
+                               rpc_url="http://127.0.0.1:1")   # 只给了 rpc，合约来自环境
+        self.assertEqual(svc.backend.name, "rpc")
+        self.assertEqual(svc.backend.contract, CONTRACT)
+
+    def test_no_chain_config_still_gives_the_file_ledger(self):
+        """没点名链上就照常走文件账本 —— 上面那条拒绝**不该**顺手把本机用法也拦掉。"""
+        svc = self._svc()
+        self.assertEqual(svc.backend.name, "file")
+        self.assertFalse(svc.backend.remote)
+
+    def test_health_names_the_backend(self):
+        """账本落在哪儿是运维第一眼要看的：本地文件与链上在「谁能改」上是两回事。"""
+        snap = self._svc().snapshot()
+        self.assertEqual(snap["anchor_backend"], "file")
+        # 本地后端**没有** chain 这一段：没有可断的东西，报健康只是噪声
+        self.assertNotIn("chain", snap)
+
+    def test_health_reports_chain_health_for_a_remote_backend(self):
+        svc = self._svc(backend=_live_rpc())
+        snap = svc.snapshot()
+        self.assertEqual(snap["anchor_backend"], "rpc")
+        self.assertTrue(snap["chain"]["healthy"])
+        self.assertEqual(snap["chain"]["contract"], CONTRACT)
+
+    def test_unhealthy_chain_is_reported_as_unhealthy(self):
+        """链挂了要**说出来**，而不是让 /v1/health 继续说 ok。
+
+        判据是「是否如实」而不是「是否可用」：一个说 ok 但链已经断了的 health
+        比没有 health 更糟 —— 它会把排查引到别的方向去。
+        """
+        snap = self._svc(backend=_dead_rpc()).snapshot()
+        self.assertFalse(snap["chain"]["healthy"])
+        self.assertIn("connection refused", snap["chain"]["detail"])
+
+    def test_backend_without_a_health_probe_says_so_instead_of_ok(self):
+        """**不知道**要报成不知道。``healthy()`` 的默认真值不能是 True。
+
+        一个报 ok 而从未自检过的后端，会让 ``chain.healthy=true`` 变成一句
+        没有信息量的话 —— 而这句话正是运维决定「要不要信这次签发的账本」的依据。
+        """
+        class Opaque(anchor.AnchorBackend):
+            name = "opaque"
+            remote = True
+
+        snap = self._svc(backend=Opaque()).snapshot()
+        self.assertFalse(snap["chain"]["healthy"])
+        self.assertIn("不支持连通性自检", snap["chain"]["detail"])
+
+    def test_chain_health_is_cached_not_recomputed_per_request(self):
+        """自检要起一个 ``cast`` 子进程（秒级），不能挂在每次 /v1/health 上。"""
+        client = _LiveClient()
+        backend = anchor.RpcAnchorBackend("http://127.0.0.1:1", CONTRACT, client=client)
+        svc = self._svc(backend=backend)
+        for _ in range(5):
+            svc.snapshot()
+        self.assertEqual(client.calls, ["code"], "每次都重新自检，health 会变成负载")
+
+    def test_cached_health_says_how_old_it_is(self):
+        """**看不出多旧**的健康值比没有更糟：会把「十分钟前是好的」读成「是好的」。"""
+        svc = self._svc(backend=_live_rpc())
+        chain = svc.snapshot()["chain"]
+        self.assertIn("checked_at", chain)
+        self.assertFalse(chain["stale"])
+        self.assertGreaterEqual(chain["age"], 0.0)
+
+    def test_an_expired_cache_is_refreshed(self):
+        """TTL 是真会过期的 —— 否则上面那条缓存测试在「永不刷新」时也通过。"""
+        client = _LiveClient()
+        backend = anchor.RpcAnchorBackend("http://127.0.0.1:1", CONTRACT, client=client)
+        svc = self._svc(backend=backend)
+        svc.snapshot()
+        with mock.patch.object(service, "CHAIN_HEALTH_TTL", 0.0):
+            svc.snapshot()
+        self.assertEqual(client.calls, ["code", "code"])
+
+
+class TestStartupRefusals(unittest.TestCase):
+    """配置写错要在**启动时**变成一句人话 + 退出码 2。
+
+    这一条是被真事逼出来的：``--rpc`` 忘带 ``--contract`` 时，``ProofService``
+    构造里抛的 ``AnchorError`` 一路冒出 ``main()``，运维看到的是**一段 Python
+    回溯**、退出码 1。在 systemd 的日志里，那和一个真的崩溃长得一模一样 —— 而
+    实际只是少了一个参数。退出码 1 还会让「配置错」与「运行中崩了」在监控上
+    无法区分。
+    """
+
+    def _run(self, *argv):
+        return subprocess.run(
+            [sys.executable, str(REPO / "scripts" / "proof_service.py"),
+             "--pack", str(CONTENT_PACK), "--out-dir", str(Path(self.tmp.name) / "o"), *argv],
+            cwd=str(REPO), capture_output=True, text=True, timeout=120)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_chain_config_missing_a_half_is_a_clean_refusal(self):
+        for argv in (["--rpc", "http://127.0.0.1:1"], ["--contract", "0x" + "11" * 20]):
+            with self.subTest(argv=argv):
+                proc = self._run(*argv)
+                self.assertEqual(proc.returncode, 2, proc.stderr)
+                self.assertIn("账本后端配置有误", proc.stderr)
+                # 关键的否定断言：不是回溯
+                self.assertNotIn("Traceback", proc.stderr)
+
+    def test_an_auth_file_that_does_not_exist_is_a_clean_refusal(self):
+        proc = self._run("--auth-file", str(Path(self.tmp.name) / "nope.txt"))
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_require_auth_without_tokens_is_refused(self):
+        proc = self._run("--require-auth")
+        self.assertEqual(proc.returncode, 2, proc.stderr)
+        self.assertIn("--require-auth", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+
+    def test_a_good_config_still_starts_and_serves(self):
+        """**非恒真对照**：同样的调用方式配全了就真的起得来。
+
+        少了这一条，上面三条在「脚本根本跑不起来」时也会全绿。
+        """
+        proc = subprocess.Popen(
+            [sys.executable, str(REPO / "scripts" / "proof_service.py"),
+             "--pack", str(CONTENT_PACK), "--out-dir", str(Path(self.tmp.name) / "ok"),
+             "--port", "0"],
+            cwd=str(REPO), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        self.addCleanup(proc.wait, 30)
+        self.addCleanup(proc.kill)
+        self.addCleanup(proc.stdout.close)     # 清理按后进先出 ⇒ 关管道在最前
+        # --port 0 会绑定一个随机端口，横幅里印的就是真实地址
+        line = proc.stdout.readline()
+        self.assertIn("proof service on http://127.0.0.1:", line)
+
+
+class TestAnchorFailureIsFailClosed(unittest.TestCase):
+    """锚定失败时：**磁盘上不该出现一份看起来签好了的证书**。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+        self.packed = service.pack_policy(service.load_policy(CONTENT_PACK), CONTENT_PACK)
+        self.ledger = self.root / "ledger.jsonl"
+
+    def test_failed_anchor_leaves_no_certificate(self):
+        """``cert.json`` / ``payload.json`` / ``key.json`` 一个都不该有。
+
+        顺序是刻意的（先锚定、再落证书文件）：锚定是唯一会**对外失败**的一步，
+        反过来的顺序会让一次链上故障留下一份完整、带签名的证书 —— verify_cert
+        确实会判 FAIL（fail-closed），但**它已经发得出去了**，而发证书的人未必
+        会先跑一遍验证。
+        """
+        with self.assertRaises(anchor.AnchorError):
+            service.issue_certificate(self.root / "cert", self.packed, CLEAN,
+                                      challenge.new_nonce(), _signer(),
+                                      _live_rpc(ledger=self.ledger), prove=False)
+        for name in ("cert.json", "payload.json", "key.json", "anchor.json"):
+            self.assertFalse((self.root / "cert" / name).exists(), f"{name} 不该存在")
+        # 本地账本也不该有半条：链上没成功就**不落账**，否则本机会凭空多出一条
+        # 「已锚定」的记录，而链上查不到 —— 这比没有记录更难查
+        self.assertFalse(self.ledger.exists())
+
+    def test_a_working_backend_still_writes_everything(self):
+        """**非恒真对照**：同一份输入、后端是好的时候四个文件都在。
+
+        少了这一条，上面那个用例在「issue_certificate 整个坏掉了」时也会通过。
+        """
+        out = self.root / "ok"
+        issued = service.issue_certificate(out, self.packed, CLEAN, challenge.new_nonce(),
+                                           _signer(), _backend(self.tmp.name), prove=False)
+        for name in ("cert.json", "payload.json", "key.json", "anchor.json"):
+            self.assertTrue((out / name).exists(), f"{name} 该存在")
+        self.assertTrue(anchor.verify_ledger(self.ledger)[0])
+
+    def test_job_error_says_no_certificate_was_issued(self):
+        """作业失败时那句话要说清「没有证书」，否则读的人会去目录里找。
+
+        这里用的是 ``_live_rpc``（自检说连通、登记才挂）—— 因为**已知**链断的
+        情况在 ``submit()`` 就被拦掉了，走不到工作线程。这一条测的正是剩下那种
+        更麻烦的情况：自检那一刻链是好的，证明烧完之后登记才失败。
+        """
+        reg = service.registry_from_paths([CONTENT_PACK])
+        svc = ProofService(reg, self.root / "svc", host_check=True, backend=_live_rpc())
+        svc.start()
+        self.addCleanup(svc.stop)
+        job = svc.submit("agent-content-v1", CLEAN)
+        done = _wait_for(lambda: svc.get(job.job_id),
+                         lambda j: j.state in service.STATE_TERMINAL_STATES)
+        self.assertEqual(done.state, service.STATE_FAILED)
+        self.assertIn("没有签发证书", done.error)
+        self.assertIn("chain.healthy", done.error)          # 给出核实方法
+        self.assertFalse((self.root / "svc" / "jobs" / job.job_id / "cert.json").exists())
+
+    def test_submit_is_refused_up_front_when_the_chain_is_known_down(self):
+        """链已知断了就**不收作业** —— 不排上队再失败。
+
+        真证明要 ~2.5 分钟 + ~10.2 GiB，而锚定在证明**之后**：让调用方等完这一程
+        才发现链是断的，是用最贵的一段路去回答一个启动时就答得出来的问题。
+        """
+        reg = service.registry_from_paths([CONTENT_PACK])
+        svc = ProofService(reg, self.root / "svc", host_check=True, backend=_dead_rpc())
+        svc.start()
+        self.addCleanup(svc.stop)
+        with self.assertRaises(anchor.AnchorError) as ctx:
+            svc.submit("agent-content-v1", CLEAN)
+        self.assertIn("没有入队", str(ctx.exception))
+        # 队列位必须**还回来**：一次上游故障不该把容量越用越少
+        self.assertEqual(svc.queue_depth(), 0)
+        self.assertEqual(svc.snapshot()["outstanding"], 0)
+
+    def test_check_is_refused_too_because_it_also_anchors(self):
+        """``/v1/check`` 也要锚定（它签的是一张**真的**证书，只是 unproven）。
+
+        容易以为「check 是纯本地的」，于是给链上后端加个仅 attest 的旁路 ——
+        那样 check 会签出一份链上查不到的证书，而它恰恰是最常被调用的那条路。
+        """
+        reg = service.registry_from_paths([CONTENT_PACK])
+        svc = ProofService(reg, self.root / "svc", host_check=True, backend=_dead_rpc())
+        with self.assertRaises(anchor.AnchorError):
+            svc.check("agent-content-v1", CLEAN)
+        self.assertEqual(list((self.root / "svc" / "checks").rglob("cert.json")), [])
+        self.assertFalse(self.ledger.exists())
+
+    def test_an_anchor_failure_leaves_a_work_dir_but_no_certificate(self):
+        """**如实记下上一条的边界**：锚定失败时工作目录是**会**留下的。
+
+        ``_write_vectors`` 在建目录时就把 ``checks/<前缀>/<随机>/`` 建出来了，
+        ``vectors.json`` / ``results.json`` 都躺在里面 —— 而 cert / payload /
+        key / anchor 四个都不在。这四个之间的区别才是有意义的那个：前两者是**输入
+        与中间结果**（谁都能重算），后四者合起来才是一份「可转交、可独立验证」的
+        产物。所以这里断言的不是「目录不存在」，而是「没有产物」。
+
+        反过来说，这也意味着磁盘上会攒下一些无主的工作目录 —— 已知、可接受
+        （它们不含签名、不含证书、重跑即可），但清理策略是运维的事。
+        """
+        reg = service.registry_from_paths([CONTENT_PACK])
+        svc = ProofService(reg, self.root / "svc", host_check=True, backend=_dead_rpc())
+        with self.assertRaises(anchor.AnchorError):
+            svc.check("agent-content-v1", CLEAN)
+        work = sorted((self.root / "svc" / "checks").rglob("vectors.json"))
+        self.assertTrue(work, "工作目录本该留下（这条用例存在的意义就是记下这件事）")
+        for name in ("cert.json", "payload.json", "key.json", "anchor.json"):
+            self.assertEqual(list((self.root / "svc" / "checks").rglob(name)), [],
+                             f"{name} 不该存在")
+
+
+class TestChainDownOverHttp(unittest.TestCase):
+    """链上后端挂掉时，调用方在**第一次调用**就得到 503。
+
+    这是「两级时间尺度」里最难受的一种故障：``/v1/attest`` 立刻回 202（证明确实
+    要 2.5 分钟），而锚定发生在证明**之后** —— 故障要等到作业跑完才浮现。如果只把
+    作业标成 failed，调用方得先学会轮询、再看懂 ``error`` 字段，才知道坏的是
+    **外部依赖**而不是自己的输入。503 让这件事在收下作业之前就成立。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from scripts.proof_service import make_server  # noqa: PLC0415
+        cls.tmp = tempfile.TemporaryDirectory()
+        reg = service.registry_from_paths([CONTENT_PACK])
+        cls.svc = ProofService(reg, Path(cls.tmp.name), host_check=True,
+                               backend=_dead_rpc())
+        cls.httpd = make_server(cls.svc, "127.0.0.1", 0)
+        cls.host, cls.port = cls.httpd.server_address
+        cls.svc.start()
+        cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        cls.svc.stop()
+        cls.tmp.cleanup()
+
+    def _call(self, method, path, body=None):
+        url = f"http://{self.host}:{self.port}{path}"
+        data = None if body is None else json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method=method)
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.status, json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read() or b"{}")
+
+    def test_health_tells_the_truth_about_a_broken_chain(self):
+        """先决条件：health 已经说了链是断的。否则上面那句 503 只是碰巧。"""
+        code, body = self._call("GET", "/v1/health")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["anchor_backend"], "rpc")
+        self.assertFalse(body["chain"]["healthy"])
+
+    def test_attest_is_503_not_a_202_that_never_finishes(self):
+        code, body = self._call("POST", "/v1/attest",
+                                {"policy_id": "agent-content-v1", "response": CLEAN})
+        self.assertEqual(code, 503, body)
+        self.assertIn("没有签发证书", body["error"])
+        self.assertIn("chain.healthy", body["error"])
+
+    def test_check_is_503_too_and_points_at_the_products_dir_not_a_job(self):
+        """``/v1/check`` 也锚定，所以它也 503 —— 但产物目录不是「作业目录」。
+
+        这两条路的产物落点不一样（``checks/`` 下的一次性目录 vs ``jobs/<id>/``），
+        一句话套两个入口会指向一个不存在的路径，而这句话正是调用方**据以去找
+        产物**的那句。
+        """
+        code, body = self._call("POST", "/v1/check",
+                                {"policy_id": "agent-content-v1", "response": LEAKY})
+        self.assertEqual(code, 503, body)
+        self.assertIn("产物目录", body["error"])
+        self.assertNotIn("作业目录", body["error"])
+
+    def test_no_job_was_created_and_nothing_was_written(self):
+        """被 503 拒掉的请求不该留下**看起来像证书**的东西，也不该占队列位。"""
+        self._call("POST", "/v1/attest",
+                   {"policy_id": "agent-content-v1", "response": CLEAN})
+        for d in (Path(self.tmp.name) / "jobs").glob("job-*"):
+            for name in ("cert.json", "payload.json"):
+                self.assertFalse((d / name).exists(), f"{d.name}/{name} 不该存在")
+        code, health = self._call("GET", "/v1/health")
+        self.assertEqual(code, 200)
+        self.assertEqual(health["outstanding"], 0, "被拒的请求吃掉了容量")
+
+
+# --------------------------------------------------------------------------- #
 # 鉴权层（policydsl/auth.py + HTTP 驱动里的接线）
 # --------------------------------------------------------------------------- #
 

@@ -143,7 +143,7 @@
   —— ⚠️ **初稿已由 LaTeX 版取代**：权威源是 `paper/proof-of-policy.tex`（xelatex + ctex），
   `.md` 只是阅读镜像且已落后（缺 L8/L9）。以 `.tex` 为准。
 - [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；
-  测试 **581 全绿 / 15 skip**（2026-09-13 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
+  测试 **612 全绿 / 15 skip**（2026-09-13 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
 - [x] **待办（延伸）—— 三项均已完成**（此前误记为待办，2026-09-12 订正）：
   verifier-only 二进制（`pop-verify`，见 Phase P7-a）；链上锚定 RPC 后端（`RpcAnchorBackend`，见 P7-c）；
   format/budget/tool 规则入电路（见 P7-b）
@@ -178,7 +178,7 @@ P0 ─► P1 ─► P2 ─► P3(透明MVP★)
 
 ## 5. 延伸路线：接真 agent + 证明服务（2026-09-13 立）
 
-> **前置**：Phase 0–6 与 P7 全部收尾，测试 **581 全绿 / 15 skip**，
+> **前置**：Phase 0–6 与 P7 全部收尾，测试 **612 全绿 / 15 skip**，
 > `scripts/demo_all.sh` 8 条支路全通。本节是**交付之后**的两步 ——
 > 与仍在外部排队的 **T1**（≥64 GB 云机，见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9）
 > **互不阻塞**，也**不能**靠 T1 替代：T1 补的是链上/云机那一格，这两步补的是
@@ -386,7 +386,7 @@ GET  /v1/policies                                                 → 已注册�
 |---|---|
 | 库：策略注册表 + 作业队列 + 两段出证 | `policydsl/service.py` |
 | HTTP 驱动（纯标准库） | `scripts/proof_service.py` |
-| 测试（62 例；真 vkey 出证那条进 `POP_TEST_PROOF` 门控） | `tests/test_proof_service.py` |
+| 测试（87 例；真 vkey 出证那条进 `POP_TEST_PROOF` 门控） | `tests/test_proof_service.py` |
 | 运维文档 | [`runbook-proof-service.md`](runbook-proof-service.md) |
 
 **过程中被 `verify_cert.py` 的 `trace_binding` 卡当场抓出的一个真 bug**：第一版
@@ -443,10 +443,58 @@ died with <Signals.SIGKILL: 9>` —— 一屏临时路径，唯独没说「内�
 systemd/docker 起服务的人看不到这段横幅，而「鉴权开没开」正是它唯一要回答的问题。
 加了显式 `flush()`。
 
-**验收**：`python3 -m unittest tests.test_proof_service` → 62 例（35 → 62）；真起
-服务用 `curl` 走了一遍 —— 无 token `401`（含 `WWW-Authenticate`）、错 token
-`token 不认识`、对 token `200`、`/v1/health` 的 `auth.mode == "bearer"`、连打 40 次
-在 burst 用尽后返 `429`（`Retry-After: 1`）再随令牌桶回填恢复 `200`。
+**验收①**：`python3 -m unittest tests.test_proof_service` → 62 例（35 → 62，这是
+① 做完时的数）；真起服务用 `curl` 走了一遍 —— 无 token `401`（含 `WWW-Authenticate`）、
+错 token `token 不认识`、对 token `200`、`/v1/health` 的 `auth.mode == "bearer"`、
+连打 40 次在 burst 用尽后返 `429`（`Retry-After: 1`）再随令牌桶回填恢复 `200`。
+
+**② 账本 RPC 后端 —— 已做（#105）。** 起因是 runbook §3.1 的一条边界：高并发下
+账本追加是 O(n)。**先纠正一条自己写错的建议** —— §3.1 当时给的解法是「换成 RPC
+后端」，**这是错的**：`RpcAnchorBackend.anchor()` 在给了 `ledger_path` 时照样调
+`append_anchor`，换后端并不改变那一步。真正的修法在账本自身：
+
+- **`ledger_tail()` + `(st_size, st_mtime_ns)` 戳的缓存**（`policydsl/anchor.py`）：
+  追加快为 O(1)。**写侧的坑**：只缓存读是不够的 —— `append_anchor` 一写，戳就变了，
+  下一次追加又退回全表重读，「写 → 失效 → 重读」，缓存等于白做；所以写完之后顺手把
+  缓存推进到新尾部。**O(1) 的证据不是计时**（计时在 CI 上会飘），是一条 monkeypatch
+  `read_ledger`、数调用次数并断言 **0 次**的用例。「快」是可以蒙对的，「一次都没读」
+  不能。
+- **fail-closed 的默认值**：`AnchorBackend.healthy()` 的缺省原先是 `(True, "local")`
+  （本意是照顾文件账本），但它会被**任何新写的远端后端**继承 —— 链上后端漏写
+  `healthy()` 就会让 `/v1/health` 报 `chain.healthy: true`，而这句话正是运维决定
+  「要不要信这次签发的账本」的依据。缺省改成「**不知道**」，本地文件后端自己声明
+  「永远健康」（它确实没有可断的东西）。这条是被新写的用例抓出来的。
+- **`service.py` 的四处接线**：① `require=True` —— `--rpc` 忘带 `--contract` 以前会
+  **静默退回文件账本**，证书照样签得出来、账本照样自洽、health 照样说 ok，等到有人去
+  链上查那份摘要才发现从来没有过；② `chain_health()` 带 30 s TTL 并进
+  `/v1/health` 与快照（**看不出多旧**的健康值比没有更糟，所以带 `age`/`checked_at`）；
+  ③ `issue_certificate` 把**锚定提到落证书文件之前**，否则一次链上故障会留下一份
+  完整、带签名的证书（`verify_cert` 会判 FAIL，但**它已经发得出去**了）；
+  ④ `submit()` 在**收下作业之前**先探链 —— 锚定发生在证明**之后**，链已知断还收下
+  作业，等于用 ~2.5 分钟 + ~10.2 GiB 去回答一个启动时就有答案的问题，还白占一个
+  队列位（`capacity` 缺省 9，而真证明下同时只有 1 个在跑）。
+- **HTTP 层**：`/v1/check` 与 `/v1/attest` 都返 **503**、都明说「没有签发证书」；
+  但两个入口的产物路径措辞**不同**（`checks/<前缀>/<随机>/` vs `jobs/<job_id>/`）——
+  一句话套两个入口会指向一个不存在的路径，而那句话正是调用方**据以去找产物**的那句。
+  配置写错也从「Python 回溯 + 退出码 1」改成「**一句人话 + 退出码 2**」：在 systemd
+  日志里，前者和一个真崩溃长得一模一样，而退出码 1 会让「配置错」与「运行中崩了」
+  在监控上无法区分。
+- **一条容易漏掉的连带事实**：`/v1/check` **也锚定**（它签的是一张真的证书，只是
+  `unproven`）。所以它同样会被坏链拦下 —— 顺手给链上后端开「仅 attest 走链」的
+  旁路是个陷阱：那样 check 会签出链上查不到的证书，而它恰恰是最常被调用的那条路。
+
+**验收②**：`tests.test_proof_service` **87 例**（62 → 87）、`tests.test_anchor_chain`
+**28 例**（22 → 28）。新增 31 例里 **30 例是离线路径**（注入假 RPC 客户端 ——
+覆盖后端选择、health 语义、fail-closed 顺序、配置拒绝、账本尾部缓存 ——
+外加 4 例把 `proof_service.py` 当**子进程**跑，核配置写错时是真的「一句人话 +
+退出码 2」而不是回溯），**1 条真链**用例：起真 anvil → 用
+`ProofService(rpc_url=…, contract=…)` 走完一次作业 → 由**独立只读客户端**
+`verify_digest_on_chain` 读回核对，并核磁盘 `anchor.json` 的链上时间戳与一次全新
+查询**相等**（只断言「有个 tx_hash」是不够的 —— 本地凭空写一个也能过）。另用 `curl`
+对真链跑了一遍：链通时 `/v1/health` → `healthy: true`、`/v1/attest` → 202 → `done` →
+独立读回成功、账本条目带同一个 `tx_hash`；`kill anvil` 并等过 30 s TTL 之后
+`/v1/health` → `healthy: false`（附原始 `cast` 报错）、`/v1/attest` 与 `/v1/check`
+→ **503** 且 `outstanding: 0`（队列位没被吃掉）。
 
 ### 5.3 顺带修掉的口径问题：`demo_e2e.py` 的魔法 `vkey = "demo"`
 
