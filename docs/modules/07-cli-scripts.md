@@ -544,9 +544,11 @@ python3 scripts/proof_service.py --host-check      # 演示/边缘：作业几�
 SP1_PROVER=cpu python3 scripts/proof_service.py    # 真证明：~2.5 分钟/作业，峰值 ~10.2 GiB
 ```
 
-库在 `policydsl/service.py`，本脚本只做 HTTP（**纯标准库 `http.server`**，零新依赖）。
-**默认只绑 `127.0.0.1:8787`，且无鉴权** —— 运维细节、排查表、已知边界见
-[`docs/runbook-proof-service.md`](../runbook-proof-service.md)。
+库在 `policydsl/service.py`（+ `policydsl/auth.py`），本脚本只做 HTTP（**纯标准库
+`http.server`**，零新依赖）。**默认只绑 `127.0.0.1:8787`**；没配 token 时**默认无
+鉴权**（`/v1/health` 的 `auth.mode` 会如实写 `none`），配上 `--auth-token` /
+`--auth-file` / `$POP_SERVICE_TOKEN` 之后**作业只对提交它的那把 token 可见**。
+运维细节、排查表、已知边界见 [`docs/runbook-proof-service.md`](../runbook-proof-service.md)。
 
 两段接口（理由：宿主判定毫秒级、SP1 证明 ~2.5 分钟，差 4 个数量级）：
 
@@ -575,8 +577,10 @@ curl -s -X POST localhost:8787/v1/attest -H 'Content-Type: application/json' \
 
 | 码 | 什么时候 | 为什么是这个码 |
 |---|---|---|
+| `401` | 没带 / 带错 `Authorization: Bearer …`（仅在配了 token 时） | 带 `WWW-Authenticate`；且**区分「格式错」与「token 错」**，否则 401 会把人引去怀疑 token 本身 |
 | `429` | 队列满（`concurrency + max_queue`，缺省 9） | 该做的是**退避重试**；`503` 会被读成「服务坏了」，而队列满恰恰说明服务是好的，只是不想把活儿收下之后 OOM |
-| `404` | 策略 / 作业不存在 | 「这东西不存在」不是「你的请求体不合法」 |
+| `429` | 某把 token 超出配额（`--rate`/`--burst`） | 两种 429 **语境不同**：队列满要等或换机器，配额满要降速。按 **token** 分桶而不是按 IP（一个 NAT 出口后面是一整个机房） |
+| `404` | 策略 / 作业不存在，**或作业不是你的** | 后一种报 404 而不是 403：403 等于确认「这个 id 存在」，那就成了探测别家 job_id 的预言机。两种情况措辞**逐字相同** |
 | `400` | 缺字段 / 策略含语义规则（见下） | 报错里说清楚是哪一条、怎么办 |
 | `413` | 请求体超 1 MiB（**不读正文**就回） | `http.server` 会把声明的字节全读进内存 |
 

@@ -32,7 +32,7 @@ from unittest import mock
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, challenge, commit, evaluate, keys, service  # noqa: E402
+from policydsl import anchor, auth, cert, challenge, commit, evaluate, keys, service  # noqa: E402
 from policydsl import trace  # noqa: E402
 from policydsl.model import Policy, Rule  # noqa: E402
 from policydsl.service import ProofService  # noqa: E402
@@ -573,6 +573,309 @@ class TestHttpEndpoint(unittest.TestCase):
             self.assertIn("超出上限", json.loads(resp.read())["error"])
         finally:
             conn.close()
+
+
+# --------------------------------------------------------------------------- #
+# 鉴权层（policydsl/auth.py + HTTP 驱动里的接线）
+# --------------------------------------------------------------------------- #
+
+#: 测试用 token：够长（≥ MIN_SECRET_LEN）而且是**读得出来源**的字符串 ——
+#: 用 "a"*32 这种会让「哪个测试挂了」变得难查。
+ALICE = "alice-token-0123456789abcdef"
+BOB = "bob-token-0123456789abcdef"
+
+
+class TestAuthTokens(unittest.TestCase):
+    """token 的定义与解析：写错**当场**报，不要留到调用时才 401。"""
+
+    def test_label_and_secret_are_split(self):
+        t = auth.parse_token_spec(f"alice:{ALICE}")
+        self.assertEqual((t.label, t.secret), ("alice", ALICE))
+
+    def test_bare_secret_gets_a_derived_label(self):
+        """不强制起名字，但派生出来的标签**不含 secret 本身**。
+
+        派生标签是 secret 的哈希前 8 位 —— 它要能出现在日志与 ``/v1/health`` 里，
+        所以绝不能是 secret 原样。这里正面锁住「标签里没有 secret 的子串」。
+        """
+        t = auth.parse_token_spec(ALICE)
+        self.assertTrue(t.label.startswith("key-"))
+        self.assertNotIn(ALICE[:12], t.label)
+
+    def test_short_secret_is_refused_with_the_reason(self):
+        with self.assertRaises(auth.AuthError) as ctx:
+            auth.parse_token_spec("weak:short")
+        msg = str(ctx.exception)
+        self.assertIn("16", msg)          # 说出下限是多少
+        self.assertIn("穷举", msg)         # 也说出**为什么**有下限
+
+    def test_secret_with_whitespace_is_refused(self):
+        """含空白的 secret 在 Authorization 头里根本传不进来。"""
+        with self.assertRaises(auth.AuthError) as ctx:
+            auth.parse_token_spec(f"alice:{ALICE} extra")
+        self.assertIn("空白", str(ctx.exception))
+
+    def test_duplicate_label_is_refused(self):
+        """两个身份共用一个标签 → 日志与配额都会悄悄合并。"""
+        with self.assertRaises(auth.AuthError) as ctx:
+            auth.Authenticator.from_sources([f"alice:{ALICE}", f"alice:{BOB}"])
+        self.assertIn("标签", str(ctx.exception))
+
+    def test_one_secret_under_two_labels_is_refused(self):
+        """一次泄露会同时拿到两个身份 —— 与其如此，不如只有一把。"""
+        with self.assertRaises(auth.AuthError) as ctx:
+            auth.Authenticator.from_sources([f"alice:{ALICE}", f"bob:{ALICE}"])
+        self.assertIn("secret", str(ctx.exception))
+
+    def test_token_file_and_env_are_merged_not_overridden(self):
+        """三处来源**合起来**。后者覆盖前者会让「文件里的常备钥」凭空消失。"""
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "tokens"
+            p.write_text(f"# 常备钥\nfilekey:{ALICE}\n\n", encoding="utf-8")
+            a = auth.Authenticator.from_sources(
+                [f"clikey:{BOB}"], path=p, env="envkey:" + "c" * 32)
+        self.assertEqual(sorted(a.labels), ["clikey", "envkey", "filekey"])
+
+    def test_token_file_bad_line_names_the_line_number(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "tokens"
+            p.write_text(f"ok:{ALICE}\nbroken:{BOB}\nnope\n", encoding="utf-8")
+            with self.assertRaises(auth.AuthError) as ctx:
+                auth.load_token_file(p)
+            self.assertIn(":3:", str(ctx.exception))
+
+    def test_admin_label_marks_the_token(self):
+        a = auth.Authenticator.from_sources([f"ops:{ALICE}", f"app:{BOB}"],
+                                            admin_labels=["ops"])
+        self.assertTrue(a.authenticate(f"Bearer {ALICE}").admin)
+        self.assertFalse(a.authenticate(f"Bearer {BOB}").admin)
+
+    def test_health_snapshot_never_contains_a_secret(self):
+        a = auth.Authenticator.from_sources([f"alice:{ALICE}"])
+        blob = json.dumps(a.snapshot())
+        self.assertIn("alice", blob)
+        # 这是这个模块最要紧的一条：``/v1/health` 是**不鉴权也能问**的那种接口，
+        # 一旦把 secret 漏进去，鉴权就成了一个幌子。
+        self.assertNotIn(ALICE, blob)
+
+
+class TestAuthDecisions(unittest.TestCase):
+    """401 的三种由来 + 令牌桶。不碰 HTTP。"""
+
+    def setUp(self):
+        self.a = auth.Authenticator.from_sources(
+            [f"alice:{ALICE}", f"bob:{BOB}"], admin_labels=["bob"],
+            rate=2.0, burst=2)
+
+    def test_missing_header_says_what_to_send(self):
+        with self.assertRaises(auth.Unauthorized) as ctx:
+            self.a.authenticate(None)
+        self.assertIn("Authorization", str(ctx.exception))
+
+    def test_wrong_scheme_is_told_apart_from_wrong_token(self):
+        """「格式错」与「token 错」分开报 —— 否则 401 会把人引向错误的方向。"""
+        with self.assertRaises(auth.Unauthorized) as ctx:
+            self.a.authenticate("Token " + ALICE)
+        self.assertIn("Bearer", str(ctx.exception))
+        with self.assertRaises(auth.Unauthorized) as ctx2:
+            self.a.authenticate("Bearer " + "z" * 32)
+        self.assertNotIn("Bearer", str(ctx2.exception))
+
+    def test_the_error_never_echoes_what_was_sent(self):
+        """猜错的 token 不能被回显 —— 日志经常被转发到别的地方去。"""
+        guess = "guess-" + "q" * 32
+        with self.assertRaises(auth.Unauthorized) as ctx:
+            self.a.authenticate("Bearer " + guess)
+        self.assertNotIn(guess, str(ctx.exception))
+
+    def test_a_late_token_in_the_list_still_matches(self):
+        """比较不提前退出（命中第几个不该体现在耗时上）；行为上先锁住「命中得了」。"""
+        pk = self.a.authenticate(f"Bearer {BOB}")
+        self.assertEqual(pk.label, "bob")
+
+    def test_oversized_header_is_refused(self):
+        with self.assertRaises(auth.Unauthorized) as ctx:
+            self.a.authenticate("Bearer " + "x" * (auth.MAX_HEADER_LEN + 1))
+        self.assertIn("超过", str(ctx.exception))
+
+    def test_bucket_allows_burst_then_rate_limits(self):
+        p = self.a.authenticate(f"Bearer {ALICE}")
+        self.a.consume(p)
+        self.a.consume(p)                      # burst=2 → 两次通过
+        with self.assertRaises(auth.RateLimited) as ctx:
+            self.a.consume(p)
+        # Retry-After 不能是 0：那会被读成「立刻重试」，于是变成忙等
+        self.assertGreaterEqual(ctx.exception.retry_after, 1)
+
+    def test_buckets_are_per_token_not_global(self):
+        """一个人打满配额，不能把另一个人饿死 —— 这是按 token 分桶的全部意义。"""
+        pa = self.a.authenticate(f"Bearer {ALICE}")
+        self.a.consume(pa)
+        self.a.consume(pa)
+        with self.assertRaises(auth.RateLimited):
+            self.a.consume(pa)
+        # alice 已满，bob 是管理员 → 豁免（事故里运维要能一直读 health）
+        self.a.consume(self.a.authenticate(f"Bearer {BOB}"))
+
+    def test_open_mode_allows_everything_and_says_so(self):
+        op = auth.Authenticator.open()
+        self.assertEqual(op.mode, "none")       # 不假装有鉴权
+        self.assertTrue(op.authenticate(None).owns("anyone"))
+        op.consume(op.authenticate(None))       # 不限流，不抛
+
+
+class _AuthHttpCase(unittest.TestCase):
+    """HTTP 层鉴权测试的公共骨架：真起服务器，真发头。"""
+
+    TOKENS = (f"alice:{ALICE}", f"bob:{BOB}")
+    ADMINS = ("bob",)
+    RATE = 0.0                                  # 0 = 不限流；要测限流的类自己覆盖
+
+    @classmethod
+    def setUpClass(cls):
+        from scripts.proof_service import make_server  # noqa: PLC0415
+        cls.tmp = tempfile.TemporaryDirectory()
+        reg = service.registry_from_paths([CONTENT_PACK])
+        cls.svc = ProofService(reg, Path(cls.tmp.name), host_check=True,
+                               concurrency=1, max_queue=4)
+        cls.authn = auth.Authenticator.from_sources(
+            cls.TOKENS, admin_labels=cls.ADMINS, rate=cls.RATE, burst=4)
+        cls.httpd = make_server(cls.svc, "127.0.0.1", 0, cls.authn)
+        cls.host, cls.port = cls.httpd.server_address
+        cls.svc.start()
+        cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+        cls.httpd.server_close()
+        cls.svc.stop()
+        cls.tmp.cleanup()
+
+    def _call(self, method, path, body=None, token=ALICE, scheme="Bearer", headers=None):
+        """返回 ``(status, payload, headers)``。``token=None`` ⇒ 不发 Authorization。"""
+        url = f"http://{self.host}:{self.port}{path}"
+        data = None if body is None else json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method=method)
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        if token is not None:
+            req.add_header("Authorization", f"{scheme} {token}")
+        for k, v in (headers or {}).items():
+            req.add_header(k, v)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.status, json.loads(resp.read()), dict(resp.headers)
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read() or b"{}"), dict(exc.headers)
+
+
+class TestAuthOverHttp(_AuthHttpCase):
+    """401 的形状 + 作业归属。"""
+
+    def test_no_token_is_401_with_www_authenticate(self):
+        code, body, headers = self._call("GET", "/v1/health", token=None)
+        self.assertEqual(code, 401)
+        # 机器可读的「你该换哪种凭据」—— 401 不带它，调用方只能靠猜
+        self.assertEqual(headers.get("WWW-Authenticate"),
+                         'Bearer realm="pop-proof-service"')
+        self.assertIn("Authorization", body["error"])
+
+    def test_wrong_token_is_401_and_says_nothing_else(self):
+        code, body, _ = self._call("GET", "/v1/health", token="z" * 32)
+        self.assertEqual(code, 401)
+        self.assertNotIn("z" * 32, body["error"])
+
+    def test_health_reports_bearer_not_none(self):
+        """「到底有没有在鉴权」必须能从外部问出来。"""
+        code, body, _ = self._call("GET", "/v1/health")
+        self.assertEqual(code, 200)
+        self.assertEqual(body["auth"]["mode"], "bearer")
+        self.assertEqual(sorted(body["auth"]["tokens"]), ["alice", "bob"])
+        self.assertNotIn(ALICE, json.dumps(body))
+
+    def test_a_job_is_visible_to_the_token_that_submitted_it(self):
+        """**读别人的作业**这条（docstring 里点名的那条）真的被关上了。
+
+        这一例测「自己的读得到」，下一例测「别人的读不到」，再下一例测「管理员
+        读得到」—— 三例缺一，都可能是「全放开」或「全锁死」而看不出来。
+        """
+        _, job, _ = self._call("POST", "/v1/attest",
+                               {"policy_id": "agent-content-v1", "response": CLEAN},
+                               token=ALICE)
+        job_id = job["job_id"]
+        self.assertEqual(job.get("submitted_by"), "alice")
+
+        mine = _wait_for(lambda: self._call("GET", f"/v1/attest/{job_id}", token=ALICE)[1],
+                         lambda b: b["state"] in service.STATE_TERMINAL_STATES)
+        self.assertEqual(mine["state"], service.STATE_DONE, mine.get("error"))
+
+    def test_an_admin_token_can_read_any_job(self):
+        """运维的出口：作业挂了之后总得有人能翻开看。"""
+        _, job, _ = self._call("POST", "/v1/attest",
+                               {"policy_id": "agent-content-v1", "response": CLEAN},
+                               token=ALICE)
+        job_id = job["job_id"]
+        got = _wait_for(lambda: self._call("GET", f"/v1/attest/{job_id}", token=BOB)[1],
+                        lambda b: b["state"] in service.STATE_TERMINAL_STATES)
+        self.assertEqual(got["state"], service.STATE_DONE, got.get("error"))
+        self.assertEqual(got.get("submitted_by"), "alice")   # 谁提的一目了然
+
+    def test_someone_elses_job_is_404_and_indistinguishable_from_missing(self):
+        """**404 而不是 403**：403 等于确认「这个 job_id 存在」。
+
+        判据不只是状态码相同，而是**措辞相同** —— 只要两者能被分开读出，
+        它就是一个探测别家 job_id 的预言机。
+        """
+        _, job, _ = self._call("POST", "/v1/attest",
+                               {"policy_id": "agent-content-v1", "response": CLEAN},
+                               token=BOB)
+        other = job["job_id"]
+        # alice 不是 admin → 看不到 bob 的作业
+        code_a, body_a, _ = self._call("GET", f"/v1/attest/{other}", token=ALICE)
+        code_m, body_m, _ = self._call("GET", "/v1/attest/job-does-not-exist",
+                                       token=ALICE)
+        self.assertEqual((code_a, code_m), (404, 404))
+
+        def _shape(err, jid):
+            return err.replace(jid, "<id>")
+
+        self.assertEqual(_shape(body_a["error"], other),
+                         _shape(body_m["error"], "job-does-not-exist"))
+
+    def test_unauthenticated_requests_cannot_submit(self):
+        code, _, _ = self._call("POST", "/v1/attest",
+                                {"policy_id": "agent-content-v1", "response": CLEAN},
+                                token=None)
+        self.assertEqual(code, 401)
+
+
+class TestRateLimitOverHttp(_AuthHttpCase):
+    """429 的形状（一个**不开**限流的类里测不出限流）。"""
+
+    RATE = 0.5          # 0.5 次/秒、burst 4 → 头 4 次过，第 5 次 429
+    ADMINS = ("bob",)
+    TOKENS = (f"alice:{ALICE}", f"bob:{BOB}")
+
+    def test_rate_limit_returns_429_with_retry_after(self):
+        codes = []
+        for _ in range(6):
+            code, body, headers = self._call(
+                "POST", "/v1/check",
+                {"policy_id": "agent-content-v1", "response": CLEAN})
+            codes.append(code)
+            if code == 429:
+                self.assertGreaterEqual(int(headers["Retry-After"]), 1)
+                self.assertIn("配额", body["error"])
+        self.assertIn(429, codes)
+        self.assertEqual(codes[0], 200)         # 头一次一定过
+
+    def test_admin_token_is_exempt_from_the_quota(self):
+        """事故里运维要能一直读 health，而那正是配额最可能被自己打满的时候。"""
+        for _ in range(8):
+            code, _, _ = self._call("GET", "/v1/health", token=BOB)
+            self.assertEqual(code, 200)
 
 
 @unittest.skipUnless(os.environ.get("POP_TEST_PROOF") == "1",

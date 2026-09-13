@@ -28,7 +28,7 @@
 
 ```bash
 cd Proof-of-Policy/03_代码仓库/zk-policy     # 仓库根（目录曾名为“方向二”，已重命名）
-python3 -m unittest discover tests -v          # 期望 554 passed（15 skip：2 个 compressed fixture + 3 个 POP_TEST_PROOF 门控 + 1 个 POP_TEST_EZKL 门控 + 5 个 POP_TEST_COMPOSE 门控 + 1 个 POP_TEST_SESSION 门控 + 1 个 POP_TEST_MULTIPARTY 门控 + 1 个 POP_TEST_LLM 门控 + 1 设计内）
+python3 -m unittest discover tests -v          # 期望 581 passed（15 skip：2 个 compressed fixture + 3 个 POP_TEST_PROOF 门控 + 1 个 POP_TEST_EZKL 门控 + 5 个 POP_TEST_COMPOSE 门控 + 1 个 POP_TEST_SESSION 门控 + 1 个 POP_TEST_MULTIPARTY 门控 + 1 个 POP_TEST_LLM 门控 + 1 设计内）
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json | head    # 编译出 ConstraintSpec
 ```
 
@@ -397,7 +397,7 @@ python3 scripts/verify_session.py --session .../session.json \
 
 ## 验收判据（复现成功）
 
-- `python3 -m unittest discover tests` → **554 passed（15 skip）**（2026-09-13 复跑；skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，3 = `POP_TEST_PROOF` 门控的用例（证明层 2 例 + 证明服务的真 vkey 出证 1 例），1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = `POP_TEST_SESSION` 门控的会话聚合证明端到端用例，1 = `POP_TEST_MULTIPARTY` 门控的多证明者端到端用例（真出两份切片证明），1 = `POP_TEST_LLM` 门控的真 provider 用例（需要真 API key + 网络；同模块里走本地 SSE 桩的那 4 例**默认就跑**），1 = 设计内「依赖已装」用例）；
+- `python3 -m unittest discover tests` → **581 passed（15 skip）**（2026-09-13 复跑；skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，3 = `POP_TEST_PROOF` 门控的用例（证明层 2 例 + 证明服务的真 vkey 出证 1 例），1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = `POP_TEST_SESSION` 门控的会话聚合证明端到端用例，1 = `POP_TEST_MULTIPARTY` 门控的多证明者端到端用例（真出两份切片证明），1 = `POP_TEST_LLM` 门控的真 provider 用例（需要真 API key + 网络；同模块里走本地 SSE 桩的那 4 例**默认就跑**），1 = 设计内「依赖已装」用例）；
 - `scripts/prove_policy.py` → **RESULT: PASS**；
 - `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 **整批重跑**：19 条向量各出一份真 core 证明，`--chunk 2` 切到 10 个独立子进程，约 45 min，见 `modules/08-tests-bench.md` §5）
   （真实证明分块跑：默认 `--chunk 4`，那次重跑用 `--chunk 2` = 10 块，见 §4 的说明；`--no-prove` 时跳过真实证明）；

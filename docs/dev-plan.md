@@ -143,7 +143,7 @@
   —— ⚠️ **初稿已由 LaTeX 版取代**：权威源是 `paper/proof-of-policy.tex`（xelatex + ctex），
   `.md` 只是阅读镜像且已落后（缺 L8/L9）。以 `.tex` 为准。
 - [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；
-  测试 **554 全绿 / 15 skip**（2026-09-13 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
+  测试 **581 全绿 / 15 skip**（2026-09-13 复跑；skip 均为设计内，见 `docs/security-model.md` §6）
 - [x] **待办（延伸）—— 三项均已完成**（此前误记为待办，2026-09-12 订正）：
   verifier-only 二进制（`pop-verify`，见 Phase P7-a）；链上锚定 RPC 后端（`RpcAnchorBackend`，见 P7-c）；
   format/budget/tool 规则入电路（见 P7-b）
@@ -178,7 +178,7 @@ P0 ─► P1 ─► P2 ─► P3(透明MVP★)
 
 ## 5. 延伸路线：接真 agent + 证明服务（2026-09-13 立）
 
-> **前置**：Phase 0–6 与 P7 全部收尾，测试 **554 全绿 / 15 skip**，
+> **前置**：Phase 0–6 与 P7 全部收尾，测试 **581 全绿 / 15 skip**，
 > `scripts/demo_all.sh` 8 条支路全通。本节是**交付之后**的两步 ——
 > 与仍在外部排队的 **T1**（≥64 GB 云机，见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9）
 > **互不阻塞**，也**不能**靠 T1 替代：T1 补的是链上/云机那一格，这两步补的是
@@ -386,7 +386,7 @@ GET  /v1/policies                                                 → 已注册�
 |---|---|
 | 库：策略注册表 + 作业队列 + 两段出证 | `policydsl/service.py` |
 | HTTP 驱动（纯标准库） | `scripts/proof_service.py` |
-| 测试（35 例；真 vkey 出证那条进 `POP_TEST_PROOF` 门控） | `tests/test_proof_service.py` |
+| 测试（62 例；真 vkey 出证那条进 `POP_TEST_PROOF` 门控） | `tests/test_proof_service.py` |
 | 运维文档 | [`runbook-proof-service.md`](runbook-proof-service.md) |
 
 **过程中被 `verify_cert.py` 的 `trace_binding` 卡当场抓出的一个真 bug**：第一版
@@ -413,6 +413,40 @@ died with <Signals.SIGKILL: 9>` —— 一屏临时路径，唯独没说「内�
 （400 + 说明 + 指路 `issue_cert.py`）。陪伴证明只存在于那条命令行路径，服务发一张
 `delegated` 非空却没有 `companion` 的证书只会「看起来验过了」。注册表里也如实标
 `serviceable: false`，不等到调用时才说。
+
+#### 5.2.5 可选加固（2026-09-13 起，按顺序做）
+
+§5.2 交付时点名了三项「可选加固」。它们都不是功能缺口，而是**把已经写下来的
+边界真正关掉** —— 三项恰好对应 runbook §5 里三条「已知边界」。
+
+**① 鉴权层 —— 已做（#101）。** runbook §5 的边界 1 原文是「服务不区分调用方，
+也没有速率限制」。关掉它做了四件事：
+
+- `policydsl/auth.py`（新模块）：token 解析/匹配/令牌桶。**单独成模块而不是塞进
+  handler** —— 错的鉴权不是「少一个功能」而是「看起来有」，所以它必须能在**不起
+  socket** 的情况下被穷举测（新增 27 例，其中 **18 例不碰 HTTP**）。
+- **401 / 404 / 429 三条口径**：401 带 `WWW-Authenticate` 且**区分「格式错」与
+  「token 错」**；**别人的作业返 404 且措辞与「不存在」逐字相同**（403 等于确认
+  「这个 id 存在」，那就成了探测预言机）；配额按 **token** 分桶而不是按 IP
+  （一个 NAT 出口后面是一整个机房），桶是令牌桶而不是固定窗口（固定窗口在边界
+  上允许 2× 突发）。
+- **没配 token ≠ 放行，但也不假装有鉴权**：服务照常能起，`/v1/health` 里如实写
+  `auth: "none"`、启动横幅打 `⚠`；`--require-auth` 在没配 token 时**拒绝启动**。
+  「到底有没有在鉴权」是运维**能问出来**的（`curl -i /v1/health | head -1` 期望
+  401），不是靠读文档。
+- **两处如实留下的边界**（写进 runbook §5）：token 明文过网（绑非本机地址时启动
+  横幅会警告，TLS 得在前面终结）；权限只有 `--auth-admin` 这个二元开关，没有
+  「只能 check 不能 attest」这类细粒度授权。
+
+过程中被真实运行抓出的一个缺陷：**启动横幅在 stdout 重定向时不可见**。`print()`
+写到管道是块缓冲的，而服务紧接着就进 `serve_forever()` 再不出声 —— 用
+systemd/docker 起服务的人看不到这段横幅，而「鉴权开没开」正是它唯一要回答的问题。
+加了显式 `flush()`。
+
+**验收**：`python3 -m unittest tests.test_proof_service` → 62 例（35 → 62）；真起
+服务用 `curl` 走了一遍 —— 无 token `401`（含 `WWW-Authenticate`）、错 token
+`token 不认识`、对 token `200`、`/v1/health` 的 `auth.mode == "bearer"`、连打 40 次
+在 burst 用尽后返 `429`（`Retry-After: 1`）再随令牌桶回填恢复 `200`。
 
 ### 5.3 顺带修掉的口径问题：`demo_e2e.py` 的魔法 `vkey = "demo"`
 

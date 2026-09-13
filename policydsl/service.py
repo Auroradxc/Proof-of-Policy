@@ -509,6 +509,9 @@ class Job:
     job_id: str
     seq: int
     policy_id: str
+    #: 提交者的 token **标签**（不是 secret）。开鉴权时用它判「这作业是不是你的」，
+    #: 见 :meth:`ProofService.public_job`。关鉴权时是 ``"anonymous"``。
+    owner: str = ""
     state: str = STATE_QUEUED
     created_at: float = field(default_factory=time.time)
     started_at: Optional[float] = None
@@ -537,6 +540,10 @@ class Job:
             "nonce": self.nonce_hex, "proved": self.proved,
             "elapsed": self.elapsed,
         }
+        if self.owner:
+            # 只有在真有人认领时才写这个字段：关鉴权时每条都是 anonymous，
+            # 把它印在每一份响应里只会让读的人以为「服务在区分调用方」。
+            out["submitted_by"] = self.owner
         if queue_position is not None:
             out["queue_position"] = queue_position
         if self.state == STATE_FAILED:
@@ -663,7 +670,7 @@ class ProofService:
             self._outstanding += 1
 
     def submit(self, policy_id: str, response: str, nonce: bytes = b"",
-               receipts: Optional[Sequence[Any]] = None) -> Job:
+               receipts: Optional[Sequence[Any]] = None, owner: str = "") -> Job:
         """入队一次出证。返回的 :class:`Job` 处于 ``queued``，**不等于**已开工。"""
         packed = self.registry.get(policy_id)          # 未注册的策略当场 4xx
         _require_serviceable(packed)
@@ -673,7 +680,8 @@ class ProofService:
             with self._lock:
                 self._seq += 1
                 job = Job(job_id=f"job-{uuid.uuid4().hex[:16]}", seq=self._seq,
-                          policy_id=policy_id, nonce_hex=challenge.nonce_hex(nonce),
+                          policy_id=policy_id, owner=owner,
+                          nonce_hex=challenge.nonce_hex(nonce),
                           proved=not self.host_check)
                 self._jobs[job.job_id] = job
             self._q.put((job.job_id, packed, response, nonce, list(receipts or [])))
@@ -694,13 +702,21 @@ class ProofService:
             raise JobNotFound(f"no such job: {job_id}")
         return job
 
-    def public_job(self, job_id: str) -> Dict[str, Any]:
+    def public_job(self, job_id: str, *, viewer: Optional[Any] = None) -> Dict[str, Any]:
         """``GET /v1/attest/{job}`` 的响应体（含 ``verify_hint``）。
 
         由服务而不是 :class:`Job` 组装：``verify_hint`` 需要账本路径与策略包路径，
         这两样是服务的知识，不是作业的。
+
+        ``viewer`` 非空时判归属（``viewer.owns(job.owner)``，duck-typed 成
+        :class:`policydsl.auth.Principal`）。**不是你的作业报的是
+        :class:`JobNotFound`，不是「无权限」** —— 报 403 等于确认「这个 job_id
+        存在」，那它就成了一个探测别家 job_id 的预言机。两种情况必须从外部
+        完全看不出区别，所以连措辞都用同一个。
         """
         job = self.get(job_id)
+        if viewer is not None and not viewer.owns(job.owner):
+            raise JobNotFound(f"no such job: {job_id}")
         out = job.public(self.queue_position(job))
         if job.issued is not None:
             out["verify_hint"] = verify_hint(job.issued,

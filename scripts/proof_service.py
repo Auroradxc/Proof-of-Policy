@@ -18,10 +18,17 @@ web 框架；引入 FastAPI/uvicorn 会把注意力从证据挪到框架上。
     python3 scripts/proof_service.py --host-check          # 秒级演示（出 unproven 证书）
     SP1_PROVER=cpu python3 scripts/proof_service.py        # 真实证明（~2.5 分钟/次，需 ~10.2 GiB）
 
-⚠️ **无鉴权**：默认只绑 ``127.0.0.1``，且**没有任何身份校验** —— 谁能连上谁就能
-出证、就能读别人的作业。要放到网络上必须先自行加一层（反向代理 + mTLS/OIDC），
-或者把它放在只对本机/内网开放的端口上。这一点写进 ``docs/runbook-proof-service.md``，
-不是「以后再说」。
+**鉴权**：``--auth-token label:secret``（可重复）/ ``--auth-file`` / ``$POP_SERVICE_TOKEN``
+三处合起来生效，判断逻辑在 ``policydsl/auth.py``。没配 token 时服务照常能起（本机
+演示不该被逼着先造密钥），但 ``/v1/health`` 里如实写 ``auth: "none"``、启动横幅打
+``⚠`` —— 想强制要求就用 ``--require-auth``，它在没配 token 时**拒绝启动**。
+
+开了鉴权之后：**作业只对提交它的那把 token 可见**（别人问同一个 job_id 得到的是
+404，不是 403 —— 403 等于确认「这个 id 存在」）。运维要看得全，把它的标签列进
+``--auth-admin``。
+
+默认只绑 ``127.0.0.1``。要放到网络上，除了这里的 bearer token，还应在前面加一层
+TLS 终结（token 是明文过网的）。见 ``docs/runbook-proof-service.md``。
 """
 
 from __future__ import annotations
@@ -37,7 +44,7 @@ from typing import Any, Dict, Optional, Tuple
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import challenge, keys, service
+from policydsl import auth, challenge, keys, service
 from policydsl.service import ProofService, ServiceError
 
 #: 请求体上限。这是**防御**而不是配额：``http.server`` 会把 ``Content-Length``
@@ -62,18 +69,53 @@ def _error(handler: BaseHTTPRequestHandler, code: int, message: str) -> None:
 class Handler(BaseHTTPRequestHandler):
     """把 HTTP 动词/路径翻成 :class:`ProofService` 调用。
 
-    ``service`` 放在类属性上由 ``make_server`` 注入 —— ``http.server`` 每个
-    连接新建一个 handler 实例，实例属性传不进去。
+    ``service`` / ``authn`` 放在类属性上由 ``make_server`` 注入 —— ``http.server``
+    每个连接新建一个 handler 实例，实例属性传不进去。
     """
 
     service: ProofService
-    server_version = "pop-proof-service/1.0"
+    authn: auth.Authenticator
+    server_version = "pop-proof-service/1.1"
 
     # ------------------------------------------------------------ 工具
 
     def log_message(self, fmt: str, *args: Any) -> None:
         """把访问日志写到 stderr，并带上方法/路径（缺省只有裸的请求行）。"""
         sys.stderr.write("[proof-service] %s %s\n" % (self.address_string(), fmt % args))
+
+    # ------------------------------------------------------------ 鉴权
+
+    def _principal(self) -> Optional[auth.Principal]:
+        """鉴权 + 限流。通过返回身份，不通过**已经回过响应**、返回 None。
+
+        两件事在这里一起做，因为它们对调用方是同一个问题的两面：「这次请求要不要
+        受理」。分开做就得在每条路由上各写一遍，而漏写一处就是一个不设防的入口。
+        """
+        try:
+            principal = self.authn.authenticate(self.headers.get("Authorization"))
+        except auth.Unauthorized as exc:
+            self.send_response(401)
+            body = json.dumps({"error": str(exc)}, ensure_ascii=False).encode("utf-8")
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            # 401 必须带 WWW-Authenticate：它既是 RFC 的硬要求，也是唯一一个
+            # 机器可读的「你该换哪种凭据」的信号。
+            self.send_header("WWW-Authenticate", 'Bearer realm="pop-proof-service"')
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return None
+        try:
+            self.authn.consume(principal)
+        except auth.RateLimited as exc:
+            self.send_response(429)
+            body = json.dumps({"error": str(exc)}, ensure_ascii=False).encode("utf-8")
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Retry-After", str(exc.retry_after))
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return None
+        return principal
 
     def _read_json(self) -> Optional[Dict[str, Any]]:
         """读并解析请求体。任何问题都**当场回**，返回 None 表示已经回复过了。"""
@@ -134,9 +176,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:                       # noqa: N802 —— BaseHTTPRequestHandler 的约定
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        principal = self._principal()
+        if principal is None:
+            return
         try:
             if path == "/v1/health":
+                # ``auth.mode`` 与 ``auth.tokens``（标签，不是 secret）都在这里 ——
+                # 「这个服务到底有没有在鉴权」必须是**运维能从外部问出来**的，
+                # 否则跑起来之后没人分得清「配了 token」和「以为配了 token」。
                 _json_response(self, 200, {"status": "ok", "policies": len(self.service.registry),
+                                           "auth": self.authn.snapshot(),
                                            **self.service.snapshot()})
             elif path == "/v1/policies":
                 _json_response(self, 200, {"policies": self.service.registry.summaries()})
@@ -145,7 +194,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not job_id:
                     _error(self, 400, "缺少 job_id：GET /v1/attest/{job}")
                     return
-                _json_response(self, 200, self.service.public_job(job_id))
+                _json_response(self, 200, self.service.public_job(job_id, viewer=principal))
             else:
                 _error(self, 404, f"没有这条路径: {self.path}")
         except (service.UnknownPolicy, service.JobNotFound) as exc:
@@ -159,6 +208,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:                      # noqa: N802
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
+        principal = self._principal()
+        if principal is None:
+            return
         try:
             body = self._read_json()
             if body is None:
@@ -175,7 +227,8 @@ class Handler(BaseHTTPRequestHandler):
                 if req is None:
                     return
                 pid, response, receipts = req
-                job = self.service.submit(pid, response, self._nonce(body), receipts)
+                job = self.service.submit(pid, response, self._nonce(body), receipts,
+                                          owner=principal.label)
                 _json_response(self, 202, job.public(self.service.queue_position(job)))
             else:
                 _error(self, 404, f"没有这条路径: {self.path}")
@@ -197,14 +250,20 @@ class Handler(BaseHTTPRequestHandler):
             _error(self, 500, f"{type(exc).__name__}: {exc}")
 
 
-def make_server(svc: ProofService, host: str, port: int) -> ThreadingHTTPServer:
+def make_server(svc: ProofService, host: str, port: int,
+                authn: Optional[auth.Authenticator] = None) -> ThreadingHTTPServer:
     """建 HTTP 服务器。
 
     ``ThreadingHTTPServer``：``/v1/check`` 是毫秒级的、可以被并发调；真正的串行
     点在证明队列里（:class:`ProofService` 的 ``concurrency``），不在 HTTP 层。
     起单线程的 ``HTTPServer`` 会让一个正在轮询的客户端把别人的 check 也堵住。
+
+    ``authn`` 缺省是 :meth:`auth.Authenticator.open`（**放开**）—— 缺省值在这里
+    必须与 ``main()`` 显式构造的那一个一致，否则「忘了传」与「故意不鉴权」在行为
+    上没法区分；``main()`` 会把 ``--require-auth`` 的检查做在启动之前。
     """
-    handler = type("BoundHandler", (Handler,), {"service": svc})
+    handler = type("BoundHandler", (Handler,), {
+        "service": svc, "authn": authn if authn is not None else auth.Authenticator.open()})
     httpd = ThreadingHTTPServer((host, port), handler)
     httpd.daemon_threads = True
     return httpd
@@ -221,7 +280,8 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--ledger", type=Path, default=None,
                     help="锚定账本（缺省 <out-dir>/ledger.jsonl）")
     ap.add_argument("--host", default="127.0.0.1",
-                    help="绑定地址。**默认只绑本机** —— 服务无鉴权，见模块 docstring")
+                    help="绑定地址。**默认只绑本机** —— token 是明文过网的，"
+                         "绑非本机时前面必须有 TLS 终结，见模块 docstring")
     ap.add_argument("--port", type=int, default=8787)
     ap.add_argument("--concurrency", type=int, default=1,
                     help="证明器线程数。缺省 1 是硬约束：SP1 core 证明峰值 ~10.2 GiB，"
@@ -240,6 +300,23 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--rpc", default=None, help="EVM RPC：证书摘要同时登记上链")
     ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
     ap.add_argument("--private-key", default=None, help="上链提交私钥")
+
+    g = ap.add_argument_group(
+        "鉴权",
+        "三处凭据**合起来**生效（命令行 + 文件 + 环境变量）。没配 token 时服务照常"
+        "能起，但 /v1/health 会如实写 auth: none；--require-auth 会让它拒绝启动。")
+    g.add_argument("--auth-token", action="append", default=None, metavar="LABEL:SECRET",
+                   help="一把 API key（可重复）。省略 LABEL 时由 secret 派生")
+    g.add_argument("--auth-file", type=Path, default=None,
+                   help="token 文件：一行一个 `label:secret`，# 开头是注释")
+    g.add_argument("--auth-admin", action="append", default=None, metavar="LABEL",
+                   help="把某个标签设为管理员（可读**所有**作业、不限流）。可重复")
+    g.add_argument("--require-auth", action="store_true",
+                   help="没配任何 token 就**拒绝启动** —— 生产上该开这个")
+    g.add_argument("--rate", type=float, default=10.0,
+                   help="每个 token 的配额（请求/秒，0 = 不限流）。默认 10 —— "
+                        "每次 /v1/check 都要签一张证书并锚一条账本，它不是免费的")
+    g.add_argument("--burst", type=int, default=30, help="令牌桶容量（允许的瞬时突发）")
     return ap
 
 
@@ -262,13 +339,27 @@ def main() -> int:
               file=sys.stderr)
         return 2
 
+    try:
+        authn = auth.Authenticator.from_sources(
+            args.auth_token or [], path=args.auth_file, admin_labels=args.auth_admin or [],
+            rate=args.rate, burst=args.burst)
+    except auth.AuthError as exc:
+        # 凭据配置写错**当场拒绝启动**。带着半套凭据跑起来的服务，运维会以为
+        # 「鉴权是开的」，而实际可能一把钥都没生效。
+        print(f"鉴权配置有误：{exc}", file=sys.stderr)
+        return 2
+    if args.require_auth and not authn.enabled:
+        print("--require-auth 要求至少配一把 token（--auth-token / --auth-file / "
+              f"${auth.ENV_TOKENS}）—— 拒不启动", file=sys.stderr)
+        return 2
+
     svc = ProofService(
         registry, args.out_dir, ledger=args.ledger,
         signer=keys.signer_from_env(args.key),
         concurrency=args.concurrency, max_queue=args.max_queue,
         host_check=args.host_check, mode=args.mode, proof_mode=args.proof_mode,
         rpc_url=args.rpc, contract=args.contract, private_key=args.private_key)
-    httpd = make_server(svc, args.host, args.port)
+    httpd = make_server(svc, args.host, args.port, authn)
     actual_host, actual_port = httpd.server_address[0], httpd.server_address[1]
     svc.start()
 
@@ -284,8 +375,26 @@ def main() -> int:
           + ("   （--host-check：作业只做宿主校验，标注 unproven）"
              if args.host_check else "   （真实证明：~2.5 分钟/次，峰值 ~10.2 GiB）"))
     print(f"  签名者    : {svc.signer.keyid}")
-    print("  ⚠ 无鉴权 —— 默认只绑 127.0.0.1；放到网络上必须先加一层，"
-          "见 docs/runbook-proof-service.md")
+    if authn.enabled:
+        admins = [lbl for lbl in authn.labels
+                  if lbl in set(args.auth_admin or [])]
+        print(f"  鉴权      : bearer，{len(authn.labels)} 把钥（{', '.join(authn.labels)}）"
+              f"；配额 {authn.rate:g} 次/秒、突发 {authn.burst}"
+              + (f"；管理员 {', '.join(admins)}" if admins else ""))
+        print("              作业只对提交它的那把钥可见（别人问是 404）")
+        if not args.require_auth:
+            print("              ⚠ 没开 --require-auth：**没带 token 的请求仍会被拒**，"
+                  "但这个开关本身没锁 —— 生产上开它")
+    else:
+        print("  ⚠ 无鉴权 —— /v1/health 里会如实写 auth: none。默认只绑 127.0.0.1；"
+              "放到网络上必须先加一层，见 docs/runbook-proof-service.md")
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        print(f"  ⚠ 绑的是 {args.host}（非本机）—— token 是明文过网的，"
+              f"前面必须有 TLS 终结")
+    # 必须**显式 flush**：stdout 重定向到文件时是块缓冲的，而服务接下来就进
+    # `serve_forever()` 再不出声了 —— 不 flush 的话，用 systemd/docker 起服务
+    # 的人会看不到这段横幅，而「鉴权到底开没开」正是它唯一要回答的问题。
+    sys.stdout.flush()
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
