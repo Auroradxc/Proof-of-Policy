@@ -542,7 +542,16 @@ python3 scripts/verify_cert.py --cert c.json --pack p.json --ledger l.jsonl \
 ```bash
 python3 scripts/proof_service.py --host-check      # 演示/边缘：作业几秒，证书标 unproven
 SP1_PROVER=cpu python3 scripts/proof_service.py    # 真证明：~2.5 分钟/作业，峰值 ~10.2 GiB
+python3 scripts/proof_service.py --rpc http://127.0.0.1:8545 --contract 0x… \
+  --auth-file /etc/pop/tokens --require-auth       # 生产的样子：同时上链 + 鉴权
 ```
+
+给了 `--rpc` 与 `--contract` 就**同时**把证书摘要登记进链上 `Anchor` 合约
+（**两个必须同时给**，只给一个**拒绝启动** —— 静默退回文件账本的那种错没有症状：
+证书照样签得出来、账本照样自洽，等到有人去链上查那份摘要才发现从来没有过）。
+`/v1/health` 多出 `anchor_backend` 与 `chain{healthy, detail, age}`；链已知断时
+`/v1/check` 与 `/v1/attest` 都返 `503`，且在**收下作业之前**就拒（免得用 ~2.5 分钟
++ ~10.2 GiB 去回答一个启动时就有答案的问题）。
 
 库在 `policydsl/service.py`（+ `policydsl/auth.py`），本脚本只做 HTTP（**纯标准库
 `http.server`**，零新依赖）。**默认只绑 `127.0.0.1:8787`**；没配 token 时**默认无
@@ -556,7 +565,7 @@ SP1_PROVER=cpu python3 scripts/proof_service.py    # 真证明：~2.5 分钟/作
 |---|---|---|
 | `POST` | `/v1/check` | 宿主判定（Python 参考评估器）+ **unproven** 证书，**毫秒级、不占队列** |
 | `POST` | `/v1/attest` | 入队，返 `202` + `job_id` + `queue_position` |
-| `GET` | `/v1/attest/{job}` | `queued` / `proving` / `done` / `failed` |
+| `GET` | `/v1/attest/{job}` | `queued` / `proving` / `done` / `failed`。**服务重启后仍答得出来**（记录在 `<out-dir>/jobs/<job_id>/job.json`，产物是权威、记录是索引） |
 | `GET` | `/v1/health` | 并发上限 / 队列深度 / 计数（运维看的） |
 | `GET` | `/v1/policies` | 已注册策略（含 `serviceable` 标注） |
 
@@ -583,6 +592,7 @@ curl -s -X POST localhost:8787/v1/attest -H 'Content-Type: application/json' \
 | `404` | 策略 / 作业不存在，**或作业不是你的** | 后一种报 404 而不是 403：403 等于确认「这个 id 存在」，那就成了探测别家 job_id 的预言机。两种情况措辞**逐字相同** |
 | `400` | 缺字段 / 策略含语义规则（见下） | 报错里说清楚是哪一条、怎么办 |
 | `413` | 请求体超 1 MiB（**不读正文**就回） | `http.server` 会把声明的字节全读进内存 |
+| `503` | 链上账本不可用（给了 `--rpc`/`--contract` 而链不通） | 不是 `500`：`500` 是「这个服务坏了，别重试」，`503` 是「依赖暂时不可用，待会儿再来」。报错明说「**没有签发证书**」，免得调用方去找一个不存在的产物 |
 
 **一处刻意的能力边界**：含语义规则（`semantic_bound`）的策略**当场拒**（400）。
 陪伴证明只存在于 `issue_cert.py` 那条命令行路径，服务发一张 `delegated` 非空却没有
