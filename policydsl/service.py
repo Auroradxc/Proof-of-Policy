@@ -37,6 +37,7 @@ import hashlib
 import json
 import os
 import queue
+import re
 import signal
 import subprocess
 import sys
@@ -63,6 +64,17 @@ STATE_DONE = "done"
 STATE_FAILED = "failed"
 
 STATE_TERMINAL_STATES = (STATE_DONE, STATE_FAILED)
+
+#: 作业记录的文件名（每个作业目录一份）。
+#:
+#: 它是一份**索引**，不是权威 —— 权威是同一个目录里的 ``cert.json``。两者的
+#: 分工在 :meth:`ProofService._load_job` 里被写成了规则：证书在，`done` 就成立；
+#: 证书不在，`done` 就站不住。
+JOB_FILE = "job.json"
+
+#: 服务自己生成的 job_id 形状（``job-`` + 16 位十六进制，见 :meth:`submit`）。
+#: 接回磁盘记录时要**先过这一关**：job_id 来自 URL，会被拼进文件路径。
+_JOB_ID_RE = re.compile(r"^job-[0-9a-f]{16}$")
 
 
 class ServiceError(RuntimeError):
@@ -343,6 +355,47 @@ class Issued:
                 "cert": self.envelope,
                 "dir": str(self.out_dir)}
 
+    @classmethod
+    def from_dir(cls, path: Path, *, expect_digest: Optional[str] = None) -> "Issued":
+        """从产物目录重建 —— **磁盘是权威**。
+
+        重启后要把一条作业答出来，不能只念记录：记录里那个 ``cert_digest`` 与
+        磁盘上这一份证书是**两件事**。所以这里一律**重新读文件**，并且：
+
+        - ``expect_digest`` 给了就核对，对不上**报错**而不是挑一个信 —— 记录说
+          是一份、磁盘上是另一份时，无论信哪个都是在替调用方做一个它没授权的
+          选择；
+        - ``envelope`` 里的载荷必须与 ``payload.json`` **是同一份**（信封是签名
+          对象，payload.json 是人读的那份，二者漂移说明有人只改了其中之一）。
+
+        ``proof_mode`` / ``vkey_hash`` 取自载荷的 ``binding``：证书本来就是
+        **自描述**的，不需要另存一份元信息。
+        """
+        path = Path(path)
+        payload = json.loads((path / "payload.json").read_text(encoding="utf-8"))
+        envelope = json.loads((path / "cert.json").read_text(encoding="utf-8"))
+        digest = cert.cert_digest(payload)
+        if expect_digest and expect_digest != digest:
+            raise ValueError(
+                f"记录里的 cert_digest={expect_digest}，而磁盘上重算出来的是 {digest} "
+                f"—— 记录与产物不是同一份证书")
+        if cert.envelope_payload(envelope) != payload:
+            raise ValueError("cert.json 里的载荷与 payload.json 不是同一份 —— 只改了其中一个")
+        binding = payload.get("binding") or {}
+        proof = path / "proof.bin"
+        receipts = path / "receipts.json"
+        return cls(
+            payload=payload, envelope=envelope, digest=digest, out_dir=path,
+            proof_mode=binding.get("proof_mode") or (
+                # 载荷没标注时按同一套口径回推（见 cert.build_payload 的说明）：
+                # 没有证明工件 ⇒ 只能记「未证明」；有工件却没标注 ⇒ 如实记
+                # unknown，**不**替出证方假设成安全的那一档。
+                cert.PROOF_MODE_UNPROVEN if not binding.get("proof_sha256") else "unknown"),
+            vkey_hash=binding.get("vkey_hash") or cert.VKEY_HASH_UNPROVEN,
+            proof_sha256=binding.get("proof_sha256"),
+            proof_path=proof if proof.exists() else None,
+            receipts_path=receipts if receipts.exists() else None)
+
 
 def _write_vectors(out_dir: Path, packed: PackedPolicy, response: str, nonce: bytes,
                    mode: str, receipts: Optional[Sequence[Any]] = None) -> Path:
@@ -546,6 +599,33 @@ class Job:
             return None
         return (self.finished_at or time.time()) - self.started_at
 
+    def record(self) -> Dict[str, Any]:
+        """可落盘的形式（重启后靠它把这条作业接回来）。
+
+        ``owner`` 也落盘，而且是**必须**落盘的那一个：重启之后「别人的作业返
+        404」这条规则要还成立，就得知道它归谁。旧记录缺这个字段时读回来是空串，
+        而空串不匹配任何非管理员的标签 ⇒ **读不到**（fail-closed）。这个默认值
+        是刻意的：不知道归谁，不能变成谁都能读。
+
+        这里只记**指针与摘要**，不记证书正文 —— 正文在 :meth:`Issued.from_dir`
+        那边从磁盘读，两边不会各存一份而漂移。
+        """
+        out: Dict[str, Any] = {
+            "job_id": self.job_id, "seq": self.seq, "policy_id": self.policy_id,
+            "owner": self.owner, "state": self.state, "proved": self.proved,
+            "nonce": self.nonce_hex, "created_at": self.created_at,
+            "started_at": self.started_at, "finished_at": self.finished_at,
+            "error": self.error,
+        }
+        if self.issued is not None:
+            out["issued"] = {
+                "dir": str(self.issued.out_dir),
+                "cert_digest": self.issued.digest,
+                "proof_mode": self.issued.proof_mode,
+                "vkey_hash": self.issued.vkey_hash,
+            }
+        return out
+
     def public(self, queue_position: Optional[int] = None) -> Dict[str, Any]:
         """``GET /v1/attest/{job}`` 的响应体。
 
@@ -736,6 +816,9 @@ class ProofService:
                           nonce_hex=challenge.nonce_hex(nonce),
                           proved=not self.host_check)
                 self._jobs[job.job_id] = job
+            # 落盘在锁外。此刻记的是 ``queued``：它唯一的作用是「重启后这个 id
+            # 不是 404，而是一句说得清的『它没跑完』」—— 见 _load_job 的规则 2。
+            self._persist(job)
             self._q.put((job.job_id, packed, response, nonce, list(receipts or [])))
             return job
         except BaseException:
@@ -748,10 +831,151 @@ class ProofService:
             raise
 
     def get(self, job_id: str) -> Job:
+        """按 id 取作业：内存里没有就去磁盘上接回来（重启后的那条路）。
+
+        **按需读而不是启动时扫全表**：作业目录只增不减，而启动时间不该随历史
+        作业数增长；问一个不存在的 id 只多一次 ``stat``。
+        """
         with self._lock:
             job = self._jobs.get(job_id)
         if job is None:
-            raise JobNotFound(f"no such job: {job_id}")
+            job = self._load_job(job_id)
+            if job is None:
+                raise JobNotFound(f"no such job: {job_id}")
+            with self._lock:
+                self._jobs[job_id] = job
+                # 接回来的记录可能带着更大的 seq（上一个进程发的号）。不抬升
+                # ``_seq`` 的话新作业会与旧记录**撞号** —— 而 seq 正是
+                # ``queue_position`` 排序的依据。
+                self._seq = max(self._seq, job.seq)
+        return job
+
+    # ---------------------------------------------------------------- 落盘 / 接回
+
+    def _job_dir(self, job_id: str) -> Path:
+        return self.out_dir / "jobs" / job_id
+
+    def _persist(self, job: Job) -> None:
+        """把作业记录写进 ``jobs/<job_id>/job.json``（原子替换）。
+
+        **在锁外调用**：``self._lock`` 保护的是内存里的队列状态，而在锁里做 I/O
+        会让一次慢盘把整条队列一起拖住。
+
+        写失败**不让作业失败** —— 证书比这份索引重要得多。但要**大声**（stderr）：
+        「重启后还查得到」是这个文件存在的唯一理由，写不进去等于那个承诺已经悄悄
+        失效了，而静默失效会让人以为持久化是好的。
+        """
+        path = self._job_dir(job.job_id) / JOB_FILE
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(JOB_FILE + ".tmp")
+            tmp.write_text(json.dumps(job.record(), indent=2, sort_keys=True),
+                           encoding="utf-8")
+            # ``os.replace`` 是原子的：崩在写一半只会留下一个 .tmp，
+            # 而不是一个半截 JSON —— 后者会让下次启动读到一个「读不出来的作业」。
+            os.replace(tmp, path)
+        except OSError as exc:
+            print(f"[proof-service] 作业记录写盘失败 {path}: {type(exc).__name__}: {exc}"
+                  f"（作业本身照常继续；但重启之后这条作业就查不到了）",
+                  file=sys.stderr, flush=True)
+
+    def _broken_record(self, job_id: str, why: str) -> Job:
+        """记录坏了也要**答得出来**：返回一条如实说明的失败作业，而不是 404。
+
+        404 说的是「没有这条作业」，而真相是「有，但读不出来」—— 这两句话把人
+        引向完全不同的下一步（前者去查 id 是不是抄错了，后者去修那个文件）。
+        """
+        return Job(job_id=job_id, seq=0, policy_id="?", state=STATE_FAILED, owner="",
+                   error=f"{why}。产物目录还在 {self._job_dir(job_id)}，"
+                         f"可以直接从那里读 cert.json / payload.json")
+
+    def _load_job(self, job_id: str) -> Optional[Job]:
+        """从磁盘接回一条作业记录；没有就返回 ``None``。
+
+        **两条规则**：
+
+        1. **磁盘是权威，记录是索引。** 崩在「证书已落盘」与「记录改 done」两步
+           之间是可能的，此时磁盘上有证书而记录还停在 ``proving``。照记录念
+           「没有证书」是假话 —— 所以只要能读出证书，就是 ``done``。
+        2. **中间态不许接回来当中间态。** 上一个进程已经死了，它手里的作业
+           **不会**再被执行。照原样接回 ``queued``/``proving`` 会让轮询的人
+           **永远等下去**（而没有任何东西会来叫醒他）。所以一律落成终态，并把
+           「为什么会这样」写进 ``error``。
+        """
+        if not _JOB_ID_RE.match(job_id or ""):
+            # job_id 会被拼进文件路径。形状不对就当它不存在 —— 这一关是给
+            # ``..`` / 绝对路径这类输入准备的，不是给正常 id 准备的。
+            return None
+        path = self._job_dir(job_id) / JOB_FILE
+        try:
+            rec = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as exc:
+            return self._broken_record(
+                job_id, f"作业记录读不出来（{type(exc).__name__}: {exc}）")
+        if not isinstance(rec, dict):
+            return self._broken_record(job_id, f"作业记录不是一个对象：{type(rec).__name__}")
+
+        try:
+            job = Job(job_id=job_id, seq=int(rec.get("seq") or 0),
+                      policy_id=str(rec.get("policy_id") or "?"),
+                      owner=str(rec.get("owner") or ""),
+                      state=str(rec.get("state") or STATE_FAILED),
+                      created_at=float(rec.get("created_at") or 0.0),
+                      started_at=rec.get("started_at"), finished_at=rec.get("finished_at"),
+                      error=rec.get("error"), proved=bool(rec.get("proved")),
+                      nonce_hex=str(rec.get("nonce") or ""))
+        except (TypeError, ValueError) as exc:
+            return self._broken_record(
+                job_id, f"作业记录的字段非法（{type(exc).__name__}: {exc}）")
+
+        written_state = job.state
+        info = rec.get("issued") if isinstance(rec.get("issued"), dict) else {}
+        cert_dir = Path(info["dir"]) if info.get("dir") else self._job_dir(job_id)
+        try:
+            job.issued = Issued.from_dir(cert_dir, expect_digest=info.get("cert_digest"))
+        except FileNotFoundError:
+            job.issued = None
+        except Exception as exc:      # noqa: BLE001 —— 见下面的「为什么这么宽」
+            # **故意捕得宽**。这一段是「把磁盘上的产物读回来」，输入是**别人手改过的
+            # 文件**：形状对不上的 JSON 在不同位置会抛不同的异常（信封里的载荷不是
+            # 字符串 ⇒ `TypeError`，`payload.json` 是个数组 ⇒ 更下面的 `AttributeError`
+            # …）。早先这里只列了 `(OSError, ValueError, KeyError)`，于是把一个
+            # `"payload": {...}` 的信封往上一放，**读取方自己崩了** —— 一次 500，
+            # 而这一整件事的规矩是「坏掉的产物要**答得出来**」（对照 `_run_job` 里
+            # 那条 `except BaseException`）。异常类型名照样写进 error，所以捕得宽
+            # 不会藏住任何东西；真正的失败原因就在那句话里。
+            job.issued = None
+            job.state = STATE_FAILED
+            job.error = (f"记录里的证书目录 {cert_dir} 读不出来或对不上"
+                         f"（{type(exc).__name__}: {exc}）—— **这次没有证书可以交付**；"
+                         f"账本里可能有它的锚定记录，用 ledger 核对")
+
+        if job.state not in STATE_TERMINAL_STATES:
+            if job.issued is not None:
+                job.state, job.error = STATE_DONE, None       # 规则 1
+            else:
+                job.state = STATE_FAILED                      # 规则 2
+                job.error = (
+                    f"服务在它跑完之前重启了（上次记到 `{written_state}`）。它**不会**再被"
+                    f"执行，也没有证书 —— 重新提交一次会得到新的 job_id。"
+                    f"如果账本里已经有这个作业的锚定摘要，那说明证书当时签出来了，"
+                    f"查 {self._job_dir(job_id) / 'cert.json'}")
+        elif job.state == STATE_DONE and job.issued is None:
+            # 说好了 done，却拿不出证书 —— 于是「done」这个说法站不住。
+            # 不把它改写成别的中间态：终态里唯一诚实的就是「这次没有证书」。
+            job.state = STATE_FAILED
+            job.error = (f"记录说这条作业已完成，但 {cert_dir} 里没有可读的 cert.json"
+                         f" —— 产物已经不在了（被清理或搬走过？）。**没有证书可以交付**；"
+                         f"账本里可能仍有它的锚定记录")
+
+        if job.state != written_state:
+            # 接回来的结论与磁盘上的记录不一致 ⇒ **把结论写回去**。不写的话，
+            # 下一次重启会重新推一遍（同样的结论，白做），而且磁盘上会一直留着
+            # 一个「永远 proving」的记录，读它的人会以为有什么还在跑。
+            job.finished_at = job.finished_at or time.time()
+            self._persist(job)
         return job
 
     def public_job(self, job_id: str, *, viewer: Optional[Any] = None) -> Dict[str, Any]:
@@ -771,8 +995,18 @@ class ProofService:
             raise JobNotFound(f"no such job: {job_id}")
         out = job.public(self.queue_position(job))
         if job.issued is not None:
-            out["verify_hint"] = verify_hint(job.issued,
-                                             self.registry.get(job.policy_id), self.ledger)
+            try:
+                packed = self.registry.get(job.policy_id)
+            except UnknownPolicy:
+                # 重启后接回来的作业可能出自一个**这次没注册**的策略（`--pack`
+                # 换过）。此时算不出 verify_hint，但作业本身是查得到的 —— 把它
+                # 整个翻成 404 会让人以为「没有这条作业」，那是另一回事。
+                out["verify_hint"] = None
+                out["verify_hint_missing"] = (
+                    f"策略 {job.policy_id} 不在当前注册表里 —— 加上它的 `--pack` "
+                    f"就能得到可直接粘贴的验证命令")
+            else:
+                out["verify_hint"] = verify_hint(job.issued, packed, self.ledger)
         return out
 
     def queue_position(self, job: Job) -> Optional[int]:
@@ -842,9 +1076,13 @@ class ProofService:
         with self._lock:
             job.state = STATE_PROVING
             job.started_at = time.time()
+        # 开工先落一次盘：真证明要 2.5 分钟，而 `proving` 是**唯一**一段「进程被
+        # 杀之后，磁盘上还来不及说它没跑完」的窗口。不落这一笔，重启后读到的还是
+        # `queued`，于是「它到底开始过没有」就没人答得上来。
+        self._persist(job)
         try:
             issued = issue_certificate(
-                self.out_dir / "jobs" / job_id, packed, response, nonce, self.signer,
+                self._job_dir(job_id), packed, response, nonce, self.signer,
                 self.backend, prove=not self.host_check, mode=self.mode,
                 proof_mode=self.proof_mode, receipts=receipts, lock=self._ledger_lock)
             with self._lock:
@@ -860,6 +1098,11 @@ class ProofService:
             with self._lock:
                 job.finished_at = time.time()
                 self._outstanding -= 1
+            # 终态落盘。放在 finally 里：`issue_certificate` 成功之后到这一行之间
+            # 被杀（或 BaseException）也还是要把结果记下来 —— 而记录里的证书指针
+            # 只有在 cert.json 已经落盘之后才可能存在，所以「记录说 done」永远不会
+            # 跑在「证书已经在那儿」前面。
+            self._persist(job)
 
     # ---------------------------------------------------------------- 在线段
 

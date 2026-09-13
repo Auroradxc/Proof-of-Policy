@@ -13,8 +13,10 @@
 真 SP1 证明那一条进 ``POP_TEST_PROOF=1`` 门控（~2.5 分钟 + ~10.2 GiB）。
 """
 
+import base64
 import contextlib
 import http.client
+import io
 import json
 import os
 import shlex
@@ -756,6 +758,393 @@ class TestChainBackendWiring(unittest.TestCase):
         with mock.patch.object(service, "CHAIN_HEALTH_TTL", 0.0):
             svc.snapshot()
         self.assertEqual(client.calls, ["code", "code"])
+
+
+class TestJobPersistence(unittest.TestCase):
+    """作业状态持久化（加固③）：重启之后还查得到，且**半截作业如实报告**。
+
+    这个模块里最要紧的一句是：**磁盘是权威，``job.json`` 是索引**。记录说的是
+    「上次写到哪儿」，证书说的是「到底签出来没有」。两者不一致时一律以证书为准
+    —— 反过来的话，一次「证书已落盘但还没改记录」的崩溃就会让系统声称「没有
+    证书」，而它明明躺在那儿。真话比方便重要。
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.out = Path(self.tmp.name)
+
+    def _svc(self, **kw):
+        reg = service.registry_from_paths([CONTENT_PACK, SEMANTIC_PACK])
+        svc = ProofService(reg, self.out, host_check=True, **kw)
+        self.addCleanup(svc.stop)
+        return svc
+
+    def _run_one(self, owner=""):
+        """提交并跑到终态；返回 ``(job_id, 原始 Job)``。"""
+        svc = self._svc()
+        svc.start()
+        job = svc.submit("agent-content-v1", CLEAN, owner=owner)
+        done = _wait_for(lambda: svc.get(job.job_id),
+                         lambda j: j.state in service.STATE_TERMINAL_STATES)
+        self.assertEqual(done.state, service.STATE_DONE, done.error)
+        svc.stop()
+        return job.job_id, done
+
+    # -------------------------------------------------------------- 正常路径
+
+    def test_a_finished_job_survives_a_restart(self):
+        """验收判据：重启后 ``GET /v1/attest/{job}`` 照常答得出来。"""
+        job_id, before = self._run_one()
+        after = self._svc().get(job_id)          # 全新进程（新对象）读同一个目录
+        self.assertEqual(after.state, service.STATE_DONE)
+        self.assertIsNotNone(after.issued)
+        self.assertEqual(after.issued.digest, before.issued.digest)
+        body = self._svc().public_job(job_id)
+        self.assertEqual(body["cert_digest"], before.issued.digest)
+        self.assertIn("cert", body)
+        self.assertIn("verify_hint", body)
+
+    def test_a_payload_that_drifted_from_its_envelope_is_caught(self):
+        """``payload.json`` 是给人读的那份，``cert.json`` 里那份是**被签名**的。
+
+        只改后者 ⇒ 二者漂移 ⇒ 重启时必须报错，而不是挑一个信。
+
+        **为什么改的是 ``cert.json`` 而不是 ``payload.json``**：改 ``payload.json``
+        会被**前一道**校验（记录里的 ``cert_digest``）先拦下 —— 那份摘要就是从
+        ``payload.json`` 重算出来的。真正只有这道校验能抓的，是「记录对得上、
+        两个文件对不上」，所以必须固定信封里的载荷来构造。
+        """
+        job_id, _ = self._run_one()
+        d = self.out / "jobs" / job_id
+        env = json.loads((d / "cert.json").read_text(encoding="utf-8"))
+        signed = json.loads(base64.b64decode(env["payload"]))
+        signed["ts"] = "2026-01-01T00:00:00Z"      # 改被签的那份，磁盘上那份不动
+        env["payload"] = base64.b64encode(
+            json.dumps(signed, separators=(",", ":")).encode("utf-8")).decode("ascii")
+        (d / "cert.json").write_text(json.dumps(env, indent=2), encoding="utf-8")
+        after = self._svc().get(job_id)
+        self.assertEqual(after.state, service.STATE_FAILED)
+        # 断言咬住**这句信封文案**。原来这里写的是笼统的「不是同一份」，而
+        # ``payload.json`` 那条路径的文案里也有它 —— 于是把这道校验整个删掉，
+        # 测试照样绿：一条假通过（2026-09-13 用变异测试查出）。
+        self.assertIn("只改了其中一个", after.error)
+
+    def test_a_hand_edited_payload_json_is_caught_by_the_record(self):
+        """手改了 ``payload.json``（更常见的那种意外）：由记录里的摘要拦下。
+
+        这条是在钉**校验的先后**：摘要那一关排在信封那一关前面，所以同一次改动
+        报出来的是「记录与产物不是同一份证书」，而不是信封那句。两句话都对，
+        但只有钉住顺序，上面那条测试的构造方式才是有理由的。
+        """
+        job_id, _ = self._run_one()
+        payload_path = self.out / "jobs" / job_id / "payload.json"
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        payload["ts"] = "2026-01-01T00:00:00Z"
+        payload_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        after = self._svc().get(job_id)
+        self.assertEqual(after.state, service.STATE_FAILED)
+        self.assertIn("记录与产物不是同一份证书", after.error)
+
+    def test_a_record_naming_a_different_certificate_is_caught(self):
+        """**记录里的摘要**也要核：两边一起被换掉时，只有它能发现。
+
+        造法：把 ``payload.json`` 与信封里的载荷**同步**改掉（签名不作数 ——
+        重建这一步不验签，验签是 ``verify_cert.py`` 的事）。此时二者一致、
+        文件都在，唯一对不上的就是记录里那个 ``cert_digest``。
+        """
+        job_id, _ = self._run_one()
+        d = self.out / "jobs" / job_id
+        payload = json.loads((d / "payload.json").read_text(encoding="utf-8"))
+        payload["ts"] = "2026-01-01T00:00:00Z"
+        (d / "payload.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        env = json.loads((d / "cert.json").read_text(encoding="utf-8"))
+        env["payload"] = base64.b64encode(
+            json.dumps(payload, separators=(",", ":")).encode("utf-8")).decode("ascii")
+        (d / "cert.json").write_text(json.dumps(env, indent=2), encoding="utf-8")
+        after = self._svc().get(job_id)
+        self.assertEqual(after.state, service.STATE_FAILED)
+        self.assertIn("不是同一份证书", after.error)
+
+    def test_ownership_survives_a_restart(self):
+        """重启后「别人的作业返 404」要还成立 —— 所以 owner 必须落盘。"""
+        job_id, _ = self._run_one(owner="alice")
+        svc = self._svc()
+        alice = auth.Principal(label="alice")
+        bob = auth.Principal(label="bob")
+        self.assertEqual(svc.public_job(job_id, viewer=alice)["submitted_by"], "alice")
+        with self.assertRaises(service.JobNotFound):
+            svc.public_job(job_id, viewer=bob)
+        # 管理员照旧读得到
+        self.assertTrue(svc.public_job(job_id, viewer=auth.Principal(label="ops", admin=True)))
+
+    # -------------------------------------------------------------- 半截作业
+
+    def _write_record(self, job_id, **rec):
+        d = self.out / "jobs" / job_id
+        d.mkdir(parents=True, exist_ok=True)
+        rec.setdefault("job_id", job_id)
+        (d / service.JOB_FILE).write_text(json.dumps(rec), encoding="utf-8")
+        return d
+
+    def test_a_job_left_queued_is_not_reported_as_queued(self):
+        """**中间态不许接回来当中间态** —— 照原样接回会让轮询的人永远等下去。
+
+        上一个进程已经死了，它手里的作业不会再被执行，也不会有任何东西来叫醒
+        那个还在轮询的客户端。所以它必须落成一个终态，并且说清为什么。
+        """
+        job_id = "job-00000000000000a1"
+        self._write_record(job_id, seq=3, policy_id="agent-content-v1",
+                           state=service.STATE_QUEUED, created_at=time.time())
+        job = self._svc().get(job_id)
+        self.assertEqual(job.state, service.STATE_FAILED)
+        self.assertIn(service.STATE_QUEUED, job.error)     # 说清上次记到哪儿
+        self.assertIn("重启", job.error)
+        self.assertIn("新的 job_id", job.error)            # 给出下一步
+        self.assertIsNone(job.issued)
+
+    def test_the_honest_verdict_is_written_back(self):
+        """结论要写回磁盘 —— 否则下一次重启又推一遍，且记录永远停在 ``proving``。"""
+        job_id = "job-00000000000000a2"
+        path = self._write_record(job_id, seq=1, policy_id="agent-content-v1",
+                                  state=service.STATE_PROVING)
+        self._svc().get(job_id)
+        rec = json.loads((path / service.JOB_FILE).read_text(encoding="utf-8"))
+        self.assertEqual(rec["state"], service.STATE_FAILED)
+        self.assertIn("重启", rec["error"])
+
+    def test_a_certificate_on_disk_beats_a_stale_record(self):
+        """**磁盘是权威**：崩在「证书已落盘」与「记录改 done」之间时，
+
+        磁盘上有证书而记录还停在 ``proving``。照记录念「没有证书」是假话。
+        """
+        job_id, before = self._run_one()
+        path = self.out / "jobs" / job_id / service.JOB_FILE
+        rec = json.loads(path.read_text(encoding="utf-8"))
+        rec["state"] = service.STATE_PROVING                  # 倒退到崩溃那一刻
+        rec.pop("issued", None)
+        path.write_text(json.dumps(rec), encoding="utf-8")
+        job = self._svc().get(job_id)
+        self.assertEqual(job.state, service.STATE_DONE)
+        self.assertIsNone(job.error)
+        self.assertEqual(job.issued.digest, before.issued.digest)
+
+    def test_a_done_job_whose_artefacts_are_gone_says_so(self):
+        """记录说 done、证书却不在了 —— 那就不能再说 done。
+
+        「done」对调用方的意思是「来拿证书」。拿不出来还挂着 done，等于让他去
+        找一个不存在的东西。
+        """
+        job_id, _ = self._run_one()
+        (self.out / "jobs" / job_id / "cert.json").unlink()
+        job = self._svc().get(job_id)
+        self.assertEqual(job.state, service.STATE_FAILED)
+        self.assertIn("没有证书可以交付", job.error)
+        self.assertIn("账本", job.error)                   # 给出去处
+        self.assertIsNone(job.issued)
+
+    # -------------------------------------------------------------- 坏记录
+
+    def test_a_corrupt_record_answers_instead_of_404(self):
+        """记录读不出来也要答得出来 —— 404 说的是「没有这条作业」，而这是假话。"""
+        job_id = "job-00000000000000b1"
+        self._write_record(job_id, **{})                   # 先建目录
+        (self.out / "jobs" / job_id / service.JOB_FILE).write_text("{ 半截 JSON",
+                                                                  encoding="utf-8")
+        job = self._svc().get(job_id)
+        self.assertEqual(job.state, service.STATE_FAILED)
+        self.assertIn("读不出来", job.error)
+        self.assertIn(str(self.out / "jobs" / job_id), job.error)   # 指出去哪儿看
+
+    def test_an_unknown_job_is_still_404(self):
+        """接回磁盘这条路的**边界**：真的没有它就还是 404。
+
+        少了这一条，「记录坏了也答得出来」很容易写成「什么 id 都答得出来」。
+        """
+        svc = self._svc()
+        with self.assertRaises(service.JobNotFound):
+            svc.get("job-00000000000000ff")
+        with self.assertRaises(service.JobNotFound):
+            svc.get("not-a-job-id")
+
+    def test_a_traversal_shaped_id_never_touches_the_filesystem(self):
+        """job_id 会被拼进路径 —— 形状不对的一律当不存在。
+
+        **这条用例是被自己写出来的**：一开始只断言「这些 id 抛 JobNotFound」，
+        而那在守卫被删掉之后**照样通过**（那些路径本来就没有文件）。所以先在那个
+        逃逸会命中的位置埋一份**像模像样的记录**，再看它会不会被读进来 ——
+        ``jobs/<id>/../../job.json`` 归一化之后正是 ``<out-dir>/job.json``。
+        """
+        svc = self._svc()
+        escape = self.out / "job.json"          # 逃逸命中点：归一化后的真实路径
+        escape.write_text(json.dumps({"job_id": "job-evil", "seq": 4242,
+                                      "policy_id": "agent-content-v1",
+                                      "state": service.STATE_FAILED,
+                                      "error": "这份记录不该被读到"}), encoding="utf-8")
+        for bad in ("..", ".", "job-..", "job-00000000000000a1/../..", "job-ABCDEF0123456789",
+                    "../../job", str(escape)):
+            with self.subTest(bad=bad):
+                with self.assertRaises(service.JobNotFound):
+                    svc.get(bad)
+
+    def test_new_jobs_do_not_collide_with_reloaded_seq(self):
+        """接回来的记录可能带着更大的 seq；新作业必须从它**之后**接着发号。
+
+        不抬升 ``_seq`` 就会撞号 —— 而 seq 正是 ``queue_position`` 排序的依据。
+        """
+        job_id = "job-00000000000000c1"
+        self._write_record(job_id, seq=99, policy_id="agent-content-v1",
+                           state=service.STATE_FAILED, error="x")
+        svc = self._svc()
+        svc.start()
+        self.assertEqual(svc.get(job_id).seq, 99)
+        fresh = svc.submit("agent-content-v1", CLEAN)
+        self.assertGreater(fresh.seq, 99)
+
+    # -------------------------------------------------------------- 韧性
+
+    def test_a_persist_failure_does_not_fail_the_job(self):
+        """写不进记录**不该**让作业失败 —— 证书比索引重要。
+
+        但也不能静默：这个文件存在的唯一理由是「重启后还查得到」，
+        写不进去等于那个承诺已经失效了。
+        """
+        svc = self._svc()
+        svc.start()
+        job = svc.submit("agent-content-v1", CLEAN)
+        # 只在 ``os.replace`` 这一处注入失败：全仓（``policydsl/`` + ``scripts/``）
+        # 只有 ``_persist`` 用它，所以这一枪**打不中工作线程正在写的产物**。
+        # 这里原先拦的是 ``Path.write_text`` —— 那是全进程的补丁，会连
+        # ``cert.json``/``vectors.json`` 一起打中，于是「索引写不进去」变成了
+        # 「产物写不出来」，作业真的失败了。窗口约 1/4 命中，表现成一条**假失败**
+        # 的 flake（2026-09-13 抓到）。要注入的是哪一步，就得拦在哪一步的 syscall 上。
+        stderr = io.StringIO()
+        with mock.patch.object(service.os, "replace", side_effect=OSError("disk full")):
+            with contextlib.redirect_stderr(stderr):
+                svc._persist(job)                          # 不该抛
+        self.assertIn("作业记录写盘失败", stderr.getvalue())
+        self.assertIn("查不到了", stderr.getvalue())
+        done = _wait_for(lambda: svc.get(job.job_id),
+                         lambda j: j.state in service.STATE_TERMINAL_STATES)
+        self.assertEqual(done.state, service.STATE_DONE, done.error)
+
+    def test_a_gone_policy_does_not_hide_the_job(self):
+        """重启后 ``--pack`` 少了一个包：作业仍在，只是算不出 ``verify_hint``。
+
+        把它整个翻成 404 会让人以为「没有这条作业」—— 那是另一回事。
+        """
+        job_id, _ = self._run_one()
+        reg = service.registry_from_paths([SEMANTIC_PACK])      # 少了 agent-content-v1
+        svc = ProofService(reg, self.out, host_check=True)
+        self.addCleanup(svc.stop)
+        body = svc.public_job(job_id)
+        self.assertEqual(body["state"], service.STATE_DONE)
+        self.assertIsNone(body["verify_hint"])
+        self.assertIn("agent-content-v1", body["verify_hint_missing"])
+        self.assertIn("--pack", body["verify_hint_missing"])
+
+
+class TestRestartOverHttp(unittest.TestCase):
+    """HTTP 层也走一遍重启：**换一个进程**，同一个 ``--out-dir``。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.out = Path(self.tmp.name)
+
+    def _boot(self):
+        from scripts.proof_service import make_server    # noqa: PLC0415
+        reg = service.registry_from_paths([CONTENT_PACK])
+        svc = ProofService(reg, self.out, host_check=True)
+        httpd = make_server(svc, "127.0.0.1", 0)
+        host, port = httpd.server_address
+        svc.start()
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        return svc, httpd, f"http://{host}:{port}"
+
+    def _down(self, svc, httpd):
+        httpd.shutdown()
+        httpd.server_close()
+        svc.stop()
+
+    def _call(self, url, method="GET", body=None):
+        data = None if body is None else json.dumps(body).encode("utf-8")
+        req = urllib.request.Request(url, data=data, method=method)
+        if data is not None:
+            req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return resp.status, json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read() or b"{}")
+
+    def test_a_job_is_queryable_after_a_restart(self):
+        svc, httpd, base = self._boot()
+        code, job = self._call(f"{base}/v1/attest", "POST",
+                               {"policy_id": "agent-content-v1", "response": CLEAN})
+        self.assertEqual(code, 202, job)
+        got = _wait_for(lambda: self._call(f"{base}/v1/attest/{job['job_id']}")[1],
+                        lambda b: b["state"] in service.STATE_TERMINAL_STATES)
+        self.assertEqual(got["state"], service.STATE_DONE, got.get("error"))
+        self._down(svc, httpd)
+
+        _svc2, httpd2, base2 = self._boot()          # 「重启」
+        try:
+            code, after = self._call(f"{base2}/v1/attest/{job['job_id']}")
+            self.assertEqual(code, 200, after)
+            self.assertEqual(after["state"], service.STATE_DONE)
+            self.assertEqual(after["cert_digest"], got["cert_digest"])
+            # 换了个进程，但证书还是同一份：摘要与磁盘上那一份对得上
+            self.assertEqual(after["cert"], got["cert"])
+        finally:
+            self._down(_svc2, httpd2)
+
+    def test_a_half_done_job_answers_after_a_restart_instead_of_hanging(self):
+        """半截作业在 HTTP 上必须是**终态**：客户端轮询 ``proving`` 会一直轮下去。"""
+        job_id = "job-00000000000000d1"
+        d = self.out / "jobs" / job_id
+        d.mkdir(parents=True, exist_ok=True)
+        (d / service.JOB_FILE).write_text(
+            json.dumps({"job_id": job_id, "seq": 1, "policy_id": "agent-content-v1",
+                        "state": service.STATE_PROVING}), encoding="utf-8")
+        svc, httpd, base = self._boot()
+        try:
+            code, body = self._call(f"{base}/v1/attest/{job_id}")
+            self.assertEqual(code, 200, body)
+            self.assertEqual(body["state"], service.STATE_FAILED)
+            self.assertIn("重启", body["error"])
+        finally:
+            self._down(svc, httpd)
+
+    def test_a_corrupt_certificate_file_is_reported_not_a_500(self):
+        """坏掉的 ``cert.json`` 必须**答得出来**（`failed` + 说清原因），不是 500。
+
+        构造的是一个**形状**错误而不是「读不出来」：合法 JSON、但信封里的载荷不是
+        字符串。这一格原来是漏的 —— 捕获列表里没有 `TypeError`，于是「磁盘是权威」
+        的读取方**自己崩了**（2026-09-13 补测查出来的真 bug：坏文件让接口 500，
+        而这正是「产物坏掉要如实报告」最该管住的那一步）。
+        """
+        svc0, httpd0, base0 = self._boot()
+        try:
+            code, job = self._call(f"{base0}/v1/attest", "POST",
+                                   {"policy_id": "agent-content-v1", "response": CLEAN})
+            self.assertEqual(code, 202, job)
+            _wait_for(lambda: self._call(f"{base0}/v1/attest/{job['job_id']}")[1],
+                      lambda b: b["state"] in service.STATE_TERMINAL_STATES)
+        finally:
+            self._down(svc0, httpd0)
+        (self.out / "jobs" / job["job_id"] / "cert.json").write_text(
+            json.dumps({"payload": {"not": "a string"}}), encoding="utf-8")
+
+        svc, httpd, base = self._boot()                 # 「重启」后由磁盘重建
+        try:
+            code, body = self._call(f"{base}/v1/attest/{job['job_id']}")
+            self.assertEqual(code, 200, body)
+            self.assertEqual(body["state"], service.STATE_FAILED)
+            self.assertIn("没有证书可以交付", body["error"])
+            self.assertIn("TypeError", body["error"])   # 原因照样写出来，不吞
+        finally:
+            self._down(svc, httpd)
 
 
 class TestStartupRefusals(unittest.TestCase):
