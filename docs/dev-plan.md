@@ -595,6 +595,7 @@ systemd/docker 起服务的人看不到这段横幅，而「鉴权开没开」�
 > 那条名为 `test_honest_certificate_passes` 的**诚实对照组**所用的证书
 > `vkey_hash` 恰恰是随手编的 `"deadbeef"` —— 与 `demo_e2e.py` 是同一个毛病；
 > ② `issue_cert.py`、三个适配器的缺省值、`zk_path --no-prove` 分支都已经是对的
+> （`unproven`），唯独演示脚本例外。现已一并订正。
 
 ### 5.4 盘点后的两项收尾（2026-09-14 立）
 
@@ -737,4 +738,80 @@ walk(unittest.TestLoader().discover('tests'))
 - **T1 真实 groth16 + 链上验证合约**：**唯一的外部阻塞**，需要一台 ≥64 GB
   内存的机器（本机 SP1 出证有 ~10.15 GiB 地板且没有余量）。代码侧已就绪，
   只差机器。
-> （`unproven`），唯独演示脚本例外。现已一并订正。
+
+### 5.5 c4（T3 真证明全量回归）+ c6（锚定钩子异常类型）（2026-09-16 立）
+
+§5.4.3 里 c4/c6 判的是「本机可做、只是没排期」。现在做。**c6 动手前先复核，
+把它从「措辞」升级为「真 bug」**（复核结果见 5.5.2）—— 这是本节唯一一处
+与原判断不同结论的地方，如实登记。
+
+#### 5.5.1 c4 · T3：把「全量真证明回归」做成能定期跑、且留痕的东西
+
+**T3 的原文**（`plan-p0p1p2.md` 待办表）：真实 SP1 证明的**全量**回归改为
+「**出证 + 验证**两条腿都在 **CI 之外**定期跑」，阻塞的是**论文 §7 的证明时间/内存数字**。
+
+**现状盘点**（三条都不满足 T3，但已有的比缺的多）：
+
+| 已有的 | 覆盖 | 为什么还不够 |
+|---|---|---|
+| `scripts/cross_validate.py --chunk 2` | **全量** 19 向量真出证 + 与 golden 逐条比对 | **只有出证这条腿**；且末行 `RESULT` 是**人读的**，没有落成结构化记录 |
+| `bench/bench_proofs.py` | 出证 → 量墙钟/体积/峰值 RSS → 再验一次 | **采样点**（默认 6 个 `(长度,规则数)`），不是全量向量；且面向 P2-12 的边界表 |
+| `bench/bench_verify.py` | 量「验证已存盘证明」的代价 | 要先有一份**存盘的**证明 —— 而 `cross_validate` 不落盘证明 |
+
+⇒ 缺的不是任何一条腿，而是**把两条腿串起来、按次留痕、能挂定时器**的那一层。
+所以 c4 **不新写一套出证/比对逻辑**（那会立刻和 `cross_validate` 漂移），
+而是新写一个 `scripts/regression_prove.py` 去**编排**已有的件。
+
+**设计**（四条腿 + 留痕）：
+
+1. **出证腿**：子进程调 `scripts/cross_validate.py --chunk N`（默认 2，
+   与既有 45 min 口径一致），解析末行 `RESULT: host A/N prove B/N`。
+   **不碰它的向量表与 golden 比对** —— 单一事实来源留在原处。
+2. **验证腿**：`--proof-out` 只支持单向量（`main.rs:397` 会 panic），所以
+   另行对**一个**向量出证并落盘，再用**新进程** `pop-script --verify --proof <p>`
+   验它。关键在「新进程」：出证进程已退出，验证方手里只剩产物 + ELF，
+   这才是独立的第二条腿。
+   *为什么只验一个*：验证腿要证的是「这份产物**换个人也能验**」这条**路径**没坏，
+   不是把 19 份再验一遍（19 份证明 ≈ 1.6 GiB，验一轮还要 19 次 vkey setup）。
+   这是**刻意的取舍**，写进记录的 `verify_leg.note` 里，不装作全量。
+3. **留痕**：**追加**写 `bench/results/regression-prove.jsonl`，一行一次运行：
+   `ts / git_sha / git_dirty / host{}/ host_leg / prove_leg / verify_leg / seconds{}/ peak_rss_mb / result`。
+   **只追加不覆盖** —— 这正是 T3 要的：§7 的数字要能指到**某一次具体运行**，
+   而「这次比上次慢了多少」要看得出来。`cross_validate.py` 每次**覆盖**
+   `results_prove.json`，历史无从谈起，所以留痕必须是这一层的新东西。
+4. **退出码**：任一条腿 FAIL → 非 0（供定时器判成败）。
+5. **CI 之外定期跑**：cron / systemd-timer 配方写进 docstring 与
+   `docs/reproduce.md`。45 min 不进 CI 是 T3 的前提，不是妥协。
+
+**可测性**（不必有 Rust）：`--pop-script PATH` 可注入驱动。单测塞一个**假驱动**
+（按参数写结果文件的脚本），全程跑完，断言：历史**追加不覆盖**、出证腿失败→非 0、
+验证腿失败被抓住且与出证腿**分开记**、`git_sha`/`host` 真的落盘。
+
+**验收 c4**：① 单测（假驱动）全绿；② **本机真跑一次全量**（≈45 min）并留下
+第一条历史记录 —— 只有真跑过，T3 才算关，否则只是「写了个没跑过的脚本」。
+
+#### 5.5.2 c6 · `anchor_on_chain` 的异常类型：从「措辞」改成「真 bug」
+
+复核后**改判**：不只是措辞。`policydsl/anchor.py:580` 在 rpc/contract 缺失时抛
+`NotImplementedError`，而**同一个条件**在它正上方的 `backend_from_env(require=True)`
+（`:560`）抛的是 `AnchorError`。**同一个仓库、同一个条件、两种类型。**
+
+后果不是理论上的：全仓库**所有**锚定错误的消费点都按 `anchor.AnchorError` 捕获 ——
+`verify_session.py:339`、`verify_cert.py:475`、`proof_service.py:249/375`、
+`deploy_anchor.py:43`、以及 `service.py:451` 那个把异常翻译成「运维能照着做的一句话」
+的 `failure_reason`。照文档写 `except anchor.AnchorError` 的调用方**接不住**这个钩子。
+
+而且 `NotImplementedError` 说的事**是假的**：链上后端**已经实现**了
+（`RpcAnchorBackend` + `contracts/Anchor.sol` + Anvil 端到端 PASS，见
+`docs/reproduce.md` §12）。它会让读者以为「这功能还没做」，真相是「你没配」。
+
+**修**：`:580` 改抛 `AnchorError`，消息与 `backend_from_env` 那条**统一**；
+连同 2 处测试锁（`test_anchor.py:62`、`test_anchor_chain.py:134`）与
+**文档锁**（`docs/modules/04-anchoring-audit.md:229` 明写「未配置抛
+`NotImplementedError`」）一起改。
+**不新增行为**，只把类型对齐既有约定 —— 所以验收是：现有两条测试改成断言
+`AnchorError` 后仍能钉住「未配置必须报错且不假装上链」。
+
+> **如实登记**：`anchor_on_chain` 目前**没有任何生产调用方**（只有这 2 条测试），
+> 真正被服务用的是 `backend_from_env`。所以这是**公共 API 的一致性缺口**，
+> 不是线上事故 —— 但既然它是对外文档化的入口，类型就该对。
