@@ -460,20 +460,119 @@ for chunk in model.stream(prompt, config={"callbacks": [handler]}):
 
 ---
 
-## 8. 扩展指引
+## 8. 接入一个新 agent：契约清单
 
-- **接一个新框架**（如 AutoGen / OpenAI Agents SDK）：写一个适配器，把该框架的
-  「模型完成」事件接到 `monitor.on_generate`、「工具调用」事件接到 `monitor.on_tool_call`。
-  参照 `langchain_adapter.py` 的 `_extract_text` / `_parse_args` 做**宽松提取**，
-  并把缺失依赖做成「导入回退 + 离线 fake」，这样单测不需要装框架。
+### 8.0 先分清哪一半是「你的活」
+
+接一个框架看上去是写一个适配器，其实是两件事：
+
+|  | 做什么 | 属于 |
+|---|---|---|
+| **① 提取** | 「本框架的事件」→（宽松解析）→ 文本 / (工具名, 参数, 结果) | **框架特定**：每个适配器都不一样，也不该一样 |
+| **② 出证** | 那些东西 →（两个钩子 + 一把网关）→ 证书 | **契约**：三者完全相同，**你不用重写** |
+
+**② 已经有一份可运行的实现**：`policydsl/generic_adapter.py` 的 `GenericGuard`。
+它不含任何框架依赖，因此既是「② 到底要做什么」的说明书，也是接新框架时**照抄的
+骨架** —— 你要写的只有 ①。它也**不是**第四个框架适配器，不是任何适配器的基类。
+
+### 8.1 先跑一遍参考实现（不装任何框架）
+
+```python
+from policydsl import generic_adapter as ga, keys
+from policydsl.service import load_policy
+
+pack  = "policy_packs/agent_tool_v1.json"
+guard = ga.GenericGuard(load_policy(pack), pack, signer=keys.ephemeral_signer())
+
+guard.generate("已为你查询退款政策")                      # ← 接「模型完成」
+guard.tool_call("search_kb", {"query": "refund"}, result="ok")   # ← 接「工具结束」
+guard.tool_call("dump_config", {}, result="SECRET=hunter2")
+
+ga.write_session(guard, out_dir)   # → session.json / ledger.jsonl / key.json /
+                                   #   gateway.pub.hex / receipts.json / cert-*.json
+```
+
+落盘的**全是公钥与产物，没有一个私钥**。第三方拿这个目录独立核：
+
+```bash
+python3 scripts/verify_session.py --session <dir>/session.json
+python3 scripts/verify_cert.py --cert <dir>/cert-1-tool.json --pack <policy_pack> \
+    --ledger <dir>/ledger.jsonl --keyring <dir>/key.json \
+    --receipts <dir>/receipts.json --gateway-key <dir>/gateway.pub.hex
+```
+
+两条都得是 `RESULT: PASS`。**少给 `--receipts`，`trace_binding` 那张卡会如实报
+FAIL**（第三方重算不了链尾），不是「默认通过」。这就是「接入之后对方能独立验」
+长什么样；`tests/test_generic_adapter.py` 把这套配方起子进程真跑了一遍。
+
+### 8.2 契约清单：一个适配器最少必须做对这几件事
+
+每一行都指得出三个现有适配器各自的实现 —— **列不出对应实现的条目就是在编**。
+
+| # | 必须做对 | 做错的后果 | LangChain | LangGraph | MCP |
+|---|---|---|---|---|---|
+| 1 | 「模型完成」→ `monitor.on_generate` | 生成路径没有证书 | `on_llm_end`（`langchain_adapter.py:352`） | `guard_node(kind="generate")`、`LangGraphEventCertifier`（`langgraph_adapter.py:71,148`） | `judge_result`（结果侧，`mcp_adapter.py:158`） |
+| 2 | 「工具结束」→ `gateway.issue` **再** `monitor.on_tool_call` | 判的是 agent 自述，不是网关回执 | `on_tool_end:427` | `LangGraphGuard.tool_node`（`:143`） | `call_tool`（`:179`，异步；同步版 `call_tool_sync:224`） |
+| 3 | **一把网关**，跨路径共用（显式 `gateway=`） | 两条链各指一条 `trace_root`，会话被劈成两条 | `PoPCallbackHandler(gateway=…)`（`:188`） | `LangGraphGuard(gateway=…)`（`:130`） | `MCPGuard(gateway=…)`（`:72`） |
+| 4 | `seal` 取**签发那一刻**的，不缓存 | 缓存的 seal = 悄悄关掉截尾检测 | 每个签名点现取 `gateway.seal()` | 同左 | `judge_result` |
+| 5 | `vkey_hash` + `proof_mode` **成对**给 | 第三方无从判断「隐藏了什么」 | 构造参数（`:183`） | `guard_node(..., proof_mode=)` | 构造参数（`:72`） |
+| 6 | **宽松提取**事件形状 | 换个框架版本就静默漏事件 | `_extract_text:53`、`_parse_args:86` | `_content_text:32` | `extract_result_text`（`trace.py:315`） |
+| 7 | 缺依赖时**导入回退 + 离线 fake** | 单测必须装框架，CI 跑不动 | `HAVE_LANGCHAIN`（`:30`） | `require_langgraph()`（`:48`） | 本就不 import mcp |
+| 8 | 有 token 级事件就接流式 | 失去早停与增量证书 | `on_llm_new_token:271` | 经同一 handler | — |
+| 9 | 失败也**签证书**，别只记日志 | 「失败」不成为产物上的事实 | `on_llm_error:369`、`on_tool_error:400` | 经同一 handler | — |
+
+第 3、4 两条是 `demo_e2e.py` 早期真踩过的（§6 第 4b 条），**不要以为新框架能绕开**。
+
+### 8.3 接一个新框架的步骤
+
+1. **先照 8.1 跑一遍** `GenericGuard`，把「② 长什么样」看懂。这一步不装框架。
+2. **写 ①**：一个 `_extract_text(事件) -> str` 与一个 `_parse_args(输入) -> dict`，
+   都做**宽松解析**（第 6 条）—— 拿不到就返回空串/空 dict，**不要抛**
+   （框架事件形状变化比你想的频繁）。
+3. **把事件接到 8.2 的表上**，逐行核对自己有没有漏。
+4. **缺依赖做成导入回退**（第 7 条），并配一个离线 fake，让单测不装框架也能跑。
+5. **网关显式注入**（第 3 条），别在适配器里 `ToolGateway()` 缺省构造。
+6. **对着 `test_generic_adapter.py` 抄考核点**：契约、seal 时序、该抛就抛、
+   第三方能真验。**变异测试一下**（见下）。
+
+### 8.4 换框架**必须重做**的部分（红线）
+
+下面这些**框架特定**，`GenericGuard` 帮不了你 —— 别以为抛个异常就完事：
+
+- **早停**：`stop_on_violation` 是「停止出证 + 回调 `on_early_stop`」，
+  `hard_stop=True` 再加「抛出 `EarlyStop` 真掐断」。两道门槛都是框架特定的：
+  ① 异常**会不会被回调系统吞掉**（LangChain 靠 `raise_error = False` 兜住）；
+  ② 掐断后**走哪条错误路由**。换个框架，这两条都得重新验一遍 ——
+  照抄 `EarlyStop` 的类名不解决任何问题。
+- **回调的执行时机与顺序**：`on_tool_start`/`on_tool_end` 是否配对、
+  `run_id` 在哪个字段、错误回调会不会被触发，各家不同
+  （`langchain_adapter` 用 `_tool_starts[run_id]` 暂存就是为这个）。
+- **工具描述字符串**：`@tool` 函数的 docstring 会被当作**工具描述**发给模型，
+  属于功能性字符串而非注释（§6 第 8 条）—— 换框架时确认它读的是同一个字段。
+
+### 8.5 其它两项
+
 - **给工具路径加结果侧认证**：需要的不是新代码，而是给 `MCPGuard` / 新适配器传
   `result_monitor=<内容策略 monitor>`。
-- **流式早停的行为差异**：`stop_on_violation` 是「停止出证 + 回调 `on_early_stop`」，
-  `hard_stop=True` 再加「抛出 `EarlyStop` 真掐断」。**换框架时这条要重做**：两道门槛
-  （异常会不会被回调系统吞掉、掐断后走哪条错误路由）都是**框架特定**的，LangChain 的
-  `raise_error` 换个框架就不存在了 —— 别以为抛个异常就完事。
+- **`result_monitor` 与 `monitor` 要用同一把网关**，理由同第 3 条。
+
+### 8.6 变异测试：这条线怎么自查「测试是不是咬住了」
+
+新适配器的测试很容易**看着绿、其实没咬住**。本仓库在 `GenericGuard` 上跑过一组
+变异，其中一处值得记下来：
+
+> 把 `tool_call` 的 `chain` 从「整条网关链」改成 `[receipt]`（等价于两条链），
+> **其余 17 例全绿**。原因有两层：① `trace_root` 只取**最后一条**回执的摘要
+> （链式性在每条回执的 `prev` 里），链尾摘要上看不出差别；② 只传当前那条时
+> 它 `seq` 不从 0 起、会先被判成 `trace_unbound` —— 于是 `passed` 与**规则名
+> 恰好都一样**，只有 `kind` 与「计到几条」不同。差别在**判定范围**。
+> 断言必须咬在 `kind` / `evidence`（计到几条）上，这条防线才立得住。
+
+自查办法：改一处、跑一遍、`cmp` 核过再还原；**改动没落盘就是假变异**
+（本项目史上真发生过一次）。**「恰好对」的测量比明显错的更危险。**
 
 ---
 
 **相关**：证书与信封结构 → [`03-certificate.md`](03-certificate.md)；
-端到端 demo 怎么跑 → [`07-cli-scripts.md`](07-cli-scripts.md)。
+端到端 demo 怎么跑 → [`07-cli-scripts.md`](07-cli-scripts.md)；
+参考适配器源码 → [`../../policydsl/generic_adapter.py`](../../policydsl/generic_adapter.py)。

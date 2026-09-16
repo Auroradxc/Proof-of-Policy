@@ -208,6 +208,11 @@ curl -s -X POST localhost:8787/v1/check -H 'Content-Type: application/json' \
 - ⛓ 链上锚定（真跑本地 Anvil）：`contracts/Anchor.sol` + `bash scripts/anchor_e2e.sh`（部署 → 每张证书摘要上链 → 第三方 `verify_session --rpc` 核对 + 反例对照）；见 `docs/reproduce.md` §12
 - 📝 论文初稿：**`paper/proof-of-policy.tex`（权威源，`xelatex` 编译）**；`paper/proof-of-policy.md` 是**便于阅读的镜像**，两者不一致时以 `.tex` 为准 · 评测脚本与结果：`bench/`（`bench/results/*.md`）· EU AI Act 映射：`docs/eu-ai-act-mapping.md`
 
+🔌 **接入你自己的 agent**：契约是 `AgentMonitor.on_generate` / `on_tool_call` +
+一会话一把 `ToolGateway`。框架无关的参考实现是 `policydsl/generic_adapter.py`
+（**不装任何框架就能跑**），接入清单、分步流程与「换框架必须重做」的红线见
+[`docs/modules/06-frameworks.md` §8](docs/modules/06-frameworks.md)。
+
 依赖（可选，安装后真实框架测试自动启用）：`pip install -r requirements-frameworks.txt`（或 `bash scripts/install_frameworks.sh`）。
 
 ## 目录结构
