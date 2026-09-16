@@ -86,6 +86,34 @@ SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 19/19 · pro
 >
 > **换机器就能把这张表拉长** —— 具体怎么跑见下面 §4½。
 
+### 4¼. 全量回归留痕（T3，可选，≈45 min）
+
+上面那条是「**跑一次、看结论**」；这一条是「**定期跑、留下痕迹**」—— 它把每次运行
+追加进 `bench/results/regression-prove.jsonl`，附 git sha / 硬件 / 证明器二进制摘要，
+于是论文 §7 的数字指得回**具体的某一次运行**，也能看出「这次比上次慢了多少」。
+
+```bash
+SP1_PROVER=cpu python3 scripts/regression_prove.py --label weekly   # 出证腿 + 验证腿
+python3 scripts/regression_prove.py --print                         # 历史摘要
+```
+
+两条腿：**出证腿**子进程调 `cross_validate.py`（全量 19 条 + golden 比对）；
+**验证腿**另起进程 `pop-script --verify` 验其中一个向量 —— 出证进程此时已退出，
+验证方手里只剩产物 + ELF，这才是独立的一次验证。
+
+挂定时器（45 min 进不了 CI，这是 T3 的前提而非妥协）：
+
+```bash
+# crontab -e —— 每周一 04:17
+17 4 * * 1  cd /path/to/zk-policy && SP1_PROVER=cpu /usr/bin/python3 \
+            scripts/regression_prove.py --label weekly \
+            >> bench/results/regression-prove.cron.log 2>&1
+```
+
+⚠️ 两点边界：**验证腿只覆盖 1 个向量**（记录里写在 `verify_leg.note`）；
+**配方在这里，但没有任何机器真的挂着它** —— 历史里那条 `first-real-run`（2026-09-16，43.6 min，
+19/19 PASS）是**手动跑的一次**，「能定期跑」与「正在定期跑」仍是两件事。
+
 ## 4½. 云机 runbook：P1-7 的 groth16 + P2-12 的全矩阵
 
 本机够不着的两件事共用**同一次租机窗口**（登记见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9 待办 **T1**）。
@@ -397,10 +425,13 @@ python3 scripts/verify_session.py --session .../session.json \
 
 ## 验收判据（复现成功）
 
-- `python3 -m unittest discover tests` → **667 passed（15 skip）**（2026-09-13 复跑、2026-09-16 c4 后重测；skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，3 = `POP_TEST_PROOF` 门控的用例（证明层 2 例 + 证明服务的真 vkey 出证 1 例），1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = `POP_TEST_SESSION` 门控的会话聚合证明端到端用例，1 = `POP_TEST_MULTIPARTY` 门控的多证明者端到端用例（真出两份切片证明），1 = `POP_TEST_LLM` 门控的真 provider 用例（需要真 API key + 网络；同模块里走本地 SSE 桩的那 4 例**默认就跑**），1 = 设计内「依赖已装」用例）；
+- `python3 -m unittest discover tests` → **667 passed（15 skip）**（2026-09-13 复跑、2026-09-16 c4 后重测；含 16 例 T3 回归编排器用例 —— 它们跑的是**替身驱动**，不需要 Rust；skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，3 = `POP_TEST_PROOF` 门控的用例（证明层 2 例 + 证明服务的真 vkey 出证 1 例），1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = `POP_TEST_SESSION` 门控的会话聚合证明端到端用例，1 = `POP_TEST_MULTIPARTY` 门控的多证明者端到端用例（真出两份切片证明），1 = `POP_TEST_LLM` 门控的真 provider 用例（需要真 API key + 网络；同模块里走本地 SSE 桩的那 4 例**默认就跑**），1 = 设计内「依赖已装」用例）；
 - `scripts/prove_policy.py` → **RESULT: PASS**；
 - `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 **整批重跑**：19 条向量各出一份真 core 证明，`--chunk 2` 切到 10 个独立子进程，约 45 min，见 `modules/08-tests-bench.md` §5）
   （真实证明分块跑：默认 `--chunk 4`，那次重跑用 `--chunk 2` = 10 块，见 §4 的说明；`--no-prove` 时跳过真实证明）；
+- `SP1_PROVER=cpu python3 scripts/regression_prove.py --label weekly` → **`[PASS] 出证 OK(19/19) · 验证 OK(clean_pass)`**，
+  并在 `bench/results/regression-prove.jsonl` **追加一行**（首条真实记录：2026-09-16，43.6 min，见 §4¼ 与 `modules/08-tests-bench.md` §3.8）。
+  与上一条同量级的 45 min，二者**跑一条即可覆盖出证腿**，同时跑则是把「已验证」提升为「有留痕」；
 - `verify_cert.py`（带 `--response T′`）/ `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证与响应绑定核对）；
 - `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 14/14 + 反例对照，见 §12）；
   `--prove` 变体（2026-09-12 本机实测重跑）→ **ALL PASS ✅**，含真 Core 证明：

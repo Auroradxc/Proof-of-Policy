@@ -177,6 +177,10 @@ python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_p
 # 交叉验证（需要先构建 circuits，见 docs/reproduce.md §2）
 SP1_PROVER=cpu python3 scripts/cross_validate.py          # host 19/19 · prove 19/19（约 45 min，分块口径见 08 §5）
 
+# T3 全量回归：出证 + 验证两条腿，按次留痕（同样 ≈45 min；08 §3.8）
+SP1_PROVER=cpu python3 scripts/regression_prove.py --label weekly
+python3 scripts/regression_prove.py --print               # 只看历史摘要，秒级
+
 # 一条命令跑通端到端（含链上锚定）
 bash scripts/anchor_e2e.sh                                # 秒级，--prove 加真实证明
 ```
