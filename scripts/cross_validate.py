@@ -22,6 +22,15 @@ OOM-kill（峰值 10.65 / 10.82 GB，``SIGKILL 9``）——而每次单独出证
   SP1_PROVER=cpu python3 scripts/cross_validate.py
   SP1_PROVER=cpu python3 scripts/cross_validate.py --chunk 4   # 默认
   SP1_PROVER=cpu python3 scripts/cross_validate.py --chunk 0   # 单进程（需 ≥16 GB）
+
+两个**非破坏性**的口子，供 ``regression_prove.py`` 与单测使用（缺省行为不变）：
+
+  ``POP_SCRIPT=<path>``   换掉证明器驱动。单测据此注入**替身驱动**，
+                          从而不必有 Rust 工具链也能把整套流程跑完。
+  ``--work-dir DIR``      换掉产物目录（``vectors.json`` / ``results_*.json``）。
+                          定时回归用私有目录，免得与手工跑的那次互相覆盖
+                          —— 那几个文件名是**固定**的，共用 ``scripts/`` 时
+                          两次运行会踩同一批文件。
 """
 
 from __future__ import annotations
@@ -44,7 +53,15 @@ from policydsl.serialize import spec_canonical_text
 from policydsl import pii
 from policydsl import trace
 
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+#: 证明器驱动。可用环境变量 ``POP_SCRIPT`` 覆盖 —— 定时回归（``regression_prove.py``）
+#: 与单测都靠它**注入替身驱动**，从而不必有 Rust 工具链也能走完整流程。
+POP_SCRIPT = Path(os.environ.get("POP_SCRIPT")
+                  or (REPO / "circuits" / "target" / "release" / "pop-script"))
+
+#: 产物目录（``vectors.json`` / ``results_*.json``）。可用 ``--work-dir`` 覆盖 ——
+#: 缺省仍是 ``scripts/``（既有行为不变），覆盖是为了让**定时回归**用私有目录，
+#: 免得和有人手工跑的 ``cross_validate`` 互相覆盖对方的结果文件。
+DEFAULT_WORK_DIR = REPO / "scripts"
 
 # Python Violation.evidence_kind -> guest 规则类型字符串
 KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block",
@@ -70,6 +87,16 @@ def parse_chunk(argv: list[str]) -> int:
         if a.startswith("--chunk="):
             return int(a.split("=", 1)[1])
     return DEFAULT_CHUNK
+
+
+def parse_work_dir(argv: list[str]) -> Path:
+    """从命令行读 ``--work-dir DIR`` / ``--work-dir=DIR``（缺省 ``scripts/``）。"""
+    for i, a in enumerate(argv):
+        if a == "--work-dir" and i + 1 < len(argv):
+            return Path(argv[i + 1]).resolve()
+        if a.startswith("--work-dir="):
+            return Path(a.split("=", 1)[1]).resolve()
+    return DEFAULT_WORK_DIR
 
 
 #: 回执链的固定时间戳 —— 让 vectors.json 每次都逐字节相同（可复现）。
@@ -242,13 +269,16 @@ def main() -> int:
         print(f"error: driver not built: {POP_SCRIPT}\n  cd circuits && cargo build --release -p pop-script")
         return 2
 
-    scripts = REPO / "scripts"
-    vectors_path = scripts / "vectors.json"
+    work_dir = parse_work_dir(sys.argv)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    if work_dir != DEFAULT_WORK_DIR:
+        print(f"work dir: {work_dir}")
+    vectors_path = work_dir / "vectors.json"
     vectors_path.write_text(json.dumps(payload, indent=2))
     print(f"{len(expected)} vectors, mode: host-check (all) + real proofs (all)")
 
     # 宿主校验（全部向量，不生成证明）
-    results_check = scripts / "results_check.json"
+    results_check = work_dir / "results_check.json"
     print("--- host check (pop-types::evaluate, no proof) ---")
     run_pop("check", vectors_path, results_check)
     rc = json.loads(results_check.read_text())
@@ -256,7 +286,7 @@ def main() -> int:
     report("check", [ok for _, ok, _, _ in d1], d1)
 
     # 真实证明（全部向量）
-    results_prove = scripts / "results_prove.json"
+    results_prove = work_dir / "results_prove.json"
     skipped_prove = "--no-prove" in sys.argv
     if skipped_prove:
         # 这里**不能**拿 host 的计数冒充 prove：`--no-prove` 下一条证明都没出，

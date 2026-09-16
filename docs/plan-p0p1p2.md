@@ -3,7 +3,7 @@
 > ⚠️ **这是 P0/P1/P2 阶段（2026-09-10 ~ 09-12）的工作记录，不是现状。** 本文里
 > 反复出现的「**469 全绿 / 13 skip**」是 **P2 收尾时的快照**；其后的 P7、第一步
 > （接真 agent）、第二步（证明服务及其三项加固）、框架无关参考适配器又加了大量用例，
-> 今天是 **648 / 15**。
+> 今天是 **667 / 15**。
 > 这是**如实保留的历史**，不要改。**测试数量的现状一律以
 > [`docs/modules/08-tests-bench.md`](modules/08-tests-bench.md) 为准。**
 > 理由与同一批订正见 [`dev-plan.md` §5.4.1](dev-plan.md)。
@@ -1143,7 +1143,7 @@ verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 |---|---|---|---|---|
 | **T1** | **租一台一次性 ≥64 GB 云机**（**外部资源，人工动作**），**① 产出 groth16 证明 + 测通验证合约（D2 已拍板）**；**②（顺带）**把 P2-12 证明侧的**全矩阵**补完（见下「T1 的第二个用途」） | ① `P1-7` 链上证明验证的**硬前置**：**本机 12 GB 必 OOM**（compressed 与 groth16 实测都在峰值 ~11.0 GB 被 OOM killer 终止 —— 递归包装的固定开销就超了本机内存，`SHARD_SIZE`/`MEMORY_LIMIT` 无效），groth16/plonk 出不来；② 只是**同一台机器上的顺带**，**不阻塞任何东西** | 需要人工租机（约数小时窗口）+ 一次环境搭建（Rust/SP1 工具链或直接搬 `circuits/` 目标目录）；产出入库后本机可离线复核 | ⬜ **未开始（阻塞中）** —— P1-5 完成后，本项是 **P1 段内唯一剩余任务**，也是唯一的外部阻塞；**不解决它，P1 段无法收尾**。建议立即排期租机 |
 | **T2** | 解开 ezkl `create_evm_verifier()` 的 `RuntimeError: no running event loop` | `P2-9`（D3 选定的全量 ezkl 集成）的最后一个阻塞 | 先试 ezkl 12.x；或绕开该 API，直接由编译产物手写 Solidity verifier | ✅ **已完成（2026-09-11）** —— 两条预设备选都不需要：真因是**调用方式**（API 内部走 `pyo3-async-runtimes`，须在事件循环内调用并 await 其返回的 Future），非版本、非依赖。解见 `policydsl/ezkl_evm.py` + `tests/test_ezkl_evm.py`（10 例）、记要见 §P2-9 子任务表 9.0 |
-| **T3** | 真实 SP1 证明的**全量**回归改为「出证 + 验证」两条腿都在 CI 之外定期跑 | 论文 §7 的证明时间/内存数字 | 单次 `cross_validate --prove` ≈ **45 分钟**（19 向量、`--chunk 2`；14 向量时约 24 分钟）；本机跑即可 | ⬜ 未开始 |
+| **T3** | 真实 SP1 证明的**全量**回归改为「出证 + 验证」两条腿都在 CI 之外定期跑 | 论文 §7 的证明时间/内存数字 | 单次 `cross_validate --prove` ≈ **45 分钟**（19 向量、`--chunk 2`；14 向量时约 24 分钟）；本机跑即可 | ✅ **已完成（2026-09-16，纯代码）** —— 见 `dev-plan.md` §5.5.1。**缺的从来不是某一条腿**（出证腿 `cross_validate` 早已有、量测 `bench_proofs` 有、验证腿 `bench_verify` 有），缺的是**把两条腿串起来、按次留痕、能挂定时器**的那层 ⇒ 新增 `scripts/regression_prove.py`（只编排，不重写任何一条腿的逻辑）。留痕**只追加**到 `bench/results/regression-prove.jsonl`（`cross_validate` 每次覆盖 `results_prove.json`，历史无从谈起）；验证腿走**新进程**（出证进程已退出，验证方只剩产物 + ELF）；`--pop-script` 可注入替身驱动，16 例单测**不需要 Rust**。**两点如实登记**：① 验证腿**只覆盖 1 个向量**（记录里写在 `note`，不装作全量）—— 它证的是「这份产物换个人也能验」这条**路径**没坏；② cron/systemd 配方已写进脚本 docstring 与 `08-tests-bench.md` §3.8，**但没有任何机器真的挂着它** —— 「能定期跑」已交付，「正在定期跑」要有人去配 |
 | **T4** | **P1-5b：堵住回执链的「截尾」缺口**（做 P1-8 时发现，见 [`security-model.md`](security-model.md) §5.3） | `P1-5` 的**健全性缺口**：把链尾那条违规回执**整条删掉**后，剩下的仍是一条结构自洽、逐条签名有效的**真链**，`trace_binding`（证书绑的链 == 送检的链）与 `receipt_chain`（逐条验签）**双双 PASS**；**当链与证书由出证方一起转交时，违规尾巴可被静默截掉**。**这不是「再比一次」能补的** —— 任何只看交付链的检查都无从知道「后面还有没有」 | **网关对会话末端做一次承诺**：`ToolSeal{count, trace_root, ts, keyid, sig}`（域分隔 `pop-trace-seal-v1`），验证方核对 `len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root` + 验签。截尾者只剩两条路：拿原 seal 配截断链（`count` 对不上）或为截断链新签一条（无网关私钥） | ✅ **已完成（2026-09-11，纯代码）** —— 见 `tests/test_trace.py::TestSeal`（9 例）与 `::TestVerifyCertTraceBinding::test_tail_truncation_is_rejected`（原 seal / 伪造 seal / 不带 seal 三路 + 正对照）。改动面：`policydsl/trace.py`（`ToolSeal`/`verify_seal`/`ToolGateway.seal`）+ `cert.build_payload`（载荷**顶层** `trace_seal`）+ `verify_cert.py` **3d** + 各适配器出证点。**两点与原设想的偏离，如实登记**：① **没有做「电路内对 seal 的结构校验」** —— 链尾摘要本就在电路内算并进公开值，「证明绑的是哪条链」已有电路保证；seal 要补的是「网关说这条链到此为止」，那是一个**签名**问题，按本项目「结构入电路、签名在链下」的既有分工放在链下；② **seal 放载荷顶层而不是 `outcome`** —— `outcome` 是证明公开值的镜像（验证方逐字段比对），放进去会让每一张带真实证明的证书都对不上。**残留边界**：验证方须持网关公钥（`--gateway-key`）才拿得到这个保证；只给 `--receipts` 而没给公钥时，3d 记 `PASS + 「截尾不可排除」(skipped)`；且 seal 仍是**网关的**陈述（A4），它把信任挪向网关而非消除信任 |
 
 > **T2 已于 2026-09-11 关闭**（理由见上表与 §P2-9 的 9.0 记要）。

@@ -143,7 +143,7 @@
   —— ⚠️ **初稿已由 LaTeX 版取代**：权威源是 `paper/proof-of-policy.tex`（xelatex + ctex），
   `.md` 只是阅读镜像且已落后（缺 L8/L9）。以 `.tex` 为准。
 - [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；
-  测试 **648 全绿 / 15 skip**（2026-09-13 复跑、2026-09-16 P3-a 后重测；skip 均为设计内，见 `docs/security-model.md` §6）
+  测试 **667 全绿 / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测；skip 均为设计内，见 `docs/security-model.md` §6）
 - [x] **待办（延伸）—— 三项均已完成**（此前误记为待办，2026-09-12 订正）：
   verifier-only 二进制（`pop-verify`，见 Phase P7-a）；链上锚定 RPC 后端（`RpcAnchorBackend`，见 P7-c）；
   format/budget/tool 规则入电路（见 P7-b）
@@ -178,7 +178,7 @@ P0 ─► P1 ─► P2 ─► P3(透明MVP★)
 
 ## 5. 延伸路线：接真 agent + 证明服务（2026-09-13 立）
 
-> **前置**：Phase 0–6 与 P7 全部收尾，测试 **648 全绿 / 15 skip**，
+> **前置**：Phase 0–6 与 P7 全部收尾，测试 **667 全绿 / 15 skip**，
 > `scripts/demo_all.sh` 8 条支路全通。本节是**交付之后**的两步 ——
 > 与仍在外部排队的 **T1**（≥64 GB 云机，见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9）
 > **互不阻塞**，也**不能**靠 T1 替代：T1 补的是链上/云机那一格，这两步补的是
@@ -601,7 +601,7 @@ systemd/docker 起服务的人看不到这段横幅，而「鉴权开没开」�
 
 §5.2 三项可选加固全部关闭之后，做了一次全仓盘点（三路：**代码与测试**、
 **文档与论文**、**对外集成面**）。结论是**代码侧没有整块缺失** —— 27 个测试模块 /
-648 例 / 30 个 `policydsl` 模块 / 22 个脚本 / 3 个 guest，链路每一格都接上了；
+667 例 / 30 个 `policydsl` 模块 / 23 个脚本 / 3 个 guest，链路每一格都接上了；
 欠账全在**外围**：5 处测试计数漂移、论文镜像停在 469、`dev-plan.md:90` 一条悬空的
 链上开示承诺、T3 未排期、没有部署类产物、以及**没有一份框架无关的接入指南**。
 
@@ -815,3 +815,45 @@ walk(unittest.TestLoader().discover('tests'))
 > **如实登记**：`anchor_on_chain` 目前**没有任何生产调用方**（只有这 2 条测试），
 > 真正被服务用的是 `backend_from_env`。所以这是**公共 API 的一致性缺口**，
 > 不是线上事故 —— 但既然它是对外文档化的入口，类型就该对。
+
+#### 5.5.3 落地情况
+
+**c6 ✅ 完成**（提交 `873a9d6`）。修法不是就地把异常名换掉 —— 那样两处消息还能继续
+各写各的、再次分叉；改为新增 `_unconfigured_error()` 统一产出**类型与消息**，两个入口
+都调它。测试 3 例（`test_same_type` 用 `assertIs(type(a),type(b))`；`test_same_message`
+比一字不差；`test_not_implemented_error_would_not_be_caught` 是**反例对照**）。
+变异核对：把 `anchor_on_chain` 改回 `NotImplementedError` → **4 条红**，确认断言不是恒真。
+另修两处：`cross_validate.py` 之外，`docs/modules/04-anchoring-audit.md` 的**文档锁**
+（它同时写着「配置缺失 → `AnchorError`」和「未配置抛 `NotImplementedError`」，自相矛盾）。
+
+**c4 ✅ 完成**（本节）。新增 `scripts/regression_prove.py` + `tests/test_regression_prove.py`
+（16 例，含**替身驱动**，不需要 Rust）+ `cross_validate.py` 的两个非破坏性口子
+（`POP_SCRIPT` / `--work-dir`）。
+
+动手时改了两处**原方案没写到**的东西，都是真踩出来的：
+
+1. **`--work-dir` 是必要的，不是顺手加的。** `cross_validate` 的
+   `vectors.json` / `results_*.json` 是**固定文件名**，定时任务与手工跑会踩同一批
+   文件、互相覆盖对方的结果。原方案只说了「留痕要追加」，漏了这个 —— 结果文件本身
+   也得分开。
+2. **失败记录里必须剥掉 `time -v` 的样板。** 这是写完之后测出来的：`time` 的报告
+   打在**子进程输出之后**，而 `log_tail` 取「末尾 30 行」—— 于是一次 OOM 的记录里
+   留的是 20 行「Average resident set size / Page size / Exit status」，
+   **解释原因的 Python traceback 被挤掉**。最需要证据的那种失败，证据反而最看不见。
+   现在解析峰值 RSS / 信号仍从完整 stderr 上取（它们在样板里），但留证据的尾巴用
+   剥掉样板后的版本。
+
+**变异测试**（6 处）：M1 覆盖写 `"a"→"w"`、M2 验证腿被跳过却标 `ok=True`、
+M3 去掉样板剥离、M5 结果只看出证腿、M6 指纹不算摘要 —— **全部被杀**。
+M4（`ok` 只看退出码、不看末行）**存活，且是等价变异**：当前两处证据（进程退出码 /
+stdout 末行）总是同时成立，要证伪得让 `cross_validate` **自报 PASS 却非零退出**，
+那不是测试能构造的状态。合取仍保留 —— 防的是将来「印了末行之后才崩」。
+**如实登记，不当作漏测。**
+
+**两点边界，不掩饰**：
+
+- 验证腿**只覆盖 1 个向量**（记录里写在 `verify_leg.note`）。它证的是「这份产物换个人
+  也能验」这条**路径**没坏，不是把 19 份再验一遍。
+- cron/systemd 配方**已写进脚本 docstring 与 `08-tests-bench.md` §3.8，但没有任何机器
+  真的挂着它**。「**能**定期跑」已交付，「**正在**定期跑」要有人去配那一步 —— 这两件事
+  不能混为一谈。

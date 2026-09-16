@@ -14,6 +14,7 @@
 | `policydsl/__main__.py` | 编译策略 / 参考判定 | 否 | 否 | 毫秒 |
 | `prove_policy.py` | 单条响应 → 真实证明 + golden 比对 | `pop-script` | 是（可 `--no-prove`） | ~70 s |
 | `cross_validate.py` | 19 条向量 × (host + prove) 与 golden 对拍 | `pop-script` | 是（可 `--no-prove`） | host 秒级；prove 约 2 分钟/条（默认分 4 块，每块峰值 ~10 GB） |
+| `regression_prove.py` | **T3 回归编排**：出证腿（全量）+ 验证腿（1 条，新进程）→ **追加**留痕 | `pop-script`（可用 `--pop-script` 注入替身） | 是（`--no-verify` 仍要） | 全量 ≈ 45 min（`--chunk 2`） |
 | `private_demo.py` | 私有模式全链路实验（Leak/Binding/Evidence/证明） | `pop-script` | 是（可 `--no-prove`） | ~70 s |
 | `gen_key.py` | 生成/查看 Ed25519 出证密钥对（打印 keyid + 公钥） | 否 | 否 | 毫秒 |
 | `issue_cert.py` | 签发证书 + 锚定（可选上链） | `pop-script` | 是（可 `--no-prove`） | ~70 s |
@@ -89,6 +90,26 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
 
 > 这个脚本是**改判定逻辑后必须跑的第一件事**。它把「两侧不一致」变成一次红灯，而不是等到
 > 复现论文数字时才发现。
+
+它有两个**非破坏性**的口子供别人用（缺省行为不变）：`POP_SCRIPT=<path>` 换掉证明器
+驱动（单测据此注入替身，**没有 Rust 也能跑完整流程**）、`--work-dir DIR` 换掉产物目录
+（定时回归用私有目录，免得与手工跑的那次踩同一批固定文件名）。
+
+### 2.2b `regression_prove.py` —— T3：全量回归的两条腿 + 按次留痕
+
+`cross_validate.py` 是「**跑一次、看结论**」；这个是「**定期跑、留下痕迹**」。
+它**只做编排**：出证腿子进程调 `cross_validate.py`（向量表与 golden 留在原处，
+再算一遍就是第二处事实来源），验证腿另起进程跑 `pop-script --verify`。
+
+```bash
+SP1_PROVER=cpu python3 scripts/regression_prove.py --label weekly   # ≈45 min
+python3 scripts/regression_prove.py --print                         # 看历史摘要
+python3 scripts/regression_prove.py --dry-run --pop-script ./fake   # 不写盘，看记录长什么样
+```
+
+每次**追加**一行到 `bench/results/regression-prove.jsonl`（**只追加、永不覆盖**，
+见 `08-tests-bench.md` §3.8 的四条设计约束与 cron/systemd 配方）。退出码任一条腿
+FAIL → 非 0。⚠️ 它**只覆盖 1 个向量的验证腿**，这件事写在记录的 `note` 里，不装作全量。
 
 ### 2.3 `private_demo.py` —— 私有模式的六个实验
 
