@@ -309,7 +309,7 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 
 **代码落点**：`policydsl/semantic.py::verify_companion`、
 `circuits/types/src/lib.rs::DelegatedConstraint`、`scripts/verify_cert.py` 检查 3e、
-`tests/test_semantic.py`（29）。
+`tests/test_semantic.py`（30）。
 
 **不保证**：① **响应内容保密** —— ezkl 的公开实例含 `encode(T)`，而 `encode` 对收录
 字符**单射**（反查 `VOCAB` 即可恢复原文），故含语义规则的策略**只支持公开模式**，
@@ -554,14 +554,14 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | 引理 / 性质 | 实现 | 测试 |
 |---|---|---|
 | 判定函数（golden ⇄ 电路） | `policydsl/evaluate.py` ⇄ `circuits/types/src/lib.rs::evaluate` | `tests/test_rules_incircuit.py`（13）、`cross_validate` **host 19/19 · prove 19/19**（2026-09-12 整批重跑） |
-| **L1** 策略绑定 | `circuits/program`（guest 内算）、`policydsl/verifier.py::check_policy_binding` | `tests/test_policy_binding.py`（22） |
+| **L1** 策略绑定 | `circuits/program`（guest 内算）、`policydsl/verifier.py::check_policy_binding` | `tests/test_policy_binding.py`（28） |
 | **L2** 响应绑定 | `policydsl/commit.py::response_binding`、`policydsl/challenge.py` | `tests/test_binding.py`（19） |
-| **L3** 轨迹绑定 | `policydsl/trace.py`、`circuits/types::verify_receipt_chain`、`verify_cert.py` 3c | `tests/test_trace.py`（39） |
+| **L3** 轨迹绑定 | `policydsl/trace.py`、`circuits/types::verify_receipt_chain`、`verify_cert.py` 3c | `tests/test_trace.py`（41） |
 | **L4** 脱敏健全性 | `policydsl/commit.py`、`circuits` 内 `mask_covered` | `tests/test_commit.py`（12） |
-| **L5** 账本 + 锚定 | `policydsl/anchor.py`、`contracts/Anchor.sol` | `tests/test_anchor.py`（4）、`test_anchor_chain.py`（22） |
+| **L5** 账本 + 锚定 | `policydsl/anchor.py`、`contracts/Anchor.sol` | `tests/test_anchor.py`（4）、`test_anchor_chain.py`（28） |
 | 证书签名（A3/A7） | `policydsl/cert.py::Ed25519Signer`、`policydsl/keys.py` | `tests/test_cert.py`（19） |
 | 证明模式诚实标注 | `cert.PROOF_MODE_HIDING`、`verifier.artifact_proof_modes` | `tests/test_verifier_only.py`（8） |
-| **L7** 语义委托（P2-9） | `policydsl/semantic.py`、`scripts/ezkl_prove.py`、`circuits/types::DelegatedConstraint`、`verify_cert.py` 3e | `tests/test_semantic.py`（29，含 6 条反例；真·端到端由 `POP_TEST_EZKL=1` 打开） |
+| **L7** 语义委托（P2-9） | `policydsl/semantic.py`、`scripts/ezkl_prove.py`、`circuits/types::DelegatedConstraint`、`verify_cert.py` 3e | `tests/test_semantic.py`（30，含 6 条反例；真·端到端由 `POP_TEST_EZKL=1` 打开） |
 | **L6** 组合义务（P1-6） | `policydsl/compose.py`、`circuits/infer-program`（guest②）、`circuits/types::job_domain`、`scripts/compose_proof.py` | `tests/test_compose.py`（48，含 5 组反例 + 4 条驱动接线回归；真·端到端由 `POP_TEST_COMPOSE=1` 打开） |
 | **L8** 跨证书一致性（P2-10） | `circuits/session-program`（guest③）、`circuits/types::run_session`、`policydsl/session.py::verify_session_proof`、`scripts/prove_session.py` | `tests/test_session.py`（38，含两种挖法的反例；真·端到端由 `POP_TEST_SESSION=1` 打开） |
 | **L9** 多证明者责任划分（P2-11） | `policydsl/multiparty.py::verify_multiparty`、`policydsl/compile.py::compile_slice_policy`、`scripts/prove_multiparty.py` | `tests/test_multiparty.py`（44，含两条验收判据与「三方合谋」边界；真·端到端由 `POP_TEST_MULTIPARTY=1` 打开） |

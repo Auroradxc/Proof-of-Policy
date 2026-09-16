@@ -1,5 +1,12 @@
 # PoP 补足计划：P0 / P1 / P2
 
+> ⚠️ **这是 P0/P1/P2 阶段（2026-09-10 ~ 09-12）的工作记录，不是现状。** 本文里
+> 反复出现的「**469 全绿 / 13 skip**」是 **P2 收尾时的快照**；其后的 P7、第一步
+> （接真 agent）、第二步（证明服务及其三项加固）又加了大量用例，今天是 **630 / 15**。
+> 这是**如实保留的历史**，不要改。**测试数量的现状一律以
+> [`docs/modules/08-tests-bench.md`](modules/08-tests-bench.md) 为准。**
+> 理由与同一批订正见 [`dev-plan.md` §5.4.1](dev-plan.md)。
+
 > 依据：`docs/security-model.md`、`paper/proof-of-policy.md`、`bench/comparison_zkagent.md`
 > 与对 `circuits/`+`policydsl/` 的逐行复核（含一个已**实跑复现**的健全性破坏）。
 > 本计划是**可执行**的：每个任务给出改动文件、接口签名、验收测试与前置依赖。
@@ -610,7 +617,7 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 | **9.4** | **策略规则**：新增 `semantic_bound` kind，贯通 `model.py → compile.py → serialize.py → pop-types` | `Constraint::SemanticBound { name, model_vkey, onnx_sha256, threshold_bp, direction }` | `tests/test_semantic.py::test_compile_semantic`；契约哈希稳定 |
 | **9.5** | **组合与绑定** —— ✅ **已完成（2026-09-12）** | `policydsl/semantic.py::verify_companion/companion_entry`、`cert.build_payload(semantic=)`、`scripts/{issue_cert,verify_cert}.py` | 见 9.7 反例；**两处与原文不同，理由见 9.5 记要** |
 | **9.6** | **信任边界论证** —— ✅ **已完成（2026-09-12）** | [`design-semantic-rules.md`](design-semantic-rules.md) | 与 §P1-8 的形式化模型对接：新增**引理 L7**（**不是 L6 —— 那号已被 P1-6 占用**，见记要） |
-| **9.7** | **验收 + 反例** —— ✅ **已完成（2026-09-12）** | `tests/test_semantic.py`（**30 例** / 6 条反例；P2-9 收尾时为 29 例，P2-9b 的折叠用例 +1） | 见下；全套 **348 passed / 11 skipped**（P2-9 收尾时复跑；**当前全量为 469/13**，见 §4 P2-10 / P2-11） |
+| **9.7** | **验收 + 反例** —— ✅ **已完成（2026-09-12）** | `tests/test_semantic.py`（**30 例** / 6 条反例；P2-9 收尾时为 29 例，P2-9b 的折叠用例 +1） | 见下；全套 **348 passed / 11 skipped**（P2-9 收尾时复跑；**P2 收尾的全量为 469/13**，见 §4 P2-10 / P2-11） |
 
 > **9.1–9.4 的完成状态补记（2026-09-12 审计）** —— 这四行此前没打勾，实物其实都在，逐条对账如下。
 > 其中 **9.1 有一处未按计划交付**，如实记下：
