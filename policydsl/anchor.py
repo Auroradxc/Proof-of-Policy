@@ -544,6 +544,26 @@ def deploy_anchor_contract(rpc_url: str, private_key: Optional[str] = None,
     }
 
 
+def _unconfigured_error() -> AnchorError:
+    """「要上链，但没给 RPC/合约」这一个条件，全模块**只有这一种说法**。
+
+    这个函数的存在本身就是不变量：``backend_from_env(require=True)`` 与
+    ``anchor_on_chain`` 守的是**同一个条件**，早先一个抛 ``AnchorError``、
+    一个抛 ``NotImplementedError`` —— 全仓库所有锚定错误的消费点
+    （``verify_session`` / ``verify_cert`` / ``proof_service`` / ``deploy_anchor`` /
+    ``service.failure_reason``）都按 ``AnchorError`` 捕获，照文档写的调用方
+    因此**接不住**后者。类型与消息都由这里统一产出，不会再各写各的。
+
+    ``NotImplementedError`` 还**说错了事**：链上后端是**已实现**的
+    （``RpcAnchorBackend`` + ``contracts/Anchor.sol``，见 ``docs/reproduce.md`` §12），
+    它会让读者以为「这功能还没做」，真相是「你没配」。
+    """
+    return AnchorError(
+        "on-chain anchoring requested but not configured: pass --rpc and --contract "
+        f"(or set {ENV_RPC} / {ENV_CONTRACT}), or use the file ledger backend "
+        "for offline verification")
+
+
 def backend_from_env(ledger_path: Optional[Path] = None, rpc_url: Optional[str] = None,
                      contract: Optional[str] = None, private_key: Optional[str] = None,
                      require: bool = False) -> AnchorBackend:
@@ -558,9 +578,7 @@ def backend_from_env(ledger_path: Optional[Path] = None, rpc_url: Optional[str] 
     if rpc and ctr:
         return RpcAnchorBackend(rpc, ctr, key, ledger_path=ledger_path)
     if require:
-        raise AnchorError(
-            "on-chain anchoring requested but not configured: pass --rpc and --contract "
-            f"(or set {ENV_RPC} / {ENV_CONTRACT})")
+        raise _unconfigured_error()
     return FileLedgerBackend(ledger_path) if ledger_path else FileLedgerBackend(Path("ledger.jsonl"))
 
 
@@ -573,14 +591,14 @@ def anchor_on_chain(digest: str, rpc_url: Optional[str] = None,
     文件账本是默认的、可离线验证的后端。真实部署通过 ``rpc_url`` + 已部署的
     ``contract`` 把 digest 作为 calldata/事件提交；未配置时本钩子显式报错，
     避免调用方误以为锚定已发生。
+
+    缺配置抛的是 ``AnchorError``（与 ``backend_from_env(require=True)`` 同款，
+    见 :func:`_unconfigured_error`），**不是** ``NotImplementedError``。
     """
     rpc = rpc_url or os.environ.get(ENV_RPC)
     ctr = contract or os.environ.get(ENV_CONTRACT)
     if not (rpc and ctr):
-        raise NotImplementedError(
-            "on-chain anchoring backend not configured: pass rpc_url + contract "
-            f"(or set {ENV_RPC} / {ENV_CONTRACT}) or use the file ledger backend "
-            "for offline verification")
+        raise _unconfigured_error()
     return RpcAnchorBackend(rpc, ctr, private_key or os.environ.get(ENV_KEY),
                             ledger_path=ledger_path).anchor(digest)
 

@@ -5,6 +5,7 @@
 历史记录必被发现」——这是证书「仅追加、防篡改」承诺的底线。
 """
 
+import os
 import sys
 import tempfile
 import unittest
@@ -57,9 +58,69 @@ class TestAnchorLedger(unittest.TestCase):
         self.assertIn("tampered", reason)
 
     # 未配置 RPC/合约时的便捷入口必须显式报错，避免调用方误以为已完成链上锚定。
-    def test_on_chain_stub_raises(self):
-        with self.assertRaises(NotImplementedError):
-            anchor.anchor_on_chain("digest")
+    #
+    # 抛的必须是 `AnchorError` 而非 `NotImplementedError`：全仓库所有锚定错误的
+    # 消费点都按 `AnchorError` 捕获（verify_cert / verify_session / proof_service /
+    # deploy_anchor / service.failure_reason），照文档写的调用方接不住后者。
+    # 一致性本身由 `TestUnconfiguredTypeConsistency` 钉住 —— 这条只钉「会报错」。
+    def test_on_chain_unconfigured_raises(self):
+        old = dict(os.environ)
+        for k in (anchor.ENV_RPC, anchor.ENV_CONTRACT):
+            os.environ.pop(k, None)
+        try:
+            with self.assertRaises(anchor.AnchorError):
+                anchor.anchor_on_chain("digest")
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+
+
+class TestUnconfiguredTypeConsistency(unittest.TestCase):
+    """「要上链但没配」这一个条件，两个入口必须给**同一种**异常。
+
+    这是 c6 修的东西。原先 ``backend_from_env(require=True)`` 抛 ``AnchorError``、
+    ``anchor_on_chain`` 抛 ``NotImplementedError`` —— 同一条件两种类型，而全仓库
+    所有锚定错误的消费点只捕 ``AnchorError``。下面两条断言分别钉住「类型相同」
+    与「消息相同」，任一处再分叉都会红。
+    """
+
+    def _unconfigured(self):
+        """在 rpc/contract 都清空的环境里跑；返回两个入口各抛出的异常。"""
+        old = dict(os.environ)
+        for k in (anchor.ENV_RPC, anchor.ENV_CONTRACT):
+            os.environ.pop(k, None)
+        try:
+            with self.assertRaises(anchor.AnchorError) as a:
+                anchor.backend_from_env(require=True)
+            with self.assertRaises(anchor.AnchorError) as b:
+                anchor.anchor_on_chain("ab" * 32)
+        finally:
+            os.environ.clear()
+            os.environ.update(old)
+        return a.exception, b.exception
+
+    # 两者抛出的类型必须完全一致（而不是「都继承自 RuntimeError」这种弱断言）。
+    def test_same_type(self):
+        e1, e2 = self._unconfigured()
+        self.assertIs(type(e1), type(e2))
+        self.assertIs(type(e1), anchor.AnchorError)
+
+    # 消息也必须一字不差：各写各的就还有分叉的余地。
+    def test_same_message(self):
+        e1, e2 = self._unconfigured()
+        self.assertEqual(str(e1), str(e2))
+
+    # 这条是**反例对照**：证明上面两条断言不是恒真的 —— `NotImplementedError`
+    # 确实不是 `AnchorError`，所以「改成 AnchorError」是**真的改了行为**，
+    # 而不是把一个已经成立的性质又断言了一遍。
+    def test_not_implemented_error_would_not_be_caught(self):
+        self.assertFalse(issubclass(NotImplementedError, anchor.AnchorError))
+        try:
+            raise NotImplementedError("on-chain anchoring backend not configured")
+        except anchor.AnchorError:
+            self.fail("`except anchor.AnchorError` 竟然接住了 NotImplementedError")
+        except NotImplementedError:
+            pass  # 这就是修之前的样子：写了文档里那个 except 的调用方接不住。
 
 
 if __name__ == "__main__":

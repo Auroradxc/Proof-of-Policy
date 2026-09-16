@@ -226,9 +226,9 @@ def check_response_binding(sources) == check_agreement(sources, "response_bindin
 | `load_artifact(path=None)` | 读 `contracts/Anchor.json` |
 | `deploy_anchor_contract(rpc_url, private_key=None, client=None, artifact_path=None, from_address=None)` | 部署并返回部署信息 |
 | `backend_from_env(ledger_path=None, rpc_url=None, contract=None, private_key=None, require=False)` | 后端选择 |
-| `anchor_on_chain(digest, rpc_url=None, contract=None, private_key=None, ledger_path=None)` | 便捷入口；未配置抛 `NotImplementedError` |
+| `anchor_on_chain(digest, rpc_url=None, contract=None, private_key=None, ledger_path=None)` | 便捷入口；未配置抛 `AnchorError`（**与 `backend_from_env(require=True)` 同款**，见下） |
 | `verify_digest_on_chain(digest, rpc_url, contract, client=None)` | **只读**核对（`verify_session --rpc` 用） |
-| `AnchorError` | 后端调用失败（cast 报错/超时/配置缺失） |
+| `AnchorError` | **后端与配置**失败的唯一类型（cast 报错/超时/未配置）。注意 `digest` 格式非法在 `:60` 抛的是 `ValueError`（参数校验，不是后端失败）；`:221`/`:224` 的 `NotImplementedError` 在抽象基类上，语义正确，不属此列 |
 | 常量 | `GENESIS="genesis"`、`REPO`、`ARTIFACT`、`ANVIL_KEY`、`ENV_RPC/CONTRACT/KEY` |
 
 ---

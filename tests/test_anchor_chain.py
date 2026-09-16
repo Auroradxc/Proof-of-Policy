@@ -126,11 +126,13 @@ class TestBackendSelection(unittest.TestCase):
             os.environ.clear()
             os.environ.update(old)
 
-    # 便捷钩子同理：未配置就抛 NotImplementedError，明确告知调用方锚定并未发生。
+    # 便捷钩子同理：未配置就抛 AnchorError（与上面的 require=True 同一类型，
+    # 一致性由 tests/test_anchor.py::TestUnconfiguredTypeConsistency 钉住），
+    # 明确告知调用方锚定并未发生。
     def test_unconfigured_hook_raises(self):
         for k in (anchor.ENV_RPC, anchor.ENV_CONTRACT):
             os.environ.pop(k, None)
-        with self.assertRaises(NotImplementedError):
+        with self.assertRaises(anchor.AnchorError):
             anchor.anchor_on_chain("ab" * 32)
 
 
