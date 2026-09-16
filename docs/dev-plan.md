@@ -867,3 +867,132 @@ stdout 末行）总是同时成立，要证伪得让 `cross_validate` **自报 P
 - cron/systemd 配方**已写进脚本 docstring 与 `08-tests-bench.md` §3.8，但没有任何机器
   真的挂着它**。「**能**定期跑」已交付，「**正在**定期跑」要有人去配那一步 —— 这两件事
   不能混为一谈。
+
+---
+
+### 5.6 结构重梳 + demo/模块文档（2026-09-17 立）
+
+#### 5.6.1 现状的五个问题（每条都能从仓库直接核对）
+
+| # | 问题 | 现场 |
+|---|---|---|
+| 1 | `policydsl/` **30 个模块平铺** 10,542 行 | 找「私有模式在哪个文件」只能靠记忆或 grep |
+| 2 | `scripts/` **22 个文件平铺**，且混着**运行产物** | `results*.json` / `vectors.json` 就落在 `scripts/` 里，靠 `.gitignore` 挡着才没入库 —— 挡住的是入库，不是「位置不对」 |
+| 3 | `docs/` 18 个文件**没有索引** | 只有 `docs/modules/README.md` 给模块文档做了索引；`docs/` 本身没有入口 |
+| 4 | `docs/demo/` **只有生成产物** | 里面是 `session_report.html` / `.svg` / 两张 png，**没有任何文档**说明这个 demo 演示了什么、每步该看什么 |
+| 5 | 根 README 的「目录结构」**漏项** | 少了 `docs/modules/`、`circuits/patches`、`bench/results`、`scripts/examples` 等 |
+
+问题 4 最要紧：一份**没人解释**的 demo 报告，读者只能从截图里猜发生了什么。
+
+#### 5.6.2 目标布局
+
+**① `policydsl/` 拆成 6 个子包 + 门面**（按职责，不按文件类型）：
+
+| 子包 | 收 | 一句话 |
+|---|---|---|
+| `core/` | `model` `compile` `evaluate` `serialize` `nfa` `pii` `normalize` | 策略、跨层契约、golden 判定 —— 唯一与 Rust 侧逐字对齐的一层 |
+| `privacy/` | `commit` `challenge` | 承诺 / 选择性披露 / 挑战-响应绑定 |
+| `evidence/` | `cert` `keys` `anchor` `trace` `verifier` | 产物与可核验性：证书、回执链、锚定、核验 |
+| `proofs/` | `compose` `infer` `session` `multiparty` `semantic` `ezkl_evm` | 组合 / 会话聚合 / 多证明者 / 语义委托 |
+| `adapters/` | `agent` `generic_adapter` `langchain_adapter` `langgraph_adapter` `mcp_adapter` `llm` | 接到 agent 框架上 |
+| `service/` | `service` `auth` | 常驻出证服务 |
+
+根上只留 `__init__.py`（门面）与 `__main__.py`（CLI）。**6 个**是刻意的：再多就
+是「每个文件一个目录」；再少则 `evidence/` 与 `proofs/` 会各自胀到 8+ 个模块，
+又回到平铺。
+
+**② `scripts/` 分 5 组**（按用途，正好对上 demo 的支路）：
+
+| 组 | 收 |
+|---|---|
+| `demo/` | `demo_all.sh` `demo_e2e.py` `private_demo.py` `make_shots.py` |
+| `prove/` | `prove_policy.py` `prove_session.py` `prove_multiparty.py` `compose_proof.py` `ezkl_prove.py` `issue_cert.py` `gen_key.py` `cross_validate.py` `regression_prove.py` |
+| `verify/` | `verify_cert.py` `verify_session.py` |
+| `anchor/` | `anchor_e2e.sh` `deploy_anchor.py` |
+| `ops/` | `proof_service.py` `make_audit_proof.sh` `install_*.sh` `retry_install_*.sh` |
+
+顺带解决：`cross_validate` 的 `DEFAULT_WORK_DIR` 从 `REPO/scripts` 改到
+**gitignore 的产物目录**（`bench/work/` 已有，或 `scripts/.work/`），产物不再落在
+源码目录里。
+
+**③ `docs/` 分三层**：
+
+```
+docs/
+├── README.md          # ← 新增：全文档索引，按「读者意图」分组
+├── development.md     # ← 新增：开发与使用手册（总入口，教程向）
+├── demo/README.md     # ← 新增：demo 文档（8 条支路 + 报告怎么读）
+├── modules/           # 分板块：01–08 + README（既有，本次补「怎么用/怎么改」）
+└── *。（架构 / 安全 / 复现 / 计划 / 论文镜像…）
+```
+
+#### 5.6.3 四条硬约束（破了就是错）
+
+1. **门面用法不变**：`from policydsl import Policy`、`compile_policy`、`ToolGateway` …
+   等 `__init__.py` re-export 的符号，包外 82 处依赖它 —— 这些**一行都不改**。
+2. **不留兼容 shim**：包外的 `from policydsl.model import X` 一律改写为新路径，
+   **不在旧位置放转出口** —— shim 会让同一个模块有两个名字，正是本次要消除的东西。
+3. **脚本仍可直接执行**：`python3 scripts/demo/demo_e2e.py` 必须能用；不许改成
+   必须 `-m` 或必须先进某个目录。为此在 `scripts/` 根放一个 `_bootstrap.py`
+   统一算 `REPO` 与装 `sys.path`。
+4. **文档路径引用与代码同等对待**：`demo_all.sh` 在**代码里** `grep docs/security-model.md`
+   取原话（那是有意的设计：报告因此不会随文档漂移而说假话）—— 挪文档就必须同步改。
+
+#### 5.6.4 分步与验收闸门
+
+每步**独立提交**，闸门不过就迭代到过，绝不带病提交（长期规则）。
+
+| 步 | 做什么 | 闸门 |
+|---|---|---|
+| 0 | 方案（本提交） | — |
+| 1 | `policydsl/` 拆包 + 全仓 import 改写 + 文档里的模块路径 | **667 passed / 15 skipped** |
+| 2 | `scripts/` 分组 + `_bootstrap.py` + 全仓路径引用 + 产物目录 | 667 + `demo_all.sh --list` + **fast 模式真跑一次** |
+| 3 | 文档结构与索引：`docs/README.md` + 根 README 目录结构订正 | 交叉链接逐条可点开 |
+| 4 | demo 文档 `docs/demo/README.md` | 对照 `demo_all.sh` 的 8 条支路逐条核对 |
+| 5 | `modules/01–08` 各补「怎么用 / 怎么改」两节 | 08 的测试计数与实际一致 |
+| 6 | 总手册 `docs/development.md` | 手册里的每条命令**实际敲一遍** |
+| 7 | 收尾：测试计数、交叉链接、推送 | 667 + 工作树干净 + origin 同步 |
+
+#### 5.6.5 爆炸半径（实测普查，2026-09-17）
+
+动手前把路径引用数清了，数字改变了做法：
+
+| 级别 | 内容 | 规模 |
+|---|---|---|
+| **P0 会跑挂** | `.py`/`.sh` 里 `REPO/"scripts"`、`sys.path.insert(…,"scripts")`、`subprocess` 拼脚本路径 | **≈90 处 / 30 文件** |
+| **P1 会跑挂** | `tests/` 里 `subprocess` 调脚本、`from scripts.proof_service import` | **≈35 处 / 12 测试文件** |
+| **P2 拆包必炸** | `policydsl` 绝对子模块引用（点号 `policydsl.X` 119 处 + `from policydsl import <子模块>` ≈130 处） | **≈249 处 / 40 文件** |
+| **P3 只是文字** | `.md` 316 / `.html` 5 / `.json` 12（生成物） | **≈333 处** |
+
+四个**决定做法**的发现：
+
+1. **成本在包外，不在包内。** `policydsl/` 内部只有 15 个文件用相对引用；其余 20 个是**叶子
+   模块**（`cert` `keys` `anchor` `nfa` `normalize` `semantic` … 完全没有包内入口引用），
+   被 `tests/`(21 文件) / `scripts/`(11) / `bench/`(4) 广泛依赖。所以拆包的真正工作量是
+   **改外层 249 个 import 点**，不是改包内。
+2. **最硬的耦合是环**：`scripts/regression_prove.py` ↔ `bench/bench_proofs.py` ↔
+   `bench/bench_cycles.py` 靠互相 `sys.path.insert` 成环（`regression_prove` 同时把
+   `scripts/` 与 `bench/` 塞进 `sys.path`）。三者中任一个换深度，**两边都要同时改**。
+3. **`scripts/` 绝不能加 `__init__.py`。** `tests/test_proof_service.py` 有 4 处
+   `from scripts.proof_service import make_server`，靠**命名空间包**成立；一加
+   `__init__.py`，`scripts` 变常规包，namespace 语义与递归发现都会变。
+4. **`.gitignore` 里有 6 条路径规则**（`scripts/vectors.json`、`scripts/results*.json`
+   ×3、`scripts/examples/out/` 出现**两次**）—— 挪目录不改它们，规则就静默失效，
+   产物会直接入库。
+
+**两个不受影响的**（省得白改）：`POP_SCRIPT` 指向 `circuits/target/release/pop-script`，
+与 `scripts/` 无关；`.github/workflows/ci.yml` 里没有任何 `scripts/`/`bench/` 字面量
+（只跑 `unittest discover -s tests`），所以**挪目录后 CI 会在 tests 里报红，而不在 workflow**。
+
+**范围决定：`bench/` 不再下沉。** 它已经是「一个目录一件事」（`bench_*.py` + `results/`
++ `work/`），再分只增加路径点、不增加清晰度。本次只动 `policydsl/` 与 `scripts/`。
+
+#### 5.6.6 边界（如实写在前头）
+
+- **这是一次性大 diff，无法渐进**：拆包不能「改一半还绿」—— 要么全改，要么不改。
+  所以靠**闸门**而不是靠审阅来保证正确性；闸门不过就整步回滚，不带病提交。
+- **拆包不改变任何运行时行为**：只是位置。若某个闸门因此变红，说明原来就藏着
+  一个隐式依赖（比如靠平铺才成立的相对导入），那要**单独记一条**，不混进搬家提交。
+- **`docs/development.md` 与 `modules/` 会有重叠**：分工定死 ——
+  手册讲**任务**（我要接一个新框架 → 步骤），modules 讲**模块**（这个文件里有什么函数、
+  它的不变量是什么）。重复的部分手册里给链接，不复制正文。
