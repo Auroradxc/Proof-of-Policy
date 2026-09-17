@@ -2516,3 +2516,67 @@ policydsl/adapters/langchain_adapter.py:468  def verify_chain(certs: List[Dict[s
   是一次干净样本，但**一次干净不构成销案** —— 它当初就是不可复现的，要销案得
   先复现出它。**继续继承到 P3 大验收。**
 - 未决事项（`bench/results/ablation_live.*` 的去留）**仍未决**，见 §5.7.14。
+
+---
+
+### 5.7.20 R13 —— 死代码：**删 4 保留 6**（不是提案说的「清 9 处」）
+
+**这一条在动代码之前先做完了逐条核查**，结果推翻了提案的前提：那 9 处里
+**5 处是文档化的公开 API**，另有 1 处是**承重的**，真正能删的是 **4 处**。
+
+##### 判据（先定死再查，事后不改口径）
+
+一条符号算「被承诺的公开 API」，**当且仅当**它满足其一：① `docs/` 下有引用；
+② 在某个 `__all__` 里。两者皆无即可删。
+
+为什么用这条而不是「有没有外部使用者」：**「无外部使用者」在本仓里根本无法证实**
+（另一个仓库 import 什么，这里看不见），照字面执行等于一条都不删。而
+**docs 正是本仓记录承诺的地方** —— 验收快照第 6 面的分工（§5.7.18）用的也是这条线。
+`__all__` 那半边是本轮顺带确认的：四个可删项**都不在** `policydsl.__all__` 里，
+而且 `evidence` / `core` / `proofs` 三个子包**都没有** `__all__`，
+所以删它们**不动门面**，R12 的门面用例与快照第 6 面都不会因此变红。
+
+##### 逐条核查（全仓 grep，**所有文件类型**，不只 `.py`）
+
+| # | 符号 | 定义处 | 定义外的引用 | 判定 |
+|---|---|---|---|---|
+| 1 | `seal_digest` | `evidence/trace.py:221` | **0** | **删**（`0c7b210`）|
+| 2 | `seal_for` | `evidence/trace.py:226` | **0** | **删**（`d5a2c38`）|
+| 3 | `public_signer` | `evidence/cert.py:399` | **0** | **删**（`d20407b`）|
+| 4 | `proved_parts` | `proofs/multiparty.py:368` | **0** | **删**（`b1c8ba7`）|
+| 5 | `format_spec` | `core/nfa.py:579` | `docs/modules/01-policy-dsl.md:219` 表格行 | **保留**：文档化 API |
+| 6 | `call_bool` | `evidence/anchor.py:347` | `docs/modules/04-anchoring-audit.md:96`「`call_uint / call_address / call_bool`」| **保留**：同族另两个在用，删掉破坏接口对称 |
+| 7 | `call_tool_sync` | `adapters/mcp_adapter.py:224` | `docs/modules/06-frameworks.md` **4 处**，含 `:664` 的**用法示例** | **保留**：有示例的公开 API |
+| 8 | `chain_digest` | `evidence/trace.py:422` | `docs/plan-p0p1p2.md:411`（计划中的签名）| **保留**：计划文档承诺过 |
+| 9 | `Rule.to_dict` | `core/model.py:227` | `docs/modules/01-policy-dsl.md:85` 类签名行「+ validate() / to_dict()」| **保留**：文档化的类接口 |
+| 10 | `compile.py:253` else 分支 | `core/compile.py:253` | `tests/test_rule_kinds.py:17` 注明「在 validate 之后其实是死代码，**但正是靠这条前提**」| **保留**：**承重** |
+
+##### 第 10 条为什么不能删（这条最容易被下一次重构误删）
+
+那个 `else` 分支生成 `{"kind": …, "stub": True, "note": "not yet implemented…"}`。
+测试的注释说它在 `validate()` 之后是死代码 —— 对，**但它承的是另一件事**：
+有它在，**每一条规则都必定产出至少一条约束**；删掉它，未知 kind 的规则会从
+约束列表里**静默消失**，而「少了一条约束」在 `ConstraintSpec` 上不留痕迹。
+所以它不是冗余，是**兜底**：把「漏了一种 kind」从**静默**变成**看得见的 `stub: true`**。
+**留着它。** 这也是「死代码」这个词最会骗人的地方 —— 覆盖率测不到的路径，
+未必没有职责。
+
+##### 第 9 条 `Rule.to_dict` 差点被误删的原因
+
+提案的备注写着「注意：`Violation.to_dict()` 用的是 `self.rule.name/kind`，不经它」——
+**这句是对的，但它证明的是「别的 `to_dict` 不走这条路」，不是「这个没人用」**。
+`Rule.to_dict` 之所以留下，靠的是 `docs/modules/01-policy-dsl.md:85` 那行类签名。
+（全仓 `to_dict` 有 27 处命中，绝大多数是**别的类**的 —— 只数命中数、
+不看接收者是谁，是这类核查最常见的错法。）
+
+##### 每条单独提交，四条各自可独立 revert
+
+删除是**不可逆**的（`git revert` 能恢复文件，但恢复不了「它曾经是公开 API」这个事实），
+所以四条**各占一个提交**，`git revert` 其中任意一条都不会牵动另外三条。
+每条提交的门禁都跑满了：**776 passed / 15 skipped + `cross_validate` host 19/19
++ 验收快照七面零差异 + demo fast 无 FAIL**（四条全绿，无一条需要回退）。
+
+##### 回退记录：R13 无回退项
+
+**保留 6 处不是「没做完」，是核查的结论。** 下一个人要再清，请先读上表第 5–10 行
+与各自的引用出处 —— 照着提案原话再删一次，删掉的会是公开 API 和兜底分支。
