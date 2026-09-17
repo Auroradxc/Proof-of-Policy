@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（33 个模块，694 个用例）与 `bench/`（7 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（34 个模块，700 个用例）与 `bench/`（7 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,7 +8,7 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 期望 694 passed, 15 skipped
+python3 -m unittest discover -s tests -t . -v   # 期望 700 passed, 15 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
@@ -45,8 +45,9 @@ python3 -m unittest discover -s tests -t . -v   # 期望 694 passed, 15 skipped
 | `test_generic_adapter` | 18 | **P3-a 框架无关参考适配器**（`GenericGuard`，把「接入契约」写成可跑的代码）。契约：生成/工具两条路径各出可验证证书、违规**如实记进证书**而不是藏起来（「证书为真」与「策略满足」是两件事）、一次会话**一把网关**、生成与工具**同一条 `trace_root`**、网关钥与出证方钥是**两把**、默认如实标 `unproven`。seal 时序：早期 seal 被后续调用作废并报「截尾」、每张证书带**自己那一刻**的 seal、无工具调用的会话 `seal.count=0`（而不是没有 seal）。该抛就抛：内容规则缺 `response` 抛 `PolicyError` 且**不留半张证书**、私钥绝不落盘。**第三方真脚本核对**（起子进程）：`verify_session.py` 全卡 PASS、`verify_cert.py` 连 `trace_binding`/`trace_seal` 都 PASS、**不给 `--receipts` 时 `trace_binding` 如实报 FAIL**（不是默认通过）、换别人的网关钥 `trace_seal` 必 FAIL。另记 **4 处变异**，其中一处一度**存活**：「把 `chain` 从整条网关链改成 `[receipt]`（等价于两条链）」时其余 17 例**全绿** —— `trace_root` 只取**最后一条**回执的摘要（链式性在每条回执的 `prev` 里），且只传当前那条时它 `seq` 不从 0 起、会先被判成 `trace_unbound`，于是 `passed` 与**规则名恰好都一样**，差别只在 `kind` 与「计到几条」。补了一条「第 2 次调用继承第 1 次的超预算」并断言咬在 `kind`/`evidence`（计到几条）上之后杀掉；另 3 处（丢网关公钥 / 不写 `receipts.json` / `generate` 不附 seal）均被杀。清单表与接新框架的步骤见 [`06-frameworks.md` §8](06-frameworks.md) |
 | `test_regression_prove` | 16 | **c4 / T3 回归编排器**（`scripts/prove/regression_prove.py`）。**整轮跑的是替身驱动，一个字节的密码学都没算** —— 它证的是**编排层**，不是证明本身（真跑一次全量是 ≈45 min 且要 ~10.15 GiB 峰值，把编排的回归绑在那上面等于没有回归）。守护：**历史只追加不覆盖**（第二次跑完后第一次那条**逐字段没变**；`--dry-run` 一个字节都不写）、坏行不让 `--print` 崩且如实标 `UNREADABLE`；**成败归因**（出证腿挂了 → 验证腿记 `skipped` 且 `ok=False`，**绝不能因为「没跑」被算成通过**；验证腿自己挂了 → 只归因给验证腿，出证腿不被连坐）；**OOM 判据**（`POP_FAKE_FAIL=prove` 让替身**真的 `SIGKILL` 自己**，复刻 OOM killer 的无输出无末行，判 FAIL 且理由写明「没有 RESULT:」）；**失败记录留得下真因**（断言 `log_tail` 含 `CalledProcessError` 且**不含** `time -v` 的样板 —— 这里钉的是一个真踩过的坑：`time` 的报告打在子进程输出**之后**，「取末尾 30 行」会整段取到样板、把 traceback 挤掉，最需要证据的那种失败反而最看不见）；**留痕字段**（`git.sha`/`host.mem_total_mb`/驱动 `sha256` 都对着真文件重算核对）。另记 **6 处变异**，其中 M4 **存活且是等价变异**（如实登记）：把 `ok=(returncode==0 and verdict=="PASS")` 削成只看退出码 —— 当前两处证据总是同时成立，要证伪得让 `cross_validate` **自报 PASS 却非零退出**，那不是本模块能构造的状态；合取仍保留，防的是将来「印了末行之后才崩」 |
 | `test_doc_links` | 4 | **文档里的仓库内链接必须指得到东西**（R1 的第三条闸门）。文档层是别的闸门都够不着的地方：把一个文件挪进 `docs/modules/`、删一节连同它的引用，编辑器不拦、review 也容易看漏，而读的人**不会看到报错** —— 他只会以为自己看错了路径。判据只覆盖「看起来就是仓库内路径」的链接（以 `./` `../` `/` 开头，或以已知后缀结尾），`http(s)://` / `mailto:` / 纯锚点一概跳过（外链断不断不是本仓能保证的事，更不该让 CI 连网）。实测 **47 份文档 / 274 条路径型链接 / 0 条指空**。防假绿有两层：`test_census_is_not_vacuous` 断言至少扫到 40 份文档与 200 条链接（正则写坏或 `rglob` 范围错了会当场红），`test_detects_a_dangling_link` 拿一份**已知含坏链接**的合成文档喂给同一个检查函数、要求它报出来（用临时目录里的真文件当好链接的靶子）| 
+| `test_cross_layer_constants` | 6 | **跨层域分隔符逐字节相同**（R2）。域分隔符是「同一哈希在两个用途下不互相冒充」的**全部实现**，写错一个字符的后果不是报错，是**两侧各自自洽、合起来对不上**。比 5 条：`TRACE_DOMAIN`(pop-trace-v1) / `BIND_DOMAIN`(pop-bind-v1) / `INFER_DOMAIN`(pop-infer-v1) / `MERKLE_NODE_DOMAIN`(pop-session-node-v1) 四个 `&[u8]` 前缀、`INFER_DOMAIN_STR` 的 `&str` 形式、`FOLD_VERSIONS` 列表。**关键：它不需要 Rust 工具链** —— 比的是 `circuits/types/src/lib.rs` 里**声明的字面量**（正则抽取），所以进得了零依赖的那条 CI 通道，而 `skipUnless(POP_SCRIPT.exists())` 那些用例在缺驱动的机器上是**静默全绿**的。两条防退化：`test_a_missing_declaration_is_reported_not_ignored` 要求常量被改名/删掉时**报错而不是返回空串**（否则断言会拿 `b""` 去比、照样绿），`test_extractor_reads_the_declared_value_not_a_substring` 钉住「认声明、不认源码里出现过」，外加 `test_domains_are_distinct` 盯住域分离本身（两个域被合并成全同时，逐条比对**可能全部照样通过**）| 
 | `test_scripts_layout` | 8 | **`scripts/` 分组的机械化保障**（见 `docs/dev-plan.md` §5.6）。存在理由很具体：每个脚本头部都自己写一行按**层数**算的 `sys.path.insert(…, parents[1])` 再 `from _bootstrap import` —— 脚本再搬一次家，这一行就**静默**指错，而它坏掉的是**跑 demo 才会走到**的路径，单测可能全绿（`policydsl/` 拆包时同一个毛病让 66 个用例一起红）。三件事：① **每个脚本都导入得动且 `REPO` == 仓库根**（16 个脚本逐个起子进程导入、不执行 `main`；另有 `test_at_least_one_script_and_five_groups` 防「空集合上全绿」——先断言至少发现 10 个脚本且组名恰是那 5 个）② **`_bootstrap` 是按标记搜索而不是数层数**（`test_finds_root_in_a_foreign_tree` 把它种进一棵陌生树仍找到根 ⇒ 是搜出来的不是写死的；`test_raises_loudly_when_markers_absent` 缺标记抛 `RuntimeError` 且消息里点名 `policydsl`/`circuits`；`test_raises_when_scripts_is_not_at_the_root` 把「嵌套 checkout 会接错树」这条自查本身变成被测行为；`test_bootstrap_is_idempotent_and_orders_repo_first` 在**子进程 + 临时 cwd** 里验连调两次不重复塞路径、且 `REPO` 排在脚本组**前面**）③ **组间不重名 + 根上不放计划外的东西**（5 个组目录是**并排**进 `sys.path` 的，同名文件会让 `import X` 取决于路径顺序 —— 这是 `bootstrap()` 成立的前提；另允许 `scripts/` 根上只有 `_bootstrap.py` + 5 组 + `examples/`，多出来的要么是误提交的产物要么是没想清楚放哪） |
-| **合计** | **694** | |
+| **合计** | **700** | |
 
 ### 15 个 skip（都是设计内的）
 
@@ -447,7 +448,7 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **694 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后与验收基线加入后重测；CI 上更多 skip，见 §1）、
+  当前验收判据是 **700 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后与验收基线加入后重测；CI 上更多 skip，见 §1）、
   `cross_validate` **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 整批重跑，见下）。
   这条判据现在**有自动留痕**：`scripts/prove/regression_prove.py` 每次运行把它追加进
   `bench/results/regression-prove.jsonl`（只追加），并附 git sha / 硬件 / 证明器二进制摘要
@@ -469,7 +470,7 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
 ### 1. 跑测试
 
 ```bash
-python3 -m unittest discover tests                # 全量：694 passed / 15 skipped，~42 s
+python3 -m unittest discover tests                # 全量：700 passed / 15 skipped，~42 s
 python3 -m unittest tests.test_dsl -v             # 单个模块（哪一板块 → 见 §1 的表）
 python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 ```
@@ -507,7 +508,7 @@ python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 
 **唯一有留痕的是 `cross_validate` 的判据**：`scripts/prove/regression_prove.py`
 每次运行把它追加进 `bench/results/regression-prove.jsonl`（**只追加**），并附
-git sha / 硬件 / 证明器二进制摘要，所以「694 passed」这类数字指得回具体的某一次运行（T3）。
+git sha / 硬件 / 证明器二进制摘要，所以「700 passed」这类数字指得回具体的某一次运行（T3）。
 
 ## 怎么改它
 
@@ -522,8 +523,8 @@ git sha / 硬件 / 证明器二进制摘要，所以「694 passed」这类数字
 **「四处同步」清单**（改测试计数时，这四处都写着同一批数字）：
 
 1. 本文件 §1 表的**那一行**与**合计行**；
-2. 本文件**顶部**那句「33 个模块，694 个用例」；
-3. 本文件 §5 扩展指引里的**验收判据**（`694 passed / 15 skip`）；
+2. 本文件**顶部**那句「34 个模块，700 个用例」；
+3. 本文件 §5 扩展指引里的**验收判据**（`700 passed / 15 skip`）；
 4. `docs/README.md` 的计数口径 + `README.md` / `docs/reproduce.md` 的验收判据。
 
 （`docs/README.md` §3 已把「测试计数 → 08」写成约定：**本文件是唯一权威源**，
@@ -547,7 +548,7 @@ git sha / 硬件 / 证明器二进制摘要，所以「694 passed」这类数字
 
 ```bash
 # 改完测试层的两条验证
-python3 -m unittest discover tests                # 694 passed / 15 skipped（数对不上先查 §1 表）
+python3 -m unittest discover tests                # 700 passed / 15 skipped（数对不上先查 §1 表）
 python3 -m unittest tests.test_scripts_layout     # 若动过 scripts/ 分组
 ```
 
