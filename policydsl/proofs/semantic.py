@@ -53,6 +53,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
@@ -62,6 +63,7 @@ __all__ = [
     "SemanticError", "SEMANTIC_VERSION", "SETTINGS_VERSION", "REQUIRED_INPUT_SCALE",
     "DEFAULT_LOGROWS", "required_logrows", "patch_settings", "check_settings",
     "settings_fingerprint", "model_dir", "model_manifest", "onnx_sha256",
+    "cached_onnx_sha256", "cached_file_sha256", "vk_path",
     "encode_ids", "input_width", "check_bound_to_response", "ARTIFACT_NAMES",
     "hex_int", "read_instances", "check_settings_file", "verify_companion",
     "companion_entry", "threshold_holds", "SEMANTIC_SYSTEM_EZKL",
@@ -198,6 +200,71 @@ def onnx_sha256(path: Path | str | None = None) -> str:
     if not p.exists():
         raise SemanticError(f"{p} 不存在 —— 先跑 python3 -m semantic.train 生成模型")
     return hashlib.sha256(p.read_bytes()).hexdigest()
+
+
+# --------------------------------------------------------------------------- #
+# 指纹的进程内缓存 —— **只给热路径用**
+#
+# 为什么要有它：`evaluate.check` 每次判定都要为语义规则取一遍指纹，而指纹是
+# 「读文件 + sha256」（`model.onnx` 156 KB + `vk.ezkl` 803 KB）。实测这占了
+# `check()` 全部耗时的 **~76%**（581 µs 里的 ~440 µs），而 `check()` 是被
+# `runtime/service.py` 逐请求调用的。指纹在这条路径上**不参与任何校验** ——
+# 它只是填 `DelegatedConstraint` 的字段，真正的比对在 `verify_cert` 那侧
+# （见 `evaluate.check` 里那段注释）。
+#
+# 边界划在哪，理由是什么：
+#   * **热路径（本节的 cached_*）**：登记委托时取指纹，缓存。
+#   * **校验路径（`onnx_sha256` / `model_manifest`）**：维持现算，一个字不改。
+#     `model_manifest` 拿 `onnx_sha256` 与 `MODEL.sha256` 比对，是「模型有没有
+#     被换过」的信任边界；按 mtime 命中缓存会漏掉「内容换了但 mtime/size 没变」
+#     的调包。那条检查冷（编译/验证期各一次），不值得为它冒险。
+#
+# 缓存键带 `mtime_ns` 与 `size`，所以**进程内换了模型照样会被察觉**：文件一变，
+# 键就变，缓存不命中，重新读盘。唯一的残留窗口是 stat 与 read 之间（TOCTOU），
+# 影响面仅限上面说的那条非校验路径。
+# --------------------------------------------------------------------------- #
+
+
+def vk_path() -> Path:
+    """``vk.ezkl``（ezkl 验证钥匙）的路径。
+
+    路径口径收在这里：它原先只写在 ``compile._model_vkey`` 里，而判定路径也要用
+    同一个文件 —— 两处各写一遍迟早写岔。
+    """
+    return model_dir() / "artifacts" / ARTIFACT_NAMES["vk"]
+
+
+@lru_cache(maxsize=16)
+def _sha256_of_file(path: str, mtime_ns: int, size: int) -> str:
+    """分块算文件 sha256，按 ``(路径, mtime_ns, size)`` 缓存结果。
+
+    分块而不是 ``read_bytes()``：后者会把整个文件读进内存，而本仓库对内存敏感
+    （SP1 出证的内存天花板见 README）。sha256 的结果与分块大小无关。
+    """
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def cached_file_sha256(path: Path | str) -> str:
+    """:func:`_sha256_of_file` 的取指纹入口（stat 当前状态后查缓存）。"""
+    p = Path(path)
+    st = p.stat()
+    return _sha256_of_file(str(p), st.st_mtime_ns, st.st_size)
+
+
+def cached_onnx_sha256() -> str:
+    """``model.onnx`` 指纹的**缓存版**（热路径用）。
+
+    **不要在校验路径上用这个** —— 那边用 :func:`onnx_sha256`（现算）。
+    两者的分工见本节开头的说明。缺文件时的报错与 :func:`onnx_sha256` 一致。
+    """
+    p = model_dir() / "model.onnx"
+    if not p.exists():
+        raise SemanticError(f"{p} 不存在 —— 先跑 python3 -m semantic.train 生成模型")
+    return cached_file_sha256(p)
 
 
 def model_manifest(directory: Path | str | None = None) -> Dict[str, Any]:

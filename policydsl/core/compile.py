@@ -118,12 +118,14 @@ def _model_vkey() -> str:
     """
     from policydsl.proofs import semantic as sem
 
-    p = sem.model_dir() / "artifacts" / sem.ARTIFACT_NAMES["vk"]
+    p = sem.vk_path()
     if not p.exists():
         raise PolicyError(
             f"缺少 {p} —— 语义规则需要 ezkl 的验证钥匙指纹。"
             f"先跑 `python3 scripts/prove/ezkl_prove.py setup` 生成它")
-    return hashlib.sha256(p.read_bytes()).hexdigest()
+    # 走 sem 的缓存入口：本函数被 evaluate.check 逐请求调用（热路径），而指纹
+    # 在那里不参与校验，只是填 DelegatedConstraint 的字段。报错类型与文案不变。
+    return sem.cached_file_sha256(p)
 
 
 def require_covering_length_bound(policy: Policy) -> None:
