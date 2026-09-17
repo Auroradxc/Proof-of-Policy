@@ -396,15 +396,6 @@ def _ed25519_verify(public_key: "Ed25519PublicKey", data: bytes, sig: bytes) -> 
         return False
 
 
-def public_signer(public_key: "Ed25519PublicKey") -> "Ed25519PublicKey":
-    """把公钥包成可放进 keyring 的「只能验签」对象。
-
-    Ed25519 公钥本身就有 ``verify``，直接放进 keyring 即可；本函数只是
-    给调用方一个显式的意图表达。
-    """
-    return public_key
-
-
 # --------------------------------------------------------------------------
 # keyring：按 keyid 分发
 # --------------------------------------------------------------------------
