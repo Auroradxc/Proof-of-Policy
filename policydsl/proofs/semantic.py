@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 from policydsl.paths import REPO  # 仓库根的唯一出处（解析 semantic/ 目录用）
+from policydsl.evidence.cert import sha256_file
 
 __all__ = [
     "SemanticError", "SEMANTIC_VERSION", "SETTINGS_VERSION", "REQUIRED_INPUT_SCALE",
@@ -236,16 +237,14 @@ def vk_path() -> Path:
 
 @lru_cache(maxsize=16)
 def _sha256_of_file(path: str, mtime_ns: int, size: int) -> str:
-    """分块算文件 sha256，按 ``(路径, mtime_ns, size)`` 缓存结果。
+    """按 ``(路径, mtime_ns, size)`` 缓存 :func:`cert.sha256_file` 的结果。
 
-    分块而不是 ``read_bytes()``：后者会把整个文件读进内存，而本仓库对内存敏感
-    （SP1 出证的内存天花板见 README）。sha256 的结果与分块大小无关。
+    **这里只做缓存，不做哈希** —— 摘要口径收在 ``policydsl.evidence.cert.sha256_file``
+    一处（原先本函数自带一份分块实现，与另外 7 份逐字重复，见该函数的 docstring）。
+
+    ``mtime_ns`` 与 ``size`` 是**缓存键**，不参与计算：文件换了就不认旧值。
     """
-    h = hashlib.sha256()
-    with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    return sha256_file(path)
 
 
 def cached_file_sha256(path: Path | str) -> str:

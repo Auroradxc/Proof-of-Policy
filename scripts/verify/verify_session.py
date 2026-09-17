@@ -27,7 +27,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -40,6 +39,7 @@ from _bootstrap import REPO, bootstrap  # noqa: E402
 bootstrap()
 
 from policydsl.evidence import anchor, cert, keys, verifier  # noqa: E402
+from policydsl.evidence.cert import sha256_file  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.adapters.langchain_adapter import verify_chain  # noqa: E402
 from policydsl.core.model import Policy, Rule  # noqa: E402
@@ -54,11 +54,6 @@ def load_policy(path: Path) -> Policy:
     rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
              for i, r in enumerate(d["rules"])]
     return Policy(d["id"], d.get("version", "0.1.0"), rules=rules)
-
-
-def sha256_file(path: Path) -> str:
-    """对文件字节求 SHA-256。"""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def main() -> int:

@@ -61,6 +61,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from policydsl.proofs import infer
 from policydsl.evidence import verifier as V
+from policydsl.evidence.cert import sha256_file
 
 # 仓库根与两个驱动路径的唯一出处（见 `policydsl/paths.py` docstring 的事故记录）
 from policydsl.paths import POP_SCRIPT, POP_VERIFY
@@ -80,11 +81,6 @@ JOB_FOR_KIND = {KIND_POLICY: "policy", KIND_INFERENCE: "infer"}
 
 #: 组合义务的陈述（进 composite，供人读；也是「这份证书声称什么」的原文）。
 OBLIGATION = "推理完整性 ∧ 策略合规"
-
-
-def sha256_file(path: Path) -> str:
-    """对文件字节求 SHA-256（小写十六进制）。"""
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def _outcome_of(proof_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:

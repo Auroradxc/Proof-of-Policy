@@ -105,6 +105,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from policydsl.evidence import cert as C
+from policydsl.evidence.cert import sha256_file
 from policydsl.privacy import commit as CMT
 from policydsl.evidence import verifier as V
 from policydsl.core.compile import (compile_policy, compile_slice_policy,
@@ -228,11 +229,6 @@ def plan_of(policy: Policy) -> Dict[str, Dict[str, Any]]:
 def plan_digest(plan: Dict[str, Any]) -> str:
     """计划摘要：把「谁证哪几段」压成一个值，进每个角色的签名载荷。"""
     return hashlib.sha256(C.canonical(plan)).hexdigest()
-
-
-def sha256_file(path: Path) -> str:
-    """对文件字节求 SHA-256（小写十六进制）。"""
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def _signer_keyid(signer: Any) -> str:

@@ -44,7 +44,8 @@ import hashlib
 import hmac
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple, Union
 
 try:  # pragma: no cover - 导入失败时给出可读错误，而不是 ImportError 栈
     from cryptography.exceptions import InvalidSignature
@@ -133,6 +134,33 @@ def canonical(obj: Any) -> bytes:
 def sha256_hex(data: bytes) -> str:
     """对字节求 SHA-256 并返回十六进制字符串。"""
     return hashlib.sha256(data).hexdigest()
+
+
+def sha256_file(path: Union[str, Path]) -> str:
+    """对**文件字节**求 SHA-256（小写十六进制）。小写是契约的一部分。
+
+    与 :func:`sha256_hex` 的分工：那个收已经在内存里的 ``bytes``，这个收路径。
+
+    **全仓唯一出处。** 这份实现一度被抄成 7 份（``proofs/compose.py``、
+    ``proofs/multiparty.py``、``runtime/service.py``、``scripts/prove/issue_cert.py``、
+    ``scripts/verify/verify_cert.py``、``scripts/verify/verify_session.py`` 各一份，
+    外加 ``regression_prove.py`` 里一段内联），其中 ``service.py`` 那份的 docstring
+    写的是「与 ``issue_cert.py`` 同口径」—— 一句话承认了重复，却没有任何东西
+    保证它**继续**同口径。它们要摘要的是同一个东西（证明工件、公值文件、驱动
+    二进制），而结果会进证书的 ``binding`` 字段：一处改了口径，出证方与验证方
+    就会各算一个值、各自自洽，证书在第三方手里才验不过（与 R4 同一类事故）。
+
+    **读文件用分块（1 MiB）而不是 ``read_bytes()``**：要摘要的东西里有
+    ``circuits/target/release/pop-script``，实测 87 MB 的构建产物；而出证这条路
+    上内存本来就是瓶颈（地板 ~10.15 GiB，见 ``bench/results/proofs.md``），
+    没必要为了一个摘要再要一份与文件等大的常驻内存。两条路的摘要值逐字节相同
+    —— 这一点由 ``tests/test_artifact_digest.py`` 在 1 MiB 边界两侧钉着。
+    """
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
 
 
 def utc_now() -> str:

@@ -1622,3 +1622,75 @@ R4 修的是「同一件事有 26 份」，所以闸门也必须是**结构**而
 
 **这也第三次证实了 §5.7.8 那条元结论**：33 处抄写**今天全部正确**，所以没有任何测试或
 基线能看见它们 —— 「对得整齐」是一种**没有观察**的状态，它的寿命等于「下一次有人改名字」。
+
+#### 5.7.10 P1-③ R5：工件摘要 7 份 + 1 段内联 → 1 处（2026-09-17，✅ 已交付）
+
+##### 实际改了什么（同样以 `git grep` 核过）
+
+提案说「6 份、行为相同但非逐字相同、2 份多一层 `Path()`」。**实测是 7 份定义 + 1 段内联**：
+
+| # | 位置 | 形态 |
+|---|---|---|
+| 1 | `policydsl/proofs/compose.py` | `sha256(Path(path).read_bytes())` |
+| 2 | `policydsl/proofs/multiparty.py` | 同上（逐字相同）|
+| 3 | `policydsl/runtime/service.py` | `sha256(path.read_bytes())`，docstring 写「与 `issue_cert.py` 同口径」|
+| 4 | `scripts/prove/issue_cert.py` | 同上 |
+| 5 | `scripts/verify/verify_cert.py` | 同上 |
+| 6 | `scripts/verify/verify_session.py` | 同上（与 5 逐字相同）|
+| 7 | `policydsl/proofs/semantic.py` `_sha256_of_file` | **分块**读 + `lru_cache`（键含 mtime_ns/size）|
+| 8 | `scripts/prove/regression_prove.py` `driver_fingerprint` | **内联**分块读（**没有名字**，只扫函数名会整条漏掉）|
+
+**唯一出处放在 `policydsl/evidence/cert.py`（紧跟已有的 `sha256_hex`）**，采纳提案的意见。
+`service.py` 那句「与 `issue_cert.py` 同口径」是个标本：**一句话承认了重复，却没有任何东西
+保证它继续同口径**。而它们摘要的东西进证书的 `binding.proof_sha256` —— 两处只要有一处
+口径变了，出证方与验证方各算一个值、**各自自洽**，证书在第三方手里才验不过。
+
+**一处有意的实现选择**：唯一出处用**分块读（1 MiB）**而不是 `read_bytes()`。理由是实测数字：
+要摘要的东西里有 `circuits/target/release/pop-script`，**87 MB** 的构建产物；而出证这条路上
+内存本来就是瓶颈（地板 ~10.15 GiB，见 `bench/results/proofs.md`）。分块版与一次读尽版
+的摘要值逐字节相同 —— 这一点由 `tests/test_artifact_digest.py` 在 **1 MiB 边界两侧**
+（0 / 1 / 1 MiB−1 / 1 MiB / 1 MiB+1 / 2 MiB+12345 字节）钉着，而不是靠「显然」。
+
+**两处有意保留**（申报名单见 `tests/test_artifact_digest.py`）：
+
+- `semantic._sha256_of_file`：**纯缓存壳**。它的签名里 `mtime_ns` / `size` 是**缓存键**、
+  不参与计算（「文件换了就不认旧值」），与摘要口径是两件事 —— 后者已经收走，
+  函数体只剩 `return sha256_file(path)`。另有一条断言证明它**真的还在缓存**。
+- `tests/test_regression_prove.py::_sha256`：**独立参照**。它验的是
+  `driver_fingerprint()` 的**输出**，复用生产实现就成了自证 —— 与本仓
+  「Python golden ↔ Rust `pop-types::evaluate` 两处独立算」是同一种用法。
+
+**副作用（如实记）**：4 个文件里的 `import hashlib` 成了死导入，一并删掉
+（`scripts/prove/issue_cert.py`、`regression_prove.py`、`scripts/verify/verify_cert.py`、
+`verify_session.py`）。另有两处**改动前就有**的死导入（`proofs/compose.py` 的
+`os`/`sys`/`tempfile`、`evidence/cert.py` 的 `InvalidSignature`）**没动** —— 那是 R13 的范围。
+
+##### 闸门（新增 `tests/test_artifact_digest.py`，11 例）
+
+两条扫描：① 像文件摘要的**函数名**；② 「分块把文件喂给哈希」这个**惯用法**
+（`iter(lambda: fh.read(N), b"")`）—— 第 ② 条非有不可，否则 `driver_fingerprint` 那段
+没有名字的内联实现整条漏掉。例外逐条申报、条数钉死；两条防恒真下限（扫到 ≥100 个 `.py`；
+≥8 个模块仍从这里取摘要），外加一条**给扫描器本身喂已知样本**的探针 —— 认不出东西的
+扫描器与没有扫描器，在结论上无法区分。
+
+**四条变异探针实测非恒真**：
+
+| 探针 | 结果 |
+|---|---|
+| A 在别处新增一份 `def _sha256` | 红（函数名扫描）|
+| B 口径改成大写十六进制 | 红（边界对拍 ×6 + 小写契约）|
+| C 每一块漏读最后一个字节 | 红（边界对拍 ×6）|
+| D 缓存壳长回自己那份分块实现 | 红（流式读惯用法扫描）|
+
+##### 验收（R5 风险标「极低」，无回退判据；实测全绿，不触发回退）
+
+| 档 | 命令 | 结果 |
+|---|---|---|
+| 秒级 | `unittest discover -s tests -t .` | **740 passed / 15 skipped**（729 + 新增 11，skip 集合不变）|
+| 秒级 | `unittest tests.test_artifact_digest` | **11 passed**（1.00 s）|
+| 秒级 | `cross_validate.py --no-prove` | **host 19/19** PASS |
+| 秒级 | `verify/acceptance.py --verify` | **七面逐路径零差异** |
+| 分钟 | `demo_all.sh`（fast） | **8 支路全 PASS，SKIP 集合 = ∅** |
+| 分钟 | `verify_session.py --session …` | **10 项 PASS** |
+
+真出证随 P1 阶段末统一跑（`--label P1-acceptance`）。

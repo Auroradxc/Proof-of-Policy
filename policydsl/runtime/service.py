@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 from policydsl.evidence import anchor, cert, keys, trace, verifier
+from policydsl.evidence.cert import sha256_file
 from policydsl.privacy import challenge, commit
 from policydsl.core import evaluate
 from policydsl.core.compile import compile_policy
@@ -469,11 +470,6 @@ def failure_reason(exc: BaseException) -> str:
                     f"或换一台内存更大的机器 —— 调大 --concurrency 只会更快 OOM")
         return f"{type(exc).__name__}: 证明器被 signal {sig} 杀死（{exc}）"
     return f"{type(exc).__name__}: {exc}"
-
-
-def sha256_file(path: Path) -> str:
-    """文件字节的 SHA-256（证明工件绑定用，与 ``issue_cert.py`` 同口径）。"""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def issue_certificate(out_dir: Path, packed: PackedPolicy, response: str, nonce: bytes,

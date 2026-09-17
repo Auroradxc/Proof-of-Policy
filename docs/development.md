@@ -239,7 +239,7 @@ python3 scripts/verify/verify_cert.py \
 
 ### 4.2 提交前清单
 
-1. `python3 -m unittest discover tests` → **729 / 15**，工作树里没有计划外的文件。
+1. `python3 -m unittest discover tests` → **740 / 15**，工作树里没有计划外的文件。
 2. 改了 `scripts/` 结构 → `tests.test_scripts_layout` 过。
 3. 改了会产生数字的东西 → 数字**四处同步**（见 [`modules/08`](modules/08-tests-bench.md)）。
 4. 改了文档 → 相对链接不悬空。

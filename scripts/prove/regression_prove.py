@@ -66,7 +66,6 @@ vkey setup，性价比不对。
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -86,7 +85,7 @@ sys.path.insert(0, str(REPO / "bench"))  # bench_proofs 在 bench/ 下，不属�
 
 import bench_proofs  # noqa: E402  —— 硬件记录（host_info）的唯一出处
 import cross_validate as cv  # noqa: E402  —— 向量表与 golden 比对的唯一出处
-from policydsl.evidence.cert import utc_now  # noqa: E402
+from policydsl.evidence.cert import sha256_file, utc_now  # noqa: E402
 from policydsl.paths import POP_SCRIPT as DEFAULT_POP  # noqa: E402  驱动路径的唯一出处
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
@@ -187,15 +186,12 @@ def driver_fingerprint(pop_script: Path) -> dict:
     p = Path(pop_script)
     if not p.exists():
         return {"path": str(p), "exists": False}
-    h = hashlib.sha256()
     try:
-        with p.open("rb") as fh:
-            for blk in iter(lambda: fh.read(1 << 20), b""):
-                h.update(blk)
+        digest = sha256_file(p)
         st = p.stat()
     except OSError as exc:
         return {"path": str(p), "exists": True, "error": str(exc)}
-    return {"path": str(p), "exists": True, "sha256": h.hexdigest(),
+    return {"path": str(p), "exists": True, "sha256": digest,
             "bytes": st.st_size,
             "mtime": datetime.fromtimestamp(st.st_mtime, timezone.utc).isoformat()}
 

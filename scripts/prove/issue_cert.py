@@ -31,7 +31,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -44,6 +43,7 @@ from _bootstrap import REPO, bootstrap  # noqa: E402
 bootstrap()
 
 from policydsl.evidence import anchor, cert, keys
+from policydsl.evidence.cert import sha256_file
 from policydsl.privacy import challenge, commit
 from policydsl.proofs import semantic as S
 from policydsl.core.compile import compile_policy
@@ -71,11 +71,6 @@ def resolve_nonce(text: str) -> bytes:
     if t == "none":
         return b""
     return challenge.parse_nonce(text)
-
-
-def sha256_file(path: Path) -> str:
-    """对文件字节求 SHA-256（用于证明工件哈希绑定）。"""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def run_pop(args: list[str]) -> None:
