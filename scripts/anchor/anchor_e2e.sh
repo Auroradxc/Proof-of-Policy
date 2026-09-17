@@ -5,15 +5,20 @@
 #   → 第三方 verify_session --rpc 独立核对（含反例对照）
 #
 # 用法：
-#   bash scripts/anchor_e2e.sh                 # 默认不生成 SP1 证明（快，~10s）
-#   SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附带真实 Core 证明（本机实测 3:10 / 峰值 10.2 GiB）
-#   RPC=http://127.0.0.1:8545 bash scripts/anchor_e2e.sh   # 复用已在跑的节点
-#   bash scripts/anchor_e2e.sh --keep           # 结束后不关闭 anvil
+#   bash scripts/anchor/anchor_e2e.sh                 # 默认不生成 SP1 证明（快，~10s）
+#   SP1_PROVER=cpu bash scripts/anchor/anchor_e2e.sh --prove   # 附带真实 Core 证明（本机实测 3:10 / 峰值 10.2 GiB）
+#   RPC=http://127.0.0.1:8545 bash scripts/anchor/anchor_e2e.sh   # 复用已在跑的节点
+#   bash scripts/anchor/anchor_e2e.sh --keep           # 结束后不关闭 anvil
 #
 # 退出码：0 全部 PASS；1 任一步骤失败。
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 仓库根：从本文件向上找**同时含** policydsl/ 与 circuits/ 的目录。
+# 不写 "${BASH_SOURCE[0]}/../.." —— 那种「数层数」的写法今天对、下次搬家就静默指错，
+# 与 scripts/_bootstrap.py 用的是同一对标记（改一处要改两处）。
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+while [ ! -d "$HERE/policydsl" ] && [ "$HERE" != "/" ]; do HERE="$(dirname "$HERE")"; done
+[ -d "$HERE/circuits" ] || { echo "找不到仓库根（从 ${BASH_SOURCE[0]} 向上）" >&2; exit 1; }
 cd "$HERE"
 
 RPC="${RPC:-http://127.0.0.1:8545}"
@@ -33,8 +38,8 @@ fail() { echo -e "\033[31m[anchor-e2e] FAIL:\033[0m $*" >&2; exit 1; }
 
 # ---- 0) foundry ----
 export PATH="$PATH:$HOME/.foundry/bin"
-command -v anvil >/dev/null || fail "anvil not found (bash scripts/retry_install_foundry.sh)"
-command -v cast  >/dev/null || fail "cast not found (bash scripts/retry_install_foundry.sh)"
+command -v anvil >/dev/null || fail "anvil not found (bash scripts/ops/retry_install_foundry.sh)"
+command -v cast  >/dev/null || fail "cast not found (bash scripts/ops/retry_install_foundry.sh)"
 log "foundry: $(anvil --version 2>&1 | head -1)"
 
 ANVIL_PID=""
@@ -65,7 +70,7 @@ fi
 # ---- 2) 部署 Anchor 合约（字节码来自入库的 contracts/Anchor.json） ----
 log "deploying Anchor.sol ..."
 DEPLOY_JSON="$OUT_DIR/deploy.json"
-python3 scripts/deploy_anchor.py --rpc "$RPC" --out "$DEPLOY_JSON" || fail "deploy failed"
+python3 scripts/anchor/deploy_anchor.py --rpc "$RPC" --out "$DEPLOY_JSON" || fail "deploy failed"
 CONTRACT=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['address'])" "$DEPLOY_JSON")
 echo "contract = $CONTRACT"
 
@@ -73,12 +78,12 @@ echo "contract = $CONTRACT"
 DEMO_ARGS=(--out-dir "$OUT_DIR" --rpc "$RPC" --contract "$CONTRACT")
 [ "$PROVE" = "1" ] || DEMO_ARGS+=(--no-prove)
 log "running demo (prove=$PROVE) → $OUT_DIR"
-SP1_PROVER=cpu python3 scripts/demo_e2e.py "${DEMO_ARGS[@]}" || fail "demo failed"
+SP1_PROVER=cpu python3 scripts/demo/demo_e2e.py "${DEMO_ARGS[@]}" || fail "demo failed"
 [ -f "$OUT_DIR/session.json" ] || fail "session.json missing"
 
 # ---- 4) 第三方独立核对（仅凭公开产物 + RPC） ----
 log "independent verification (verify_session --rpc) ..."
-python3 scripts/verify_session.py --session "$OUT_DIR/session.json" \
+python3 scripts/verify/verify_session.py --session "$OUT_DIR/session.json" \
         --rpc "$RPC" --contract "$CONTRACT" || fail "verify_session reported FAIL"
 
 # ---- 5) 反例对照：未登记的摘要必须读回 0（证明上面的 PASS 不是恒真） ----

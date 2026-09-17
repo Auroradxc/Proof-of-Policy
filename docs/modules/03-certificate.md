@@ -223,7 +223,7 @@ ezkl 的公开实例含 `encode(T)`，而 `encode` 对收录字符是**单射**�
 **密钥从哪来**（`policydsl/evidence/keys.py`）：
 
 - 出证方：`keys.load_or_create()` 读 `$POP_SIGNING_KEY`（缺省 `.pop-keys/signing.key`，
-  已 gitignore，`0600`、不覆盖已有文件），没有就生成一把；`scripts/gen_key.py` 是它的 CLI。
+  已 gitignore，`0600`、不覆盖已有文件），没有就生成一把；`scripts/prove/gen_key.py` 是它的 CLI。
 - 验证方：`keys.load_keyring(path_or_text)` 把 `key.json` / `*.pub.hex` / `*.pub.pem` /
   公钥十六进制读成 `{keyid: 公钥}`，交给 `verify_envelope`。**从头到尾不需要私钥。**
 
@@ -390,8 +390,8 @@ build_payload(policy_id, policy_version, spec, mode, outcome,
 | `tests/test_agent.py` | `AgentMonitor` 两条路径的 outcome 与证书、`mock_agent` 确定性 |
 | `tests/test_frameworks.py`（流式部分） | `verify_chain`、早停证书形状 |
 | `tests/test_binding.py::TestChallengedCertificateEndToEnd` | 挑战块进证书：送达 T′ 通过 / 换 T′ / 换 nonce 被拒 / 无挑战块诚实跳过 |
-| `scripts/verify_cert.py` | 端到端 9 项检查（签名 / policy_hash / **response_binding** / **proof_mode** / 锚定 / 证明 / outcome / vkey / proof_sha256） |
-| `scripts/verify_session.py` | 会话级：签名 + policy_hash + **response_binding** + **proof_mode**（逐证书 + 与工件自报模式交叉核对）+ 锚定 + 流式链 + zk 证明 |
+| `scripts/verify/verify_cert.py` | 端到端 9 项检查（签名 / policy_hash / **response_binding** / **proof_mode** / 锚定 / 证明 / outcome / vkey / proof_sha256） |
+| `scripts/verify/verify_session.py` | 会话级：签名 + policy_hash + **response_binding** + **proof_mode**（逐证书 + 与工件自报模式交叉核对）+ 锚定 + 流式链 + zk 证明 |
 
 ---
 

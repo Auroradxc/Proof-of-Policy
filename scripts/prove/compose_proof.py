@@ -12,7 +12,7 @@ ELF ⇒ 两个不同的 vkey**），再交给 :mod:`policydsl.proofs.compose` �
 用法：
 
 ```bash
-SP1_PROVER=cpu python3 scripts/compose_proof.py \\
+SP1_PROVER=cpu python3 scripts/prove/compose_proof.py \\
   --pack policy_packs/eu_ai_act_v1.json \\
   --response scripts/examples/eu_agent_reply.txt \\
   [--out-dir DIR] [--no-prove] [--reuse-proofs] [--proof-mode core|compressed|groth16|plonk]
@@ -41,8 +41,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.proofs import infer as I                      # noqa: E402
 from policydsl.proofs import compose as C                    # noqa: E402

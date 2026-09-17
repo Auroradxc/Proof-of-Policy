@@ -13,7 +13,7 @@
 
 峰值常驻内存是**分开报**的，因为它决定了「这台机器能不能跑」：实测 12 GB 机器上
 出证峰值 **8.7–9.2 GB**，很紧。因此脚本对每个阶段**各起一个子进程**（``--phase``），
-避免同一进程内两段峰值叠加 —— 这也正是 ``scripts/ezkl_prove.py`` 要求
+避免同一进程内两段峰值叠加 —— 这也正是 ``scripts/prove/ezkl_prove.py`` 要求
 ``setup`` 与 ``prove`` 分进程的原因。
 
 用法：
@@ -39,7 +39,7 @@ from typing import Any, Dict, List, Optional
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-DRIVER = REPO / "scripts" / "ezkl_prove.py"
+DRIVER = REPO / "scripts" / "prove" / "ezkl_prove.py"
 ART = REPO / "semantic" / "artifacts"
 
 #: 基准用的响应：一条**同形异义绕过**的有害文本。选它而不是普通有害文本，是因为
@@ -53,7 +53,7 @@ def _run_phase(phase: str, extra: List[str] | None = None) -> Dict[str, Any]:
 
     分进程是刻意的：同一进程内连续跑 setup 与 prove，``ru_maxrss`` 会给出两段
     峰值之和，既不是任何单阶段的真实成本，又会把机器打爆。峰值由子进程自己用
-    ``ru_maxrss`` 测（``scripts/ezkl_prove.py`` 里已实现），父进程只解析 ——
+    ``ru_maxrss`` 测（``scripts/prove/ezkl_prove.py`` 里已实现），父进程只解析 ——
     父进程**测不到**子进程的峰值，这是不重复实现的唯一办法。
     """
     argv = [sys.executable, str(DRIVER), phase, *(extra or [])]

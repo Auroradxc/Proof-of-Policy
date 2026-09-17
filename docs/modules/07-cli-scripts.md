@@ -1,6 +1,7 @@
 # 07 · CLI 与脚本
 
-> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（15 个 Python 入口 + 7 个 shell）。
+> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（16 个 Python 入口 + 7 个 shell = 23 个，
+> 外加引导用的 `_bootstrap.py`）。
 > 这一板块回答：**每个脚本负责哪一段，什么时候该用哪个。**
 > 完整的复现顺序见 [`../reproduce.md`](../reproduce.md)；这里讲的是**脚本内部在做什么**。
 
@@ -39,8 +40,24 @@
 > 顺序调用下表里的驱动，并如实记下「哪条跑了 / 哪条为什么跳过 / 耗时与峰值内存」。
 > 完整说明见 §3。
 
-补充：`scripts/vectors.json`、`results.json`、`results_check.json`、`results_prove.json`、
-`scripts/examples/out/` 都是**运行产物**（部分入库、部分 gitignored）。
+**这 23 个文件在盘上分在 5 个组里**（表里写的是脚本名，实际路径要加组前缀）：
+
+| 组 | 脚本 |
+|---|---|
+| `scripts/demo/` | `demo_all.sh` `demo_e2e.py` `private_demo.py` `make_shots.py` |
+| `scripts/prove/` | `cross_validate.py` `ezkl_prove.py` `compose_proof.py` `prove_session.py` `prove_multiparty.py` `prove_policy.py` `regression_prove.py` `issue_cert.py` `gen_key.py` |
+| `scripts/verify/` | `verify_cert.py` `verify_session.py` |
+| `scripts/anchor/` | `anchor_e2e.sh` `deploy_anchor.py` |
+| `scripts/ops/` | `proof_service.py` `make_audit_proof.sh` `install_ezkl.sh` `install_frameworks.sh` `retry_install_frameworks.sh` `retry_install_foundry.sh` |
+
+每个脚本开头都先 `bootstrap()` 一下 `scripts/_bootstrap.py` —— 它**按标记目录**
+（同时含 `policydsl/` 与 `circuits/`）向上搜仓库根，把 5 个组目录并排装进 `sys.path`，
+所以**跨组 import 直接用平铺模块名**（`from verify_cert import …`），不必写 `verify.`。
+代价是组间不能有同名文件 —— 这条不变量由 `tests/test_scripts_layout.py` 锁住（见 08）。
+
+补充：`scripts/.work/`（`vectors.json` / `results_*.json` 等草稿产物）与
+`scripts/examples/out/`（demo 产物、部分入库）都是**运行产物**，都在 gitignore 里。
+草稿区原先散在 `scripts/` 根上（每个文件名一条规则），分组时一并收进 `.work/`。
 
 ---
 
@@ -49,7 +66,7 @@
 ### 2.1 `prove_policy.py` —— 最小的一件事
 
 ```bash
-SP1_PROVER=cpu python3 scripts/prove_policy.py \
+SP1_PROVER=cpu python3 scripts/prove/prove_policy.py \
   --pack policy_packs/eu_ai_act_v1.json \
   --response scripts/examples/eu_agent_reply.txt \
   [--out-dir DIR] [--no-prove] [--expect pass|violate]
@@ -102,9 +119,9 @@ SP1_PROVER=cpu python3 scripts/prove_policy.py \
 再算一遍就是第二处事实来源），验证腿另起进程跑 `pop-script --verify`。
 
 ```bash
-SP1_PROVER=cpu python3 scripts/regression_prove.py --label weekly   # ≈45 min
-python3 scripts/regression_prove.py --print                         # 看历史摘要
-python3 scripts/regression_prove.py --dry-run --pop-script ./fake   # 不写盘，看记录长什么样
+SP1_PROVER=cpu python3 scripts/prove/regression_prove.py --label weekly   # ≈45 min
+python3 scripts/prove/regression_prove.py --print                         # 看历史摘要
+python3 scripts/prove/regression_prove.py --dry-run --pop-script ./fake   # 不写盘，看记录长什么样
 ```
 
 每次**追加**一行到 `bench/results/regression-prove.jsonl`（**只追加、永不覆盖**，
@@ -129,7 +146,7 @@ FAIL → 非 0。⚠️ 它**只覆盖 1 个向量的验证腿**，这件事写�
 ### 2.4 `issue_cert.py` —— 签发 + 锚定
 
 ```bash
-python3 scripts/issue_cert.py --pack P --response R --out-dir D \
+python3 scripts/prove/issue_cert.py --pack P --response R --out-dir D \
     [--mode public|private] [--proof-mode core|compressed|groth16|plonk] \
     [--nonce auto|none|<hex>] [--key 私钥.pem] \
     [--no-prove] [--no-semantic] [--ledger L] [--rpc URL --contract 0x…] [--private-key KEY]
@@ -155,7 +172,7 @@ python3 scripts/issue_cert.py --pack P --response R --out-dir D \
   都没有就在 `.pop-keys/signing.key` **生成一把新的**，0600、已 gitignore）。公钥写进
   `<out-dir>/key.json` —— 验证方只需要它。
 - **语义规则的陪伴证明（P2-9）**：电路公开值里的 `delegated` 非空时，自动调
-  `scripts/ezkl_prove.py prove` 出一份 ezkl 陪伴证明（**~77 s / 峰值 ~9 GiB**，
+  `scripts/prove/ezkl_prove.py prove` 出一份 ezkl 陪伴证明（**~77 s / 峰值 ~9 GiB**，
   见 `08` §3.5），并把每个约定约束的指纹写进证书的 `semantic.companions[]`。
   同一份证明被所有规则共用（v1 只有**一个**模型 —— 证明的内容是"`encode(T)` 经这张
   图算出的分数"，方向与阈值只是对同一个分数的不同比较）。
@@ -167,7 +184,7 @@ python3 scripts/issue_cert.py --pack P --response R --out-dir D \
 ### 2.5 `verify_cert.py` —— 第三方验证单张证书
 
 ```bash
-python3 scripts/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] \
+python3 scripts/verify/verify_cert.py --cert C --pack P --ledger L [--proof proof.bin] \
     [--response T.txt] [--nonce HEX] [--keyring key.json|pub.hex|pub.pem] \
     [--receipts receipts.json [--gateway-key gw.pub.hex]] \
     [--semantic-dir semantic/artifacts] [--semantic-skip-ezkl] \
@@ -245,11 +262,11 @@ RESULT: PASS | FAIL      ← 这张证书**是不是真的**（签名/绑定/证
 ### 2.6 `ezkl_prove.py` —— 语义规则的 ezkl 出证（P2-9）
 
 ```bash
-python3 scripts/ezkl_prove.py setup      # gen_settings → compile → gen_srs → setup（每策略一次）
-python3 scripts/ezkl_prove.py prove      --response T.txt
-python3 scripts/ezkl_prove.py verify
-python3 scripts/ezkl_prove.py selftest   # 四条文本端到端自检（含同形异义反例）
-python3 scripts/ezkl_prove.py info       # 产物尺寸与口径
+python3 scripts/prove/ezkl_prove.py setup      # gen_settings → compile → gen_srs → setup（每策略一次）
+python3 scripts/prove/ezkl_prove.py prove      --response T.txt
+python3 scripts/prove/ezkl_prove.py verify
+python3 scripts/prove/ezkl_prove.py selftest   # 四条文本端到端自检（含同形异义反例）
+python3 scripts/prove/ezkl_prove.py info       # 产物尺寸与口径
 ```
 
 **`setup` 与 `prove` 必须分进程跑** —— 出证峰值 ~8.7 GiB、setup ~4.8 GiB，
@@ -269,7 +286,7 @@ python3 scripts/ezkl_prove.py info       # 产物尺寸与口径
 ### 2.7 `compose_proof.py` —— 组合证明（P1-6）
 
 ```bash
-SP1_PROVER=cpu python3 scripts/compose_proof.py \
+SP1_PROVER=cpu python3 scripts/prove/compose_proof.py \
   --pack policy_packs/eu_ai_act_v1.json \
   --response scripts/examples/eu_agent_reply.txt \
   [--out-dir scripts/examples/out/compose] [--nonce auto|none|<hex>] \
@@ -307,7 +324,7 @@ RESULT: PASS | FAIL           ← 这张**组合证书**是不是真的
 ### 2.8 `prove_session.py` —— 会话聚合证明（P2-10）
 
 ```bash
-python3 scripts/prove_session.py \
+python3 scripts/prove/prove_session.py \
   --session scripts/examples/out/e2e/session.json \
   [--run N] [--nonce-hex <hex>] [--keyring <公钥>] \
   [--proof-out <f>] [--proof-mode core|compressed|groth16|plonk] [--no-prove]
@@ -342,7 +359,7 @@ python3 scripts/prove_session.py \
 ### 2.9 `prove_multiparty.py` —— 多证明者（P2-11）
 
 ```bash
-python3 scripts/prove_multiparty.py \
+python3 scripts/prove/prove_multiparty.py \
   --pack policy_packs/multiparty_demo_v1.json \
   --response scripts/examples/eu_agent_reply.txt \
   [--out-dir <d>] [--role-keys <私钥目录>] [--nonce-hex <hex>] \
@@ -380,9 +397,9 @@ RESULT: PASS   ← 三段出证/签名/验证全过 **且** 两条判据都按�
 SP1 证明）。生成那段要真模型得显式给 `--model`：
 
 ```bash
-python3 scripts/demo_e2e.py --model openai:gpt-4o-mini        # 裸名按 openai 处理
-OPENAI_BASE_URL=http://127.0.0.1:8000/v1 python3 scripts/demo_e2e.py --model openai:<m>
-python3 scripts/demo_e2e.py --model anthropic:claude-sonnet-5 # 需 ANTHROPIC_API_KEY
+python3 scripts/demo/demo_e2e.py --model openai:gpt-4o-mini        # 裸名按 openai 处理
+OPENAI_BASE_URL=http://127.0.0.1:8000/v1 python3 scripts/demo/demo_e2e.py --model openai:<m>
+python3 scripts/demo/demo_e2e.py --model anthropic:claude-sonnet-5 # 需 ANTHROPIC_API_KEY
 ```
 
 **缺省不传真模型**，因为 CI 与 `demo_all.sh` 不该依赖网络与 key。规格由
@@ -486,7 +503,7 @@ python3 scripts/demo_e2e.py --model anthropic:claude-sonnet-5 # 需 ANTHROPIC_AP
 ### 2.11 `verify_session.py` —— 第三方验证整个会话
 
 ```bash
-python3 scripts/verify_session.py --session S [--keyring 公钥] \
+python3 scripts/verify/verify_session.py --session S [--keyring 公钥] \
     [--rpc URL --contract 0x…] [--no-chain]
 ```
 
@@ -537,9 +554,9 @@ python3 scripts/verify_session.py --session S [--keyring 公钥] \
 ### 2.13 `gen_key.py` —— 出证方密钥对（P0-3）
 
 ```bash
-python3 scripts/gen_key.py [--out-dir D] [--path P] [--name demo] [--force]
-python3 scripts/gen_key.py --show                     # 读已有私钥、只打印公钥，不写盘
-python3 scripts/gen_key.py --pubkey keys/demo.pub.hex # 只有公钥时算 keyid
+python3 scripts/prove/gen_key.py [--out-dir D] [--path P] [--name demo] [--force]
+python3 scripts/prove/gen_key.py --show                     # 读已有私钥、只打印公钥，不写盘
+python3 scripts/prove/gen_key.py --pubkey keys/demo.pub.hex # 只有公钥时算 keyid
 ```
 
 产出 `<name>.key`（PKCS#8 PEM，`0600`，**已存在则拒绝覆盖**，要轮换请先删除或用 `--force`）、
@@ -549,7 +566,7 @@ python3 scripts/gen_key.py --pubkey keys/demo.pub.hex # 只有公钥时算 keyid
 验证方只需要 `--pubkey` 那一路（**永远不读私钥**）：
 
 ```bash
-python3 scripts/verify_cert.py --cert c.json --pack p.json --ledger l.jsonl \
+python3 scripts/verify/verify_cert.py --cert c.json --pack p.json --ledger l.jsonl \
     --keyring keys/demo.pub.hex
 ```
 
@@ -561,9 +578,9 @@ python3 scripts/verify_cert.py --cert c.json --pack p.json --ledger l.jsonl \
 ### 2.14 `proof_service.py` —— 证明服务（第二步）
 
 ```bash
-python3 scripts/proof_service.py --host-check      # 演示/边缘：作业几秒，证书标 unproven
-SP1_PROVER=cpu python3 scripts/proof_service.py    # 真证明：~2.5 分钟/作业，峰值 ~10.2 GiB
-python3 scripts/proof_service.py --rpc http://127.0.0.1:8545 --contract 0x… \
+python3 scripts/ops/proof_service.py --host-check      # 演示/边缘：作业几秒，证书标 unproven
+SP1_PROVER=cpu python3 scripts/ops/proof_service.py    # 真证明：~2.5 分钟/作业，峰值 ~10.2 GiB
+python3 scripts/ops/proof_service.py --rpc http://127.0.0.1:8545 --contract 0x… \
   --auth-file /etc/pop/tokens --require-auth       # 生产的样子：同时上链 + 鉴权
 ```
 
@@ -638,10 +655,10 @@ curl -s -X POST localhost:8787/v1/attest -H 'Content-Type: application/json' \
 ### `demo_all.sh` —— 全链路总入口
 
 ```bash
-bash scripts/demo_all.sh              # fast：走宿主校验（--no-prove），约 20 秒
-bash scripts/demo_all.sh --prove      # 出真证明，每条支路数分钟、峰值 ~10 GB，本机实测 26–27 分钟
-bash scripts/demo_all.sh --out-dir D  # 产物与报告落 D（默认 scripts/examples/out/all）
-bash scripts/demo_all.sh --list       # 只列支路，不跑
+bash scripts/demo/demo_all.sh              # fast：走宿主校验（--no-prove），约 20 秒
+bash scripts/demo/demo_all.sh --prove      # 出真证明，每条支路数分钟、峰值 ~10 GB，本机实测 26–27 分钟
+bash scripts/demo/demo_all.sh --out-dir D  # 产物与报告落 D（默认 scripts/examples/out/all）
+bash scripts/demo/demo_all.sh --list       # 只列支路，不跑
 ```
 
 **它存在的理由**：本项目的端到端能力分散在 8 条支路上，`demo_e2e.py` 只覆盖其中
@@ -679,10 +696,10 @@ bash scripts/demo_all.sh --list       # 只列支路，不跑
 ### `anchor_e2e.sh` —— 端到端链上锚定（推荐入口）
 
 ```bash
-bash scripts/anchor_e2e.sh                 # 不生成证明，~10s
-SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove    # 附真实 Core 证明，本机实测 3:10 / 峰值 10.2 GiB
-RPC=http://… bash scripts/anchor_e2e.sh    # 复用已有节点
-bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
+bash scripts/anchor/anchor_e2e.sh                 # 不生成证明，~10s
+SP1_PROVER=cpu bash scripts/anchor/anchor_e2e.sh --prove    # 附真实 Core 证明，本机实测 3:10 / 峰值 10.2 GiB
+RPC=http://… bash scripts/anchor/anchor_e2e.sh    # 复用已有节点
+bash scripts/anchor/anchor_e2e.sh --keep          # 结束后不关 anvil
 ```
 
 步骤：① 找 foundry → ② 没节点就起 anvil（端口 `PORT`，默认 8545）→ ③ `deploy_anchor.py`
@@ -726,9 +743,9 @@ bash scripts/anchor_e2e.sh --keep          # 结束后不关 anvil
 | **核对送达的 T′ 就是被证明的 T** | 上一条再加 `--response T′.txt`（P0-2，见 §2.5） |
 | **核对被证明的轨迹就是我手上这条链** | 上一条再加 `--receipts receipts.json [--gateway-key gw.pub.hex]`（P1-5，见 §2.5） |
 | **核对链有没有被截尾** | 上一条的 `--gateway-key` 是必要条件：seal 的签名与「会话末端承诺」都要它才立得住（P1-5b，见 `verify_cert.py` 的 3d 与安全模型 §5.3） |
-| **一次看全 8 条支路** | `bash scripts/demo_all.sh`（真出证加 `--prove`；汇总在 `REPORT.md`） |
-| 全链路最小复现 | `bash scripts/anchor_e2e.sh` |
-| 生成论文/文档用的截图 | `python3 scripts/make_shots.py --run-demo` |
+| **一次看全 8 条支路** | `bash scripts/demo/demo_all.sh`（真出证加 `--prove`；汇总在 `REPORT.md`） |
+| 全链路最小复现 | `bash scripts/anchor/anchor_e2e.sh` |
+| 生成论文/文档用的截图 | `python3 scripts/demo/make_shots.py --run-demo` |
 
 ---
 

@@ -91,7 +91,7 @@ DEFAULT_LOGROWS = 18
 #: 分发到具体的验证器；两边写岔会让「有陪伴证明」被判成「系统不认识」。
 SEMANTIC_SYSTEM_EZKL = "ezkl-halo2"
 
-#: 落盘产物的文件名（``scripts/ezkl_prove.py`` 与测试共用，避免两边写岔）。
+#: 落盘产物的文件名（``scripts/prove/ezkl_prove.py`` 与测试共用，避免两边写岔）。
 #:
 #: 说明：ezkl 对扩展名不作要求，这里刻意用 ``.ezkl`` 而不是 ``.key`` ——
 #: ``.gitignore`` 里的 ``*.key`` 是给 P0-3 的 Ed25519 私钥用的，而 ``vk.ezkl``

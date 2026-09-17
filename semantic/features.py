@@ -79,7 +79,7 @@ ezkl 把图编译成定点电路，每个张量带一个 ``scale``（真值 = �
 - 于是 ``Gather`` 拿到的索引恰好是 id，与 :func:`encode` 的输出逐位相等。
 
 这条配置由 ``policydsl/proofs/semantic.py`` 的 :func:`patch_settings` 施加，并在
-``scripts/ezkl_prove.py`` 里对「生成设置」的步骤强制执行 —— **不允许出现「忘了打补丁
+``scripts/prove/ezkl_prove.py`` 里对「生成设置」的步骤强制执行 —— **不允许出现「忘了打补丁
 的设置文件」**：设置文件一旦不带这个补丁，出的证明要么崩、要么恒真，后者尤其危险
 （它会静默地让语义规则形同虚设）。``tests/test_semantic.py`` 用一条正例一条反例把它钉住。
 

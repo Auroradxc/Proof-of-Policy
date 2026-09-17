@@ -15,8 +15,8 @@
 ``http.server``（零新依赖）** —— 这是刻意的：这一步要演示的是**证据链**，不是
 web 框架；引入 FastAPI/uvicorn 会把注意力从证据挪到框架上。
 
-    python3 scripts/proof_service.py --host-check          # 秒级演示（出 unproven 证书）
-    SP1_PROVER=cpu python3 scripts/proof_service.py        # 真实证明（~2.5 分钟/次，需 ~10.2 GiB）
+    python3 scripts/ops/proof_service.py --host-check          # 秒级演示（出 unproven 证书）
+    SP1_PROVER=cpu python3 scripts/ops/proof_service.py        # 真实证明（~2.5 分钟/次，需 ~10.2 GiB）
 
 **鉴权**：``--auth-token label:secret``（可重复）/ ``--auth-file`` / ``$POP_SERVICE_TOKEN``
 三处合起来生效，判断逻辑在 ``policydsl/runtime/auth.py``。没配 token 时服务照常能起（本机
@@ -41,8 +41,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.evidence import anchor, keys
 from policydsl.runtime import auth, service

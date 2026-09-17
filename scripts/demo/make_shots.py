@@ -8,7 +8,7 @@
   docs/demo/verify_result.png     — 第三方验证清单（Pillow）
 
 用法：
-  python3 scripts/make_shots.py [--session PATH] [--out-dir docs/demo] [--run-demo]
+  python3 scripts/demo/make_shots.py [--session PATH] [--out-dir docs/demo] [--run-demo]
 
 若会话缺失（或给了 --run-demo），则先以宿主校验模式（快）跑一遍 demo。
 PNG 文本用纯 ASCII，因此无需 CJK 字体。
@@ -23,8 +23,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 DEFAULT_SESSION = REPO / "scripts" / "examples" / "out" / "e2e" / "session.json"
 
 # 本机 DejaVu 字体路径（PNG 渲染用，ASCII 即可）
@@ -51,7 +53,7 @@ def ensure_session(session: Path, run_demo: bool) -> None:
     """若会话缺失或要求重跑，则以宿主校验模式跑一遍 demo 生成会话。"""
     if run_demo or not session.exists():
         print("running demo (host-check mode) ...")
-        subprocess.run([sys.executable, str(REPO / "scripts" / "demo_e2e.py"), "--no-prove",
+        subprocess.run([sys.executable, str(REPO / "scripts" / "demo" / "demo_e2e.py"), "--no-prove",
                         "--out-dir", str(session.parent)], cwd=str(REPO), check=True)
 
 
@@ -62,7 +64,7 @@ def collect(session_path: Path) -> dict:
     for e in session["certificates"]:
         kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
     # 跑独立验证，并解析 [PASS/FAIL] 行
-    verify_out = run([sys.executable, str(REPO / "scripts" / "verify_session.py"),
+    verify_out = run([sys.executable, str(REPO / "scripts" / "verify" / "verify_session.py"),
                       "--session", str(session_path)])
     checks = [{"name": m.group(2), "detail": m.group(3).strip(), "ok": m.group(1) == "PASS"}
               for m in re.finditer(r"\[(PASS|FAIL)\]\s+(\S+)\s+(.*)", verify_out)]
@@ -124,7 +126,7 @@ def render_pngs(data: dict, out: Path) -> list:
               for c in data["checks"]]
     vlines += [("", FG), (f"RESULT: {'PASS' if data['ok'] else 'FAIL'}", GREEN if data["ok"] else RED)]
     img2 = _card((1180, 150 + 32 * len(vlines)), vlines, "Third-party verification",
-                 "scripts/verify_session.py — public artefacts only (session.json + ledger + proof)")
+                 "scripts/verify/verify_session.py — public artefacts only (session.json + ledger + proof)")
     p2 = out / "verify_result.png"
     img2.save(p2)
     written.append(p2)
@@ -201,12 +203,12 @@ def render_html(data: dict, out: Path) -> Path:
   <div style="margin-top:10px">{kinds}</div>
 </div>
 <div class="card">
-  <h2 style="margin:0 0 8px;font-size:18px">第三方验证（scripts/verify_session.py）</h2>
+  <h2 style="margin:0 0 8px;font-size:18px">第三方验证（scripts/verify/verify_session.py）</h2>
   <ul>{checks}</ul>
   <div class="result">RESULT: {'PASS' if data['ok'] else 'FAIL'}</div>
 </div>
-<div class="card muted">复现：<code class="k">SP1_PROVER=cpu python3 scripts/demo_e2e.py</code> →
-<code class="k">python3 scripts/verify_session.py --session scripts/examples/out/e2e/session.json</code>
+<div class="card muted">复现：<code class="k">SP1_PROVER=cpu python3 scripts/demo/demo_e2e.py</code> →
+<code class="k">python3 scripts/verify/verify_session.py --session scripts/examples/out/e2e/session.json</code>
 · 详见 <code class="k">docs/reproduce.md</code></div>
 </html>"""
     p = out / "session_report.html"

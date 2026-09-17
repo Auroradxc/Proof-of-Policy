@@ -16,7 +16,7 @@
    真实 zkAgent 推理证明的规模与这里不是一回事（见 ``bench/comparison_zkagent.md``）。
 
 峰值内存单独报，且**取两半的最大值而不是和**：两半各起一个进程，峰值不叠加。
-这是「组合」在资源上唯一不需要加法的部分，也是 ``scripts/compose_proof.py``
+这是「组合」在资源上唯一不需要加法的部分，也是 ``scripts/prove/compose_proof.py``
 坚持分进程的原因。
 
 用法：

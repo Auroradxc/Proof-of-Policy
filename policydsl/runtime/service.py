@@ -28,7 +28,7 @@ SP1 core 证明            ~2.5 分钟           峰值 ~10.2 GiB（**固定地�
 的空间；``/v1/attest`` 把同一条响应升级成真证明。两者的 ``challenge`` 块绑同一个
 nonce 时，持 T′ 的一方能离线确认两段说的是同一条 T。
 
-本模块**只用标准库**，HTTP 驱动在 ``scripts/proof_service.py``。
+本模块**只用标准库**，HTTP 驱动在 ``scripts/ops/proof_service.py``。
 """
 
 from __future__ import annotations
@@ -104,7 +104,7 @@ class PolicyNotServiceable(ServiceError):
     """策略含本服务**出不了**证的那类约束 —— 当场拒，不出一张注定验不过的证书。
 
     当前唯一一类是 ``semantic_bound``（语义规则）：它由 ezkl 陪伴证明判定，而
-    陪伴证明的生成在 ``scripts/issue_cert.py`` 那条命令行路径里。**服务里没有
+    陪伴证明的生成在 ``scripts/prove/issue_cert.py`` 那条命令行路径里。**服务里没有
     这一步**，于是出来的证书 ``outcome.delegated`` 非空却没有 ``semantic`` 块 ——
     ``verify_cert.py`` 会据此如实判 FAIL（P2-9 fail closed）。
 
@@ -119,7 +119,7 @@ class PolicyNotServiceable(ServiceError):
             f"策略 {policy_id!r} 含 {len(self.rules)} 条服务出不了证的约束"
             f"（{', '.join(self.rules)}）—— 语义规则由 ezkl 陪伴证明判定，本服务不"
             f"生成陪伴证明，因此出的证书会因缺少 companion 而验不过（fail closed）。"
-            f"要这类策略请用：python3 scripts/issue_cert.py --pack <pack> ...")
+            f"要这类策略请用：python3 scripts/prove/issue_cert.py --pack <pack> ...")
 
 
 class VerdictMismatch(ServiceError):
@@ -141,7 +141,7 @@ class VerdictMismatch(ServiceError):
 def load_policy(path: Path) -> Policy:
     """从 JSON 文件加载策略包。
 
-    口径与 ``scripts/verify_cert.py`` / ``issue_cert.py`` 的 ``load_policy``
+    口径与 ``scripts/verify/verify_cert.py`` / ``issue_cert.py`` 的 ``load_policy``
     **逐字段相同**（``description`` 不进 :class:`Policy`，``semantic`` 取缺省的
     ``"and"``）—— 刻意如此：``compile_policy`` 会把 ``policy.semantic`` 写进
     规范 JSON，而 ``policy_hash`` 是**验证方自己重编译一遍**来核对的
@@ -1151,7 +1151,7 @@ def verify_hint(issued: Issued, packed: PackedPolicy, ledger: Path) -> str:
     有证明工件时带上 ``--proof``（没有它，``proof``/``trace_binding`` 那两张卡
     会如实跳过：证明没在手上，谁也核不了）；有回执旁证时带上 ``--receipts``。
     """
-    parts = [f"python3 scripts/verify_cert.py --cert {issued.out_dir / 'cert.json'}",
+    parts = [f"python3 scripts/verify/verify_cert.py --cert {issued.out_dir / 'cert.json'}",
              f"--pack {packed.path or '<pack>'}", f"--ledger {ledger}",
              f"--keyring {issued.out_dir / 'key.json'}"]
     if issued.proof_path is not None:

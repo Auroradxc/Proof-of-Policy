@@ -18,11 +18,11 @@ T ──encode(T)──▶ ids ──gen_witness──▶ witness ──prove─
 用法：
 
 ```
-python3 scripts/ezkl_prove.py setup                       # 一次性：编译 + 赋键（重）
-python3 scripts/ezkl_prove.py prove --response reply.txt  # 出证（必须与 setup 分进程）
-python3 scripts/ezkl_prove.py verify --proof proof.json --response reply.txt
-python3 scripts/ezkl_prove.py selftest                    # 端到端自检（含同形异义反例）
-python3 scripts/ezkl_prove.py info                        # 只看产物清单与规模
+python3 scripts/prove/ezkl_prove.py setup                       # 一次性：编译 + 赋键（重）
+python3 scripts/prove/ezkl_prove.py prove --response reply.txt  # 出证（必须与 setup 分进程）
+python3 scripts/prove/ezkl_prove.py verify --proof proof.json --response reply.txt
+python3 scripts/prove/ezkl_prove.py selftest                    # 端到端自检（含同形异义反例）
+python3 scripts/prove/ezkl_prove.py info                        # 只看产物清单与规模
 ```
 
 **为什么 ``setup`` 与 ``prove`` 必须分进程**：本机实测 prove 的峰值常驻内存是
@@ -46,9 +46,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-REPO = Path(__file__).resolve().parents[1]
-if str(REPO) not in sys.path:
-    sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.proofs import semantic as S            # noqa: E402
 

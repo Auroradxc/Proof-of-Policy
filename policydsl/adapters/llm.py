@@ -15,7 +15,7 @@
    而不是等 SDK 在第一次请求时抛一个不含上下文的 ValidationError；
 3. **缺省必须是 fake**：CI 与 ``demo_all.sh`` 不能依赖网络与 key，
    所以本模块**只在显式给了 ``--model`` 时**才被调用（见
-   ``scripts/demo_e2e.py``）。「没传参数」与「传了参数但构造失败」是
+   ``scripts/demo/demo_e2e.py``）。「没传参数」与「传了参数但构造失败」是
    两件不同的事：前者走离线桩，后者**报错**，绝不静默退回桩 ——
    静默退回会让一份「真模型演示」的产物其实来自写死的字符串。
 
@@ -105,7 +105,7 @@ def build_chat_model(spec: str, *, streaming: bool = True,
         except ImportError as exc:  # pragma: no cover - 取决于环境
             raise ModelSpecError(
                 f"没装 {_PKG[provider]}：pip install {_PKG[provider]}"
-                f"（或跑 bash scripts/install_frameworks.sh）") from exc
+                f"（或跑 bash scripts/ops/install_frameworks.sh）") from exc
         return ChatOpenAI(model=name, temperature=temperature,
                           streaming=streaming, **kwargs)
 
@@ -114,6 +114,6 @@ def build_chat_model(spec: str, *, streaming: bool = True,
     except ImportError as exc:  # pragma: no cover - 取决于环境
         raise ModelSpecError(
             f"没装 {_PKG[provider]}：pip install {_PKG[provider]}"
-            f"（或跑 bash scripts/install_frameworks.sh）") from exc
+            f"（或跑 bash scripts/ops/install_frameworks.sh）") from exc
     return ChatAnthropic(model=name, temperature=temperature,
                          streaming=streaming, **kwargs)

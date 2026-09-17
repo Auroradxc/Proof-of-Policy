@@ -23,9 +23,9 @@
 | W3 | PII 正则 | `policydsl/core/nfa.py` + `policydsl/core/pii.py` + `docs/policy-dsl.md` | ≥2 类 PII 规则通过 | ✅ |
 | W4 | 透明模式 MVP | `circuits/program` + `circuits/script` | PoP v0：公开响应→证明→验证 | ✅ |
 | W5 | 私有模式 | `policydsl/privacy/commit.py` + `pop-types::evaluate_private` | 验证者看不到全文 | ✅ |
-| W6 | Agent 集成 | `policydsl/adapters/agent.py` + 三个框架适配器 + `policydsl/evidence/cert.py` + `policydsl/evidence/anchor.py` + `scripts/demo_e2e.py`；链上见 `contracts/Anchor.sol` | 真实会话产出证书 | ✅（**原计划的 `demo/` 目录未使用** —— 功能落在上述模块，该空目录已删除） |
+| W6 | Agent 集成 | `policydsl/adapters/agent.py` + 三个框架适配器 + `policydsl/evidence/cert.py` + `policydsl/evidence/anchor.py` + `scripts/demo/demo_e2e.py`；链上见 `contracts/Anchor.sol` | 真实会话产出证书 | ✅（**原计划的 `demo/` 目录未使用** —— 功能落在上述模块，该空目录已删除） |
 | W7 | 评测 + 安全模型 | `bench/`（6 个脚本）+ `docs/security-model.md` v2（L1–L9）+ `docs/quadrant.md` | 成本曲线 + 四象限表 | ✅ |
-| W8 | 论文 + 发布 | `paper/proof-of-policy.tex`（权威源）+ `docs/reproduce.md` + `scripts/make_shots.py` → `docs/demo/` 截图 | 导师按 README 复现通过 | ✅（**demo 视频未产出**，改由一键 demo + 截图替代） |
+| W8 | 论文 + 发布 | `paper/proof-of-policy.tex`（权威源）+ `docs/reproduce.md` + `scripts/demo/make_shots.py` → `docs/demo/` 截图 | 导师按 README 复现通过 | ✅（**demo 视频未产出**，改由一键 demo + 截图替代） |
 
 > W8 之后的工作（P0 补足、P1 轨迹/组合/链上/形式化、P2 语义/会话/多证明者/规模评测）
 > 不在 8 周计划内，见 `docs/plan-p0p1p2.md`。

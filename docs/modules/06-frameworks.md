@@ -33,7 +33,7 @@
 
 1. **不改框架**：适配器只做「事件 → 钩子」的翻译，策略判定与出证全在 `AgentMonitor` 里。
 2. **可离线单测**：所有适配器在缺少对应框架时用**鸭子类型**回退，因此不需要装框架也能跑测试。
-3. **真实框架也测**：装了框架后（`bash scripts/install_frameworks.sh`），真实端到端测试会自动启用。
+3. **真实框架也测**：装了框架后（`bash scripts/ops/install_frameworks.sh`），真实端到端测试会自动启用。
 
 ---
 
@@ -405,7 +405,7 @@ for chunk in model.stream(prompt, config={"callbacks": [handler]}):
 | `PoPCallbackHandler.on_tool_error` | 工具（**失败**） | `tool-call` + `error` | — | 有 |
 | `LangGraphEventCertifier` | 两者 | 同上 | — | 有 |
 
-`scripts/demo_e2e.py` 一次会话产出 **13 张证书**：流式（含早停）、LLM、MCP 参数 + 结果、zk 各若干。
+`scripts/demo/demo_e2e.py` 一次会话产出 **13 张证书**：流式（含早停）、LLM、MCP 参数 + 结果、zk 各若干。
 
 ---
 
@@ -430,7 +430,7 @@ for chunk in model.stream(prompt, config={"callbacks": [handler]}):
    `zk_path` 的 zk 证书**不在此列**：它证的是「`T` 满足 `π`」，**不主张**工具轨迹，
    所以没有 `trace_seal` 是**如实**而非漏签（见 `dev-plan.md` §5.1.2 第 1 条）。
 5. **`vkey_hash` 默认 `"unproven"`**：框架路径签发的证书默认**不绑定证明**；
-   附证明的证书由 `scripts/issue_cert.py` / `demo_e2e.py` 的 zk 路径产出。
+   附证明的证书由 `scripts/prove/issue_cert.py` / `demo_e2e.py` 的 zk 路径产出。
    `vkey_hash` 与 `proof_mode`（P0-4 的**证据档位诚实标注**）必须**成对**给出：
    只说「绑了哪个程序」而不说「这档证据隐藏了什么」，第三方就无从判断
    「响应内容被隐藏」是否成立。适配器把 `proof_mode` 作为构造参数（`guard_node`
@@ -453,10 +453,10 @@ for chunk in model.stream(prompt, config={"callbacks": [handler]}):
 | `tests/test_mcp.py` | `MCPGuard` 参数侧拦截、结果侧判定、`extract_result_text`、工具清单发现与未声明工具拦截 | 离线用 `FakeSession`；已装 mcp 时跑真实 stdio（`tests/mcp_echo_server.py`，`discover_tools` 也跑在真实 SDK 返回形状上） |
 | `tests/test_real_llm.py` | `llm.parse_spec`/`build_chat_model` 的报错路径；**真实 `ChatOpenAI` 客户端 + 本地 SSE 桩**（`tests/openai_sse_stub.py`）下的真早停 —— 由服务器侧数它写出去了几片来证明**传输层**真的断了 | 规格与报错用例无依赖；客户端用例要 `langchain_openai`（已装则默认跑）；真 provider 用例由 `POP_TEST_LLM=1` 门控 |
 | `tests/test_demo_e2e.py` | 端到端会话（依赖齐全时才跑全部）；`--model` 产物与离线桩**同形** | — |
-| `scripts/demo_e2e.py` | 真实 LangChain 流式 + 真实 MCP stdio 的一键演示 | — |
+| `scripts/demo/demo_e2e.py` | 真实 LangChain 流式 + 真实 MCP stdio 的一键演示 | — |
 
-安装框架：`bash scripts/install_frameworks.sh`（独立 venv + 镜像源；
-装好后真实框架测试自动启用）。网络受限时用 `scripts/retry_install_frameworks.sh`。
+安装框架：`bash scripts/ops/install_frameworks.sh`（独立 venv + 镜像源；
+装好后真实框架测试自动启用）。网络受限时用 `scripts/ops/retry_install_frameworks.sh`。
 
 ---
 
@@ -495,8 +495,8 @@ ga.write_session(guard, out_dir)   # → session.json / ledger.jsonl / key.json 
 落盘的**全是公钥与产物，没有一个私钥**。第三方拿这个目录独立核：
 
 ```bash
-python3 scripts/verify_session.py --session <dir>/session.json
-python3 scripts/verify_cert.py --cert <dir>/cert-1-tool.json --pack <policy_pack> \
+python3 scripts/verify/verify_session.py --session <dir>/session.json
+python3 scripts/verify/verify_cert.py --cert <dir>/cert-1-tool.json --pack <policy_pack> \
     --ledger <dir>/ledger.jsonl --keyring <dir>/key.json \
     --receipts <dir>/receipts.json --gateway-key <dir>/gateway.pub.hex
 ```

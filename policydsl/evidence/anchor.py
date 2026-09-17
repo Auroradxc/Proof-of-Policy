@@ -268,7 +268,7 @@ def _find_cast() -> str:
         if cand.exists():
             return str(cand)
     raise AnchorError(
-        "`cast` not found (foundry). Install: bash scripts/retry_install_foundry.sh "
+        "`cast` not found (foundry). Install: bash scripts/ops/retry_install_foundry.sh "
         "(or run `foundryup`), or use the file ledger backend for offline verification.")
 
 

@@ -285,7 +285,7 @@ python3 -m policydsl check <response.txt> --policy <policy.json>
 | `tests/test_serialize.py` | **契约字节**的性质：确定性/键排序/紧凑、纯 ASCII、`sha256(字节) == spec["sha256"]` 恒等式、各类 kind 与编译后 NFA / 折叠表都在字节里、未知 kind 原样携带 |
 | `tests/test_policy_binding.py` | 策略绑定：攻击回归（空策略证明 + 真策略哈希）、fail-closed、三方比对、伪造证书必须被拒 |
 | `tests/test_ablation.py` | `match_search` ≡ `match_search_naive`（pike/naive 语义等价） |
-| `tests/test_rules_incircuit.py` + `scripts/cross_validate.py` | Python golden ↔ SP1 逐向量一致（I1） |
+| `tests/test_rules_incircuit.py` + `scripts/prove/cross_validate.py` | Python golden ↔ SP1 逐向量一致（I1） |
 
 ---
 
@@ -302,7 +302,7 @@ python3 -m policydsl check <response.txt> --policy <policy.json>
    Rust 侧逐字节相同（它是要被承诺的值）。漏了这步的症状很隐蔽：公开模式一切正常，
    一旦走私密模式就 `NotImplementedError`（P2-9b 之前的指引漏了这条，是因为当时
    还没有规则是「先加公开、后补私密」的顺序；现在补上）。
-6. `tests/` + `scripts/cross_validate.py` —— 至少一条 pass、一条 violate 向量，
+6. `tests/` + `scripts/prove/cross_validate.py` —— 至少一条 pass、一条 violate 向量，
    跑 `cross_validate` 确认 host/prove 都对上；私有模式另需一条证据承诺对齐用例
    （`tests/test_rules_incircuit.py::TestEvidenceCommitmentParity`）。
 

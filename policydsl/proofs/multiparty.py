@@ -464,7 +464,7 @@ def prove_slice(policy: Policy, response: str, *, receipts: Optional[Sequence[An
                 pop_script: Path = POP_SCRIPT) -> Dict[str, Any]:
     """对**一个角色切片的策略**出一次证明，返回 ``{"outcome", "proof_file", "spec"}``。
 
-    走的是 ``scripts/prove_policy.py`` 公开模式的**同一条路**（同一个
+    走的是 ``scripts/prove/prove_policy.py`` 公开模式的**同一条路**（同一个
     ``--job policy``、同一个 guest、同一种向量形状）：切片在电路眼里就是一条普通
     策略。这正是本设计不需要新 guest / 新 vkey、已有证明不作废的原因。
 

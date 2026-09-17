@@ -3,7 +3,7 @@
 > ⚠️ **这是 P0/P1/P2 阶段（2026-09-10 ~ 09-12）的工作记录，不是现状。** 本文里
 > 反复出现的「**469 全绿 / 13 skip**」是 **P2 收尾时的快照**；其后的 P7、第一步
 > （接真 agent）、第二步（证明服务及其三项加固）、框架无关参考适配器又加了大量用例，
-> 今天是 **667 / 15**。
+> 今天是 **675 / 15**。
 > 这是**如实保留的历史**，不要改。**测试数量的现状一律以
 > [`docs/modules/08-tests-bench.md`](modules/08-tests-bench.md) 为准。**
 > 理由与同一批订正见 [`dev-plan.md` §5.4.1](dev-plan.md)。
@@ -37,7 +37,7 @@ honest_eu_policy         passed=False  violations=[{keyword_block, banned_terms,
 attacker_trivial_policy  passed=True   violations=[]        ← constraints: []
 ```
 
-而 `scripts/verify_cert.py:74` 的策略绑定是 `payload["policy_hash"] == spec["sha256"]` ——
+而 `scripts/verify/verify_cert.py:74` 的策略绑定是 `payload["policy_hash"] == spec["sha256"]` ——
 **纯字符串比对**。攻击者填入真策略哈希即可全绿。结论：证明的义务是
 「**存在** π′ 使 J(π′,T).passed」，不是「J(π,T).passed」。
 
@@ -111,8 +111,8 @@ W1    W2    W3    W4    W5    W6    W7    W8    W9    W10
 > **验收证据**（本机实跑）
 > ```
 > python3 -m unittest discover tests                     → Ran 163 tests, OK (skipped=4)
-> python3 scripts/cross_validate.py --no-prove           → host 14/14  PASS
-> SP1_PROVER=cpu python3 scripts/verify_cert.py ... --proof .../proof.bin
+> python3 scripts/prove/cross_validate.py --no-prove           → host 14/14  PASS
+> SP1_PROVER=cpu python3 scripts/verify/verify_cert.py ... --proof .../proof.bin
 >   [PASS] policy_hash  5b5fd101…[cert] == 5b5fd101…[cert.outcome]
 >                       == 5b5fd101…[recompiled] == 5b5fd101…[proof]
 >   RESULT: PASS
@@ -206,8 +206,8 @@ def _canonical_hash(obj): return hashlib.sha256(canonical_spec_bytes(obj)).hexdi
 | `policydsl/core/compile.py` | `canonical_spec_bytes` |
 | `policydsl/core/serialize.py` | ✅ `spec_to_rust_constraints` **已删除**，改导出 `spec_canonical_text(spec)` + `vector_entry(...)`（20 个调用点已机械替换） |
 | 20 个调用点 | `scripts/{prove_policy,cross_validate,private_demo,issue_cert,demo_e2e}.py`、`tests/{test_rules_incircuit,test_ablation,test_serialize}.py`、`bench/*.py` |
-| `scripts/verify_cert.py` | 策略绑定改**四方比对**（证书声明 / 证书 outcome 内嵌 / 重编译 / 证明公开值），并把证明校验**提到绑定之前**（绑定要用到证明公开值） |
-| `scripts/verify_session.py` | 同上；`zk` 循环补上「证明公开值」这一路 |
+| `scripts/verify/verify_cert.py` | 策略绑定改**四方比对**（证书声明 / 证书 outcome 内嵌 / 重编译 / 证明公开值），并把证明校验**提到绑定之前**（绑定要用到证明公开值） |
+| `scripts/verify/verify_session.py` | 同上；`zk` 循环补上「证明公开值」这一路 |
 | `circuits/verifier/src/main.rs` | 解码公开值为 `Outcome` 并输出（新增 `pop-types` 依赖）；解码失败即判 `verified=false`（fail-closed） |
 | `policydsl/evidence/verifier.py` | 新增 `check_policy_binding` / `committed_policy_hash` / `outcome_without_meta` |
 
@@ -263,14 +263,14 @@ def test_empty_policy_commits_empty_hash_not_real(self):
 > ```
 > python3 -m unittest discover tests                     → Ran 220 tests, OK (skipped=5)
 > python3 -m unittest tests.test_binding -v              → Ran 19 tests, OK
-> python3 scripts/cross_validate.py --no-prove           → host 14/14  PASS
-> python3 scripts/private_demo.py                        → challenge (T',nonce)_opens=True
+> python3 scripts/prove/cross_validate.py --no-prove           → host 14/14  PASS
+> python3 scripts/demo/private_demo.py                        → challenge (T',nonce)_opens=True
 >                                                          wrong_T'_rejected=True
 >                                                          wrong_nonce_rejected=True
 >                                                          domain_separated=True
-> python3 scripts/verify_cert.py ... --response T.txt    → [PASS] response_binding
+> python3 scripts/verify/verify_cert.py ... --response T.txt    → [PASS] response_binding
 >                                                          — 送达的 T′ 就是被证明的 T
-> python3 scripts/verify_session.py --session …/session.json
+> python3 scripts/verify/verify_session.py --session …/session.json
 >                                                        → [PASS] certificates_response_binding
 >                                                          [PASS] zk_proof … + response binding
 > ```
@@ -311,9 +311,9 @@ def new_nonce() -> bytes:   # 32 字节 CSPRNG，一次性
 
 - ~~私有模式下 `response_commitment` 语义升级为「绑定到本次会话的承诺」；保留 `commitment(T)` 供兼容。~~
   （**未采纳**，见开头偏差 4：两个字段并置而非合并。）
-- `scripts/issue_cert.py` / `demo_e2e.py` 接受 `--nonce`；`verify_cert.py` 加 `--response` / `--nonce` 做核对
+- `scripts/prove/issue_cert.py` / `demo_e2e.py` 接受 `--nonce`；`verify_cert.py` 加 `--response` / `--nonce` 做核对
   （`verify_session.py` 不做重算，只对会话内证书做自洽比对）。
-- `scripts/demo_e2e.py` 走真实挑战流程（客户端生成 → 传 → 验证）。
+- `scripts/demo/demo_e2e.py` 走真实挑战流程（客户端生成 → 传 → 验证）。
 
 **验收** `tests/test_binding.py`：① 正确 (nonce,T) 通过；② 换 T 失败；③ 换 nonce 失败（**重放防护**）；④ 空 nonce 与带 nonce 的绑定不同（域分离）。
 
@@ -347,7 +347,7 @@ class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 - `policydsl/evidence/keys.py`（新）：`load_or_create(path)` / `signer_from_env` / `ephemeral_signer`、
   `POP_SIGNING_KEY`（+ `_PASSPHRASE`）环境变量、PKCS#8 PEM（`0600`、不覆盖）、
   公钥导出（hex/PEM/keyid）与验证方入口 `load_keyring` / `public_record`。
-- `scripts/gen_key.py`（新）：生成密钥对 + 指纹；`--show` / `--pubkey` 只碰公钥。
+- `scripts/prove/gen_key.py`（新）：生成密钥对 + 指纹；`--show` / `--pubkey` 只碰公钥。
 - 改动调用点：`agent.py`、`langchain_adapter.py`、`issue_cert.py`、`verify_cert.py`、
   `verify_session.py`、`demo_e2e.py`、5 个测试文件。
 - `demo_e2e.py` 默认生成**临时**密钥对（不落盘），把**公钥**写进 `session.json` 的
@@ -454,7 +454,7 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
 1. **形式化层**：定义组合义务 `Compose = (推理完整性 ∧ 策略合规)`，给出「键分离 + 两次验证 ⇒ 组合成立」的引理（写进 P1-8）。
 2. **代理实验**：在现有 zkVM 内加 `Job::Infer` 模式，证明一个**确定性小模型前向**
    （固定权重、量化整数、`circuits/types` 内实现）确实产生了被承诺的输出。
-3. **组合驱动** `scripts/compose_proof.py`（新）：分别产证 → 联合验证 → 输出 `CompositeCertificate`
+3. **组合驱动** `scripts/prove/compose_proof.py`（新）：分别产证 → 联合验证 → 输出 `CompositeCertificate`
    （含两个 proof digest + 两个 vkey + 组合义务声明）。
 4. **成本表**：证明「组合成本 ≈ 两者之和，且由推理证明主导」这一假设是否成立。
 
@@ -473,7 +473,7 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
 |---|---|
 | 1 形式化 | **引理 L6** 写进 [`security-model.md`](security-model.md) §3（组合义务、键分离、四方 `response_binding`），含「不保证」三条与成本结论的如实标注 |
 | 2 代理实验 | 新增 guest `circuits/infer-program`（包 `pop-infer`）；`pop-types` 加 `Job::Infer` / `InferRequest` / `run_infer` 与 `job_domain`；**两个 guest 入口各断言一次域**，把键分离钉进电路。模型是 16→32→4 定点（Q16）MLP，权重由编译期常量种子生成 ⇒ **模型就是程序**，被 vkey 承诺（比 P2-9 的 ezkl 委托更强）。Python 参考实现 `policydsl/proofs/infer.py` 与 Rust 逐位一致 |
-| 3 组合驱动 | `policydsl/proofs/compose.py`（8 步验证）+ `scripts/compose_proof.py`（两次独立进程出证 → 合成 → 独立验证）。**必须分进程**：同进程连出两份证明会在第二份 setup 被 OOM |
+| 3 组合驱动 | `policydsl/proofs/compose.py`（8 步验证）+ `scripts/prove/compose_proof.py`（两次独立进程出证 → 合成 → 独立验证）。**必须分进程**：同进程连出两份证明会在第二份 setup 被 OOM |
 | 4 成本表 | `bench/bench_compose.py` → **已跑出** `bench/results/compose.{json,md}`：策略半 127.3 s / 64.4 万周期 / 峰值 10.2 GiB，推理半 110.8 s / 8.3 万周期 / 峰值 10.0 GiB；组合层合成 5.0 ms、联合验证 53.8 s（主导是两次 vkey setup）。两半**分进程** ⇒ 峰值取 max 而非相加 |
 | 反例 | `tests/test_compose.py`（48）：换证明文件/缺失、同 vkey/非期望 vkey、换模型/换输入、两半绑不同 T/送达 T′ 不符、形状/模式/域/policy_hash 重编译 —— 全部被拒 |
 | 驱动接线 | 真出证明才暴露的 4 处（`kind`≠`--job` 旗标、`outcome_without_meta` 连 `mode` 一起剥、`--reuse-proofs` 必须还原同一个 nonce、`_verify_one` 漏给 `--out` 会在仓库根落 `results.json`）已修并各自补了回归用例（`TestDriverWiring`）—— 绑定层全绿但驱动一跑就炸，这个教训写进了测试注释 |
@@ -487,7 +487,7 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
 `scripts/examples/out/` 下**本机生成**的证明工件随之失效（该目录被 `.gitignore` 忽略，
 不入库）。唯一会用到它们的是 `POP_TEST_PROOF` 打开的那个测试，默认 skip；
 要用就先重新生成：跑一次
-`SP1_PROVER=cpu python3 scripts/issue_cert.py --pack policy_packs/eu_ai_act_v1.json --response scripts/examples/eu_agent_reply.txt --out-dir scripts/examples/out/cert_public`
+`SP1_PROVER=cpu python3 scripts/prove/issue_cert.py --pack policy_packs/eu_ai_act_v1.json --response scripts/examples/eu_agent_reply.txt --out-dir scripts/examples/out/cert_public`
 （该用例读的就是这个目录）。
 
 ---
@@ -506,7 +506,7 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
 > 命令见 [`reproduce.md`](reproduce.md) §4½。
 >
 > 代码侧可以先行、不受影响的部分：`contracts/Anchor.sol` 的 `anchorWithProof` 骨架、
-> `scripts/anchor_e2e.sh --onchain-verify` 的驱动与反例用例 —— 这些在 §P7-C 已有可运行基础
+> `scripts/anchor/anchor_e2e.sh --onchain-verify` 的驱动与反例用例 —— 这些在 §P7-C 已有可运行基础
 > （真实 Anvil 上端到端 PASS），本项只差 **groth16 证明工件**入不了库。
 
 现状 `contracts/Anchor.sol` 只存 `bytes32` 摘要 —— **链上不验证证明**，「链上可验证」是过度声明。
@@ -530,7 +530,7 @@ function anchorWithProof(bytes32 digest, bytes calldata proof, bytes calldata pu
 
 **前置**：① 拉取 SP1 `SP1VerifierGateway`/`SP1VerifierGroth16` artifact 入库（与 `Anchor.json` 同策略）；
 ② **≥64 GB 机器**产出 groth16 证明（本机 12 GB 必 OOM）—— **见 §9 待办 T1（需人工租机，建议与 P1-5 并行排期）**；
-③ `scripts/anchor_e2e.sh --onchain-verify`。
+③ `scripts/anchor/anchor_e2e.sh --onchain-verify`。
 
 **验收**：有效证明 → 锚定成功 + `anchoredAt>0`；**反例**——篡改 publicValues → `verifyProof` revert；
 未验证证明直接调 `anchor()` → 路径被移除/拒绝。
@@ -612,9 +612,9 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 | # | 子任务 | 交付 | 验收 |
 |---|---|---|---|
 | **9.0** | **EVM 验证器接口**（原 T2 阻塞）—— ✅ **已完成（2026-09-11）** | `policydsl/proofs/ezkl_evm.py` + `tests/test_ezkl_evm.py` | 裸调用抛错已定位并绕开；一次性/可复用验证器与 VK artifact 均产出，10 例全绿 |
-| **9.1** | **依赖栈打通**：恢复 pip（§8.0）→ `torch`/`onnx`/`ezkl`（halo2 后端）；锁定版本写进 `requirements-ezkl.txt`；**离线 wheel 缓存入库** | 可复现的 `scripts/install_ezkl.sh` | `import ezkl` + 一次自带示例的 prove/verify 通过 |
+| **9.1** | **依赖栈打通**：恢复 pip（§8.0）→ `torch`/`onnx`/`ezkl`（halo2 后端）；锁定版本写进 `requirements-ezkl.txt`；**离线 wheel 缓存入库** | 可复现的 `scripts/ops/install_ezkl.sh` | `import ezkl` + 一次自带示例的 prove/verify 通过 |
 | **9.2** | **模型与特征**：`semantic/train.py`（数据 + 训练 + 导出 ONNX）；权重与 ONNX 入库，`semantic/MODEL.sha256` | `semantic/model.onnx` + 训练脚本 | ONNX 导出**逐位确定**（同权重两次导出 sha256 相同） |
-| **9.3** | **ezkl 编译与出证**：`scripts/ezkl_prove.py` —— `gen_settings → compile → setup → prove → verify`；产出 `vk` + `proof` | `semantic/artifacts/{vk.json,proof.json}` | `ezkl verify` 通过；记录**出证时间/大小/内存**（进 `bench/`） |
+| **9.3** | **ezkl 编译与出证**：`scripts/prove/ezkl_prove.py` —— `gen_settings → compile → setup → prove → verify`；产出 `vk` + `proof` | `semantic/artifacts/{vk.json,proof.json}` | `ezkl verify` 通过；记录**出证时间/大小/内存**（进 `bench/`） |
 | **9.4** | **策略规则**：新增 `semantic_bound` kind，贯通 `model.py → compile.py → serialize.py → pop-types` | `Constraint::SemanticBound { name, model_vkey, onnx_sha256, threshold_bp, direction }` | `tests/test_semantic.py::test_compile_semantic`；契约哈希稳定 |
 | **9.5** | **组合与绑定** —— ✅ **已完成（2026-09-12）** | `policydsl/proofs/semantic.py::verify_companion/companion_entry`、`cert.build_payload(semantic=)`、`scripts/{issue_cert,verify_cert}.py` | 见 9.7 反例；**两处与原文不同，理由见 9.5 记要** |
 | **9.6** | **信任边界论证** —— ✅ **已完成（2026-09-12）** | [`design-semantic-rules.md`](design-semantic-rules.md) | 与 §P1-8 的形式化模型对接：新增**引理 L7**（**不是 L6 —— 那号已被 P1-6 占用**，见记要） |
@@ -625,10 +625,10 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 >
 > | # | 计划交付 | 实际 | 判定 |
 > |---|---|---|---|
-> | 9.1 | `scripts/install_ezkl.sh` + **离线 wheel 缓存入库** | 脚本 ✅ **已补（2026-09-12）**；wheel 缓存 ❌ **仍不入库**（主动偏差） | `install_ezkl.sh` 现已交付：幂等、`--check` 只检、装前**版本核对**（`ezkl==23.0.5 / onnx==1.22.0 / torch==2.14.0`，装错版本会让陪伴证明与策略固化的 `onnx_sha256`/`model_vkey` 对不上）、装后冒烟 `ezkl_prove.py info`、网络不通**快速失败**（退出码 2）、锁文件防并发。离线侧给了 `--save-wheels` / `--offline` 两条路，但 wheelhouse 本身**不入库** —— torch 一个轮子就几百 MB～2 GB，纯二进制、可由 pip 重下（`wheelhouse/` 已进 `.gitignore`）。 |
+> | 9.1 | `scripts/ops/install_ezkl.sh` + **离线 wheel 缓存入库** | 脚本 ✅ **已补（2026-09-12）**；wheel 缓存 ❌ **仍不入库**（主动偏差） | `install_ezkl.sh` 现已交付：幂等、`--check` 只检、装前**版本核对**（`ezkl==23.0.5 / onnx==1.22.0 / torch==2.14.0`，装错版本会让陪伴证明与策略固化的 `onnx_sha256`/`model_vkey` 对不上）、装后冒烟 `ezkl_prove.py info`、网络不通**快速失败**（退出码 2）、锁文件防并发。离线侧给了 `--save-wheels` / `--offline` 两条路，但 wheelhouse 本身**不入库** —— torch 一个轮子就几百 MB～2 GB，纯二进制、可由 pip 重下（`wheelhouse/` 已进 `.gitignore`）。 |
 > 顺带：补这个冒烟步骤时撞出 `ezkl_prove.py info` 的一个真缺陷 —— 它读 `settings_version` 找错了层级（该字段在清单**顶层**，不在 `settings` 块里），于是打完半张清单就 `KeyError` 崩掉；已修并补回归用例 `TestProveCliInfo`。 |
 > | 9.2 | `semantic/model.onnx` + 训练脚本 + `MODEL.sha256` | ✅ `semantic/{train.py,features.py,dataset.py,model.onnx,head.weights.json,MODEL.sha256}` | 导出逐位确定由 `test_two_processes_same_sha256` 锁死 |
-> | 9.3 | `scripts/ezkl_prove.py` + `semantic/artifacts/{vk,proof}` | ✅ 同名脚本（`setup/prove/verify/selftest/info` 五个子命令）+ `semantic/artifacts/{vk.ezkl,proof.json}`（manifest 见 `MANIFEST.json`） | 成本已进 `bench/results/semantic.md`（setup 48.2 s / prove 76.6 s） |
+> | 9.3 | `scripts/prove/ezkl_prove.py` + `semantic/artifacts/{vk,proof}` | ✅ 同名脚本（`setup/prove/verify/selftest/info` 五个子命令）+ `semantic/artifacts/{vk.ezkl,proof.json}`（manifest 见 `MANIFEST.json`） | 成本已进 `bench/results/semantic.md`（setup 48.2 s / prove 76.6 s） |
 > | 9.4 | `semantic_bound` 贯通四层 + `test_compile_semantic` | ✅ `model.py`（校验阈值/方向）→ `compile.py`（固化 `onnx_sha256` + `model_vkey`）→ `serialize.py` → `pop-types` | 契约哈希稳定由编译测试与 `policy_hash` 三方比对共同保证 |
 
 > **9.0 记要（T2 的结论，2026-09-11）** —— 原文把这件事记成「先试 ezkl 12.x；或绕开该 API
@@ -736,7 +736,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 **顺带查出的两件事**（都不在计划里）：
 
-- `scripts/ezkl_prove.py info` 一直在 `KeyError: 'settings_version'` 崩（清单字段在**顶层**而非
+- `scripts/prove/ezkl_prove.py info` 一直在 `KeyError: 'settings_version'` 崩（清单字段在**顶层**而非
   `settings` 块内），是给 `install_ezkl.sh` 加冒烟步骤时撞上的；已修 + `TestProveCliInfo` 钉住。
 - `semantic/dataset.py` 的注释称 `HOMOGLYPH_PAIRS` 全部来自 `features.VOCAB`，**实测有 6 个字符不满足**
   （大写西里尔 `Ѕ А Е О Т`、小写 `п`）——即模型没训过它们。所以「语义规则 ⊇ 折叠规则」不成立：
@@ -755,7 +755,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 （crate 名 `pop-session`）+ `circuits/types` 的 P2-10 段（`merkle_root`、`SessionRequest` /
 `CertView` / `SessionOutput`、`run_session`）+ 驱动接线（`build.rs` 三个 ELF、`--job session`）+
 `policydsl/proofs/session.py`（参考实现 + Merkle 包含证明 + `prove_session` / `verify_session_proof`）+
-`scripts/prove_session.py`（CLI）+ `tests/test_session.py`（38 例，其中 1 例 gated）。
+`scripts/prove/prove_session.py`（CLI）+ `tests/test_session.py`（38 例，其中 1 例 gated）。
 
 **三个设计要点（每一个都是「换个做法就出漏洞」的那种）**：
 
@@ -788,14 +788,14 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 **顺带查出的两件事**：
 
-- `scripts/cross_validate.py --no-prove` 此前**拿 host 的计数冒充 prove**（末行照抄 host 数字）。
+- `scripts/prove/cross_validate.py --no-prove` 此前**拿 host 的计数冒充 prove**（末行照抄 host 数字）。
   可 `--no-prove` 下一条证明都没出 —— 那个数字会被读成「出证结论」并抄进文档。已改为
   `prove SKIPPED (--no-prove)`。
 - 仓库里**在盘的** `scripts/examples/out/*/session.json` 是**旧的**（生成于「每张流式证书都带
   seal」落地之前），拿它去出会话证明会被 ③ 拒。这是**如实拒绝、不是回归**：用当前代码重跑
   `demo_e2e.py` 得到的证书集每张都带 seal，两个 run 都过宿主校验、`run[1]` 已真出证并验过。
 
-**与计划不同的一处**：多交付了一个 `scripts/prove_session.py`（计划只要求
+**与计划不同的一处**：多交付了一个 `scripts/prove/prove_session.py`（计划只要求
 `session.py` + guest + 测试）。理由很具体：会话层否则**没有命令行入口**
 （`pop-script --job session` 要手工拼 `vectors.json`），`docs/reproduce.md` 就没有可跑的命令。
 
@@ -810,7 +810,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 | 跑法 | 切片证明份数 | 墙钟 | 峰值 RSS | 结果 |
 |---|---:|---:|---:|:--|
-| `scripts/prove_multiparty.py --pack policy_packs/multiparty_demo_v1.json` | 2（模型方 + 网关；部署方空切片不出证） | **6:33**（393 s） | 10.71 GiB | `RESULT: PASS` |
+| `scripts/prove/prove_multiparty.py --pack policy_packs/multiparty_demo_v1.json` | 2（模型方 + 网关；部署方空切片不出证） | **6:33**（393 s） | 10.71 GiB | `RESULT: PASS` |
 | `POP_TEST_MULTIPARTY=1 python3 -m unittest tests.test_multiparty.TestMultipartyEndToEnd` | 2 | **7:05**（425 s） | 10.72 GiB | 通过（exit 0） |
 
 两条都覆盖了现场造假演示（缺签名 / 换切片），也都跑在**真证明**上而非只在宿主判定上：
@@ -827,7 +827,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 **交付物**：`policydsl/proofs/multiparty.py`（切分 + 编译 + 签名 + 装配 + 七步验证）+
 `policydsl/core/compile.py` 的 `compile_constraints` / `compile_slice_policy` 接缝 +
 `policy_packs/multiparty_demo_v1.json`（模型方与网关**都有**非空切片的示例包）+
-`scripts/prove_multiparty.py`（CLI，含两条验收判据的现场造假演示）+ `tests/test_multiparty.py`（44 例，其中 1 例 gated）。
+`scripts/prove/prove_multiparty.py`（CLI，含两条验收判据的现场造假演示）+ `tests/test_multiparty.py`（44 例，其中 1 例 gated）。
 
 **三个设计要点**：
 
@@ -1000,7 +1000,7 @@ apt-get install python3-pip    → 有候选(22.0.2)，但 sudo 需要密码 →
 ```
 
 现有框架（`langchain_core 1.6.2` 等）装在 `~/.local/lib/python3.10/site-packages`，
-说明**历史上曾有 pip**，现已不可用。`scripts/install_frameworks.sh` 建的 `.venv` 也不存在。
+说明**历史上曾有 pip**，现已不可用。`scripts/ops/install_frameworks.sh` 建的 `.venv` 也不存在。
 
 **要装 ezkl，必须先恢复 pip。** 两条路，推荐第一条（不需要 sudo）：
 
@@ -1143,7 +1143,7 @@ verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 |---|---|---|---|---|
 | **T1** | **租一台一次性 ≥64 GB 云机**（**外部资源，人工动作**），**① 产出 groth16 证明 + 测通验证合约（D2 已拍板）**；**②（顺带）**把 P2-12 证明侧的**全矩阵**补完（见下「T1 的第二个用途」） | ① `P1-7` 链上证明验证的**硬前置**：**本机 12 GB 必 OOM**（compressed 与 groth16 实测都在峰值 ~11.0 GB 被 OOM killer 终止 —— 递归包装的固定开销就超了本机内存，`SHARD_SIZE`/`MEMORY_LIMIT` 无效），groth16/plonk 出不来；② 只是**同一台机器上的顺带**，**不阻塞任何东西** | 需要人工租机（约数小时窗口）+ 一次环境搭建（Rust/SP1 工具链或直接搬 `circuits/` 目标目录）；产出入库后本机可离线复核 | ⬜ **未开始（阻塞中）** —— P1-5 完成后，本项是 **P1 段内唯一剩余任务**，也是唯一的外部阻塞；**不解决它，P1 段无法收尾**。建议立即排期租机 |
 | **T2** | 解开 ezkl `create_evm_verifier()` 的 `RuntimeError: no running event loop` | `P2-9`（D3 选定的全量 ezkl 集成）的最后一个阻塞 | 先试 ezkl 12.x；或绕开该 API，直接由编译产物手写 Solidity verifier | ✅ **已完成（2026-09-11）** —— 两条预设备选都不需要：真因是**调用方式**（API 内部走 `pyo3-async-runtimes`，须在事件循环内调用并 await 其返回的 Future），非版本、非依赖。解见 `policydsl/proofs/ezkl_evm.py` + `tests/test_ezkl_evm.py`（10 例）、记要见 §P2-9 子任务表 9.0 |
-| **T3** | 真实 SP1 证明的**全量**回归改为「出证 + 验证」两条腿都在 CI 之外定期跑 | 论文 §7 的证明时间/内存数字 | 单次 `cross_validate --prove` ≈ **45 分钟**（19 向量、`--chunk 2`；14 向量时约 24 分钟）；本机跑即可 | ✅ **已完成（2026-09-16，代码 + 本机真跑）** —— 见 `dev-plan.md` §5.5.1/§5.5.3。**缺的从来不是某一条腿**（出证腿 `cross_validate` 早已有、量测 `bench_proofs` 有、验证腿 `bench_verify` 有），缺的是**把两条腿串起来、按次留痕、能挂定时器**的那层 ⇒ 新增 `scripts/regression_prove.py`（只编排，不重写任何一条腿的逻辑）。留痕**只追加**到 `bench/results/regression-prove.jsonl`（`cross_validate` 每次覆盖 `results_prove.json`，历史无从谈起）；验证腿走**新进程**（出证进程已退出，验证方只剩产物 + ELF）；`--pop-script` 可注入替身驱动，16 例单测**不需要 Rust**。**两点如实登记**：① 验证腿**只覆盖 1 个向量**（记录里写在 `note`，不装作全量）—— 它证的是「这份产物换个人也能验」这条**路径**没坏；② cron/systemd 配方已写进脚本 docstring 与 `08-tests-bench.md` §3.8，**但没有任何机器真的挂着它** —— 「能定期跑」已交付，「正在定期跑」要有人去配。**首条真实记录已入库**（2026-09-16 `first-real-run`：19/19 PASS，43.6 min，峰值 10,975 MB，`git.dirty=false`）——「脚本跑过」与「挂着定时器」也是两件事，都如实写在这里 |
+| **T3** | 真实 SP1 证明的**全量**回归改为「出证 + 验证」两条腿都在 CI 之外定期跑 | 论文 §7 的证明时间/内存数字 | 单次 `cross_validate --prove` ≈ **45 分钟**（19 向量、`--chunk 2`；14 向量时约 24 分钟）；本机跑即可 | ✅ **已完成（2026-09-16，代码 + 本机真跑）** —— 见 `dev-plan.md` §5.5.1/§5.5.3。**缺的从来不是某一条腿**（出证腿 `cross_validate` 早已有、量测 `bench_proofs` 有、验证腿 `bench_verify` 有），缺的是**把两条腿串起来、按次留痕、能挂定时器**的那层 ⇒ 新增 `scripts/prove/regression_prove.py`（只编排，不重写任何一条腿的逻辑）。留痕**只追加**到 `bench/results/regression-prove.jsonl`（`cross_validate` 每次覆盖 `results_prove.json`，历史无从谈起）；验证腿走**新进程**（出证进程已退出，验证方只剩产物 + ELF）；`--pop-script` 可注入替身驱动，16 例单测**不需要 Rust**。**两点如实登记**：① 验证腿**只覆盖 1 个向量**（记录里写在 `note`，不装作全量）—— 它证的是「这份产物换个人也能验」这条**路径**没坏；② cron/systemd 配方已写进脚本 docstring 与 `08-tests-bench.md` §3.8，**但没有任何机器真的挂着它** —— 「能定期跑」已交付，「正在定期跑」要有人去配。**首条真实记录已入库**（2026-09-16 `first-real-run`：19/19 PASS，43.6 min，峰值 10,975 MB，`git.dirty=false`）——「脚本跑过」与「挂着定时器」也是两件事，都如实写在这里 |
 | **T4** | **P1-5b：堵住回执链的「截尾」缺口**（做 P1-8 时发现，见 [`security-model.md`](security-model.md) §5.3） | `P1-5` 的**健全性缺口**：把链尾那条违规回执**整条删掉**后，剩下的仍是一条结构自洽、逐条签名有效的**真链**，`trace_binding`（证书绑的链 == 送检的链）与 `receipt_chain`（逐条验签）**双双 PASS**；**当链与证书由出证方一起转交时，违规尾巴可被静默截掉**。**这不是「再比一次」能补的** —— 任何只看交付链的检查都无从知道「后面还有没有」 | **网关对会话末端做一次承诺**：`ToolSeal{count, trace_root, ts, keyid, sig}`（域分隔 `pop-trace-seal-v1`），验证方核对 `len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root` + 验签。截尾者只剩两条路：拿原 seal 配截断链（`count` 对不上）或为截断链新签一条（无网关私钥） | ✅ **已完成（2026-09-11，纯代码）** —— 见 `tests/test_trace.py::TestSeal`（9 例）与 `::TestVerifyCertTraceBinding::test_tail_truncation_is_rejected`（原 seal / 伪造 seal / 不带 seal 三路 + 正对照）。改动面：`policydsl/evidence/trace.py`（`ToolSeal`/`verify_seal`/`ToolGateway.seal`）+ `cert.build_payload`（载荷**顶层** `trace_seal`）+ `verify_cert.py` **3d** + 各适配器出证点。**两点与原设想的偏离，如实登记**：① **没有做「电路内对 seal 的结构校验」** —— 链尾摘要本就在电路内算并进公开值，「证明绑的是哪条链」已有电路保证；seal 要补的是「网关说这条链到此为止」，那是一个**签名**问题，按本项目「结构入电路、签名在链下」的既有分工放在链下；② **seal 放载荷顶层而不是 `outcome`** —— `outcome` 是证明公开值的镜像（验证方逐字段比对），放进去会让每一张带真实证明的证书都对不上。**残留边界**：验证方须持网关公钥（`--gateway-key`）才拿得到这个保证；只给 `--receipts` 而没给公钥时，3d 记 `PASS + 「截尾不可排除」(skipped)`；且 seal 仍是**网关的**陈述（A4），它把信任挪向网关而非消除信任 |
 
 > **T2 已于 2026-09-11 关闭**（理由见上表与 §P2-9 的 9.0 记要）。

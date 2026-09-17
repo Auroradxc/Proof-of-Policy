@@ -51,7 +51,7 @@ nonce ─────────── challenge.new_nonce() ──────
 `tool_arg_guard` / `budget_bound(calls)` 判的是这条链，链尾摘要 `trace_root` 进公开值。
 
 语义规则（P2-9）还有第三路：策略含 `semantic_bound` 时，出证方额外产出一条
-**ezkl 陪伴证明**（`scripts/ezkl_prove.py`），它证明「该策略指定的模型在这条响应上给出的分数满足阈值」。
+**ezkl 陪伴证明**（`scripts/prove/ezkl_prove.py`），它证明「该策略指定的模型在这条响应上给出的分数满足阈值」。
 两份证明**必须一起验**：SP1 那份的 `delegated[]` 说明「哪几条没被判」，ezkl 那份补上判定结果，
 二者由 `{vk 指纹, onnx 哈希, 阈值, 方向}` 逐字段绑定，且 ezkl 的公开实例输入 `encode(T)` 由验证方
 拿送达的 `T′` 现场重算比对。

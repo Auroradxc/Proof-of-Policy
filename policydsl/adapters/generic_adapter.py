@@ -39,8 +39,8 @@
 
 ::
 
-    python3 scripts/verify_session.py <out_dir>/session.json
-    python3 scripts/verify_cert.py <out_dir>/cert.json --gateway-key <out_dir>/gateway.pub.hex
+    python3 scripts/verify/verify_session.py <out_dir>/session.json
+    python3 scripts/verify/verify_cert.py <out_dir>/cert.json --gateway-key <out_dir>/gateway.pub.hex
 
 ## 三件必须做对的事（做错的后果各不相同）
 
@@ -247,8 +247,8 @@ def write_session(guard: GenericGuard, out_dir: Path,
 
     核对配方（``<dir>`` 即 ``out_dir``）：:
 
-        python3 scripts/verify_session.py --session <dir>/session.json
-        python3 scripts/verify_cert.py --cert <dir>/cert-1-tool.json \\
+        python3 scripts/verify/verify_session.py --session <dir>/session.json
+        python3 scripts/verify/verify_cert.py --cert <dir>/cert-1-tool.json \\
             --pack <policy_pack> --ledger <dir>/ledger.jsonl \\
             --keyring <dir>/key.json --receipts <dir>/receipts.json \\
             --gateway-key <dir>/gateway.pub.hex

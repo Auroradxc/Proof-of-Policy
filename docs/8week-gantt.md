@@ -47,8 +47,8 @@ gantt
 ```
 
 > 图中 `m3 demo 视频` 是**当时的里程碑，最终未产出**：交付形态改为
-> `scripts/demo_e2e.py` 一键端到端 + `docs/demo/` 的 HTML/SVG/PNG 报告与截图
-> （由 `scripts/make_shots.py` 生成）。其余里程碑均按期达成。
+> `scripts/demo/demo_e2e.py` 一键端到端 + `docs/demo/` 的 HTML/SVG/PNG 报告与截图
+> （由 `scripts/demo/make_shots.py` 生成）。其余里程碑均按期达成。
 
 ## 二、关键路径
 
@@ -88,7 +88,7 @@ gantt
 | W3 | `policy_packs/finance_redaction_v1.json`、`docs/policy-dsl.md` | 同左 + `policydsl/core/nfa.py`、`policydsl/core/pii.py` | ≥2 类 PII 通过 |
 | W4 | `circuits/program`、`circuits/script` | 同左 | PoP v0 证明→验证 |
 | W5 | 私有模式模块、`docs/security-model.md` 第一节 | `policydsl/privacy/commit.py` + `pop-types::evaluate_private` | 验证者看不到全文 |
-| W6 | `demo/`、cert 脚本 | **`policydsl/adapters/agent.py` + 三个框架适配器 + `policydsl/evidence/cert.py` + `scripts/demo_e2e.py`**（`demo/` 空目录已删） | 真实会话证书可验证 |
+| W6 | `demo/`、cert 脚本 | **`policydsl/adapters/agent.py` + 三个框架适配器 + `policydsl/evidence/cert.py` + `scripts/demo/demo_e2e.py`**（`demo/` 空目录已删） | 真实会话证书可验证 |
 | W7 | `bench/`、`docs/security-model.md` | 同左（+ `docs/quadrant.md`、`docs/plan-p0p1p2.md`） | 成本曲线 + 对比表 |
 | W8 | 论文 + README 复现 | `paper/proof-of-policy.tex`（权威源）+ `docs/reproduce.md` + `docs/demo/` 截图 | 导师按 README 复现通过 |
 

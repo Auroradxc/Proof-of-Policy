@@ -8,10 +8,10 @@
 # 哪条跑了、哪条跳过了（为什么）、耗时与峰值内存、以及**哪几条是 stand-in**。
 #
 # 用法：
-#   bash scripts/demo_all.sh                # 快速模式：走宿主校验，不出真证明（约半分钟）
-#   bash scripts/demo_all.sh --prove        # 出真证明（每条支路数分钟、峰值 ~10 GB，约 25–30 分钟）
-#   bash scripts/demo_all.sh --out-dir DIR  # 产物与报告落 DIR
-#   bash scripts/demo_all.sh --list         # 只列支路，不跑
+#   bash scripts/demo/demo_all.sh                # 快速模式：走宿主校验，不出真证明（约半分钟）
+#   bash scripts/demo/demo_all.sh --prove        # 出真证明（每条支路数分钟、峰值 ~10 GB，约 25–30 分钟）
+#   bash scripts/demo/demo_all.sh --out-dir DIR  # 产物与报告落 DIR
+#   bash scripts/demo/demo_all.sh --list         # 只列支路，不跑
 #
 # 退出码：0 = 所有**应有**的步骤都 PASS；1 = 有步骤 FAIL。
 # 跳过（缺依赖）不算失败，但会在报告里单列 —— 跳过与通过必须能分开看，
@@ -19,7 +19,12 @@
 
 set -uo pipefail
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 仓库根：从本文件向上找**同时含** policydsl/ 与 circuits/ 的目录。
+# 不写 "${BASH_SOURCE[0]}/../.." —— 那种「数层数」的写法今天对、下次搬家就静默指错，
+# 与 scripts/_bootstrap.py 用的是同一对标记（改一处要改两处）。
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+while [ ! -d "$HERE/policydsl" ] && [ "$HERE" != "/" ]; do HERE="$(dirname "$HERE")"; done
+[ -d "$HERE/circuits" ] || { echo "找不到仓库根（从 ${BASH_SOURCE[0]} 向上）" >&2; exit 1; }
 cd "$HERE"
 
 PROVE=0
@@ -65,14 +70,14 @@ emit() {
 #
 # 每条支路：`key|中文名|驱动脚本|说明`。顺序即执行顺序（有依赖的排在被依赖者之后）。
 LANES=(
-  "policy|公开模式主干|scripts/demo_e2e.py|LangChain 流式(含早停) + MCP 工具(参数/结果) + 真 SP1 证明 + 挑战绑定 + 公私模式对比 + 账本"
-  "private|私有模式|scripts/private_demo.py|响应承诺 + 逐违规证据承诺 + 脱敏证明(mask_covered) + 证据开示"
-  "semantic|语义规则(P2-9)|scripts/ezkl_prove.py|ezkl 陪伴证明：确定性特征图 + 阈值判定，验证方与 SP1 结论**合取**"
-  "compose|组合证明(P1-6)|scripts/compose_proof.py|策略半 ∧ 推理半，两个 guest 两个 vkey → 一张组合证书"
-  "session|会话聚合(P2-10)|scripts/prove_session.py|一组证书的 Merkle 根 + 三条义务(policy_hash 全同/链无缝/覆盖完整)"
-  "multiparty|多证明者(P2-11)|scripts/prove_multiparty.py|按规则类切三段，各角色用自己的键对**自己那段**出证"
-  "anchor|链上锚定(P7-c)|scripts/anchor_e2e.sh|起 anvil → 部署 Anchor.sol → 13 张证书摘要上链 → 第三方 --rpc 核对"
-  "verify|第三方独立验证|scripts/verify_session.py|只用公开产物(session.json + ledger + proof)复算全部结论"
+  "policy|公开模式主干|scripts/demo/demo_e2e.py|LangChain 流式(含早停) + MCP 工具(参数/结果) + 真 SP1 证明 + 挑战绑定 + 公私模式对比 + 账本"
+  "private|私有模式|scripts/demo/private_demo.py|响应承诺 + 逐违规证据承诺 + 脱敏证明(mask_covered) + 证据开示"
+  "semantic|语义规则(P2-9)|scripts/prove/ezkl_prove.py|ezkl 陪伴证明：确定性特征图 + 阈值判定，验证方与 SP1 结论**合取**"
+  "compose|组合证明(P1-6)|scripts/prove/compose_proof.py|策略半 ∧ 推理半，两个 guest 两个 vkey → 一张组合证书"
+  "session|会话聚合(P2-10)|scripts/prove/prove_session.py|一组证书的 Merkle 根 + 三条义务(policy_hash 全同/链无缝/覆盖完整)"
+  "multiparty|多证明者(P2-11)|scripts/prove/prove_multiparty.py|按规则类切三段，各角色用自己的键对**自己那段**出证"
+  "anchor|链上锚定(P7-c)|scripts/anchor/anchor_e2e.sh|起 anvil → 部署 Anchor.sol → 13 张证书摘要上链 → 第三方 --rpc 核对"
+  "verify|第三方独立验证|scripts/verify/verify_session.py|只用公开产物(session.json + ledger + proof)复算全部结论"
 )
 
 if [ "$LIST" = "1" ]; then
@@ -148,63 +153,63 @@ PROVE_ARG=(); [ "$PROVE" = 0 ] && PROVE_ARG=(--no-prove)
 # 的话，--prove 模式下这一条会**悄悄不出证**（日志里 `running demo (prove=0)`），
 # 而汇总表仍然报 PASS：正是本脚本要拦的那种「说法 ≠ 产物」。
 ANCHOR_ARG=(); [ "$PROVE" = 1 ] && ANCHOR_ARG=(--prove)
-run_step policy "公开模式主干" "scripts/demo_e2e.py" \
-  python3 scripts/demo_e2e.py "${PROVE_ARG[@]}" --out-dir "$OUT_DIR/policy"
+run_step policy "公开模式主干" "scripts/demo/demo_e2e.py" \
+  python3 scripts/demo/demo_e2e.py "${PROVE_ARG[@]}" --out-dir "$OUT_DIR/policy"
 SESSION_JSON="$OUT_DIR/policy/session.json"
 
 # ---- 2) 私有模式 -----------------------------------------------------------
-run_step private "私有模式" "scripts/private_demo.py" \
-  python3 scripts/private_demo.py "${PROVE_ARG[@]}"
+run_step private "私有模式" "scripts/demo/private_demo.py" \
+  python3 scripts/demo/private_demo.py "${PROVE_ARG[@]}"
 
 # ---- 3) 语义规则（P2-9）---------------------------------------------------
 if [ "$HAVE_EZKL" = 0 ]; then
-  skip_step semantic "语义规则(P2-9)" "scripts/ezkl_prove.py" "未装 ezkl（python3 -c 'import ezkl' 失败）"
+  skip_step semantic "语义规则(P2-9)" "scripts/prove/ezkl_prove.py" "未装 ezkl（python3 -c 'import ezkl' 失败）"
 elif [ "$HAVE_SRS" = 0 ]; then
-  skip_step semantic "语义规则(P2-9)" "scripts/ezkl_prove.py" "缺 semantic/artifacts/{kzg.srs,model.compiled}，先跑 ezkl_prove.py setup"
+  skip_step semantic "语义规则(P2-9)" "scripts/prove/ezkl_prove.py" "缺 semantic/artifacts/{kzg.srs,model.compiled}，先跑 ezkl_prove.py setup"
 else
   # selftest 是四条文本的端到端自检（含同形异义反例），比单条 prove 更能说明问题。
-  run_step semantic "语义规则(P2-9)" "scripts/ezkl_prove.py" \
-    python3 scripts/ezkl_prove.py selftest
+  run_step semantic "语义规则(P2-9)" "scripts/prove/ezkl_prove.py" \
+    python3 scripts/prove/ezkl_prove.py selftest
 fi
 
 # ---- 4) 组合证明（P1-6）---------------------------------------------------
-run_step compose "组合证明(P1-6)" "scripts/compose_proof.py" \
-  python3 scripts/compose_proof.py \
+run_step compose "组合证明(P1-6)" "scripts/prove/compose_proof.py" \
+  python3 scripts/prove/compose_proof.py \
     --pack policy_packs/eu_ai_act_v1.json \
     --response scripts/examples/eu_agent_reply.txt \
     "${PROVE_ARG[@]}" --out-dir "$OUT_DIR/compose"
 
 # ---- 5) 会话聚合（P2-10）—— 依赖上一轮的 session.json ---------------------
 if [ ! -f "$SESSION_JSON" ]; then
-  skip_step session "会话聚合(P2-10)" "scripts/prove_session.py" \
+  skip_step session "会话聚合(P2-10)" "scripts/prove/prove_session.py" \
     "缺 $SESSION_JSON（依赖「公开模式主干」的产物，那一步没有成功产出）"
 else
-  run_step session "会话聚合(P2-10)" "scripts/prove_session.py" \
-    python3 scripts/prove_session.py --session "$SESSION_JSON" \
+  run_step session "会话聚合(P2-10)" "scripts/prove/prove_session.py" \
+    python3 scripts/prove/prove_session.py --session "$SESSION_JSON" \
       "${PROVE_ARG[@]}" --out-dir "$OUT_DIR/session"
 fi
 
 # ---- 6) 多证明者（P2-11）---------------------------------------------------
-run_step multiparty "多证明者(P2-11)" "scripts/prove_multiparty.py" \
-  python3 scripts/prove_multiparty.py \
+run_step multiparty "多证明者(P2-11)" "scripts/prove/prove_multiparty.py" \
+  python3 scripts/prove/prove_multiparty.py \
     --pack policy_packs/eu_ai_act_v1.json \
     --response scripts/examples/eu_agent_reply.txt \
     "${PROVE_ARG[@]}" --out-dir "$OUT_DIR/multiparty"
 
 # ---- 7) 链上锚定 -----------------------------------------------------------
 if [ "$HAVE_ANVIL" = 0 ]; then
-  skip_step anchor "链上锚定(P7-c)" "scripts/anchor_e2e.sh" "未装 foundry（anvil/cast 不在 PATH），先跑 scripts/retry_install_foundry.sh"
+  skip_step anchor "链上锚定(P7-c)" "scripts/anchor/anchor_e2e.sh" "未装 foundry（anvil/cast 不在 PATH），先跑 scripts/ops/retry_install_foundry.sh"
 else
-  run_step anchor "链上锚定(P7-c)" "scripts/anchor_e2e.sh" \
-    env OUT_DIR="$OUT_DIR/anchor" bash scripts/anchor_e2e.sh "${ANCHOR_ARG[@]}"
+  run_step anchor "链上锚定(P7-c)" "scripts/anchor/anchor_e2e.sh" \
+    env OUT_DIR="$OUT_DIR/anchor" bash scripts/anchor/anchor_e2e.sh "${ANCHOR_ARG[@]}"
 fi
 
 # ---- 8) 第三方独立验证（闭环）---------------------------------------------
 if [ ! -f "$SESSION_JSON" ]; then
-  skip_step verify "第三方独立验证" "scripts/verify_session.py" "缺 $SESSION_JSON"
+  skip_step verify "第三方独立验证" "scripts/verify/verify_session.py" "缺 $SESSION_JSON"
 else
-  run_step verify "第三方独立验证" "scripts/verify_session.py" \
-    python3 scripts/verify_session.py --session "$SESSION_JSON"
+  run_step verify "第三方独立验证" "scripts/verify/verify_session.py" \
+    python3 scripts/verify/verify_session.py --session "$SESSION_JSON"
 fi
 
 # ---------------------------------------------------------------- 汇总报告 --
@@ -250,13 +255,13 @@ else
 fi
 
 # ② 流式那半用的是不是真模型：从 demo 源码里读它有没有 --model 那条路。
-FAKE=$(grep -o "GenericFakeChatModel" scripts/demo_e2e.py | head -1)
-REAL=$(grep -o '\-\-model' scripts/demo_e2e.py | head -1)
+FAKE=$(grep -o "GenericFakeChatModel" scripts/demo/demo_e2e.py | head -1)
+REAL=$(grep -o '\-\-model' scripts/demo/demo_e2e.py | head -1)
 if [ -n "$FAKE" ] && [ -n "$REAL" ]; then
   emit "② ${YEL}流式路径**缺省**用离线桩，不是真模型。${RST}"
-  emit "   实测 scripts/demo_e2e.py 缺省走 LangChain 的 $FAKE（响应写死）；终端会如实打出"
+  emit "   实测 scripts/demo/demo_e2e.py 缺省走 LangChain 的 $FAKE（响应写死）；终端会如实打出"
   emit "   \`llm model : fake (offline)\`。要真模型得显式给 --model（走真 langchain_openai 客户端）："
-  emit "     python3 scripts/demo_e2e.py --model openai:<model>"
+  emit "     python3 scripts/demo/demo_e2e.py --model openai:<model>"
   emit "   → 始终真实的是 **callback 管线**（PoPCallbackHandler 跑在 LangChain 流式管线上）。"
   emit "     接真 LLM 后仍有一个未解的口径问题：流式分片的切分口径跨 provider 不可比"
   emit "     （同一句话在两家 provider 下切出不同的部分证书序列，见 docs/dev-plan.md §5.1.1 第 5 条）。"

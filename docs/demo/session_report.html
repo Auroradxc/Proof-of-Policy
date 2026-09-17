@@ -21,11 +21,11 @@
   <div style="margin-top:10px"><span class='pill'>llm <b>1</b></span><span class='pill'>stream <b>4</b></span><span class='pill'>tool-args <b>3</b></span><span class='pill'>tool-result <b>2</b></span><span class='pill'>zk <b>3</b></span></div>
 </div>
 <div class="card">
-  <h2 style="margin:0 0 8px;font-size:18px">第三方验证（scripts/verify_session.py）</h2>
+  <h2 style="margin:0 0 8px;font-size:18px">第三方验证（scripts/verify/verify_session.py）</h2>
   <ul><li class='ok'><span>PASS</span><code>ledger_chain</code><em>ok</em></li><li class='ok'><span>PASS</span><code>certificates_signature</code><em>13 certs, 1 key(s) in ring</em></li><li class='ok'><span>PASS</span><code>certificates_policy_hash</code><em>2 pack(s), 3 sources</em></li><li class='ok'><span>PASS</span><code>certificates_response_binding</code><em>3 challenge-bound cert(s), self-consistent</em></li><li class='ok'><span>PASS</span><code>certificates_proof_mode</code><em>13 cert(s) labeled, 0 predate the field</em></li><li class='ok'><span>PASS</span><code>certificates_vkey_label</code><em>13 cert(s) labeled, 0 predate the field</em></li><li class='ok'><span>PASS</span><code>certificates_anchored</code><em>digest present in ledger</em></li><li class='ok'><span>PASS</span><code>stream_chains</code><em>2 run(s)</em></li><li class='ok'><span>PASS</span><code>zk_proof</code><em>unproven (host-check only)×3</em></li><li class='ok'><span>PASS</span><code>chain_anchored</code><em>not anchored on chain (file ledger only)</em></li></ul>
   <div class="result">RESULT: PASS</div>
 </div>
-<div class="card muted">复现：<code class="k">SP1_PROVER=cpu python3 scripts/demo_e2e.py</code> →
-<code class="k">python3 scripts/verify_session.py --session scripts/examples/out/e2e/session.json</code>
+<div class="card muted">复现：<code class="k">SP1_PROVER=cpu python3 scripts/demo/demo_e2e.py</code> →
+<code class="k">python3 scripts/verify/verify_session.py --session scripts/examples/out/e2e/session.json</code>
 · 详见 <code class="k">docs/reproduce.md</code></div>
 </html>

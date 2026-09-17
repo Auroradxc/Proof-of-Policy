@@ -620,7 +620,7 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
 | `tests/test_verifier_only.py` | `pop-verify` 的调用与快路径判定 |
 | `bench/bench_cycles.py` | `--execute` 的 cycle 数矩阵（长度 × 规则数 × pike/naive） |
 | `bench/bench_proofs.py` / `bench_verify.py` | 证明时间/体积/内存；验证的冷启动 vs 纯验证 |
-| `scripts/cross_validate.py` | **host 19/19 · prove 19/19**（**I1 的总闸门**，2026-09-12 整批重跑；分块口径见 `08` §5） |
+| `scripts/prove/cross_validate.py` | **host 19/19 · prove 19/19**（**I1 的总闸门**，2026-09-12 整批重跑；分块口径见 `08` §5） |
 
 ---
 

@@ -6,12 +6,12 @@
 
 用法：
   # 1) 本地 Anvil（另开一个终端：anvil）
-  python3 scripts/deploy_anchor.py --rpc http://127.0.0.1:8545
+  python3 scripts/anchor/deploy_anchor.py --rpc http://127.0.0.1:8545
   # 2) 部署信息写进 .anchor_deploy.json（gitignore），供 demo / verify_session 复用
   #    脚本末尾会打印可 source 的环境变量
 
   # 任意测试网/本地节点
-  python3 scripts/deploy_anchor.py --rpc $RPC --private-key $KEY --out deploy.json
+  python3 scripts/anchor/deploy_anchor.py --rpc $RPC --private-key $KEY --out deploy.json
 """
 
 from __future__ import annotations
@@ -21,8 +21,10 @@ import json
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.evidence import anchor  # noqa: E402
 

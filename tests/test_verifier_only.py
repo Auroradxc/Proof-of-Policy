@@ -4,7 +4,7 @@
 因此 ``pop-verify`` 只在 SP1 的验证端点上做校验，环境依赖极轻、耗时也远低于
 重新出证——这里既验证它能验通真证明，也验证它会明确拒绝不可这样验的模式。
 
-重量级 fixture（一份 compressed 证明）由 ``scripts/make_audit_proof.sh`` 生成到
+重量级 fixture（一份 compressed 证明）由 ``scripts/ops/make_audit_proof.sh`` 生成到
 ``circuits/testdata/audit_proof/``；二进制或 fixture 缺失时干净地跳过（前者说明
 没构建，后者说明还没出证，都不该算失败）。
 """
@@ -33,7 +33,7 @@ class TestVerifierOnly(unittest.TestCase):
     def test_compressed_fixture_verifies_fast_and_light(self):
         sidecar = FIXTURE / "proof.verify.json"
         if not sidecar.exists():
-            self.skipTest("no compressed fixture; run scripts/make_audit_proof.sh")
+            self.skipTest("no compressed fixture; run scripts/ops/make_audit_proof.sh")
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "res.json"
             t0 = time.perf_counter()
@@ -87,6 +87,8 @@ class TestVerifierOnlySelection(unittest.TestCase):
     # 只看边车存在会把 core 证明误选为快路径，随后 pop-verify 会拒绝（见上一类）。
     def test_prefer_verifier_only_requires_binary_and_sidecar(self):
         sys.path.insert(0, str(REPO / "scripts"))
+        from _bootstrap import bootstrap  # noqa: E402
+        bootstrap()  # 把 5 个脚本组装进 sys.path（与脚本自身走同一条引导）
         from verify_session import prefer_verifier_only
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -107,6 +109,8 @@ class TestVerifierOnlySelection(unittest.TestCase):
     def test_core_sidecar_does_not_take_the_fast_path(self):
         """core 证明也会写边车，但 core 不能被 pop-verify 验证 → 必须回落到 pop-script。"""
         sys.path.insert(0, str(REPO / "scripts"))
+        from _bootstrap import bootstrap  # noqa: E402
+        bootstrap()  # 把 5 个脚本组装进 sys.path（与脚本自身走同一条引导）
         from verify_session import prefer_verifier_only
 
         with tempfile.TemporaryDirectory() as tmp:

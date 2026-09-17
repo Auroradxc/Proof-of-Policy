@@ -144,7 +144,7 @@ contract Anchor {
 `verify_session.py --rpc` 对**每一张**证书执行上述核对，并统计
 `chain_anchored 14/14 digests on chain 0x5fbd… (14 cross-checked)`。
 
-**反例对照**（`scripts/anchor_e2e.sh` 第 5 步）：一个从未登记的摘要读回 `anchoredAt = 0`。
+**反例对照**（`scripts/anchor/anchor_e2e.sh` 第 5 步）：一个从未登记的摘要读回 `anchoredAt = 0`。
 如果脚本改坏了、检查退化成恒真，这一步会把它抓出来。
 
 链上锚定能证明什么、不能证明什么：
@@ -257,7 +257,7 @@ def check_response_binding(sources) == check_agreement(sources, "response_bindin
 | `tests/test_anchor_chain.py::TestCastCommandLines` | **参数顺序**：`--rpc-url` 在 `--create` 之前、尾参在最后、`cast wallet` 无 `--rpc-url`、`call_uint` 的后缀解析 |
 | `tests/test_anchor_chain.py::TestAnvilEndToEnd` | 真 anvil（端口 8577）；**没有 foundry 时自动跳过** |
 | `tests/test_verifier_only.py` | `prefer_verifier_only` 的三条件与 core 回落 |
-| `scripts/anchor_e2e.sh` | 一键端到端：起节点 → 部署 → 13 张证书上链 → `--rpc` 核对 + 反例对照 |
+| `scripts/anchor/anchor_e2e.sh` | 一键端到端：起节点 → 部署 → 13 张证书上链 → `--rpc` 核对 + 反例对照 |
 
 CI（`.github/workflows/ci.yml`）单独跑 `tests.test_anchor` + `tests.test_anchor_chain`（离线 fake-RPC；
 无 foundry 时 anvil e2e 自动跳过），因此 CI 不需要装 foundry。
@@ -266,7 +266,7 @@ CI（`.github/workflows/ci.yml`）单独跑 `tests.test_anchor` + `tests.test_an
 
 ## 9. 扩展指引
 
-- **接到自备节点/测试网**：`python3 scripts/deploy_anchor.py --rpc <URL>` 打印
+- **接到自备节点/测试网**：`python3 scripts/anchor/deploy_anchor.py --rpc <URL>` 打印
   `POP_ANCHOR_RPC` / `POP_ANCHOR_CONTRACT`，之后 `issue_cert.py` / `demo_e2e.py` 加 `--rpc/--contract` 即可。
 - **换生产签名 + 上链密钥**：`CastRpc` 目前用 `--private-key` 传明文；
   可扩展为 `--account <keystore>` 或硬件签名（改动集中在 `CastRpc._run` 的构造处）。

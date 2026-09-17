@@ -4,9 +4,14 @@
 #
 # 退出码：0 已安装并验证 | 2 网络仍不可用 | 1 尝试过但失败
 #
-# 用法：  bash scripts/retry_install_foundry.sh [--check]
+# 用法：  bash scripts/ops/retry_install_foundry.sh [--check]
 set -u
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 仓库根：从本文件向上找**同时含** policydsl/ 与 circuits/ 的目录。
+# 不写 "${BASH_SOURCE[0]}/../.." —— 那种「数层数」的写法今天对、下次搬家就静默指错，
+# 与 scripts/_bootstrap.py 用的是同一对标记（改一处要改两处）。
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+while [ ! -d "$HERE/policydsl" ] && [ "$HERE" != "/" ]; do HERE="$(dirname "$HERE")"; done
+[ -d "$HERE/circuits" ] || { echo "找不到仓库根（从 ${BASH_SOURCE[0]} 向上）" >&2; exit 1; }
 LOCK="$HERE/.install_foundry.lock"
 CHECK_ONLY=0
 [ "${1:-}" = "--check" ] && CHECK_ONLY=1

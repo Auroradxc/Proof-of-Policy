@@ -4,10 +4,9 @@ __pycache__/
 venv/
 target/
 proof-request.json
-scripts/vectors.json
-scripts/results.json
-scripts/results_check.json
-scripts/results_prove.json
+# cross_validate 的草稿产物（vectors.json / results_*.json）—— 原先散成 4 条文件规则，
+# 脚本分组后统一挪进 .work/，一条目录规则覆盖（见 docs/dev-plan.md §5.6.2）
+scripts/.work/
 scripts/examples/out/
 bench/work/
 .install_frameworks.lock
@@ -19,8 +18,7 @@ wheelhouse/
 # forge 的编译产物——只有 contracts/Anchor.json（abi+bytecode）入库
 contracts/out/
 contracts/cache/
-# anvil 端到端运行期产物
-scripts/examples/out/
+# anvil 端到端运行期产物（scripts/examples/out/ 的规则在上面的公共区，不重复写）
 .anchor_deploy.json
 # 语义规则（P2-9）的 ezkl 运行期大文件——**故意不入库**：
 #   pk.ezkl 3.13 GB，可由 `ezkl_prove.py setup` 重算；

@@ -11,7 +11,7 @@
   - 证据开示（EVIDENCE OPENING）：披露的片段能对照其承诺验证通过。
   - 证明（PROOF）：同一个私有任务在 SP1 内证明并复查（--no-prove 可跳过）。
 
-用法：SP1_PROVER=cpu python3 scripts/private_demo.py [--no-prove]
+用法：SP1_PROVER=cpu python3 scripts/demo/private_demo.py [--no-prove]
 """
 
 from __future__ import annotations
@@ -23,8 +23,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.privacy import challenge, commit
 from policydsl.core import pii

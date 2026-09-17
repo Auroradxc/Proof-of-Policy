@@ -83,7 +83,7 @@ def run_check(vector: dict) -> dict:
 
 
 def vector_for(policy: Policy, receipts, response: str = "") -> dict:
-    """构造一个带回执链的向量（与 ``scripts/cross_validate.py`` 同形）。"""
+    """构造一个带回执链的向量（与 ``scripts/prove/cross_validate.py`` 同形）。"""
     return {"name": "t", "response": response,
             "spec_canonical": spec_canonical_text(compile_policy(policy)),
             "receipts": trace.receipts_to_json(receipts)}
@@ -320,7 +320,7 @@ class TestSeal(unittest.TestCase):
             cert_file = issue_and_anchor(tmp, gw.receipts, seal=None)  # 没承诺会话末端
             (tmp / "receipts.json").write_text(
                 json.dumps(trace.receipts_to_json(gw.receipts)))
-            base = [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+            base = [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
                     "--cert", str(cert_file), "--pack", str(tmp / "pack.json"),
                     "--ledger", str(tmp / "ledger.jsonl"),
                     "--receipts", str(tmp / "receipts.json")]
@@ -610,7 +610,7 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
         (tmp / "receipts.json").write_text(json.dumps(trace.receipts_to_json(receipts)))
         (tmp / "gw.pub.hex").write_text(gateway.signer.public_hex)
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+            [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
              "--cert", str(cert_file), "--pack", str(tmp / "pack.json"),
              "--ledger", str(tmp / "ledger.jsonl"),
              "--receipts", str(tmp / "receipts.json"),
@@ -760,7 +760,7 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
             tmp = Path(td)
             cert_file = self._issue(tmp, gw.receipts, seal=gw.seal())
             (tmp / "gw.pub.hex").write_text(gw.signer.public_hex)
-            base = [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+            base = [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
                     "--cert", str(cert_file), "--pack", str(tmp / "pack.json"),
                     "--ledger", str(tmp / "ledger.jsonl")]
             # 不给 --receipts，只给网关公钥：seal 依然可核 —— 它自带 count/链尾，
@@ -793,7 +793,7 @@ class TestVerifyCertTraceBinding(unittest.TestCase):
             (tmp / "receipts.json").write_text(
                 json.dumps(trace.receipts_to_json(gw.receipts)))
             proc = subprocess.run(
-                [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+                [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
                  "--cert", str(cert_file), "--pack", str(tmp / "pack.json"),
                  "--ledger", str(tmp / "ledger.jsonl"),
                  "--receipts", str(tmp / "receipts.json")],

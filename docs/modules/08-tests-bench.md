@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（29 个模块，667 个用例）与 `bench/`（6 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（30 个模块，675 个用例）与 `bench/`（6 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,7 +8,7 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 期望 667 passed, 15 skipped
+python3 -m unittest discover -s tests -t . -v   # 期望 675 passed, 15 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
@@ -41,14 +41,15 @@ python3 -m unittest discover -s tests -t . -v   # 期望 667 passed, 15 skipped
 | `test_multiparty` | 44 | **P2-11**：多证明者（模型方 / 工具网关 / 部署方各证一段策略切片）。三层 —— ① **切分层**（8 个 kind 的归属普查：每条规则恰属一个角色、切片两两不交且并集为全策略、三个角色**恒存在**（空切片也要签名）、未知 kind 在两处被拒、同名规则拒绝、`require_covering_length_bound` 只在整条策略上查一次、切片与整策同一份编译器、内容寻址确定性）② **绑定层**（happy path；缺 keyring 时如实标注「未验签名」；语义切片真实但需陪伴证明；JSON 往返；`plan_digest` 绑进**每一份**签名；**验收 ①** 缺任一角色签名 / 空签名表 / 缺 part / 重复 part；**角色密钥分离**；**验收 ②** 单角色切片被换（含该角色拿自己键重签、把切片谎报为空、单独改 plan、改 `plan_digest`）与**三方合谋改 plan**（不带策略包时而通过、带上 `policy_pack` 即被拒 —— 如实记下这条边界）；证明文件被换 / 张冠李戴 / 空切片带证明 / 非空切片不带证明 / 非 public 模式 / vkey 混用 / 非期望 vkey；换 T / 两半绑不同 T / 不同 `trace_root`；违规切片是**真证书但未满足**）③ **构造层**（缺角色键、一把键当两个角色、空策略无法出证、构建期缺证明、构建期 part 与策略不符）。真·端到端 1 例由 `POP_TEST_MULTIPARTY=1` 打开 |
 | `test_proof_service` | 105 | **第二步（服务化）**：策略注册表（同名不同内容拒收、坏包**报告**而不吞掉）、**两段同形**（`host_outcome` 的键集与电路公开值逐字段相同；`violations` 镜像 `pop-types::evaluate`；两套推导打架就**停证** `VerdictMismatch`）、队列（第二个请求**排队**而非被拒、满了 429 且被拒的不吃队列位、作业炸了不带走工作线程、`stop()` drain）、`/v1/check` 的证书**真的验得过**（`verify_cert.py` → `RESULT: PASS` 含 `[PASS] trace_binding`，且账本里每条锚定摘要磁盘上都还在）、OOM 杀进程要被翻成一句「内存不足」（含 10.15 GiB 地板与 `dmesg` 核实法）、HTTP 层分得清 400/404/413（**413 不读正文**）、**鉴权层**（27 例：token 解析与三条拒收理由「短/含空白/重复标签或 secret」、**五处来源合并而非覆盖**、401 带 `WWW-Authenticate` 且**区分「格式错」与「token 错」**、报错**不回显**收到的值、`/v1/health` 快照**不含 secret**、令牌桶突发→429→回填、**按 token 分桶**（一个人打满不饿死另一个）、管理员豁免、**别人的作业返 404 且与「不存在」措辞逐字相同**、未鉴权不许提交）。、**账本 RPC 后端（29 例）**：`--rpc` 忘带 `--contract` **拒绝启动**（此前会静默退回文件账本）、配全了照样起（环境变量来源也算配全）、`/v1/health` 报 `anchor_backend` 且本地后端**不报** chain、链上后端报连通性、**链挂了如实报 unhealthy**、没有自检能力的后端报**「不知道」而不是 ok**、健康值走 TTL 缓存（5 次查询只探链 1 次）且**过期真的会重探**、锚定失败时磁盘上**没有** cert/payload/key/anchor 四个文件（并如实记下「工作目录会留下」这条边界）、作业 error 说清「没有签发证书」、**链已知断则当场拒收作业**（不吃队列位）、`/v1/check` 同样被拒（它也锚定）、HTTP 层 503 且两个入口的产物路径措辞各自正确。**配置写错=一句人话+退出码 2**（4 例：链上配一半 / 鉴权文件不存在 / `--require-auth` 无 token 都是干净拒绝，**不是 Python 回溯**；外加「配全了就真的起得来」的非恒真对照）。**真 vkey 出证 1 例由 `POP_TEST_PROOF=1` 打开**。**作业状态持久化（18 例）**：重启后 `GET /v1/attest/{job}` 照常答得出来（新对象读同一个 `--out-dir`）、提交人落盘后「别人的作业 404」口径不变、**三条重建规则各一条**（有证书就 `done` 哪怕记录停在 `proving` / 中间态不接回来当中间态而报「不会被执行」/ 记录说 `done` 而证书没了）、**两种记录-产物漂移各一条**（`payload.json` 被手改 ⇒ 记录摘要拦下；`cert.json` 里被签的那份被改 ⇒ 信封一致性拦下）、`job.json` 损坏或字段非法时**报错而不是 404**、`job_id` 形状不合法（含路径穿越形）**连文件系统都不碰**、记录写盘失败**不失败作业**但必须在 stderr 上喊、惰性按 id 加载（不启动扫盘）、`--pack` 少了一个包时作业仍在而 `verify_hint` 如实为 `null`、**换一个真进程**（子进程）读同一个 `--out-dir` 走 HTTP 再问一次。另记：**6 处变异测试**钉住这条线，并当场查出三件事 —— 两处是**测试自身**的毛病（信封校验的断言咬得太松，删掉那道校验测试照样绿；一条用例打的是全进程 `Path.write_text`，连工作线程写的产物一起打中，约 1/4 概率的假失败），一处是**产品 bug**（读回产物那段只捕 `(OSError, ValueError, KeyError)`，一个形状对但载荷不是字符串的 `cert.json` 抛 `TypeError` ⇒ **读取方自己崩、接口返 500**，改成捕 `Exception` 后修掉） |
 | `test_generic_adapter` | 18 | **P3-a 框架无关参考适配器**（`GenericGuard`，把「接入契约」写成可跑的代码）。契约：生成/工具两条路径各出可验证证书、违规**如实记进证书**而不是藏起来（「证书为真」与「策略满足」是两件事）、一次会话**一把网关**、生成与工具**同一条 `trace_root`**、网关钥与出证方钥是**两把**、默认如实标 `unproven`。seal 时序：早期 seal 被后续调用作废并报「截尾」、每张证书带**自己那一刻**的 seal、无工具调用的会话 `seal.count=0`（而不是没有 seal）。该抛就抛：内容规则缺 `response` 抛 `PolicyError` 且**不留半张证书**、私钥绝不落盘。**第三方真脚本核对**（起子进程）：`verify_session.py` 全卡 PASS、`verify_cert.py` 连 `trace_binding`/`trace_seal` 都 PASS、**不给 `--receipts` 时 `trace_binding` 如实报 FAIL**（不是默认通过）、换别人的网关钥 `trace_seal` 必 FAIL。另记 **4 处变异**，其中一处一度**存活**：「把 `chain` 从整条网关链改成 `[receipt]`（等价于两条链）」时其余 17 例**全绿** —— `trace_root` 只取**最后一条**回执的摘要（链式性在每条回执的 `prev` 里），且只传当前那条时它 `seq` 不从 0 起、会先被判成 `trace_unbound`，于是 `passed` 与**规则名恰好都一样**，差别只在 `kind` 与「计到几条」。补了一条「第 2 次调用继承第 1 次的超预算」并断言咬在 `kind`/`evidence`（计到几条）上之后杀掉；另 3 处（丢网关公钥 / 不写 `receipts.json` / `generate` 不附 seal）均被杀。清单表与接新框架的步骤见 [`06-frameworks.md` §8](06-frameworks.md) |
-| `test_regression_prove` | 16 | **c4 / T3 回归编排器**（`scripts/regression_prove.py`）。**整轮跑的是替身驱动，一个字节的密码学都没算** —— 它证的是**编排层**，不是证明本身（真跑一次全量是 ≈45 min 且要 ~10.15 GiB 峰值，把编排的回归绑在那上面等于没有回归）。守护：**历史只追加不覆盖**（第二次跑完后第一次那条**逐字段没变**；`--dry-run` 一个字节都不写）、坏行不让 `--print` 崩且如实标 `UNREADABLE`；**成败归因**（出证腿挂了 → 验证腿记 `skipped` 且 `ok=False`，**绝不能因为「没跑」被算成通过**；验证腿自己挂了 → 只归因给验证腿，出证腿不被连坐）；**OOM 判据**（`POP_FAKE_FAIL=prove` 让替身**真的 `SIGKILL` 自己**，复刻 OOM killer 的无输出无末行，判 FAIL 且理由写明「没有 RESULT:」）；**失败记录留得下真因**（断言 `log_tail` 含 `CalledProcessError` 且**不含** `time -v` 的样板 —— 这里钉的是一个真踩过的坑：`time` 的报告打在子进程输出**之后**，「取末尾 30 行」会整段取到样板、把 traceback 挤掉，最需要证据的那种失败反而最看不见）；**留痕字段**（`git.sha`/`host.mem_total_mb`/驱动 `sha256` 都对着真文件重算核对）。另记 **6 处变异**，其中 M4 **存活且是等价变异**（如实登记）：把 `ok=(returncode==0 and verdict=="PASS")` 削成只看退出码 —— 当前两处证据总是同时成立，要证伪得让 `cross_validate` **自报 PASS 却非零退出**，那不是本模块能构造的状态；合取仍保留，防的是将来「印了末行之后才崩」 |
-| **合计** | **667** | |
+| `test_regression_prove` | 16 | **c4 / T3 回归编排器**（`scripts/prove/regression_prove.py`）。**整轮跑的是替身驱动，一个字节的密码学都没算** —— 它证的是**编排层**，不是证明本身（真跑一次全量是 ≈45 min 且要 ~10.15 GiB 峰值，把编排的回归绑在那上面等于没有回归）。守护：**历史只追加不覆盖**（第二次跑完后第一次那条**逐字段没变**；`--dry-run` 一个字节都不写）、坏行不让 `--print` 崩且如实标 `UNREADABLE`；**成败归因**（出证腿挂了 → 验证腿记 `skipped` 且 `ok=False`，**绝不能因为「没跑」被算成通过**；验证腿自己挂了 → 只归因给验证腿，出证腿不被连坐）；**OOM 判据**（`POP_FAKE_FAIL=prove` 让替身**真的 `SIGKILL` 自己**，复刻 OOM killer 的无输出无末行，判 FAIL 且理由写明「没有 RESULT:」）；**失败记录留得下真因**（断言 `log_tail` 含 `CalledProcessError` 且**不含** `time -v` 的样板 —— 这里钉的是一个真踩过的坑：`time` 的报告打在子进程输出**之后**，「取末尾 30 行」会整段取到样板、把 traceback 挤掉，最需要证据的那种失败反而最看不见）；**留痕字段**（`git.sha`/`host.mem_total_mb`/驱动 `sha256` 都对着真文件重算核对）。另记 **6 处变异**，其中 M4 **存活且是等价变异**（如实登记）：把 `ok=(returncode==0 and verdict=="PASS")` 削成只看退出码 —— 当前两处证据总是同时成立，要证伪得让 `cross_validate` **自报 PASS 却非零退出**，那不是本模块能构造的状态；合取仍保留，防的是将来「印了末行之后才崩」 |
+| `test_scripts_layout` | 8 | **`scripts/` 分组的机械化保障**（见 `docs/dev-plan.md` §5.6）。存在理由很具体：每个脚本头部都自己写一行按**层数**算的 `sys.path.insert(…, parents[1])` 再 `from _bootstrap import` —— 脚本再搬一次家，这一行就**静默**指错，而它坏掉的是**跑 demo 才会走到**的路径，单测可能全绿（`policydsl/` 拆包时同一个毛病让 66 个用例一起红）。三件事：① **每个脚本都导入得动且 `REPO` == 仓库根**（16 个脚本逐个起子进程导入、不执行 `main`；另有 `test_at_least_one_script_and_five_groups` 防「空集合上全绿」——先断言至少发现 10 个脚本且组名恰是那 5 个）② **`_bootstrap` 是按标记搜索而不是数层数**（`test_finds_root_in_a_foreign_tree` 把它种进一棵陌生树仍找到根 ⇒ 是搜出来的不是写死的；`test_raises_loudly_when_markers_absent` 缺标记抛 `RuntimeError` 且消息里点名 `policydsl`/`circuits`；`test_raises_when_scripts_is_not_at_the_root` 把「嵌套 checkout 会接错树」这条自查本身变成被测行为；`test_bootstrap_is_idempotent_and_orders_repo_first` 在**子进程 + 临时 cwd** 里验连调两次不重复塞路径、且 `REPO` 排在脚本组**前面**）③ **组间不重名 + 根上不放计划外的东西**（5 个组目录是**并排**进 `sys.path` 的，同名文件会让 `import X` 取决于路径顺序 —— 这是 `bootstrap()` 成立的前提；另允许 `scripts/` 根上只有 `_bootstrap.py` + 5 组 + `examples/`，多出来的要么是误提交的产物要么是没想清楚放哪） |
+| **合计** | **675** | |
 
 ### 15 个 skip（都是设计内的）
 
 | skip | 原因 | 怎么启用 |
 |---|---|---|
-| `test_verifier_only` 中 2 例 | `circuits/testdata/audit_proof/` 没有 compressed fixture | 在 ≥16 GB 机器上跑 `SP1_PROVER=cpu bash scripts/make_audit_proof.sh` |
+| `test_verifier_only` 中 2 例 | `circuits/testdata/audit_proof/` 没有 compressed fixture | 在 ≥16 GB 机器上跑 `SP1_PROVER=cpu bash scripts/ops/make_audit_proof.sh` |
 | `test_frameworks`（或 `test_mcp`）中 1 例 | 依赖已安装而用例本身是「缺依赖时的行为」 | 设计如此，装了框架就会 skip |
 | `test_policy_binding` 中 2 例 | 「证明层」用例默认关闭（要 `scripts/examples/out/cert_public/` 下的工件与当前 guest ELF 匹配；改过 ELF 就得重新出证） | `POP_TEST_PROOF=1 python3 -m unittest tests.test_policy_binding`（**已实测通过**：Ran 22 … OK，67.1 s） |
 | `test_multiparty` 中 1 例 | 「真·端到端」要给**两段**切片各出一份 SP1 证明（每段 ~2 分钟、峰值 ~10 GiB） | `POP_TEST_MULTIPARTY=1 python3 -m unittest tests.test_multiparty.TestMultipartyEndToEnd -v` |
@@ -97,19 +98,19 @@ CI（`.github/workflows/ci.yml`）跑的是**最轻的一档**：Python 套件 +
 
 | 定义 | 对应用例/脚本 |
 |---|---|
-| Completeness | `scripts/prove_policy.py`（eu pass）、`cross_validate.py` **host 19/19 · prove 19/19**（2026-09-12 整批重跑） |
+| Completeness | `scripts/prove/prove_policy.py`（eu pass）、`cross_validate.py` **host 19/19 · prove 19/19**（2026-09-12 整批重跑） |
 | Soundness（入电路规则） | `cross_validate` 的 violate 向量、`private_demo` 的违规用例 |
 | Content privacy | `test_commit.py::TestPrivateOutput`（无明文泄露）、`private_demo` 的 `leak` 实验 |
 | Redaction soundness | `test_commit.py::TestMaskCoverage`（伪造 span → `mask_covered=false`） |
 | Evidence unforgeability | `test_commit.py::TestEvidenceOpening`（篡改开示 → 失败） |
-| Provenance | `scripts/verify_cert.py` 的 `policy_hash`/`vkey`/`proof_sha256` 卡；`test_cert.py`；`test_policy_binding.py`（P0-1 攻击回归） |
-| Response binding (A6) | `scripts/verify_cert.py --response` 卡；`test_binding.py`（换 T′/换 nonce/域分离）；`demo_e2e` 的 challenge 实验 |
-| 证据档位诚实标注 (P0-4) | `scripts/verify_cert.py` 的 `proof_mode` 卡（与工件自报模式比对）；`verify_session.py` 的 `certificates_proof_mode`；`test_cert.py::TestProofModeLabeling`、`test_policy_binding.py::TestProofModeOverclaimRejected`（自称某档却无工件 ⇒ FAIL）、`test_verifier_only.py::TestArtifactProofModes` |
-| vkey 诚实标注（同构的第二条） | `scripts/verify_cert.py` 的 `vkey_label` 卡；`verify_session.py` 的 `certificates_vkey_label`；`test_policy_binding.py::TestVkeyLabelHonestyRejected`（**用 `demo_e2e.py` 写过的魔法值 `"demo"` 本身作反例**）+ `::TestSessionVkeyLabelHonesty`。此前 `vkey_hash` **一条不变量都没有**，那个字段可以被写成任意字符串而全绿通过 |
+| Provenance | `scripts/verify/verify_cert.py` 的 `policy_hash`/`vkey`/`proof_sha256` 卡；`test_cert.py`；`test_policy_binding.py`（P0-1 攻击回归） |
+| Response binding (A6) | `scripts/verify/verify_cert.py --response` 卡；`test_binding.py`（换 T′/换 nonce/域分离）；`demo_e2e` 的 challenge 实验 |
+| 证据档位诚实标注 (P0-4) | `scripts/verify/verify_cert.py` 的 `proof_mode` 卡（与工件自报模式比对）；`verify_session.py` 的 `certificates_proof_mode`；`test_cert.py::TestProofModeLabeling`、`test_policy_binding.py::TestProofModeOverclaimRejected`（自称某档却无工件 ⇒ FAIL）、`test_verifier_only.py::TestArtifactProofModes` |
+| vkey 诚实标注（同构的第二条） | `scripts/verify/verify_cert.py` 的 `vkey_label` 卡；`verify_session.py` 的 `certificates_vkey_label`；`test_policy_binding.py::TestVkeyLabelHonestyRejected`（**用 `demo_e2e.py` 写过的魔法值 `"demo"` 本身作反例**）+ `::TestSessionVkeyLabelHonesty`。此前 `vkey_hash` **一条不变量都没有**，那个字段可以被写成任意字符串而全绿通过 |
 | Ledger integrity | `test_anchor.py`（链篡改检出）、`verify_session.py::ledger_chain` |
 | Stream chain | `test_frameworks.py`（链路验证/篡改/早停） |
 | 链上锚定 | `test_anchor_chain.py`（离线 fake + anvil e2e）、`anchor_e2e.sh` 的 `chain_anchored` 与反例 |
-| End-to-end | `scripts/verify_session.py` 全 PASS（含真实 SP1 证明） |
+| End-to-end | `scripts/verify/verify_session.py` 全 PASS（含真实 SP1 证明） |
 
 **关键的一类测试是「负例/反例」**：伪造 span、篡改开示、篡改账本条目、未登记摘要读回 0、
 core 边车不得走快路径 —— 这些保证正向检查**不是恒真**的。
@@ -361,10 +362,10 @@ P2-9 的语义规则走**另一套证明系统**（ezkl / halo2），代价必�
 
 | | 谁在跑 | 覆盖 |
 |---|---|---|
-| **出证腿** | `scripts/cross_validate.py`（全量 + golden 逐条比对） | 19/19 |
+| **出证腿** | `scripts/prove/cross_validate.py`（全量 + golden 逐条比对） | 19/19 |
 | **验证腿** | `pop-script --verify`，**另起进程** | **只 1 条**（见下） |
 
-`scripts/regression_prove.py` 只做**编排 + 留痕**，不重写任何一条腿的逻辑 ——
+`scripts/prove/regression_prove.py` 只做**编排 + 留痕**，不重写任何一条腿的逻辑 ——
 向量表与 golden 比对留在 `cross_validate`，量测口径留在 `bench_proofs`，
 它再算一遍就是第二处事实来源。每次运行**追加**一行到
 `bench/results/regression-prove.jsonl`：
@@ -408,10 +409,10 @@ ts · label · git{sha,branch,dirty} · host{hostname,cpu_model,cpu_count,mem_to
 ```bash
 # crontab -e —— 每周一 04:17
 17 4 * * 1  cd /path/to/zk-policy && SP1_PROVER=cpu /usr/bin/python3 \
-            scripts/regression_prove.py --label weekly \
+            scripts/prove/regression_prove.py --label weekly \
             >> bench/results/regression-prove.cron.log 2>&1
 
-python3 scripts/regression_prove.py --print     # 看历史摘要：几次通过、最近一次什么样
+python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次通过、最近一次什么样
 ```
 
 退出码：任一条腿 FAIL → 非 0。**`--pop-script` 可注入替身驱动**，所以整套编排逻辑
@@ -441,9 +442,9 @@ python3 scripts/regression_prove.py --print     # 看历史摘要：几次通过
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **667 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测；CI 上更多 skip，见 §1）、
+  当前验收判据是 **675 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后重测；CI 上更多 skip，见 §1）、
   `cross_validate` **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 整批重跑，见下）。
-  这条判据现在**有自动留痕**：`scripts/regression_prove.py` 每次运行把它追加进
+  这条判据现在**有自动留痕**：`scripts/prove/regression_prove.py` 每次运行把它追加进
   `bench/results/regression-prove.jsonl`（只追加），并附 git sha / 硬件 / 证明器二进制摘要
   —— 数字因此指得回具体的某一次运行，见 §13（T3）。
 - **`cross_validate` 的 prove 侧怎么跑**：19 条向量各出一份真 core 证明，**必须**按

@@ -8,11 +8,11 @@
 # 退出码：0 已装好并验证 | 2 网络不可用且本地无可用 wheelhouse | 1 尝试过但失败
 #
 # 用法：
-#   bash scripts/install_ezkl.sh                 # 在线装（走镜像）
-#   bash scripts/install_ezkl.sh --check         # 只检查装没装好，不动环境
-#   bash scripts/install_ezkl.sh --save-wheels   # 装好后把 wheel 另存到 wheelhouse/
-#   bash scripts/install_ezkl.sh --offline       # 只用 wheelhouse 装，全程不联网
-#   bash scripts/install_ezkl.sh --force         # 即使已装也重装一遍
+#   bash scripts/ops/install_ezkl.sh                 # 在线装（走镜像）
+#   bash scripts/ops/install_ezkl.sh --check         # 只检查装没装好，不动环境
+#   bash scripts/ops/install_ezkl.sh --save-wheels   # 装好后把 wheel 另存到 wheelhouse/
+#   bash scripts/ops/install_ezkl.sh --offline       # 只用 wheelhouse 装，全程不联网
+#   bash scripts/ops/install_ezkl.sh --force         # 即使已装也重装一遍
 #
 # 环境变量：
 #   PYTHON             解释器，默认 python3
@@ -25,7 +25,12 @@
 #      8.72 GiB）：`setup` 与 `prove` 必须**分进程**跑，别把两步并进一个进程。
 set -u
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 仓库根：从本文件向上找**同时含** policydsl/ 与 circuits/ 的目录。
+# 不写 "${BASH_SOURCE[0]}/../.." —— 那种「数层数」的写法今天对、下次搬家就静默指错，
+# 与 scripts/_bootstrap.py 用的是同一对标记（改一处要改两处）。
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+while [ ! -d "$HERE/policydsl" ] && [ "$HERE" != "/" ]; do HERE="$(dirname "$HERE")"; done
+[ -d "$HERE/circuits" ] || { echo "找不到仓库根（从 ${BASH_SOURCE[0]} 向上）" >&2; exit 1; }
 REQ="$HERE/requirements-ezkl.txt"
 PY="${PYTHON:-python3}"
 LOCK="$HERE/.install_ezkl.lock"
@@ -142,10 +147,10 @@ if ! ready; then
 fi
 log "版本核对通过：$(installed_versions | tr '\n' ' ')"
 
-if [ -f "$HERE/scripts/ezkl_prove.py" ]; then
-  log "冒烟：scripts/ezkl_prove.py info（只看产物清单，不出证，秒级）"
-  if "$PY" "$HERE/scripts/ezkl_prove.py" info >>"$LOG" 2>&1; then
-    log "冒烟通过。要出真证明：python3 scripts/ezkl_prove.py selftest"
+if [ -f "$HERE/scripts/prove/ezkl_prove.py" ]; then
+  log "冒烟：scripts/prove/ezkl_prove.py info（只看产物清单，不出证，秒级）"
+  if "$PY" "$HERE/scripts/prove/ezkl_prove.py" info >>"$LOG" 2>&1; then
+    log "冒烟通过。要出真证明：python3 scripts/prove/ezkl_prove.py selftest"
     log "  真正端到端一例：POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic"
     log "  ⚠️ setup 与 prove 峰值各 4.76 / 8.72 GiB，务必分进程跑（见 docs/reproduce.md §8）"
     exit 0
@@ -155,5 +160,5 @@ if [ -f "$HERE/scripts/ezkl_prove.py" ]; then
   exit 1
 fi
 
-log "DONE（未找到 scripts/ezkl_prove.py，跳过冒烟）"
+log "DONE（未找到 scripts/prove/ezkl_prove.py，跳过冒烟）"
 exit 0

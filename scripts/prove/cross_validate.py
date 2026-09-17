@@ -19,9 +19,9 @@ OOM-kill（峰值 10.65 / 10.82 GB，``SIGKILL 9``）——而每次单独出证
 大内存机器可用 ``--chunk 0`` 恢复「一个进程跑完」。
 
 从仓库根运行：
-  SP1_PROVER=cpu python3 scripts/cross_validate.py
-  SP1_PROVER=cpu python3 scripts/cross_validate.py --chunk 4   # 默认
-  SP1_PROVER=cpu python3 scripts/cross_validate.py --chunk 0   # 单进程（需 ≥16 GB）
+  SP1_PROVER=cpu python3 scripts/prove/cross_validate.py
+  SP1_PROVER=cpu python3 scripts/prove/cross_validate.py --chunk 4   # 默认
+  SP1_PROVER=cpu python3 scripts/prove/cross_validate.py --chunk 0   # 单进程（需 ≥16 GB）
 
 两个**非破坏性**的口子，供 ``regression_prove.py`` 与单测使用（缺省行为不变）：
 
@@ -43,8 +43,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.core.compile import compile_policy
 from policydsl.core.evaluate import check
@@ -59,9 +61,12 @@ POP_SCRIPT = Path(os.environ.get("POP_SCRIPT")
                   or (REPO / "circuits" / "target" / "release" / "pop-script"))
 
 #: 产物目录（``vectors.json`` / ``results_*.json``）。可用 ``--work-dir`` 覆盖 ——
-#: 缺省仍是 ``scripts/``（既有行为不变），覆盖是为了让**定时回归**用私有目录，
-#: 免得和有人手工跑的 ``cross_validate`` 互相覆盖对方的结果文件。
-DEFAULT_WORK_DIR = REPO / "scripts"
+#: 定时回归就是靠覆盖用私有目录，免得和有人手工跑的 ``cross_validate`` 互相覆盖。
+#:
+#: 缺省从 ``scripts/`` 改到 ``scripts/.work/``：这四个文件是**草稿产物**，原先直接
+#: 落在源码目录里，`ls scripts/` 分不清哪些是脚本、哪些是上次跑剩下的。`.work/`
+#: 是专门的草稿区，由一条 gitignore 规则覆盖（替掉原先散在 4 条里的同名文件规则）。
+DEFAULT_WORK_DIR = REPO / "scripts" / ".work"
 
 # Python Violation.evidence_kind -> guest 规则类型字符串
 KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block",

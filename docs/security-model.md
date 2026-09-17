@@ -84,7 +84,7 @@ zkVM 的 soundness 突破能力。
 
 ## 2. 游戏
 
-每个游戏返回 1 表示 `A` 获胜。`Verify` 指**验证方的全部检查**（= `scripts/verify_cert.py`
+每个游戏返回 1 表示 `A` 获胜。`Verify` 指**验证方的全部检查**（= `scripts/verify/verify_cert.py`
 逐卡 PASS，或 `verify_session.py` 对整条会话），而不是其中任意一条。
 
 ```
@@ -134,7 +134,7 @@ G_Ledger(A):                                ; 事后篡改审计记录
 且**少于两个来源一律判失败** —— 这一条防的是「比对退化成恒真」。
 
 **代码落点**：`circuits/program`（guest 内算 hash）、`policydsl/evidence/verifier.py::check_policy_binding`、
-`scripts/verify_cert.py` 检查 3。
+`scripts/verify/verify_cert.py` 检查 3。
 **不保证**：策略本身写得对不对（那是策略作者的事）；`vkey_hash` 之外的 ELF 一致性由证明工件哈希承担。
 
 ### L2 响应绑定（P0-2）—— 归约到 A2（域分离）
@@ -251,7 +251,7 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 
 **代码落点**：`policydsl/proofs/compose.py::verify_composite`（8 步）、
 `circuits/types::job_domain`、`circuits/program` 与 `circuits/infer-program` 的入口断言、
-`scripts/compose_proof.py`、`tests/test_compose.py`。
+`scripts/prove/compose_proof.py`、`tests/test_compose.py`。
 
 #### L6.1 覆盖率：结论形式与主定理不同
 
@@ -308,7 +308,7 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 一张 `passed=true` 而语义规则没过的证书会被读成合规，那正是 P0-1 的形态。
 
 **代码落点**：`policydsl/proofs/semantic.py::verify_companion`、
-`circuits/types/src/lib.rs::DelegatedConstraint`、`scripts/verify_cert.py` 检查 3e、
+`circuits/types/src/lib.rs::DelegatedConstraint`、`scripts/verify/verify_cert.py` 检查 3e、
 `tests/test_semantic.py`（30）。
 
 **不保证**：① **响应内容保密** —— ezkl 的公开实例含 `encode(T)`，而 `encode` 对收录
@@ -345,7 +345,7 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 
 **代码落点**：`circuits/session-program/`（guest③，vkey 与另两域不同）、
 `circuits/types/src/lib.rs::run_session`、`policydsl/proofs/session.py::verify_session_proof`、
-`scripts/prove_session.py`、`tests/test_session.py`（38）。
+`scripts/prove/prove_session.py`、`tests/test_session.py`（38）。
 
 **不保证 / 诚实边界**：
 
@@ -406,7 +406,7 @@ P0-1「空策略证明 + 真策略哈希」攻击的同一条防线。∎
 
 **代码落点**：`policydsl/proofs/multiparty.py::verify_multiparty`（七步）、
 `policydsl/core/compile.py::compile_slice_policy`、
-`scripts/prove_multiparty.py`、`tests/test_multiparty.py`（44）。
+`scripts/prove/prove_multiparty.py`、`tests/test_multiparty.py`（44）。
 
 **不保证 / 诚实边界**：
 
@@ -561,12 +561,12 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 | **L5** 账本 + 锚定 | `policydsl/evidence/anchor.py`、`contracts/Anchor.sol` | `tests/test_anchor.py`（4）、`test_anchor_chain.py`（28） |
 | 证书签名（A3/A7） | `policydsl/evidence/cert.py::Ed25519Signer`、`policydsl/evidence/keys.py` | `tests/test_cert.py`（19） |
 | 证明模式诚实标注 | `cert.PROOF_MODE_HIDING`、`verifier.artifact_proof_modes` | `tests/test_verifier_only.py`（8） |
-| **L7** 语义委托（P2-9） | `policydsl/proofs/semantic.py`、`scripts/ezkl_prove.py`、`circuits/types::DelegatedConstraint`、`verify_cert.py` 3e | `tests/test_semantic.py`（30，含 6 条反例；真·端到端由 `POP_TEST_EZKL=1` 打开） |
-| **L6** 组合义务（P1-6） | `policydsl/proofs/compose.py`、`circuits/infer-program`（guest②）、`circuits/types::job_domain`、`scripts/compose_proof.py` | `tests/test_compose.py`（48，含 5 组反例 + 4 条驱动接线回归；真·端到端由 `POP_TEST_COMPOSE=1` 打开） |
-| **L8** 跨证书一致性（P2-10） | `circuits/session-program`（guest③）、`circuits/types::run_session`、`policydsl/proofs/session.py::verify_session_proof`、`scripts/prove_session.py` | `tests/test_session.py`（38，含两种挖法的反例；真·端到端由 `POP_TEST_SESSION=1` 打开） |
-| **L9** 多证明者责任划分（P2-11） | `policydsl/proofs/multiparty.py::verify_multiparty`、`policydsl/core/compile.py::compile_slice_policy`、`scripts/prove_multiparty.py` | `tests/test_multiparty.py`（44，含两条验收判据与「三方合谋」边界；真·端到端由 `POP_TEST_MULTIPARTY=1` 打开） |
+| **L7** 语义委托（P2-9） | `policydsl/proofs/semantic.py`、`scripts/prove/ezkl_prove.py`、`circuits/types::DelegatedConstraint`、`verify_cert.py` 3e | `tests/test_semantic.py`（30，含 6 条反例；真·端到端由 `POP_TEST_EZKL=1` 打开） |
+| **L6** 组合义务（P1-6） | `policydsl/proofs/compose.py`、`circuits/infer-program`（guest②）、`circuits/types::job_domain`、`scripts/prove/compose_proof.py` | `tests/test_compose.py`（48，含 5 组反例 + 4 条驱动接线回归；真·端到端由 `POP_TEST_COMPOSE=1` 打开） |
+| **L8** 跨证书一致性（P2-10） | `circuits/session-program`（guest③）、`circuits/types::run_session`、`policydsl/proofs/session.py::verify_session_proof`、`scripts/prove/prove_session.py` | `tests/test_session.py`（38，含两种挖法的反例；真·端到端由 `POP_TEST_SESSION=1` 打开） |
+| **L9** 多证明者责任划分（P2-11） | `policydsl/proofs/multiparty.py::verify_multiparty`、`policydsl/core/compile.py::compile_slice_policy`、`scripts/prove/prove_multiparty.py` | `tests/test_multiparty.py`（44，含两条验收判据与「三方合谋」边界；真·端到端由 `POP_TEST_MULTIPARTY=1` 打开） |
 
-**回归总盘**：`python3 -m unittest discover -s tests -t .` → **667 passed / 15 skipped**（2026-09-13 复跑、2026-09-16 c4 后重测；
+**回归总盘**：`python3 -m unittest discover -s tests -t .` → **675 passed / 15 skipped**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后重测；
 skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— 由 `POP_TEST_EZKL=1` 打开；P1-6 那 5 例
 要真出两份 SP1 证明 —— 由 `POP_TEST_COMPOSE=1` 打开；P2-10 那例要真出一份会话聚合证明 ——
 由 `POP_TEST_SESSION=1` 打开。三组均已单独实测通过；另有 3 例由 `POP_TEST_PROOF=1` 打开
@@ -582,7 +582,7 @@ skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— �
 
 | 定义/引理 | 对应实验 |
 |---|---|
-| Completeness | `scripts/prove_policy.py`、`cross_validate.py` **host 19/19 · prove 19/19**（2026-09-12 整批重跑） |
+| Completeness | `scripts/prove/prove_policy.py`、`cross_validate.py` **host 19/19 · prove 19/19**（2026-09-12 整批重跑） |
 | **G_Sound** | 违规向量出证得到 `passed=false`；「空策略证明 + 真策略哈希」攻击回归必须失败 |
 | **G_Bind_pol** | `verify_cert.py` 的 `policy_hash` 卡；`test_policy_binding.py`（含证明层 opt-in） |
 | **G_Bind_resp** | `verify_cert.py --response T′`（3b）；换 `T′`/换 `n`/域分离/空 nonce 四组反例 |
@@ -594,4 +594,4 @@ skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— �
 | **L6 组合义务** | 五组反例：换证明文件/缺失、同 vkey/非期望 vkey、换模型/换输入、两半绑不同 T/送达 T′ 不符、形状/模式/域/policy_hash 重编译 —— 全部必须被拒（`tests/test_compose.py`）；成本与「推理是否主导」的实测见 `bench/results/compose.md` |
 | **L8 跨证书一致性** | 混入异策略证书 / 挖中间 / 换序 / 尾截断（**电路接受、只有根比对拦得住**）/ 伪造根 —— 全部必须被拒（`tests/test_session.py`） |
 | **L9 多证明者** | 验收①：缺任一角色签名（或空签名表 / 缺 part / 重复 part）必须被拒；验收②：单角色切片被换（该角色拿自己键重签 / 谎报切片为空 / 单独改 plan / 改 `plan_digest`）必须被拒；**三方合谋改 plan 在不给策略包时会通过、给了即被拒**（如实钉住） |
-| 端到端 | `scripts/verify_session.py` 全 PASS（含真实 SP1 证明） |
+| 端到端 | `scripts/verify/verify_session.py` 全 PASS（含真实 SP1 证明） |

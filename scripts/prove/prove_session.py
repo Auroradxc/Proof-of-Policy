@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """会话层（P2-10）出证 demo：一个 run 的流式证书 → 一次聚合证明。
 
-给定一个端到端会话包（`session.json`，与 ``scripts/verify_session.py`` 同格式），
+给定一个端到端会话包（`session.json`，与 ``scripts/verify/verify_session.py`` 同格式），
 把其中**同一个 run 的流式证书**按序取出，在 SP1 内证明三条义务成立：
 
   ① 所有证书的 `policy_hash` 全同（同一个策略约束了整条轨迹）；
@@ -15,11 +15,11 @@ sealed_count, seal_keyid)``。验证方拿**交付的证书集**重算 Merkle �
 与证明公开值逐字段比对 —— 混入异策略证书 / 挖掉一张 / 换掉链尾都会失败。
 
 用法：
-  python3 scripts/prove_session.py --session scripts/examples/out/e2e/session.json
+  python3 scripts/prove/prove_session.py --session scripts/examples/out/e2e/session.json
   # 只对某一个 run 出证，并钉住 nonce（重放新鲜度）：
-  python3 scripts/prove_session.py --session ... --run 0 --nonce-hex 0011223344556677
+  python3 scripts/prove/prove_session.py --session ... --run 0 --nonce-hex 0011223344556677
   # 只做 Python↔Rust 宿主校验对拍（秒级，不出证）：
-  python3 scripts/prove_session.py --session ... --no-prove
+  python3 scripts/prove/prove_session.py --session ... --no-prove
 
 **边界（如实说明，不要读过头）**：
   - 电路**不验**网关对 `trace_seal` 的 Ed25519 签名（zkVM 里没有网关公钥）。
@@ -41,15 +41,17 @@ import sys
 from pathlib import Path
 from typing import Any, Dict
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.evidence import cert as C  # noqa: E402
 from policydsl.proofs import session as S  # noqa: E402
 
 
 def _payload(envelope: Dict[str, Any]) -> Dict[str, Any]:
-    """取信封的证书载荷（与 ``scripts/verify_session.py`` 同口径：用公开的
+    """取信封的证书载荷（与 ``scripts/verify/verify_session.py`` 同口径：用公开的
     ``cert.envelope_payload``，不走 session 模块内部的同名封装）。"""
     return C.envelope_payload(envelope)
 

@@ -17,7 +17,7 @@
 | 要求（概括） | PoP 对应 |
 |---|---|
 | 向部署者提供系统能力与限制 | `mode`（public/private）与 `outcome` 告知验证方：内容是否公开、是否合规 |
-| 决策可核验 | 验证方可**独立**验证：DSSE 签名 + 复算 `policy_hash` + **用送达的 T′ 与 nonce 复算 `response_binding`** + 锚定查询 + SP1 证明密码学验证（`scripts/verify_cert.py --response T′`） |
+| 决策可核验 | 验证方可**独立**验证：DSSE 签名 + 复算 `policy_hash` + **用送达的 T′ 与 nonce 复算 `response_binding`** + 锚定查询 + SP1 证明密码学验证（`scripts/verify/verify_cert.py --response T′`） |
 | 内容最小暴露 | 私有模式只公开响应**承诺**与**证据承诺**（+ 脱敏证明 `mask_covered`），不泄露原文 |
 
 ## 证书字段 → 义务映射（摘要）

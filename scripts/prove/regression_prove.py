@@ -7,7 +7,7 @@
 
 **它不重写出证/比对逻辑**。仓库里已经有三条腿，各归各的：
 
-    出证腿 + golden 比对   scripts/cross_validate.py     ← 向量表与判定比对的唯一出处
+    出证腿 + golden 比对   scripts/prove/cross_validate.py     ← 向量表与判定比对的唯一出处
     耗时/体积/峰值 RSS     bench/bench_proofs.py         ← 量测口径的唯一出处
     验证已存盘的证明       bench/bench_verify.py         ← 同上
 
@@ -33,16 +33,16 @@ vkey setup，性价比不对。
 ``tests/test_regression_prove.py``。
 
 用法：
-  SP1_PROVER=cpu python3 scripts/regression_prove.py                 # 全量，≈45 min
-  SP1_PROVER=cpu python3 scripts/regression_prove.py --label nightly # 给这次运行起名
-  python3 scripts/regression_prove.py --print                        # 只看历史摘要
-  python3 scripts/regression_prove.py --history /tmp/r.jsonl --pop-script ./fake
+  SP1_PROVER=cpu python3 scripts/prove/regression_prove.py                 # 全量，≈45 min
+  SP1_PROVER=cpu python3 scripts/prove/regression_prove.py --label nightly # 给这次运行起名
+  python3 scripts/prove/regression_prove.py --print                        # 只看历史摘要
+  python3 scripts/prove/regression_prove.py --history /tmp/r.jsonl --pop-script ./fake
 
 **CI 之外定期跑**（这是 T3 的原话；45 min 不要塞进 CI）。每周一 04:17 跑一次：
 
     # crontab -e
     17 4 * * 1  cd /path/to/zk-policy && SP1_PROVER=cpu /usr/bin/python3 \\
-                scripts/regression_prove.py --label weekly \\
+                scripts/prove/regression_prove.py --label weekly \\
                 >> bench/results/regression-prove.cron.log 2>&1
 
 或 systemd（更推荐，能和别的重活排队、有日志、失败可查）：
@@ -52,7 +52,7 @@ vkey setup，性价比不对。
     Type=oneshot
     WorkingDirectory=/path/to/zk-policy
     Environment=SP1_PROVER=cpu
-    ExecStart=/usr/bin/python3 scripts/regression_prove.py --label weekly
+    ExecStart=/usr/bin/python3 scripts/prove/regression_prove.py --label weekly
     # ~/.config/systemd/user/pop-regression.timer
     [Timer]
     OnCalendar=Mon 04:17
@@ -77,10 +77,12 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
-sys.path.insert(0, str(REPO / "scripts"))
-sys.path.insert(0, str(REPO / "bench"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
+
+sys.path.insert(0, str(REPO / "bench"))  # bench_proofs 在 bench/ 下，不属于 scripts 的 5 组
 
 import bench_proofs  # noqa: E402  —— 硬件记录（host_info）的唯一出处
 import cross_validate as cv  # noqa: E402  —— 向量表与 golden 比对的唯一出处
@@ -209,7 +211,7 @@ def run_prove_leg(pop_script: Path | None, chunk: int, work_dir: Path,
     **不在这里复算判定** —— 向量表、golden、分块都在 ``cross_validate`` 里，
     再算一遍就是第二处事实来源，两处迟早不一致。这里只负责「跑、计时、判成败」。
     """
-    cmd = [sys.executable, str(REPO / "scripts" / "cross_validate.py"),
+    cmd = [sys.executable, str(REPO / "scripts" / "prove" / "cross_validate.py"),
            "--chunk", str(chunk), "--work-dir", str(work_dir)]
     if TIME_BIN:
         cmd = [TIME_BIN, "-v"] + cmd

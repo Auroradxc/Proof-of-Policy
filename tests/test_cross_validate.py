@@ -1,4 +1,4 @@
-"""交叉验证驱动（``scripts/cross_validate.py``）里**不依赖证明器**的那部分。
+"""交叉验证驱动（``scripts/prove/cross_validate.py``）里**不依赖证明器**的那部分。
 
 真实证明本身很贵（每个向量 ~2 分钟、峰值 RSS ~10.3 GB），所以这里只测「怎么切
 向量」「块大小怎么读」这些纯逻辑 —— 它们恰恰是原先踩坑的地方：把 14 个向量交给
@@ -12,6 +12,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
+from _bootstrap import bootstrap  # noqa: E402
+bootstrap()  # 把 5 个脚本组装进 sys.path（与脚本自身走同一条引导）
 
 import cross_validate  # noqa: E402
 

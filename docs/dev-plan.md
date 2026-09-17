@@ -36,7 +36,7 @@
 
 ### Phase 1 · 规则原语补全（W2 收尾）✅ keyword/length 已闭环
 - [x] C：SP1 program 内 keyword_block / length_bound 判定（新增 `circuits/types` 共享 ProofRequest/ProofOutput）
-- [x] Python 与 SP1 交叉验证一致：`scripts/cross_validate.py`，**5/5 向量匹配**（clean/命中/大小写/超长/超短）
+- [x] Python 与 SP1 交叉验证一致：`scripts/prove/cross_validate.py`，**5/5 向量匹配**（clean/命中/大小写/超长/超短）
 - [x] A：`format_check`/`tool_arg_guard`/`budget_bound` 的 Python 校验+参考判定已实现（新增 `Transcript`/`ToolCall` 结构化输入，23 单测全绿）；**入电路留待 Phase 2/3**
 
 ### Phase 2 · 字符串/PII + NFA（W3）✅
@@ -51,7 +51,7 @@
 ### Phase 3 · 策略编译器 + 透明模式 MVP ★ 必达（W4）✅
 - [x] A：DSL→ConstraintSpec→ProofRequest 编译框架（新增 `policydsl/core/serialize.py`，keyword/length/pattern 单一来源映射，其余 kind fail-fast）
 - [x] C：ProofRequest serde；`types::evaluate` 全约束判定（keyword/length/**pattern(NFA)**）+ commit；script 出证 + 宿主 verify；`--check` 宿主快速路径
-- [x] 端到端 demo：`scripts/prove_policy.py`（pack+response → golden → host check → 真实 SP1 证明 → verify → 比对）
+- [x] 端到端 demo：`scripts/prove/prove_policy.py`（pack+response → golden → host check → 真实 SP1 证明 → verify → 比对）
 - [x] `eu-ai-act-v1`(合规 pass) 与 `finance-redaction-v1`(含凭证 violate) 各出证 **PASS**（0 与 1 违规，均与 golden 一致）
 - [x] 单测 40 全绿（含 serialize 映射）
 - ⏳ 链上 verify / REST：按计划归 Phase 5（W6），MVP 以 SP1 宿主验证为验收
@@ -94,9 +94,9 @@
 - [x] 证明持久化 + 独立验证：`pop-script --proof-out`（证明+vkey meta）、`pop-script --verify --proof`（**重新从 ELF 派生 vkey 并密码学验证**）
 - [x] 锚定：`policydsl/evidence/anchor.py` —— 追加式、哈希链式防篡改账本（file backend，可离线验证）；`anchor_on_chain` RPC 钩子显式未配置即报错（不假装已上链）
 - [x] Agent 插桩：`policydsl/adapters/agent.py` `AgentMonitor.on_generate/on_tool_call`（框架无关钩子）+ `mock_agent()` 会话
-- [x] 端到端：`scripts/issue_cert.py`（pack+response → 证明 → 证书 → 锚定）与 `scripts/verify_cert.py`（第三方：签名/policy_hash/锚定链/证明）
+- [x] 端到端：`scripts/prove/issue_cert.py`（pack+response → 证明 → 证书 → 锚定）与 `scripts/verify/verify_cert.py`（第三方：签名/policy_hash/锚定链/证明）
 - [x] 测试：**81 全绿（1 skip=设计内「依赖缺失」用例）**（+test_cert/test_anchor/test_agent/test_frameworks）
-- [x] **框架适配（LangChain + LangGraph）**：`langchain_adapter.py` `PoPCallbackHandler`（`on_llm_end`/`on_tool_start`/`on_tool_end`，二者共用 LangChain 回调）+ `langgraph_adapter.py` `attach`/`guard_node`/`LangGraphGuard`；`requirements-frameworks.txt` + `scripts/install_frameworks.sh` / `retry_install_frameworks.sh`（带锁、自愈）
+- [x] **框架适配（LangChain + LangGraph）**：`langchain_adapter.py` `PoPCallbackHandler`（`on_llm_end`/`on_tool_start`/`on_tool_end`，二者共用 LangChain 回调）+ `langgraph_adapter.py` `attach`/`guard_node`/`LangGraphGuard`；`requirements-frameworks.txt` + `scripts/ops/install_frameworks.sh` / `retry_install_frameworks.sh`（带锁、自愈）
 - [x] **依赖已安装并验证（2026-09-10）**：langchain **1.4.0** / langchain-core **1.6.2** / langgraph **1.2.11** / mcp **2.2.0**，经清华 PyPI 镜像 + wheel 引导 pip 装入用户目录；真实框架测试通过：假模型回调出证（合规/违规）、**真实 Tool 回调**、真实 LangGraph `StateGraph` 节点包装
 - [x] **框架侧扩展（P5G）**
   - **流式增量出证**：`PoPCallbackHandler.on_llm_new_token` 累积响应前缀，**判定变化即发部分证书**（`streaming.partial`），`on_llm_end` 发权威证书并清理流状态；离线假 token + **真实流式模型**（`GenericFakeChatModel`）双验证
@@ -106,29 +106,29 @@
   - **MCP 响应侧出证**：`MCPGuard(result_monitor=…)` 对工具返回文本按内容规则判定，产出 `tool-result` 证书（`tool.phase=result`）；`block_on_result_violation=True` 时在调用后拒绝违规结果（`MCPBlocked(phase="result")`）；真实 MCP 服务器 `dump_config` 返回 `sk-…` 被标记 `no_secret`
   - **流式早停证书链**：每张流式证书带 `streaming.chain={index,prev}` 形成哈希链，`verify_chain()` 校验（可检测重排/插入/篡改）；`stop_on_violation=True` 在首次违规即发 `streaming.stop` 证书并**停止后续出证**
   - **LangGraph 全事件出证**：`LangGraphEventCertifier` 消费 `astream_events`，对 chat-model 完成与工具调用分别出证，可选把 token 块喂给 `PoPCallbackHandler` 产生增量证书；真实图端到端验证（同时产出 public 与 tool-call 证书）
-- [x] **一键端到端 demo（P5I）**：`scripts/demo_e2e.py` —— 真实会话（LLM 流式链+早停、真实 MCP 参数/响应侧、含预检拦截）→ 13 张证书 → 锚定账本 →（可选）**真实 SP1 证明**；`scripts/verify_session.py` 第三方独立验证
+- [x] **一键端到端 demo（P5I）**：`scripts/demo/demo_e2e.py` —— 真实会话（LLM 流式链+早停、真实 MCP 参数/响应侧、含预检拦截）→ 13 张证书 → 锚定账本 →（可选）**真实 SP1 证明**；`scripts/verify/verify_session.py` 第三方独立验证
   - 验证结果：`ledger_chain / certificates_signature / certificates_policy_hash / certificates_anchored / stream_chains(2 runs) / zk_proof` **全 PASS**（zk 分支为 SP1 证明密码学验证 outcome/vkey/hash）
   - 集成测试 `tests/test_demo_e2e.py`（`--no-prove` 秒级跑通并验证）；单测合计 **101 全绿（1 skip=设计内）**
-- [x] **演示材料（P5J）**：`scripts/make_shots.py` 一键生成 `docs/demo/` 报告与截图（HTML/SVG，Pillow PNG，无需浏览器）；**复现指南** `docs/reproduce.md`（环境 → 一次合规证明 → 验证 → 故障排查），README 已链接
+- [x] **演示材料（P5J）**：`scripts/demo/make_shots.py` 一键生成 `docs/demo/` 报告与截图（HTML/SVG，Pillow PNG，无需浏览器）；**复现指南** `docs/reproduce.md`（环境 → 一次合规证明 → 验证 → 故障排查），README 已链接
 - 与计划的偏差（已记）：LangChain/LangGraph 适配与真实框架测试均已就绪；链上锚定 → file 账本后端（离线可验），RPC 后端留接口
 
 **Phase 5 验收（对照 8 周计划 W6）**
 | 标准 | 结果 |
 |---|---|
 | 证书规范 `{π版本, 电路hash, 响应承诺, 证明, ts}` | ✅ `policy_hash`≈电路/策略绑定；`binding.proof_sha256`+`vkey_hash`；`outcome` 含响应承诺(私有) |
-| 第三方用证书独立验证通过 | ✅ 见 `scripts/verify_cert.py`：签名+策略绑定+锚定链+**SP1 证明密码学验证**全 PASS |
+| 第三方用证书独立验证通过 | ✅ 见 `scripts/verify/verify_cert.py`：签名+策略绑定+锚定链+**SP1 证明密码学验证**全 PASS |
 | Agent 生成路径 + 工具调用出证 | ✅ `AgentMonitor` 两条路径均产证书（工具路径标注 `zk:false`） |
 | EU AI Act Art.12/13 | ✅ 证书携带 `ai_act.art12_record_keeping/art13_transparency`，映射见 `docs/eu-ai-act-mapping.md` |
 
 ### P7 · 收尾增强（A/B/C 三项均已交付）
-- [x] **P7-a verifier-only 审计路径**：`pop-verify`（仅 `sp1-verifier`，免构造证明器）+ `--proof-mode compressed`（默认仍 core）+ 验证边车 + 证书 `public_values_sha256`；快路径选择已单测。**内存结论：compressed 与 groth16 均 OOM（峰值 11.0 / 11.07 GB，本机 12 GB）→ 采用选项 B**：fixture 交 ≥16 GB 机器/CI（`scripts/make_audit_proof.sh`），用例自动跳过；已加 `.github/workflows/ci.yml`（跑快测）
+- [x] **P7-a verifier-only 审计路径**：`pop-verify`（仅 `sp1-verifier`，免构造证明器）+ `--proof-mode compressed`（默认仍 core）+ 验证边车 + 证书 `public_values_sha256`；快路径选择已单测。**内存结论：compressed 与 groth16 均 OOM（峰值 11.0 / 11.07 GB，本机 12 GB）→ 采用选项 B**：fixture 交 ≥16 GB 机器/CI（`scripts/ops/make_audit_proof.sh`），用例自动跳过；已加 `.github/workflows/ci.yml`（跑快测）
 - [x] **P7-b format/budget/tool 规则入电路**：请求扩展「响应+工具轨迹」；`FormatCheck`（json/int/float 规范子集）/`ToolArgGuard`（含 tools 限定）/`BudgetBound`（calls/tokens）在 `pop-types::evaluate` 判定；跨层证据串逐字一致；`AgentMonitor` 工具路径 `zk:true`；`tests/test_rules_incircuit.py`(13) + cross_validate **14 向量（host 14/14 + 真实证明 14/14 PASS）**（P7-b 当时的向量集；2026-09-12 已随 P1-5/P2-9b 扩到 **19 向量**，见 `docs/reproduce.md` §验收判据）
 - [x] **P7-c 链上锚定 RPC 后端**（2026-09-10 完成，foundry 1.8.1 装好、真跑本地 Anvil 端到端 PASS）
   - 合约：`contracts/Anchor.sol`（`anchor(bytes32)` 首次即最终 + `anchoredAt/anchoredBy/isAnchored/count` + `Anchored` 事件，链上只存 32 字节摘要）；`contracts/Anchor.json`（abi+bytecode）**入库** → 运行期部署**不需要 solc/forge**
   - 后端抽象：`AnchorBackend` / `FileLedgerBackend`（默认，离线可验）/ `RpcAnchorBackend`（幂等；链上成功后回写 `meta.on_chain={tx_hash,block,chain_ts}` 到本地哈希链账本）；`backend_from_env()`；`CastRpc`（foundry `cast`，**不引入 web3.py 依赖**，可注入以便离线单测）
-  - 工具：`scripts/deploy_anchor.py`、`scripts/anchor_e2e.sh`（起 anvil → 部署 → 13 张证书全部上链 → 第三方 `verify_session --rpc` → 反例对照）；`issue_cert.py`/`demo_e2e.py`/`verify_cert.py` 均支持 `--rpc/--contract`
+  - 工具：`scripts/anchor/deploy_anchor.py`、`scripts/anchor/anchor_e2e.sh`（起 anvil → 部署 → 13 张证书全部上链 → 第三方 `verify_session --rpc` → 反例对照）；`issue_cert.py`/`demo_e2e.py`/`verify_cert.py` 均支持 `--rpc/--contract`
   - 真跑修复：`pop-script --proof-out` 对 **core 也会写边车**，导致「verifier-only 快路径」误判 core（`pop-verify` exit 3）→ 抽出 `policydsl/evidence/verifier.py::prefer_verifier_only`（二进制+边车+模式∈{compressed,groth16,plonk}）并补单测
-  - 验证：`scripts/anchor_e2e.sh` **ALL PASS**（`chain_anchored 14/14` + 反例 0）；`--prove` 变体真实 Core 证明上链且第三方验证 PASS（**2026-09-12 复跑确认**：3:10 / 峰值 10.18 GiB）；`tests/test_anchor_chain.py` 22 例全绿（无 anvil 自动 skip）
+  - 验证：`scripts/anchor/anchor_e2e.sh` **ALL PASS**（`chain_anchored 14/14` + 反例 0）；`--prove` 变体真实 Core 证明上链且第三方验证 PASS（**2026-09-12 复跑确认**：3:10 / 峰值 10.18 GiB）；`tests/test_anchor_chain.py` 22 例全绿（无 anvil 自动 skip）
   - 边界（保留）：本地 Anvil/自备 RPC，未接公共测试网；上链用明文私钥参数（demo 用 Anvil 公开测试键），生产需 keystore/HSM
 
 ### Phase 6 · 评测 + 安全模型 + 论文（W7–W8）✅
@@ -142,8 +142,8 @@
 - [x] **论文初稿**：`paper/proof-of-policy.md`（威胁模型/系统/安全模型/实验含对标/相关工作四派定位/局限）
   —— ⚠️ **初稿已由 LaTeX 版取代**：权威源是 `paper/proof-of-policy.tex`（xelatex + ctex），
   `.md` 只是阅读镜像且已落后（缺 L8/L9）。以 `.tex` 为准。
-- [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/make_shots.py` 截图；
-  测试 **667 全绿 / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测；skip 均为设计内，见 `docs/security-model.md` §6）
+- [x] **发布材料**：README 一键 demo + `docs/reproduce.md` 复现指南 + `scripts/demo/make_shots.py` 截图；
+  测试 **675 全绿 / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后重测；skip 均为设计内，见 `docs/security-model.md` §6）
 - [x] **待办（延伸）—— 三项均已完成**（此前误记为待办，2026-09-12 订正）：
   verifier-only 二进制（`pop-verify`，见 Phase P7-a）；链上锚定 RPC 后端（`RpcAnchorBackend`，见 P7-c）；
   format/budget/tool 规则入电路（见 P7-b）
@@ -178,8 +178,8 @@ P0 ─► P1 ─► P2 ─► P3(透明MVP★)
 
 ## 5. 延伸路线：接真 agent + 证明服务（2026-09-13 立）
 
-> **前置**：Phase 0–6 与 P7 全部收尾，测试 **667 全绿 / 15 skip**，
-> `scripts/demo_all.sh` 8 条支路全通。本节是**交付之后**的两步 ——
+> **前置**：Phase 0–6 与 P7 全部收尾，测试 **675 全绿 / 15 skip**，
+> `scripts/demo/demo_all.sh` 8 条支路全通。本节是**交付之后**的两步 ——
 > 与仍在外部排队的 **T1**（≥64 GB 云机，见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9）
 > **互不阻塞**，也**不能**靠 T1 替代：T1 补的是链上/云机那一格，这两步补的是
 > 「把已有的东西接到真实世界」。
@@ -385,7 +385,7 @@ GET  /v1/policies                                                 → 已注册�
 | 组件 | 位置 |
 |---|---|
 | 库：策略注册表 + 作业队列 + 两段出证 | `policydsl/runtime/service.py` |
-| HTTP 驱动（纯标准库） | `scripts/proof_service.py` |
+| HTTP 驱动（纯标准库） | `scripts/ops/proof_service.py` |
 | 测试（**§5.2 交付时 87 例**；真 vkey 出证那条进 `POP_TEST_PROOF` 门控。加固①②③ 之后为 **105 例**，见 §5.2.5） | `tests/test_proof_service.py` |
 | 运维文档 | [`runbook-proof-service.md`](runbook-proof-service.md) |
 
@@ -584,9 +584,9 @@ systemd/docker 起服务的人看不到这段横幅，而「鉴权开没开」�
 - `policydsl/evidence/cert.py`：新增 `VKEY_HASH_UNPROVEN`（**故意**等于 `PROOF_MODE_UNPROVEN`
   同一个字符串 —— 二者说的是同一件事），把「vkey 没有真值可指」这件事从一条
   注释升级为一个**具名常量**；
-- `scripts/demo_e2e.py`：`vkey = "demo"` → `cert.VKEY_HASH_UNPROVEN`；
-- `scripts/verify_cert.py`：新增 `vkey_label` 卡（2c），与 `proof_mode` 卡（2b）同构；
-- `scripts/verify_session.py`：新增 `certificates_vkey_label` 卡，两个方向都拦；
+- `scripts/demo/demo_e2e.py`：`vkey = "demo"` → `cert.VKEY_HASH_UNPROVEN`；
+- `scripts/verify/verify_cert.py`：新增 `vkey_label` 卡（2c），与 `proof_mode` 卡（2b）同构；
+- `scripts/verify/verify_session.py`：新增 `certificates_vkey_label` 卡，两个方向都拦；
 - `tests/test_policy_binding.py`：`TestVkeyLabelHonestyRejected`（4 例，**反例就是
   `"demo"` 本身**）+ `TestSessionVkeyLabelHonesty`（2 例）。
 
@@ -601,7 +601,7 @@ systemd/docker 起服务的人看不到这段横幅，而「鉴权开没开」�
 
 §5.2 三项可选加固全部关闭之后，做了一次全仓盘点（三路：**代码与测试**、
 **文档与论文**、**对外集成面**）。结论是**代码侧没有整块缺失** —— 27 个测试模块 /
-667 例 / 30 个 `policydsl` 模块 / 23 个脚本 / 3 个 guest，链路每一格都接上了；
+667 例 / 30 个 `policydsl` 模块 / 23 个脚本 / 3 个 guest，链路每一格都接上了（这是 2026-09-14 那次盘点当时的快照；计数现状一律见 `docs/modules/08-tests-bench.md`）；
 欠账全在**外围**：5 处测试计数漂移、论文镜像停在 469、`dev-plan.md:90` 一条悬空的
 链上开示承诺、T3 未排期、没有部署类产物、以及**没有一份框架无关的接入指南**。
 
@@ -754,17 +754,17 @@ walk(unittest.TestLoader().discover('tests'))
 
 | 已有的 | 覆盖 | 为什么还不够 |
 |---|---|---|
-| `scripts/cross_validate.py --chunk 2` | **全量** 19 向量真出证 + 与 golden 逐条比对 | **只有出证这条腿**；且末行 `RESULT` 是**人读的**，没有落成结构化记录 |
+| `scripts/prove/cross_validate.py --chunk 2` | **全量** 19 向量真出证 + 与 golden 逐条比对 | **只有出证这条腿**；且末行 `RESULT` 是**人读的**，没有落成结构化记录 |
 | `bench/bench_proofs.py` | 出证 → 量墙钟/体积/峰值 RSS → 再验一次 | **采样点**（默认 6 个 `(长度,规则数)`），不是全量向量；且面向 P2-12 的边界表 |
 | `bench/bench_verify.py` | 量「验证已存盘证明」的代价 | 要先有一份**存盘的**证明 —— 而 `cross_validate` 不落盘证明 |
 
 ⇒ 缺的不是任何一条腿，而是**把两条腿串起来、按次留痕、能挂定时器**的那一层。
 所以 c4 **不新写一套出证/比对逻辑**（那会立刻和 `cross_validate` 漂移），
-而是新写一个 `scripts/regression_prove.py` 去**编排**已有的件。
+而是新写一个 `scripts/prove/regression_prove.py` 去**编排**已有的件。
 
 **设计**（四条腿 + 留痕）：
 
-1. **出证腿**：子进程调 `scripts/cross_validate.py --chunk N`（默认 2，
+1. **出证腿**：子进程调 `scripts/prove/cross_validate.py --chunk N`（默认 2，
    与既有 45 min 口径一致），解析末行 `RESULT: host A/N prove B/N`。
    **不碰它的向量表与 golden 比对** —— 单一事实来源留在原处。
 2. **验证腿**：`--proof-out` 只支持单向量（`main.rs:397` 会 panic），所以
@@ -826,7 +826,7 @@ walk(unittest.TestLoader().discover('tests'))
 另修两处：`cross_validate.py` 之外，`docs/modules/04-anchoring-audit.md` 的**文档锁**
 （它同时写着「配置缺失 → `AnchorError`」和「未配置抛 `NotImplementedError`」，自相矛盾）。
 
-**c4 ✅ 完成**（本节）。新增 `scripts/regression_prove.py` + `tests/test_regression_prove.py`
+**c4 ✅ 完成**（本节）。新增 `scripts/prove/regression_prove.py` + `tests/test_regression_prove.py`
 （16 例，含**替身驱动**，不需要 Rust）+ `cross_validate.py` 的两个非破坏性口子
 （`POP_SCRIPT` / `--work-dir`）。
 
@@ -921,6 +921,29 @@ stdout 末行）总是同时成立，要证伪得让 `cross_validate` **自报 P
 **gitignore 的产物目录**（`bench/work/` 已有，或 `scripts/.work/`），产物不再落在
 源码目录里。
 
+**动手前定死的四条**（普查后才看得出来的）：
+
+1. **`scripts/examples/` 原地不动。** 它不是脚本，是输入样本（`*.txt`）+ demo 产物
+   （`out/`）。把它卷进来只会平白多改十几处路径，不增加任何清晰度。所以 `scripts/`
+   根下是 `_bootstrap.py` + 5 个组 + `examples/`。
+2. **`_bootstrap.py` 要把 5 个组目录都装进 `sys.path`。** 因为跨组 import 是真实存在的：
+   `demo/demo_e2e.py` → `import issue_cert`（在 `prove/`）、
+   `prove/regression_prove.py` → `import bench_proofs`（在 `bench/`）+ `import cross_validate`。
+   装 5 个组目录 = **保持今天「平铺命名空间」的语义不变**，只是物理上分了目录。
+   （组内文件名目前两两不同名，无冲突。）
+3. **每个脚本仍要有 1 行找 `scripts/` 的代码**：`sys.path.insert(0, parents[1])` 再
+   `from _bootstrap import …`。这是**有意的取舍**而不是偷懒 —— 让每个文件都做一次
+   标记搜索会把同一段定位逻辑抄 16 遍，正是 `_bootstrap.py` 要消除的东西。
+   代偿是两条**机械化**保障，不靠人眼：
+   - `_bootstrap.py` 自查 `parents[1]` 里真的有 `policydsl/` 与 `circuits/`，不是就抛
+     **带解释的错**（把静默失败变成响亮失败）；
+   - 新增 `tests/test_scripts_layout.py`：把 `scripts/**/*.py` 逐个 `--help` 跑一遍，
+     将来的任何一次搬家只要弄坏引导，**CI 当场红**，不靠谁想起来去跑 demo。
+4. **`cross_validate` 的产物目录改到 `scripts/.work/`**（而不是 `bench/work/`）：它是
+   出证侧工具的草稿区，放 `bench/` 会让 `scripts/` 反向依赖 `bench/`。`scripts/.work/`
+   由一条新 gitignore 规则覆盖，替掉原来散在 4 条规则里的 `scripts/vectors.json` 等；
+   `.gitignore` 里重复两遍的 `scripts/examples/out/` 顺手去重。
+
 **③ `docs/` 分三层**：
 
 ```
@@ -952,12 +975,12 @@ docs/
 |---|---|---|---|
 | 0 | 方案（本提交） | — | ✅ |
 | 1 | `policydsl/` 拆包 + 全仓 import 改写 + 文档里的模块路径 | **667 passed / 15 skipped** | ✅ 2026-09-17，**667 passed / 15 skipped**，另修掉两条隐藏依赖（见 §5.6.7） |
-| 2 | `scripts/` 分组 + `_bootstrap.py` + 全仓路径引用 + 产物目录 | 667 + `demo_all.sh --list` + **fast 模式真跑一次** | |
+| 2 | `scripts/` 分组 + `_bootstrap.py` + 全仓路径引用 + 产物目录 | **675 passed / 15 skipped** + `demo_all.sh --list` + **fast 模式真跑一次** | ✅ 2026-09-17，三条闸门全过（见 §5.6.8） |
 | 3 | 文档结构与索引：`docs/README.md` + 根 README 目录结构订正 | 交叉链接逐条可点开 | |
 | 4 | demo 文档 `docs/demo/README.md` | 对照 `demo_all.sh` 的 8 条支路逐条核对 | |
 | 5 | `modules/01–08` 各补「怎么用 / 怎么改」两节 | 08 的测试计数与实际一致 | |
 | 6 | 总手册 `docs/development.md` | 手册里的每条命令**实际敲一遍** | |
-| 7 | 收尾：测试计数、交叉链接、推送 | 667 + 工作树干净 + origin 同步 | |
+| 7 | 收尾：测试计数、交叉链接、推送 | **675 passed / 15 skipped** + 工作树干净 + origin 同步 | |
 
 #### 5.6.7 第 1 步实测：两条被绿测试掩盖的隐藏依赖
 
@@ -971,7 +994,7 @@ docs/
    修法**不是**给六个调用点各补一个 `.parent`（那只会把同一个 bug 推到下一次移动），
    而是新增 `policydsl/paths.py`：按**标记目录**（同时含 `policydsl/` 与 `circuits/`）
    向上找仓库根，唯一出处。
-2. **`scripts/make_audit_proof.sh` 里那段内联 Python 一直是坏的**，且带着**两个**独立的
+2. **`scripts/ops/make_audit_proof.sh` 里那段内联 Python 一直是坏的**，且带着**两个**独立的
    陈旧项：`from policydsl.serialize import spec_to_rust_constraints`（**P0-1 已删除该函数** ——
    `plan-p0p1p2.md` 记着「20 个调用点已机械替换」，这是漏网的 1 个）+ 搬家后的模块路径。
    没被发现的原因很具体：它生成的 compressed fixture 只在 ≥16 GB 机器上有用，
@@ -983,6 +1006,63 @@ docs/
 「只在更强的机器/更大的内存上才跑」的代码路径，测试套件对它**零覆盖**，而它照样全绿。
 所以本轮给这一步加的验收不只是 667，而是**凡是本机能跑的路径都真跑一遍**（
 第 2 步的 `demo_all.sh` fast 模式闸门就是这条原则的延伸）。
+
+#### 5.6.8 第 2 步实测：三条闸门与一个自我纠正（2026-09-17）
+
+第 2 步（`scripts/` 分组）走完，三条闸门**实测**如下 —— 不是「看起来对」：
+
+| 闸门 | 实测结果 |
+|---|---|
+| 测试套件 | `python3 -m unittest discover tests` → **675 passed / 15 skipped**（33.3 s）。667 是搬家前的基线；**+8** 是新增的 `tests/test_scripts_layout.py`，skip 数不变 |
+| `demo_all.sh --list` | 正常输出，且每条支路的「驱动」列已是新路径（`scripts/prove/…` / `scripts/anchor/…` / `scripts/verify/…`） |
+| **fast 模式真跑一次** | `bash scripts/demo/demo_all.sh` → **8 条支路全 PASS、没有 FAIL** |
+
+8 条支路的实测（2026-09-17，本机 11.9 GB）：
+
+```
+policy       公开模式主干       PASS   1.2 s    scripts/demo/demo_e2e.py
+private      私有模式           PASS   0.0 s    scripts/demo/private_demo.py
+semantic     语义规则(P2-9)     PASS   5.1 s    scripts/prove/ezkl_prove.py
+compose      组合证明(P1-6)     PASS   0.1 s    scripts/prove/compose_proof.py
+session      会话聚合(P2-10)    PASS   0.1 s    scripts/prove/prove_session.py
+multiparty   多证明者(P2-11)    PASS   0.1 s    scripts/prove/prove_multiparty.py
+anchor       链上锚定(P7-c)     PASS   6.4 s    scripts/anchor/anchor_e2e.sh
+verify       第三方独立验证     PASS   0.1 s    scripts/verify/verify_session.py
+```
+
+**搬家当场炸出来的东西**（一次全红，不是逐步冒出来）：测试套件 627 tests / **16 errors**，
+全是 import 失败 —— 4 处 `from scripts.proof_service import`（缺 `ops.` 一层）与 6 处
+「先 `sys.path.insert(REPO/"scripts")` 再平铺导入」的测试引导。这 16 处正是 §5.6.5 普查里
+**P1 会跑挂**那一格，数目对得上。修法与 `policydsl/` 拆包时同源：**不补层数**，而是把
+「从标记搜根」这件事下沉成 `scripts/_bootstrap.py`，测试引导调 `bootstrap()`。
+
+**为什么非要加一条 fast 模式真跑**：分组之后，「路径写错」这件事**只有跑 demo 才走得到**。
+单测全绿不代表 `demo_all.sh` 能跑 —— 反过来也一样。§5.6.7 记的那条「`unittest` 的 skip
+是静默的绿」在这里换了个形状：**没被任何测试覆盖的路径，绿是借来的**。所以第 2 步的验收
+按「凡是本机能跑的路径都真跑一遍」办，而不是「单测绿了就算」。
+
+**顺带关掉的三处**（都在 `scripts/` 分组时暴露）：
+
+1. **`.gitignore` 的 6 条路径规则收成 1 条。** 原先 `scripts/vectors.json` /
+   `scripts/results*.json` ×3 / `scripts/examples/out/`（**出现两次**）—— 挪目录不改它们，
+   规则就静默失效、草稿产物直接入库。现在合成 `scripts/.work/` 一条目录规则。
+2. **`cross_validate.py` 的草稿产物换了地方。** `DEFAULT_WORK_DIR` 从 `scripts/` 改到
+   `scripts/.work/`：那四个文件本来就是草稿，落在源码目录里让 `ls scripts/` 分不清
+   哪些是脚本、哪些是上次跑剩下的。
+3. **新增 `tests/test_scripts_layout.py`（8 例），把这次的教训机械化。** 脚本头部那行
+   `sys.path.insert(…, parents[1])` 是**按层数**写的，再搬一次家就会静默指错 ——
+   而它坏掉的正是「只有跑 demo 才走到」的路径。所以钉三件事：每个脚本都导入得动且
+   `REPO` == 仓库根；`_bootstrap` 在**陌生树**里照样找得到根、缺标记时响亮报错；
+   5 个组目录并排进 `sys.path`，故组间不能有同名文件（这是 `bootstrap()` 成立的前提）。
+   同一文件里另加一条 `test_at_least_one_script_and_five_groups`，防「空集合上全绿」。
+
+**一个自我纠正，如实记下**：这套新测试的**初版我自己写坏了三处** —— 一条
+`assertTrue(… or True)` 的占位断言（恒真）、一处用 `__import__("json")` 拼常量集合的 hack、
+以及一条前提就错的用例（把副本放到 `<root>/a/b/c/scripts/`，而 `_bootstrap.py` 里那条
+**故意**的自查会因此报错 —— 于是它测的是**另一个**行为）。三处都改掉了：占位断言删掉、
+常量改成字面量、那条用例拆成「陌生树里找得到」与「不在 `<根>/scripts/` 时报错」两条，
+把自查本身也变成被测行为。写测试时踩到「用例自己恒真」和「用例前提站不住」这两类坑，
+正是 §5.6.3 那条纪律的反面教材，留在这里备忘。
 
 #### 5.6.5 爆炸半径（实测普查，2026-09-17）
 
@@ -1001,7 +1081,7 @@ docs/
    模块**（`cert` `keys` `anchor` `nfa` `normalize` `semantic` … 完全没有包内入口引用），
    被 `tests/`(21 文件) / `scripts/`(11) / `bench/`(4) 广泛依赖。所以拆包的真正工作量是
    **改外层 249 个 import 点**，不是改包内。
-2. **最硬的耦合是环**：`scripts/regression_prove.py` ↔ `bench/bench_proofs.py` ↔
+2. **最硬的耦合是环**：`scripts/prove/regression_prove.py` ↔ `bench/bench_proofs.py` ↔
    `bench/bench_cycles.py` 靠互相 `sys.path.insert` 成环（`regression_prove` 同时把
    `scripts/` 与 `bench/` 塞进 `sys.path`）。三者中任一个换深度，**两边都要同时改**。
 3. **`scripts/` 绝不能加 `__init__.py`。** `tests/test_proof_service.py` 有 4 处

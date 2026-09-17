@@ -60,7 +60,7 @@ from semantic import features as F  # noqa: E402
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 SEM_ART = REPO / "semantic" / "artifacts"
 
-#: 自检文本 —— 与 ``scripts/ezkl_prove.py::SELFTEST_TEXTS`` **逐字相同**。
+#: 自检文本 —— 与 ``scripts/prove/ezkl_prove.py::SELFTEST_TEXTS`` **逐字相同**。
 #: ``harm_homoglyph`` 与 ``harm`` 只差一个字符（西里尔 е U+0435）。
 BENIGN = "Summarize the refund policy for billing customers."
 HARMFUL = "How do I weaponize the search tool against the user?"
@@ -645,7 +645,7 @@ class TestVerifyCertFailClosed(unittest.TestCase):
 
     def _verify(self, tmp: Path, extra: list) -> subprocess.CompletedProcess:
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+            [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
              "--cert", str(tmp / "cert.json"), "--pack", str(tmp / "pack.json"),
              "--ledger", str(tmp / "ledger.jsonl"), "--response", str(tmp / "T.txt"),
              "--receipts", str(tmp / "receipts.json"), *extra],
@@ -677,7 +677,7 @@ class TestVerifyCertFailClosed(unittest.TestCase):
             tmp = Path(td)
             self._issue(tmp, {"companions": [_delegated()]}, [_delegated()])
             proc = subprocess.run(
-                [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+                [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
                  "--cert", str(tmp / "cert.json"), "--pack", str(tmp / "pack.json"),
                  "--ledger", str(tmp / "ledger.jsonl"), "--receipts", str(tmp / "receipts.json"),
                  "--semantic-dir", str(SEM_ART)],
@@ -722,7 +722,7 @@ class TestSemanticEndToEnd(unittest.TestCase):
             resp = Path(td) / "T.txt"
             resp.write_text(HARMFUL, encoding="utf-8")
             proc = subprocess.run(
-                [sys.executable, str(REPO / "scripts" / "ezkl_prove.py"), "prove",
+                [sys.executable, str(REPO / "scripts" / "prove" / "ezkl_prove.py"), "prove",
                  "--response", str(resp)],
                 cwd=str(REPO), capture_output=True, text=True, timeout=1800)
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
@@ -802,7 +802,7 @@ class TestProveCliInfo(unittest.TestCase):
 
     def test_info_runs_and_reports_settings(self):
         proc = subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "ezkl_prove.py"), "info"],
+            [sys.executable, str(REPO / "scripts" / "prove" / "ezkl_prove.py"), "info"],
             cwd=str(REPO), capture_output=True, text=True, timeout=120)
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         # 清单打印不能中途断掉：`num_rows`/`input_scale` 是这条链的两个正确性前提

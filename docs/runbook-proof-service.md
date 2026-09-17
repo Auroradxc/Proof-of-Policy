@@ -1,11 +1,11 @@
-# 单机 runbook：证明服务（`scripts/proof_service.py`）
+# 单机 runbook：证明服务（`scripts/ops/proof_service.py`）
 
 > 面向**运维这个服务的人**，不是面向读代码的人。回答四个问题：跑起来要什么、
 > 怎么确认它是好的、满载时它怎么表现、出事怎么办。
 >
 > 接口定义与设计理由见 [`dev-plan.md` §5.2](dev-plan.md)；实现见
 > [`policydsl/runtime/service.py`](../policydsl/runtime/service.py)（库）与
-> [`scripts/proof_service.py`](../scripts/proof_service.py)（HTTP 驱动）。
+> [`scripts/ops/proof_service.py`](../scripts/ops/proof_service.py)（HTTP 驱动）。
 
 ---
 
@@ -34,11 +34,11 @@
 cd Proof-of-Policy/03_代码仓库/zk-policy
 
 # A. 演示 / 边缘：宿主判定，作业几秒完成，证书如实标注 unproven
-python3 scripts/proof_service.py --host-check
+python3 scripts/ops/proof_service.py --host-check
 
 # C. 真证明 + 鉴权（生产的样子）
 export POP_SIGNING_KEY=/etc/pop/signing.key
-SP1_PROVER=cpu python3 scripts/proof_service.py \
+SP1_PROVER=cpu python3 scripts/ops/proof_service.py \
   --auth-file /etc/pop/tokens --auth-admin ops --require-auth
 ```
 
@@ -72,7 +72,7 @@ SP1_PROVER=cpu python3 scripts/proof_service.py \
 
 ```bash
 export POP_SERVICE_TOKEN="app:$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
-python3 scripts/proof_service.py --auth-token "ops:$OPS_KEY" --auth-file /etc/pop/tokens
+python3 scripts/ops/proof_service.py --auth-token "ops:$OPS_KEY" --auth-file /etc/pop/tokens
 ```
 
 **三处凭据合起来生效**（命令行 + 文件 + 环境变量），不是后者覆盖前者 ——
@@ -105,7 +105,7 @@ python3 scripts/proof_service.py --auth-token "ops:$OPS_KEY" --auth-file /etc/po
 给出 `--rpc` 与 `--contract` 就**同时**把证书摘要登记进 `Anchor` 合约（部署见 §7）。
 
 ```bash
-python3 scripts/proof_service.py --rpc http://127.0.0.1:8545 --contract 0x<addr>
+python3 scripts/ops/proof_service.py --rpc http://127.0.0.1:8545 --contract 0x<addr>
 ```
 
 | 行为 | 结果 |
@@ -296,7 +296,7 @@ export POP_SIGNING_KEY=/etc/pop/signing.key
    (b) **不区分角色的权限** —— 除了 `--auth-admin` 这个二元开关，没有「只能 check
    不能 attest」这类细粒度授权。真要多角色，把两段拆到两个端口、各自一套 token。
 2. **语义规则策略不受支持**。`semantic_bound` 由 ezkl 陪伴证明判定，而该证明只
-   在 `scripts/issue_cert.py` 那条命令行路径里生成。服务**当场拒**这类请求
+   在 `scripts/prove/issue_cert.py` 那条命令行路径里生成。服务**当场拒**这类请求
    （400），`GET /v1/policies` 里也如实标 `serviceable: false` —— 而不是发一张
    `delegated` 非空却没有 companion 的证书（那会被 `verify_cert.py` 判 FAIL，
    但在那之前它看起来是正常的）。

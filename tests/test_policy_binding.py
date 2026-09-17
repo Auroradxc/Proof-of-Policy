@@ -254,7 +254,7 @@ class TestVerifierEndToEnd(unittest.TestCase):
         anchor.append_anchor(ledger, cert.cert_digest(payload))
         self.assertEqual(spec["sha256"] is not None, True)
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+            [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
              "--cert", str(cert_file), "--pack", str(pack_file), "--ledger", str(ledger)],
             cwd=str(REPO), capture_output=True, text=True)
 
@@ -296,7 +296,7 @@ class TestVerifierEndToEnd(unittest.TestCase):
             ledger = tmp / "ledger.jsonl"
             anchor.append_anchor(ledger, cert.cert_digest(payload))
             proc = subprocess.run(
-                [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+                [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
                  "--cert", str(cert_file), "--pack", str(pack_file), "--ledger", str(ledger)],
                 cwd=str(REPO), capture_output=True, text=True)
         self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
@@ -336,7 +336,7 @@ class TestProofModeOverclaimRejected(unittest.TestCase):
         ledger = tmp / "ledger.jsonl"
         anchor.append_anchor(ledger, cert.cert_digest(payload))
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+            [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
              "--cert", str(cert_file), "--pack", str(pack_file), "--ledger", str(ledger)],
             cwd=str(REPO), capture_output=True, text=True)
 
@@ -379,6 +379,8 @@ class TestSessionProofModeOverclaim(unittest.TestCase):
     def _session(self, tmp: Path, proof_mode: str, proof_sha) -> Path:
         """造一个最小会话包：单张会话证书 + 账本 + 出证方公钥。"""
         sys.path.insert(0, str(REPO / "scripts"))
+        from _bootstrap import bootstrap  # noqa: E402
+        bootstrap()  # 把 5 个脚本组装进 sys.path（与脚本自身走同一条引导）
         from verify_session import load_policy  # 与验证脚本共用同一套加载逻辑
 
         pack = load_policy(REPO / self.PACK)
@@ -404,7 +406,7 @@ class TestSessionProofModeOverclaim(unittest.TestCase):
 
     def _verify(self, path: Path) -> subprocess.CompletedProcess:
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "verify_session.py"),
+            [sys.executable, str(REPO / "scripts" / "verify" / "verify_session.py"),
              "--session", str(path)],
             cwd=str(REPO), capture_output=True, text=True)
 
@@ -440,7 +442,7 @@ class TestVkeyLabelHonestyRejected(unittest.TestCase):
 
     这条不变量此前**一条都不存在**：验证方只比对「证书 vs 证明」
     （``vkey_hash`` / ``proof_vkey`` 两张卡），从不问这个值**本身**是否可能是
-    真的。于是 ``scripts/demo_e2e.py`` 里写过的魔法值 ``"demo"`` 可以**全绿
+    真的。于是 ``scripts/demo/demo_e2e.py`` 里写过的魔法值 ``"demo"`` 可以**全绿
     通过验证** —— 一个有内容、却没有任何东西能证伪的字段。修法就是这一组用例
     锁住的两条：**过度声明**（未附工件却声明 vkey）与**低报**（附了工件却标
     ``unproven``）都判 FAIL。
@@ -465,7 +467,7 @@ class TestVkeyLabelHonestyRejected(unittest.TestCase):
         ledger = tmp / "ledger.jsonl"
         anchor.append_anchor(ledger, cert.cert_digest(payload))
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+            [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
              "--cert", str(cert_file), "--pack", str(pack_file), "--ledger", str(ledger)],
             cwd=str(REPO), capture_output=True, text=True)
 
@@ -514,6 +516,8 @@ class TestSessionVkeyLabelHonesty(unittest.TestCase):
 
     def _session(self, tmp: Path, vkey: str) -> Path:
         sys.path.insert(0, str(REPO / "scripts"))
+        from _bootstrap import bootstrap  # noqa: E402
+        bootstrap()  # 把 5 个脚本组装进 sys.path（与脚本自身走同一条引导）
         from verify_session import load_policy  # 与验证脚本共用同一套加载逻辑
 
         pack = load_policy(REPO / self.PACK)
@@ -538,7 +542,7 @@ class TestSessionVkeyLabelHonesty(unittest.TestCase):
 
     def _verify(self, path: Path):
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "verify_session.py"),
+            [sys.executable, str(REPO / "scripts" / "verify" / "verify_session.py"),
              "--session", str(path)],
             cwd=str(REPO), capture_output=True, text=True)
 
@@ -577,7 +581,7 @@ class TestProofLevelBinding(unittest.TestCase):
 
     def _verify(self, cert_file: Path, ledger: Path) -> subprocess.CompletedProcess:
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+            [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
              "--cert", str(cert_file), "--pack", str(self.PACK),
              "--ledger", str(ledger), "--proof", str(self.CERT_DIR / "proof.bin")],
             cwd=str(REPO), capture_output=True, text=True,

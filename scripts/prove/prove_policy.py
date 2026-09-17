@@ -9,7 +9,7 @@
 当响应被证明且 golden 一致时以退出码 0 结束。
 
 用法：
-  SP1_PROVER=cpu python3 scripts/prove_policy.py \
+  SP1_PROVER=cpu python3 scripts/prove/prove_policy.py \
       --pack policy_packs/eu_ai_act_v1.json \
       --response scripts/examples/eu_agent_reply.txt \
       [--out-dir scripts/examples/out] [--no-prove] [--expect pass|violate]
@@ -26,9 +26,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.core.compile import compile_policy
 from policydsl.core.evaluate import check

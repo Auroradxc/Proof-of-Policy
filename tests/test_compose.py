@@ -551,7 +551,7 @@ class TestCompositeEndToEnd(unittest.TestCase):
         cls._tmp = tempfile.TemporaryDirectory()
         cls.out = Path(cls._tmp.name) / "compose"
         proc = subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "compose_proof.py"),
+            [sys.executable, str(REPO / "scripts" / "prove" / "compose_proof.py"),
              "--pack", str(REPO / "policy_packs" / "eu_ai_act_v1.json"),
              "--response", str(REPO / "scripts" / "examples" / "eu_agent_reply.txt"),
              "--out-dir", str(cls.out)],

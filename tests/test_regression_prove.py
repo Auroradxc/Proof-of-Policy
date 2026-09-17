@@ -1,4 +1,4 @@
-"""T3 回归编排器（``scripts/regression_prove.py``）的单元测试。
+"""T3 回归编排器（``scripts/prove/regression_prove.py``）的单元测试。
 
 **这些用例证的是什么、不证什么** —— 先说清楚，免得被误读：
 
@@ -29,6 +29,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
+from _bootstrap import bootstrap  # noqa: E402
+bootstrap()  # 把 5 个脚本组装进 sys.path（与脚本自身走同一条引导）
 
 import cross_validate as cv  # noqa: E402
 import regression_prove as rp  # noqa: E402

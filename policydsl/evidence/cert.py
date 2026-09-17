@@ -194,7 +194,7 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
     ``trace_seal`` 是 P1-5b 的会话末端承诺（``ToolGateway.seal()``）：网关签的
     ``{count, trace_root}``，用来说明「这条回执链到此为止」。它放在**载荷顶层**
     而不是 ``outcome`` 里 —— ``outcome`` 是**证明公开值的镜像**（验证方会逐字段
-    比对，见 ``scripts/verify_cert.py`` 的 ``proof_outcome`` 卡），而电路里没有
+    比对，见 ``scripts/verify/verify_cert.py`` 的 ``proof_outcome`` 卡），而电路里没有
     seal 这个东西：它是链下网关签的，与 ``challenge`` 块同属「主机层随证书附上
     的旁证」。放进 ``outcome`` 的后果是**每一张带真实证明的证书都对不上**
     （公开值里没有这个字段）。见 ``policydsl/evidence/trace.py`` 的「截尾与 ToolSeal」。

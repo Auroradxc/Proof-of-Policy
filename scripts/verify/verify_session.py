@@ -17,11 +17,11 @@
      账本 meta 里的 tx/区块/时间戳一致（**需要 RPC**，见下）。
 
 用法：
-  python3 scripts/verify_session.py --session scripts/examples/out/e2e/session.json
+  python3 scripts/verify/verify_session.py --session scripts/examples/out/e2e/session.json
   # 链上核对：--rpc/--contract 显式给出，或用 session 里记录的 chain 字段
-  python3 scripts/verify_session.py --session ... --rpc http://127.0.0.1:8545 \
+  python3 scripts/verify/verify_session.py --session ... --rpc http://127.0.0.1:8545 \
       --contract 0x5FbDB2315678afecb367f032d93F642f64180aa3
-  python3 scripts/verify_session.py --session ... --no-chain   # 强制只做链下核对
+  python3 scripts/verify/verify_session.py --session ... --no-chain   # 强制只做链下核对
 """
 
 from __future__ import annotations
@@ -34,8 +34,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.evidence import anchor, cert, keys, verifier  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402

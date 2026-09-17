@@ -36,7 +36,7 @@
 矛盾」，挡不住「签发者整体造假」—— 真正的密码学保证来自步骤 2 的证明。
 
 用法：
-  python3 scripts/verify_cert.py --cert scripts/examples/out/cert_public/cert.json \
+  python3 scripts/verify/verify_cert.py --cert scripts/examples/out/cert_public/cert.json \
       --pack policy_packs/eu_ai_act_v1.json \
       --ledger scripts/examples/out/ledger.jsonl \
       [--proof scripts/examples/out/cert_public/proof.bin] \
@@ -56,8 +56,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.evidence import anchor, cert, keys, trace, verifier
 from policydsl.privacy import challenge, commit
@@ -113,7 +115,7 @@ def main() -> int:
 
     env = json.loads(args.cert.read_text(encoding="utf-8"))
     results = []
-    # 送达的响应 T′ 原文（**不加工**，见 scripts/ezkl_prove.py::_read_response）。
+    # 送达的响应 T′ 原文（**不加工**，见 scripts/prove/ezkl_prove.py::_read_response）。
     # 语义规则的陪伴证明要对着它核对 encode(T′)，逐字符都必须一致。
     response_text = (args.response.read_text(encoding="utf-8")
                      if args.response is not None else None)
@@ -124,7 +126,7 @@ def main() -> int:
             args.cert.parent / "key.json")
     except (OSError, ValueError, TypeError) as exc:
         print(f"  [FAIL] keyring        无法获得出证方公钥：{exc}\n"
-              f"         请用 --keyring 指定（见 scripts/gen_key.py --pubkey）")
+              f"         请用 --keyring 指定（见 scripts/prove/gen_key.py --pubkey）")
         print("\nRESULT: FAIL")
         return 1
     if not keyring:

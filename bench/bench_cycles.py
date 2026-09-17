@@ -212,7 +212,7 @@ def load_corpus(spec: str) -> Corpus:
     if not candidates:
         raise SystemExit(
             f"--corpus demo 需要真实工件 （``scripts/examples/out/**``） 或 "
-            f"``scripts/examples/*.txt``；先跑一次 `python3 scripts/demo_e2e.py`，"
+            f"``scripts/examples/*.txt``；先跑一次 `python3 scripts/demo/demo_e2e.py`，"
             f"或用 --corpus synthetic / --corpus <文件>")
 
     kept: list[tuple[str, str]] = []

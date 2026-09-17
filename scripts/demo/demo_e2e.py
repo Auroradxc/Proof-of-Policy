@@ -31,12 +31,12 @@
 把**公钥**写进 `session.json` 的 `signers` 字段。于是第三方只凭公开的 session.json
 就能独立验签 —— 而 demo 自己手里那把私钥，验证方拿不到、也就伪造不了。
 
-之后用 `python3 scripts/verify_session.py ...` 独立验证这一切。
+之后用 `python3 scripts/verify/verify_session.py ...` 独立验证这一切。
 
 用法：
-  SP1_PROVER=cpu python3 scripts/demo_e2e.py [--out-dir DIR] [--no-prove] [--nonce auto|<hex>|none] [--key <私钥.pem>]
-  # 链上锚定（另开终端跑 `anvil`，先部署合约：python3 scripts/deploy_anchor.py）
-  SP1_PROVER=cpu python3 scripts/demo_e2e.py --no-prove \
+  SP1_PROVER=cpu python3 scripts/demo/demo_e2e.py [--out-dir DIR] [--no-prove] [--nonce auto|<hex>|none] [--key <私钥.pem>]
+  # 链上锚定（另开终端跑 `anvil`，先部署合约：python3 scripts/anchor/deploy_anchor.py）
+  SP1_PROVER=cpu python3 scripts/demo/demo_e2e.py --no-prove \
       --rpc http://127.0.0.1:8545 --contract 0x5FbDB2315678afecb367f032d93F642f64180aa3
 """
 
@@ -49,9 +49,10 @@ import sys
 import unicodedata
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.evidence import anchor, cert, keys, trace  # noqa: E402
 from policydsl.privacy import challenge, commit  # noqa: E402
@@ -629,7 +630,7 @@ def main() -> int:
               f"{on_chain['contract']} (tx={str(on_chain.get('tx_hash'))[:18]}…)")
     else:
         print("on-chain    : skipped (no --rpc/--contract; pass them to anchor on a real chain)")
-    print("\nverify with: python3 scripts/verify_session.py --session " + str(out_dir / "session.json"))
+    print("\nverify with: python3 scripts/verify/verify_session.py --session " + str(out_dir / "session.json"))
     ok = ok_chain and ok_challenge and (contrast is None or contrast["ok"])
     return 0 if ok else 1
 

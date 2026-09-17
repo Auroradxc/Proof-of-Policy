@@ -1,4 +1,4 @@
-"""证明服务（``policydsl/runtime/service.py`` + ``scripts/proof_service.py``）的测试。
+"""证明服务（``policydsl/runtime/service.py`` + ``scripts/ops/proof_service.py``）的测试。
 
 分三层，**默认全跑**（除了最后一层）：
 
@@ -7,7 +7,7 @@
 2. **队列层**（``ProofService``）—— 队列满拒收而不是无限收下、排队的作业真的
    会被执行、作业失败不带走工作线程、拒绝的请求不吃队列位。这一层**不跑真
    证明**：把出证步骤换成「睡一下再走真流程」，几秒钟就能覆盖状态机；
-3. **HTTP 层**（``scripts/proof_service.py``）—— 真起一个 ``ThreadingHTTPServer``
+3. **HTTP 层**（``scripts/ops/proof_service.py``）—— 真起一个 ``ThreadingHTTPServer``
    （端口 0 让内核分配），用 urllib/``http.client`` 打真实请求。
 
 真 SP1 证明那一条进 ``POP_TEST_PROOF=1`` 门控（~2.5 分钟 + ~10.2 GiB）。
@@ -453,7 +453,7 @@ class TestHttpEndpoint(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from scripts.proof_service import make_server  # noqa: PLC0415
+        from scripts.ops.proof_service import make_server  # noqa: PLC0415
         cls.tmp = tempfile.TemporaryDirectory()
         reg = service.registry_from_paths([CONTENT_PACK, TOOL_PACK, SEMANTIC_PACK])
         # concurrency=1 + max_queue=1 ⇒ 容量 2，队列满的行为在 HTTP 上也测得到
@@ -1056,7 +1056,7 @@ class TestRestartOverHttp(unittest.TestCase):
         self.out = Path(self.tmp.name)
 
     def _boot(self):
-        from scripts.proof_service import make_server    # noqa: PLC0415
+        from scripts.ops.proof_service import make_server    # noqa: PLC0415
         reg = service.registry_from_paths([CONTENT_PACK])
         svc = ProofService(reg, self.out, host_check=True)
         httpd = make_server(svc, "127.0.0.1", 0)
@@ -1162,7 +1162,7 @@ class TestStartupRefusals(unittest.TestCase):
 
     def _run(self, *argv):
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "proof_service.py"),
+            [sys.executable, str(REPO / "scripts" / "ops" / "proof_service.py"),
              "--pack", str(CONTENT_PACK), "--out-dir", str(Path(self.tmp.name) / "o"), *argv],
             cwd=str(REPO), capture_output=True, text=True, timeout=120)
 
@@ -1196,7 +1196,7 @@ class TestStartupRefusals(unittest.TestCase):
         少了这一条，上面三条在「脚本根本跑不起来」时也会全绿。
         """
         proc = subprocess.Popen(
-            [sys.executable, str(REPO / "scripts" / "proof_service.py"),
+            [sys.executable, str(REPO / "scripts" / "ops" / "proof_service.py"),
              "--pack", str(CONTENT_PACK), "--out-dir", str(Path(self.tmp.name) / "ok"),
              "--port", "0"],
             cwd=str(REPO), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
@@ -1331,7 +1331,7 @@ class TestChainDownOverHttp(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from scripts.proof_service import make_server  # noqa: PLC0415
+        from scripts.ops.proof_service import make_server  # noqa: PLC0415
         cls.tmp = tempfile.TemporaryDirectory()
         reg = service.registry_from_paths([CONTENT_PACK])
         cls.svc = ProofService(reg, Path(cls.tmp.name), host_check=True,
@@ -1558,7 +1558,7 @@ class _AuthHttpCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        from scripts.proof_service import make_server  # noqa: PLC0415
+        from scripts.ops.proof_service import make_server  # noqa: PLC0415
         cls.tmp = tempfile.TemporaryDirectory()
         reg = service.registry_from_paths([CONTENT_PACK])
         cls.svc = ProofService(reg, Path(cls.tmp.name), host_check=True,

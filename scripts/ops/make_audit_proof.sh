@@ -3,9 +3,14 @@
 # COMPRESSED 证明（可被 pop-verify 在完全没有 prover 的情况下验证），
 # 并拷贝到 circuits/testdata/audit_proof/。
 #
-# 用法：  SP1_PROVER=cpu bash scripts/make_audit_proof.sh
+# 用法：  SP1_PROVER=cpu bash scripts/ops/make_audit_proof.sh
 set -euo pipefail
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# 仓库根：从本文件向上找**同时含** policydsl/ 与 circuits/ 的目录。
+# 不写 "${BASH_SOURCE[0]}/../.." —— 那种「数层数」的写法今天对、下次搬家就静默指错，
+# 与 scripts/_bootstrap.py 用的是同一对标记（改一处要改两处）。
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+while [ ! -d "$HERE/policydsl" ] && [ "$HERE" != "/" ]; do HERE="$(dirname "$HERE")"; done
+[ -d "$HERE/circuits" ] || { echo "找不到仓库根（从 ${BASH_SOURCE[0]} 向上）" >&2; exit 1; }
 cd "$HERE"
 
 WORK="$(mktemp -d)"

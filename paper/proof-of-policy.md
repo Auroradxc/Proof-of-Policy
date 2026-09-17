@@ -81,7 +81,7 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 并补上 zkAgent 未覆盖的策略合规与承诺式隐私；二者组合覆盖“推理执行 + 策略合规”的完整义务*（对应计划中的 M1）。
 详细对标数据见仓库 `bench/comparison_zkagent.md`。
 **关于 M1 的进展口径**：组合义务已按 P1-6 **分支 A** 落地 —— 形式化引理（L6）、
-两个 guest 程序（键分离）、组合驱动 `scripts/compose_proof.py` 与反例测试
+两个 guest 程序（键分离）、组合驱动 `scripts/prove/compose_proof.py` 与反例测试
 （`tests/test_compose.py`）都在仓库里，**推理那一半是代理**（确定性定点 MLP，
 权重编进程序 ⇒ 被 vkey 承诺），不是 zkAgent，其源码不可得。所以这里证的是
 **组合机制**而非端到端的真实推理证明；见 §7.4 与 §8.2。
@@ -383,10 +383,10 @@ zkAgent 证明「provider 执行了声明的模型与工具轨迹」（推理完
 
 ### 7.6 端到端与审计
 
-`scripts/demo_e2e.py` 产生 14 张证书（流式链+早停、MCP 参数+响应、zk 证明）并锚定；
-`scripts/verify_session.py` 第三方仅凭公开产物验证：`ledger_chain / signature / policy_hash / anchored / stream_chains / zk_proof` 全 PASS。
+`scripts/demo/demo_e2e.py` 产生 14 张证书（流式链+早停、MCP 参数+响应、zk 证明）并锚定；
+`scripts/verify/verify_session.py` 第三方仅凭公开产物验证：`ledger_chain / signature / policy_hash / anchored / stream_chains / zk_proof` 全 PASS。
 
-链上变体（`bash scripts/anchor_e2e.sh`：本地 Anvil → 部署 `Anchor.sol` → 14 张证书摘要上链）：
+链上变体（`bash scripts/anchor/anchor_e2e.sh`：本地 Anvil → 部署 `Anchor.sol` → 14 张证书摘要上链）：
 第三方 `verify_session --rpc` 逐证书 `anchoredAt` 读回并交叉核对本地账本，`chain_anchored 14/14` PASS；
 反例对照（未登记摘要读回 0）确认该检查非恒真。`--prove` 变体在真实 Core 证明（2.78 MB）下同样通过。
 

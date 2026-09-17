@@ -22,7 +22,7 @@
 > 之前的状态。所以没有把 `response_commitment`「升级」成绑定值，而是并置。
 
 `commit.py` 就是这套原语的参考实现，语义与 Rust 侧 `pop-types::evaluate_private` **逐字节兼容**
-（`scripts/private_demo.py` 逐字段比对 golden 与电路输出，含 `response_binding`）。
+（`scripts/demo/private_demo.py` 逐字段比对 golden 与电路输出，含 `response_binding`）。
 
 **不负责**：证书封装（`03`）、证明本身（`05`）。这里只定义「什么值该被提交」。
 挑战值的**生成与生命周期**（一次性、重放记录）在 `policydsl/privacy/challenge.py`（本节 §5b）。
@@ -121,7 +121,7 @@ Python 的 `str.lower()` 会折叠非 ASCII 字母，而 Rust 侧只折叠 ASCII
 `mask_covered` 的「真实完整匹配」由 `nfa.anchored_full_match` 判定：两端锚定、**至少消耗 1 个字符**
 （长度为 0 的空匹配一律不认），这正是「不能拿空 span 糊弄」的地方。
 
-**二者合取 ⇒ 脱敏只遮蔽真实命中内容。** 负例对照（`scripts/private_demo.py` 的 `badspan` 用例）：
+**二者合取 ⇒ 脱敏只遮蔽真实命中内容。** 负例对照（`scripts/demo/private_demo.py` 的 `badspan` 用例）：
 构造 `spans=[[0,1]]` 而掩码并不落在真实匹配内 → 电路内 `mask_covered=false`。
 
 ### 掩码是怎么算出来的
@@ -259,7 +259,7 @@ Python 侧与 `pop_types::response_binding` 必须逐字节一致 —— 否则�
 | `tests/test_binding.py::TestReplayAndDomain` | `NonceStore` 拒绝重放、可持久化；`new_nonce` 32 字节且不重复 |
 | `tests/test_binding.py::TestPythonRustParity` | 真跑 `pop-script --check` 比对 Python/Rust 绑定值（公开 + 私有模式，多种 nonce 长度） |
 | `tests/test_binding.py::TestChallengedCertificateEndToEnd` | 出证 → `verify_cert --response`：送达的 T′ 通过、换 T′ / 换 nonce 被拒、无挑战块时诚实跳过 |
-| `scripts/private_demo.py` | 端到端：host check ↔ golden 逐字段、负例、Leak、Binding、Evidence、真实证明 |
+| `scripts/demo/private_demo.py` | 端到端：host check ↔ golden 逐字段、负例、Leak、Binding、Evidence、真实证明 |
 | `tests/test_rules_incircuit.py` | 私有输出在电路内与 golden 一致 |
 
 ---
@@ -269,7 +269,7 @@ Python 侧与 `pop_types::response_binding` 必须逐字节一致 —— 否则�
 - **想让脱敏覆盖更多模式**：只需在策略包里增加 `pattern_block` 规则；掩码与见证区间会自动包含它
   （`spec_spans` 遍历所有 pattern_block）。
 - **想加新的证据形状**：改 `canonical_violations` 的分支，**同时**改 `circuits/types/src/lib.rs`
-  的 `evaluate` 对应分支，保持字符串完全一致，然后跑 `scripts/private_demo.py`。
+  的 `evaluate` 对应分支，保持字符串完全一致，然后跑 `scripts/demo/private_demo.py`。
 - **想把校验位（IBAN MOD-97）纳入私有证明**：目前 `pii.iban_mod97` 是纯链下辅助函数，
   要入电路需要新增约束类型（见 `01` §7 的六步）。
 

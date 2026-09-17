@@ -10,7 +10,7 @@
 > **真跑本地 Anvil**（不满足于假 RPC）。
 > 网络现状（2026-09-10 实测）：`rsproxy` / `pypi.tuna` / `github` / `gh-proxy` **全部超时** → 外部下载暂不可用；
 > 但 A 所需 Rust crate（`sp1-verifier` / `bincode` …）**已在本地 cargo 缓存**，可离线构建。
-> **2026-09-10 更新**：网络恢复，foundry **1.8.1 已装**（anvil/forge/cast，见 `scripts/retry_install_foundry.sh`）→ C 的端到端已真跑通过。
+> **2026-09-10 更新**：网络恢复，foundry **1.8.1 已装**（anvil/forge/cast，见 `scripts/ops/retry_install_foundry.sh`）→ C 的端到端已真跑通过。
 
 ---
 
@@ -29,7 +29,7 @@
 **实测阻塞（已按选项 C→B 处理）**：本机 12 GB WSL 下 **compressed 证明 OOM**（1:51 被 OOM killer 终止，峰值 **11.0 GB**）；
 随后按**选项 C** 实测 **groth16** —— 同样 **OOM**（exit 137，1:36，峰值 **11.07 GB**，**内存占用与 compressed 相同**，无改善）；
 `SHARD_SIZE`/`MEMORY_LIMIT` 对**固定递归开销**无效（`drop_ldes` 未在 sdk 暴露）。
-→ **采用选项 B**：审计 fixture 交**≥16 GB** 机器/CI 生成；本仓库保留 `scripts/make_audit_proof.sh` 与自动跳过的 fixture 用例；
+→ **采用选项 B**：审计 fixture 交**≥16 GB** 机器/CI 生成；本仓库保留 `scripts/ops/make_audit_proof.sh` 与自动跳过的 fixture 用例；
 Core 证明路径不受影响（~10 GB，回归 PASS）。
 
 **验收（当前状态）**：`pop-verify` 构建/模式处理/快路径选择已测；**端到端（真实 compressed 证明 + pop-verify 验证）待 ≥16 GB 环境**。
@@ -76,10 +76,10 @@ Core 证明路径不受影响（~10 GB，回归 PASS）。
      （偏离原计划的自研方向；理由：Anvil 端到端本就需要 foundry，`cast` 已是既有依赖，少一层 Python 依赖）。
    - `anchor()` **幂等**：先 `anchoredAt` 查询；并发下遇到 `already anchored` revert 也按幂等处理。
    - 链上成功后才把 `tx_hash`/区块/链上时间戳写进本地账本 `meta.on_chain`（哈希链保持自洽）。
-3. **工具链**：`scripts/deploy_anchor.py`（部署，打印 `POP_ANCHOR_RPC/CONTRACT`）；
+3. **工具链**：`scripts/anchor/deploy_anchor.py`（部署，打印 `POP_ANCHOR_RPC/CONTRACT`）；
    `issue_cert.py` / `demo_e2e.py` 支持 `--rpc/--contract`；
    `verify_session.py` / `verify_cert.py` 支持 `--rpc/--contract` 链上核对；
-   `scripts/anchor_e2e.sh` 一键：起 anvil → 部署 → 会话 demo（13 张证书全部上链）→ 第三方核对 → **反例对照**。
+   `scripts/anchor/anchor_e2e.sh` 一键：起 anvil → 部署 → 会话 demo（13 张证书全部上链）→ 第三方核对 → **反例对照**。
 
 **顺带修掉的真 bug**：`pop-script --proof-out` 会给**所有**模式（含 core）写 `<proof>.verify.json` 边车，
 而「走 verifier-only 快路径」的判定原先只看边车是否存在 → **core 证明被误判为快路径**，`pop-verify` 以 exit 3 拒绝
@@ -87,9 +87,9 @@ Core 证明路径不受影响（~10 GB，回归 PASS）。
 {compressed,groth16,plonk}），`verify_session`/`verify_cert` 共用，并补单测（core 边车必须回落 `pop-script --verify`）。
 
 **实测（2026-09-10，本机 WSL 12 GB，foundry 1.8.1）**
-- `bash scripts/anchor_e2e.sh`（无证明，冷启动自建 anvil）→ **ALL PASS**：
+- `bash scripts/anchor/anchor_e2e.sh`（无证明，冷启动自建 anvil）→ **ALL PASS**：
   `chain_anchored 14/14 digests on chain … (14 cross-checked)` + 反例 `unknown digest anchoredAt = 0`。
-- `SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove` → 真实 Core 证明（2.78 MB）生成并**上链锚定 14/14**；
+- `SP1_PROVER=cpu bash scripts/anchor/anchor_e2e.sh --prove` → 真实 Core 证明（2.78 MB）生成并**上链锚定 14/14**；
   第三方验证走 `pop-script --verify` 回落路径 PASS。
 - `tests/test_anchor_chain.py` **22 例全绿**（含真链 `deploy→anchor→读回→幂等→账本回写`，无 anvil 时自动 skip）。
 

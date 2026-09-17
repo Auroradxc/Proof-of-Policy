@@ -13,7 +13,7 @@
 表示不绑定（仅用于对照/兼容，会如实写进证书的 ai_act 声明）。
 
 用法：
-  SP1_PROVER=cpu python3 scripts/issue_cert.py \
+  SP1_PROVER=cpu python3 scripts/prove/issue_cert.py \
       --pack policy_packs/eu_ai_act_v1.json \
       --response scripts/examples/eu_agent_reply.txt \
       --out-dir scripts/examples/out/cert_public [--mode public|private] [--no-prove] \
@@ -24,7 +24,7 @@
 `POP_SIGNING_KEY` 指定。公钥写到 `<out-dir>/key.json`，第三方验签只需要它。
 
 链上锚定（可选，需要一条 EVM 链 + 已部署的 contracts/Anchor.sol）：
-  python3 scripts/issue_cert.py ... --rpc http://127.0.0.1:8545 --contract 0x...
+  python3 scripts/prove/issue_cert.py ... --rpc http://127.0.0.1:8545 --contract 0x...
   （也可用环境变量 POP_ANCHOR_RPC / POP_ANCHOR_CONTRACT；未配置则只写文件账本）
 """
 
@@ -38,8 +38,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.evidence import anchor, cert, keys
 from policydsl.privacy import challenge, commit
@@ -83,7 +85,7 @@ def run_pop(args: list[str]) -> None:
                    check=True, cwd=str(REPO))
 
 
-#: 语义规则的 ezkl 材料目录（与 ``scripts/ezkl_prove.py`` 共用同一份）。
+#: 语义规则的 ezkl 材料目录（与 ``scripts/prove/ezkl_prove.py`` 共用同一份）。
 SEMANTIC_ARTIFACTS = REPO / "semantic" / "artifacts"
 
 
@@ -112,7 +114,7 @@ def build_semantic_block(delegated: list, args) -> dict:
 
     print(f"策略含 {len(delegated)} 条语义规则 —— 生成 ezkl 陪伴证明（约 1–2 分钟）…")
     proc = subprocess.run(
-        [sys.executable, str(REPO / "scripts" / "ezkl_prove.py"), "prove",
+        [sys.executable, str(REPO / "scripts" / "prove" / "ezkl_prove.py"), "prove",
          "--response", str(args.response)],
         cwd=str(REPO), capture_output=True, text=True)
     if proc.returncode != 0:
@@ -271,7 +273,7 @@ def main() -> int:
         print(f"anchor      : seq={entry['seq']} hash={entry['hash'][:16]}… ledger={args.ledger}")
     print(f"wrote       : {out_dir}/cert.json, payload.json, key.json, results.json" +
           ("" if args.no_prove else f", {proof.name}"))
-    print(f"verify with : python3 scripts/verify_cert.py --cert {out_dir}/cert.json \\\n"
+    print(f"verify with : python3 scripts/verify/verify_cert.py --cert {out_dir}/cert.json \\\n"
           f"                  --pack {args.pack} --ledger {args.ledger} \\\n"
           f"                  --keyring {out_dir}/key.json")
     return 0

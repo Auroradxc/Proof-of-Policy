@@ -122,7 +122,7 @@ def _model_vkey() -> str:
     if not p.exists():
         raise PolicyError(
             f"缺少 {p} —— 语义规则需要 ezkl 的验证钥匙指纹。"
-            f"先跑 `python3 scripts/ezkl_prove.py setup` 生成它")
+            f"先跑 `python3 scripts/prove/ezkl_prove.py setup` 生成它")
     return hashlib.sha256(p.read_bytes()).hexdigest()
 
 

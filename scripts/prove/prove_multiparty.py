@@ -10,11 +10,11 @@
   ② 单角色的策略切片被换（拿另一段冒充，用该角色自己的键重签）→ 必须被拒。
 
 用法：
-  python3 scripts/prove_multiparty.py \
+  python3 scripts/prove/prove_multiparty.py \
       --pack policy_packs/multiparty_demo_v1.json \
       --response scripts/examples/eu_agent_reply.txt
   # 只做「切完之后两端算的还对不对」的对拍（秒级；**不产生证书**）：
-  python3 scripts/prove_multiparty.py --pack ... --response ... --no-prove
+  python3 scripts/prove/prove_multiparty.py --pack ... --response ... --no-prove
 
 **边界（如实说明，不要读过头）**：
   - 三个角色各持一把键只是**责任划分**：三段共享同一个 ``pop-program``（同一个
@@ -37,8 +37,10 @@ import os
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.evidence import keys  # noqa: E402
 from policydsl.proofs import multiparty as M  # noqa: E402

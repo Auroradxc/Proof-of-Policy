@@ -234,7 +234,7 @@ class TestChallengedCertificateEndToEnd(unittest.TestCase):
     def _verify(self, tmp: Path, cert_file: Path, response: Path,
                 extra: list | None = None) -> subprocess.CompletedProcess:
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "verify_cert.py"),
+            [sys.executable, str(REPO / "scripts" / "verify" / "verify_cert.py"),
              "--cert", str(cert_file), "--pack", str(tmp / "pack.json"),
              "--ledger", str(tmp / "ledger.jsonl"), "--response", str(response),
              *(extra or [])],

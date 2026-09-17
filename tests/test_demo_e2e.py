@@ -1,7 +1,7 @@
-"""端到端演示（scripts/demo_e2e.py）的集成测试。
+"""端到端演示（scripts/demo/demo_e2e.py）的集成测试。
 
 跑一遍「一条命令」的演示（host-check 模式，不生成 SP1 证明，换取速度），然后
-用 scripts/verify_session.py **独立**校验产出的会话包。关键在「独立」二字：
+用 scripts/verify/verify_session.py **独立**校验产出的会话包。关键在「独立」二字：
 验证脚本只读会话包本身，不信任演示进程的内存状态，因此这条用例真正检验的是
 产物自洽性，而不是演示脚本「自己说自己通过了」。
 
@@ -57,7 +57,7 @@ class TestEndToEndDemo(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "e2e"
             demo = subprocess.run(
-                [sys.executable, str(REPO / "scripts" / "demo_e2e.py"),
+                [sys.executable, str(REPO / "scripts" / "demo" / "demo_e2e.py"),
                  "--no-prove", "--out-dir", str(out)],
                 cwd=str(REPO), capture_output=True, text=True)
             self.assertEqual(demo.returncode, 0, demo.stdout + demo.stderr)
@@ -65,7 +65,7 @@ class TestEndToEndDemo(unittest.TestCase):
             session = out / "session.json"
             self.assertTrue(session.exists())
             verify = subprocess.run(
-                [sys.executable, str(REPO / "scripts" / "verify_session.py"),
+                [sys.executable, str(REPO / "scripts" / "verify" / "verify_session.py"),
                  "--session", str(session)],
                 cwd=str(REPO), capture_output=True, text=True)
             self.assertEqual(verify.returncode, 0, verify.stdout + verify.stderr)
@@ -89,12 +89,12 @@ class TestEndToEndDemo(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "e2e"
             subprocess.run(
-                [sys.executable, str(REPO / "scripts" / "demo_e2e.py"),
+                [sys.executable, str(REPO / "scripts" / "demo" / "demo_e2e.py"),
                  "--no-prove", "--out-dir", str(out)],
                 cwd=str(REPO), check=True, capture_output=True, text=True)
             shots_dir = Path(tmp) / "shots"
             shots = subprocess.run(
-                [sys.executable, str(REPO / "scripts" / "make_shots.py"),
+                [sys.executable, str(REPO / "scripts" / "demo" / "make_shots.py"),
                  "--session", str(out / "session.json"), "--out-dir", str(shots_dir)],
                 cwd=str(REPO), capture_output=True, text=True)
             self.assertEqual(shots.returncode, 0, shots.stdout + shots.stderr)
@@ -134,7 +134,7 @@ class TestDemoWithRealModelClient(unittest.TestCase):
 
         e = dict(os.environ, **(env or {}))
         return subprocess.run(
-            [sys.executable, str(REPO / "scripts" / "demo_e2e.py"),
+            [sys.executable, str(REPO / "scripts" / "demo" / "demo_e2e.py"),
              "--no-prove", "--out-dir", str(out)] + extra,
             cwd=str(REPO), capture_output=True, text=True, env=e)
 
@@ -170,7 +170,7 @@ class TestDemoWithRealModelClient(unittest.TestCase):
 
                 # ③ 第三方独立复核仍然全绿
                 verify = subprocess.run(
-                    [sys.executable, str(REPO / "scripts" / "verify_session.py"),
+                    [sys.executable, str(REPO / "scripts" / "verify" / "verify_session.py"),
                      "--session", str(real_out / "session.json")],
                     cwd=str(REPO), capture_output=True, text=True)
                 self.assertEqual(verify.returncode, 0, verify.stdout + verify.stderr)

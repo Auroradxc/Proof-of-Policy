@@ -192,7 +192,7 @@ def _payload(envelope: Dict[str, Any]) -> Dict[str, Any]:
 def runs_of(envelopes: Sequence[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
     """按 ``streaming.chain.index == 0`` 把证书切成一条条 run。
 
-    与 ``scripts/verify_session.py`` 的分组口径一致：一个 session 包里可能有多条
+    与 ``scripts/verify/verify_session.py`` 的分组口径一致：一个 session 包里可能有多条
     互不相干的流式链，本模块的证明只对**一条 run** 成立。
 
     **只收「链上」的证书**（载荷里真有 ``streaming.chain`` 的那种）。真实会话包里

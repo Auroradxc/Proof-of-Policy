@@ -28,7 +28,7 @@
 
 ```bash
 cd Proof-of-Policy/03_代码仓库/zk-policy     # 仓库根（目录曾名为“方向二”，已重命名）
-python3 -m unittest discover tests -v          # 期望 667 passed（15 skip：2 个 compressed fixture + 3 个 POP_TEST_PROOF 门控 + 1 个 POP_TEST_EZKL 门控 + 5 个 POP_TEST_COMPOSE 门控 + 1 个 POP_TEST_SESSION 门控 + 1 个 POP_TEST_MULTIPARTY 门控 + 1 个 POP_TEST_LLM 门控 + 1 设计内）
+python3 -m unittest discover tests -v          # 期望 675 passed（15 skip：2 个 compressed fixture + 3 个 POP_TEST_PROOF 门控 + 1 个 POP_TEST_EZKL 门控 + 5 个 POP_TEST_COMPOSE 门控 + 1 个 POP_TEST_SESSION 门控 + 1 个 POP_TEST_MULTIPARTY 门控 + 1 个 POP_TEST_LLM 门控 + 1 设计内）
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json | head    # 编译出 ConstraintSpec
 ```
 
@@ -44,7 +44,7 @@ cd ../script && cargo build --release -p pop-script             # 宿主驱动
 ## 3. 复现：一次透明模式合规证明（最小）
 
 ```bash
-SP1_PROVER=cpu python3 scripts/prove_policy.py \
+SP1_PROVER=cpu python3 scripts/prove/prove_policy.py \
   --pack policy_packs/eu_ai_act_v1.json \
   --response scripts/examples/eu_agent_reply.txt \
   --out-dir scripts/examples/out/eu --expect pass
@@ -60,7 +60,7 @@ RESULT: PASS
 ## 4. 复现：双端一致性（Python golden ↔ SP1）
 
 ```bash
-SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 19/19 · prove 19/19（prove 约 45 min，见下方注）
+SP1_PROVER=cpu python3 scripts/prove/cross_validate.py      # 期望 host 19/19 · prove 19/19（prove 约 45 min，见下方注）
 ```
 
 > 真实证明默认**分块**（`--chunk 4`；19 条向量 = 5 个 `pop-script` 进程）。原因很实际：
@@ -93,8 +93,8 @@ SP1_PROVER=cpu python3 scripts/cross_validate.py      # 期望 host 19/19 · pro
 于是论文 §7 的数字指得回**具体的某一次运行**，也能看出「这次比上次慢了多少」。
 
 ```bash
-SP1_PROVER=cpu python3 scripts/regression_prove.py --label weekly   # 出证腿 + 验证腿
-python3 scripts/regression_prove.py --print                         # 历史摘要
+SP1_PROVER=cpu python3 scripts/prove/regression_prove.py --label weekly   # 出证腿 + 验证腿
+python3 scripts/prove/regression_prove.py --print                         # 历史摘要
 ```
 
 两条腿：**出证腿**子进程调 `cross_validate.py`（全量 19 条 + golden 比对）；
@@ -106,7 +106,7 @@ python3 scripts/regression_prove.py --print                         # 历史摘�
 ```bash
 # crontab -e —— 每周一 04:17
 17 4 * * 1  cd /path/to/zk-policy && SP1_PROVER=cpu /usr/bin/python3 \
-            scripts/regression_prove.py --label weekly \
+            scripts/prove/regression_prove.py --label weekly \
             >> bench/results/regression-prove.cron.log 2>&1
 ```
 
@@ -130,7 +130,7 @@ python3 scripts/regression_prove.py --print                         # 历史摘�
 
 ```bash
 cd contracts && forge build && cd ..          # solc 0.8.24 已在 ~/.svm 缓存，可离线编译
-SP1_PROVER=cpu ./scripts/anchor_e2e.sh --onchain-verify
+SP1_PROVER=cpu ./scripts/anchor/anchor_e2e.sh --onchain-verify
 ```
 
 **② P2-12 全矩阵（`core`）**：`20k / 50k / 100k` × `1 / 2 / 3 / 6` 规则，
@@ -176,7 +176,7 @@ SP1_PROVER=cpu python3 bench/bench_proofs.py \
 ## 5. 复现：私有模式（承诺 + 选择性披露 + 证据开示）
 
 ```bash
-SP1_PROVER=cpu python3 scripts/private_demo.py
+SP1_PROVER=cpu python3 scripts/demo/private_demo.py
 # 期望：check/prove 与 golden 一致；leak/binding/challenge/opening 全 PASS；redaction.mask_covered=true
 #      （challenge 行： (T',nonce)_opens=True wrong_T'_rejected=True wrong_nonce_rejected=True domain_separated=True）
 ```
@@ -194,10 +194,10 @@ SP1_PROVER=cpu python3 scripts/private_demo.py
 ## 6. 复现：合规证书 + 第三方验证
 
 ```bash
-SP1_PROVER=cpu python3 scripts/issue_cert.py \
+SP1_PROVER=cpu python3 scripts/prove/issue_cert.py \
   --pack policy_packs/eu_ai_act_v1.json --response scripts/examples/eu_agent_reply.txt \
   --out-dir scripts/examples/out/cert_public          # 默认 --nonce auto：现场出一个 32 字节挑战值
-SP1_PROVER=cpu python3 scripts/verify_cert.py \
+SP1_PROVER=cpu python3 scripts/verify/verify_cert.py \
   --cert scripts/examples/out/cert_public/cert.json --pack policy_packs/eu_ai_act_v1.json \
   --ledger scripts/examples/out/ledger.jsonl --proof scripts/examples/out/cert_public/proof.bin \
   --response scripts/examples/eu_agent_reply.txt      # ← 送达的 T′，用来核对响应绑定
@@ -215,7 +215,7 @@ SP1_PROVER=cpu python3 scripts/verify_cert.py \
 
 ```bash
 # 策略半 + 推理半各出一份真实证明（两个 guest 程序 → 两个 vkey），再合成一张组合证书
-SP1_PROVER=cpu python3 scripts/compose_proof.py \
+SP1_PROVER=cpu python3 scripts/prove/compose_proof.py \
   --pack policy_packs/eu_ai_act_v1.json --response scripts/examples/eu_agent_reply.txt \
   --out-dir scripts/examples/out/compose
 # 期望：RESULT: PASS 且 组合义务(Compose): PASS
@@ -238,14 +238,14 @@ SP1_PROVER=cpu python3 scripts/compose_proof.py \
 
 ```bash
 # 先有一个端到端会话包（旧的在盘 bundle 不带 seal，会被义务③如实拒掉）
-python3 scripts/demo_e2e.py --no-prove --out-dir scripts/examples/out/e2e
+python3 scripts/demo/demo_e2e.py --no-prove --out-dir scripts/examples/out/e2e
 
 # 秒级：只看「一个 run 的证书集能否聚合」（Python ↔ Rust 对拍，不出证）
-python3 scripts/prove_session.py --session scripts/examples/out/e2e/session.json --no-prove
+python3 scripts/prove/prove_session.py --session scripts/examples/out/e2e/session.json --no-prove
 # 期望：每个 run 两行 [ ok ]，末行 RESULT: PASS
 
 # 真实出证 + 独立验证（3 张证书的 run：~2.5 分钟、峰值 ~10 GiB）
-SP1_PROVER=cpu python3 scripts/prove_session.py \
+SP1_PROVER=cpu python3 scripts/prove/prove_session.py \
   --session scripts/examples/out/e2e/session.json --run 1 \
   --nonce-hex 00112233445566778899aabbccddeeff \
   --proof-out scripts/examples/out/session/run1.proof
@@ -278,9 +278,9 @@ RESULT: PASS
 （`pk.ezkl` 2.92 GiB 与 `kzg.srs` 32 MiB 可重算、不入库；`vk.ezkl` 802 KiB 入库）。
 
 ```bash
-bash scripts/install_ezkl.sh             # 装依赖栈（幂等；--check 只看装没装好）
-python3 scripts/ezkl_prove.py info       # 只看产物清单与规模（秒级，不出证）
-python3 scripts/ezkl_prove.py selftest   # 四条文本端到端自检（含同形异义反例）
+bash scripts/ops/install_ezkl.sh             # 装依赖栈（幂等；--check 只看装没装好）
+python3 scripts/prove/ezkl_prove.py info       # 只看产物清单与规模（秒级，不出证）
+python3 scripts/prove/ezkl_prove.py selftest   # 四条文本端到端自检（含同形异义反例）
 POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic   # 真·端到端一例（~61 s / 峰值 ~9 GiB）
 ```
 
@@ -292,7 +292,7 @@ POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic   # 真·端到端一例
 一个大轮子就几百 MB），之后用 `--offline` 全程离线装。
 
 **这两条命令必须分进程**：ezkl 的 `setup` 与 `prove` 峰值叠加会在 12 GB 机器上 OOM
-（setup 4.76 GiB + prove 8.72 GiB，见 `bench/results/semantic.md`）——`scripts/ezkl_prove.py`
+（setup 4.76 GiB + prove 8.72 GiB，见 `bench/results/semantic.md`）——`scripts/prove/ezkl_prove.py`
 本身就是分阶段跑的，别把两步并进一个进程。
 
 ⚠️ **三条硬边界**（论证见 [`design-semantic-rules.md`](design-semantic-rules.md) 的**引理 L7**）：
@@ -314,7 +314,7 @@ POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic   # 真·端到端一例
 >
 > ```bash
 > python3 -m unittest tests.test_normalize tests.test_rules_incircuit   # 后者需先编 pop-script
-> python3 scripts/cross_validate.py --no-prove                          # 19 条向量里 5 条是折叠规则
+> python3 scripts/prove/cross_validate.py --no-prove                          # 19 条向量里 5 条是折叠规则
 > ```
 
 ---
@@ -324,8 +324,8 @@ POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic   # 真·端到端一例
 > **想一次看全所有支路**（不只下面这条主干），跑总入口：
 >
 > ```bash
-> bash scripts/demo_all.sh            # fast：宿主校验，约 20 秒
-> bash scripts/demo_all.sh --prove    # 真出证，本机实测 26–27 分钟、峰值 ~10 GB
+> bash scripts/demo/demo_all.sh            # fast：宿主校验，约 20 秒
+> bash scripts/demo/demo_all.sh --prove    # 真出证，本机实测 26–27 分钟、峰值 ~10 GB
 > ```
 >
 > 它把 8 条支路（公开模式 / 私有模式 / 语义规则 / 组合 / 会话聚合 / 多证明者 /
@@ -334,9 +334,9 @@ POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic   # 真·端到端一例
 > 见 [`modules/07-cli-scripts.md`](modules/07-cli-scripts.md) §3。
 
 ```bash
-SP1_PROVER=cpu python3 scripts/demo_e2e.py                 # 真实会话 + 真实 SP1 证明（加 --no-prove 秒级）
-python3 scripts/verify_session.py --session scripts/examples/out/e2e/session.json
-python3 scripts/make_shots.py --run-demo                   # 生成 docs/demo/*.html/svg/png
+SP1_PROVER=cpu python3 scripts/demo/demo_e2e.py                 # 真实会话 + 真实 SP1 证明（加 --no-prove 秒级）
+python3 scripts/verify/verify_session.py --session scripts/examples/out/e2e/session.json
+python3 scripts/demo/make_shots.py --run-demo                   # 生成 docs/demo/*.html/svg/png
 ```
 期望：`verify_session` 全 PASS；`docs/demo/session_report.html`、`session_summary.png`、`verify_result.png` 生成。
 
@@ -352,14 +352,14 @@ python3 scripts/make_shots.py --run-demo                   # 生成 docs/demo/*.
 ## 10.（可选）框架适配
 
 ```bash
-bash scripts/install_frameworks.sh     # langchain / langgraph / mcp；装好后真实框架测试自动启用
+bash scripts/ops/install_frameworks.sh     # langchain / langgraph / mcp；装好后真实框架测试自动启用
 ```
 
 ## 11.（可选）审计路径：verifier-only（免构造证明器）
 
 ```bash
 # a) 生成 compressed 证明（默认 core 不变；此命令额外产出验证边车 .bytes/.pv/.vkh/.verify.json）
-SP1_PROVER=cpu python3 scripts/issue_cert.py \
+SP1_PROVER=cpu python3 scripts/prove/issue_cert.py \
   --pack policy_packs/eu_ai_act_v1.json --response scripts/examples/eu_agent_reply.txt \
   --out-dir scripts/examples/out/cert_audit --proof-mode compressed
 
@@ -368,12 +368,12 @@ SP1_PROVER=cpu python3 scripts/issue_cert.py \
   --meta scripts/examples/out/cert_audit/proof.bin.verify.json
 
 # c) 第三方验证会自动走快路径（存在边车 + pop-verify 已构建时）
-python3 scripts/verify_cert.py --cert .../cert.json --pack policy_packs/eu_ai_act_v1.json \
+python3 scripts/verify/verify_cert.py --cert .../cert.json --pack policy_packs/eu_ai_act_v1.json \
   --ledger .../ledger.jsonl --proof .../proof.bin
 ```
 
 > ⚠️ **内存**：`compressed` 证明需 **≥16 GB**（本机 12 GB 实测 OOM，峰值 anon-RSS 11.0 GB；Core 仍需 ~10 GB）。
-> 需要 fixture 时运行 `SP1_PROVER=cpu bash scripts/make_audit_proof.sh`（生成后 `tests/test_verifier_only.py` 的用例自动启用）。
+> 需要 fixture 时运行 `SP1_PROVER=cpu bash scripts/ops/make_audit_proof.sh`（生成后 `tests/test_verifier_only.py` 的用例自动启用）。
 
 ## 12.（可选）链上锚定：真跑本地 Anvil
 
@@ -382,11 +382,11 @@ python3 scripts/verify_cert.py --cert .../cert.json --pack policy_packs/eu_ai_ac
 
 ```bash
 # 前置：foundry（anvil/cast）
-bash scripts/retry_install_foundry.sh          # 网络可用时安装；成功后 anvil/forge/cast 1.8.1
+bash scripts/ops/retry_install_foundry.sh          # 网络可用时安装；成功后 anvil/forge/cast 1.8.1
 
 # 一键端到端：起 anvil → 部署合约 → 会话 demo（每张证书上链）→ 第三方 --rpc 核对（含反例对照）
-bash scripts/anchor_e2e.sh                     # 默认不生成 SP1 证明（秒级）
-SP1_PROVER=cpu bash scripts/anchor_e2e.sh --prove   # 附带真实 Core 证明（本机实测 3:10 / 峰值 10.2 GiB）
+bash scripts/anchor/anchor_e2e.sh                     # 默认不生成 SP1 证明（秒级）
+SP1_PROVER=cpu bash scripts/anchor/anchor_e2e.sh --prove   # 附带真实 Core 证明（本机实测 3:10 / 峰值 10.2 GiB）
 ```
 
 期望输出（末段）：
@@ -405,11 +405,11 @@ ALL PASS ✅
 
 ```bash
 anvil &                                             # 或任意 EVM RPC 端点
-python3 scripts/deploy_anchor.py --rpc http://127.0.0.1:8545 \
+python3 scripts/anchor/deploy_anchor.py --rpc http://127.0.0.1:8545 \
         --out .anchor_deploy.json                   # 打印 POP_ANCHOR_RPC / POP_ANCHOR_CONTRACT
-python3 scripts/demo_e2e.py --no-prove \
+python3 scripts/demo/demo_e2e.py --no-prove \
         --rpc http://127.0.0.1:8545 --contract 0x5FbDB2315678afecb367f032d93F642f64180aa3
-python3 scripts/verify_session.py --session .../session.json \
+python3 scripts/verify/verify_session.py --session .../session.json \
         --rpc http://127.0.0.1:8545 --contract 0x5FbDB2315678afecb367f032d93F642f64180aa3
 ```
 
@@ -425,19 +425,19 @@ python3 scripts/verify_session.py --session .../session.json \
 
 ## 验收判据（复现成功）
 
-- `python3 -m unittest discover tests` → **667 passed（15 skip）**（2026-09-13 复跑、2026-09-16 c4 后重测；含 16 例 T3 回归编排器用例 —— 它们跑的是**替身驱动**，不需要 Rust；skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，3 = `POP_TEST_PROOF` 门控的用例（证明层 2 例 + 证明服务的真 vkey 出证 1 例），1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = `POP_TEST_SESSION` 门控的会话聚合证明端到端用例，1 = `POP_TEST_MULTIPARTY` 门控的多证明者端到端用例（真出两份切片证明），1 = `POP_TEST_LLM` 门控的真 provider 用例（需要真 API key + 网络；同模块里走本地 SSE 桩的那 4 例**默认就跑**），1 = 设计内「依赖已装」用例）；
-- `scripts/prove_policy.py` → **RESULT: PASS**；
-- `SP1_PROVER=cpu python3 scripts/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 **整批重跑**：19 条向量各出一份真 core 证明，`--chunk 2` 切到 10 个独立子进程，约 45 min，见 `modules/08-tests-bench.md` §5）
+- `python3 -m unittest discover tests` → **675 passed（15 skip）**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后重测；含 16 例 T3 回归编排器用例、8 例 `scripts/` 布局用例 —— 它们跑的是**替身驱动**，不需要 Rust；skip：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，3 = `POP_TEST_PROOF` 门控的用例（证明层 2 例 + 证明服务的真 vkey 出证 1 例），1 = `POP_TEST_EZKL` 门控的真实 ezkl 出证用例，5 = `POP_TEST_COMPOSE` 门控的组合证明端到端用例（真出两份证明），1 = `POP_TEST_SESSION` 门控的会话聚合证明端到端用例，1 = `POP_TEST_MULTIPARTY` 门控的多证明者端到端用例（真出两份切片证明），1 = `POP_TEST_LLM` 门控的真 provider 用例（需要真 API key + 网络；同模块里走本地 SSE 桩的那 4 例**默认就跑**），1 = 设计内「依赖已装」用例）；
+- `scripts/prove/prove_policy.py` → **RESULT: PASS**；
+- `SP1_PROVER=cpu python3 scripts/prove/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 **整批重跑**：19 条向量各出一份真 core 证明，`--chunk 2` 切到 10 个独立子进程，约 45 min，见 `modules/08-tests-bench.md` §5）
   （真实证明分块跑：默认 `--chunk 4`，那次重跑用 `--chunk 2` = 10 块，见 §4 的说明；`--no-prove` 时跳过真实证明）；
-- `SP1_PROVER=cpu python3 scripts/regression_prove.py --label weekly` → **`[PASS] 出证 OK(19/19) · 验证 OK(clean_pass)`**，
+- `SP1_PROVER=cpu python3 scripts/prove/regression_prove.py --label weekly` → **`[PASS] 出证 OK(19/19) · 验证 OK(clean_pass)`**，
   并在 `bench/results/regression-prove.jsonl` **追加一行**（首条真实记录：2026-09-16，43.6 min，见 §4¼ 与 `modules/08-tests-bench.md` §3.8）。
   与上一条同量级的 45 min，二者**跑一条即可覆盖出证腿**，同时跑则是把「已验证」提升为「有留痕」；
 - `verify_cert.py`（带 `--response T′`）/ `verify_session.py` → **RESULT: PASS**（含 SP1 证明密码学验证与响应绑定核对）；
-- `bash scripts/anchor_e2e.sh` → **ALL PASS**（链上锚定 14/14 + 反例对照，见 §12）；
+- `bash scripts/anchor/anchor_e2e.sh` → **ALL PASS**（链上锚定 14/14 + 反例对照，见 §12）；
   `--prove` 变体（2026-09-12 本机实测重跑）→ **ALL PASS ✅**，含真 Core 证明：
   `[PASS] zk_proof SP1 proof verified (pop-script) + response binding`、`[PASS] chain_anchored 14/14`，
   整条命令 **3:10 墙钟 / 峰值 10.18 GiB**（`/usr/bin/time -v`）；
-- `python3 scripts/ezkl_prove.py selftest` → **四条文本全 PASS**（含同形异义反例，见 §8）；
+- `python3 scripts/prove/ezkl_prove.py selftest` → **四条文本全 PASS**（含同形异义反例，见 §8）；
 - `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic` → **OK**（真·端到端一例，~61 s）。
 
 ## 故障排查

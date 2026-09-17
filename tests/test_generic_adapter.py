@@ -262,7 +262,7 @@ class TestThirdPartyVerification(unittest.TestCase):
 
     # 会话级：verify_session.py 全卡 PASS
     def test_verify_session_passes_on_the_written_bundle(self):
-        r = self._run("scripts/verify_session.py",
+        r = self._run("scripts/verify/verify_session.py",
                       "--session", str(self.out / "session.json"))
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("RESULT: PASS", r.stdout)
@@ -270,7 +270,7 @@ class TestThirdPartyVerification(unittest.TestCase):
 
     # 单证书级：连 trace_binding 与 trace_seal 都核得过（回执链 + 网关公钥都给全）
     def test_verify_cert_passes_including_the_seal(self):
-        r = self._run("scripts/verify_cert.py",
+        r = self._run("scripts/verify/verify_cert.py",
                       "--cert", str(self.out / "cert-1-tool.json"),
                       "--pack", TOOL_PACK,
                       "--ledger", str(self.out / "ledger.jsonl"),
@@ -284,7 +284,7 @@ class TestThirdPartyVerification(unittest.TestCase):
 
     # 不给回执链，trace_binding 就该报「核不了」而不是默认通过
     def test_without_the_receipts_the_trace_binding_is_not_assumed(self):
-        r = self._run("scripts/verify_cert.py",
+        r = self._run("scripts/verify/verify_cert.py",
                       "--cert", str(self.out / "cert-1-tool.json"),
                       "--pack", TOOL_PACK,
                       "--ledger", str(self.out / "ledger.jsonl"),
@@ -297,7 +297,7 @@ class TestThirdPartyVerification(unittest.TestCase):
         foreign = self.out / "foreign.pub.hex"
         foreign.write_text(keys.public_hex(
             keys.ephemeral_signer().public_key) + "\n", encoding="utf-8")
-        r = self._run("scripts/verify_cert.py",
+        r = self._run("scripts/verify/verify_cert.py",
                       "--cert", str(self.out / "cert-1-tool.json"),
                       "--pack", TOOL_PACK,
                       "--ledger", str(self.out / "ledger.jsonl"),

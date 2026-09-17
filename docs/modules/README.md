@@ -19,7 +19,7 @@ zk-policy（Proof-of-Policy，PoP）证明的是：
 
 1. **唯一跨层契约 `ConstraintSpec`** —— 编译产物是 JSON，两侧都解释它（见 `02`）。
 2. **参考实现 (golden) 与电路实现成对存在** —— 每个规则类型都有 Python 版与 Rust 版，
-   并由 `scripts/cross_validate.py` 交叉验证逐向量一致（见 `01`/`05`）。
+   并由 `scripts/prove/cross_validate.py` 交叉验证逐向量一致（见 `01`/`05`）。
 3. **证书只绑定「哈希」** —— 策略哈希、vkey 哈希、证明哈希、证书摘要；验证方全部**重算**（见 `03`/`04`）。
 
 ---
@@ -76,9 +76,16 @@ zk-policy/
 │   └── patches/                  #   tempfile 补丁（sp1-prover 6.7.0 依赖 TempDir::keep）
 ├── semantic/                     # P2-9：语义规则的模型与特征（确定性 ONNX 导出 + ezkl 产物）
 ├── contracts/                    # Anchor.sol + 已编译 artifact（Anchor.json，免 solc 部署）
-├── scripts/                      # 端到端脚本（demo / 交叉验证 / 出证 / 验证 / 安装）
+├── scripts/                      # 端到端脚本，按用途分 5 组（见 07 §1）
+│   ├── _bootstrap.py             #   每个脚本都先引导它；按标记搜索仓库根
+│   ├── demo/                     #   端到端 demo（demo_all.sh / demo_e2e.py / private_demo.py / make_shots.py）
+│   ├── prove/                    #   出证、交叉验证与密钥（cross_validate / ezkl_prove / compose_proof / prove_session / prove_multiparty / prove_policy / regression_prove …）
+│   ├── verify/                   #   第三方核验（verify_cert.py / verify_session.py）
+│   ├── anchor/                   #   锚定（anchor_e2e.sh / deploy_anchor.py）
+│   ├── ops/                      #   常驻服务与安装（proof_service / install_* / retry_install_* / make_audit_proof）
+│   └── examples/                 #   输入样本与 demo 产物（不是脚本，故意不分组）
 ├── bench/                        # 评测（周期数矩阵 / 证明成本 / 验证成本 / ezkl / 组合 / 对标）
-├── tests/                        # 单测与集成测试（667 passed / 15 skip）
+├── tests/                        # 单测与集成测试（675 passed / 15 skip）
 ├── policy_packs/                 # 示例策略包（EU AI Act / PII / 金融 / agent 内容与工具）
 └── docs/                         # 文档（本目录为分板块模块文档）
 ```
@@ -144,16 +151,16 @@ zk-policy/
 | 04 | [锚定与审计](04-anchoring-audit.md) | `evidence/`：`anchor.py` `verifier.py`；`contracts/` | 防篡改记录：本地哈希链账本 + 链上存在性证明 |
 | 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/`：`types` `program` `infer-program` `session-program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证；**三个 guest 的键分离**（P1-6 / P2-10）（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
 | 06 | [框架集成](06-frameworks.md) | `adapters/`：`langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` `generic_adapter.py` `llm.py` | 把两个钩子接到真实 agent 框架上（含流式、真早停、飞行前拦截与工具清单发现）；**§8 接入指南**：框架无关的参考适配器 + 契约清单 + 接新框架的步骤与红线 |
-| 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/*`（含散落在其中的库用法：`proofs/multiparty.py` §2.9） | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
-| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 667 个测试覆盖什么、评测数字怎么来的 |
+| 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/`（5 组：`demo/` `prove/` `verify/` `anchor/` `ops/`，外加引导 `_bootstrap.py`；含散落在其中的库用法：`proofs/multiparty.py` §2.9） | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
+| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 675 个测试覆盖什么、评测数字怎么来的 |
 
 三条**不在本目录**但同样属于实现层的线（各自有独立文档，故未拆成板块）：
 
 | 线 | 文档 | 代码 | 一句话 |
 |---|---|---|---|
-| P2-9 语义规则（引理 L7） | [`../design-semantic-rules.md`](../design-semantic-rules.md) | `proofs/semantic.py` `proofs/ezkl_evm.py` `semantic/` `scripts/ezkl_prove.py` | 学习型规则不在 SP1 内判定，而是**委托**给 ezkl/halo2 陪伴证明，验证方必须**合取**二者 |
-| P1-6 组合证明（引理 L6） | [`../security-model.md`](../security-model.md) §3 L6 | `proofs/compose.py` `proofs/infer.py` `circuits/infer-program` `scripts/compose_proof.py` | 两份证明（策略合规 ∧ 推理完整性）合成一次会话结论，前提是**键分离** |
-| P2-10 跨证书一致性（引理 L8） | [`../security-model.md`](../security-model.md) §3 L8 | `proofs/session.py` `circuits/session-program` `circuits/types::run_session` `scripts/prove_session.py` | 一个 run 的流式证书用 Merkle 根聚合成一次证明；证同一策略 / 无缺口 / 覆盖完整 —— **尾截断只有根比对拦得住** |
+| P2-9 语义规则（引理 L7） | [`../design-semantic-rules.md`](../design-semantic-rules.md) | `proofs/semantic.py` `proofs/ezkl_evm.py` `semantic/` `scripts/prove/ezkl_prove.py` | 学习型规则不在 SP1 内判定，而是**委托**给 ezkl/halo2 陪伴证明，验证方必须**合取**二者 |
+| P1-6 组合证明（引理 L6） | [`../security-model.md`](../security-model.md) §3 L6 | `proofs/compose.py` `proofs/infer.py` `circuits/infer-program` `scripts/prove/compose_proof.py` | 两份证明（策略合规 ∧ 推理完整性）合成一次会话结论，前提是**键分离** |
+| P2-10 跨证书一致性（引理 L8） | [`../security-model.md`](../security-model.md) §3 L8 | `proofs/session.py` `circuits/session-program` `circuits/types::run_session` `scripts/prove/prove_session.py` | 一个 run 的流式证书用 Merkle 根聚合成一次证明；证同一策略 / 无缺口 / 覆盖完整 —— **尾截断只有根比对拦得住** |
 
 推荐阅读路径：
 
@@ -171,7 +178,7 @@ zk-policy/
 
 | # | 不变量 | 由什么保证 |
 |---|---|---|
-| I1 | **跨层判定一致**：同一 `ConstraintSpec` + 同一输入，Python golden 与 `pop-types` 结果逐字段相同 | `scripts/cross_validate.py`（**host 19/19 · prove 19/19**，2026-09-12 整批重跑；分块口径见 `08` §5）、`tests/test_rules_incircuit.py` |
+| I1 | **跨层判定一致**：同一 `ConstraintSpec` + 同一输入，Python golden 与 `pop-types` 结果逐字段相同 | `scripts/prove/cross_validate.py`（**host 19/19 · prove 19/19**，2026-09-12 整批重跑；分块口径见 `08` §5）、`tests/test_rules_incircuit.py` |
 | I2 | **契约哈希稳定**：语义相同 ⇒ `spec["sha256"]` 相同（键排序、紧凑分隔符、字符串排序去重小写化） | `compile._canonical_hash`、`cert.canonical` |
 | I3 | **ASCII 语义**：关键词大小写折叠、NFA 的 `\w\d\s` 都只在 ASCII 上定义，避免 Python `str.lower()` 与 Rust 的差异 | `commit._ascii_lower`、`types::ascii_lower`、`nfa.py` 模块注释 |
 | I4 | **不出电路就无法证明**：一个规则类型要么两侧都实现，要么**根本产不出证明**，绝不静默跳过 | `compile.py` 把未知 kind 原样写进规范字节 → guest 的 serde 解析失败即 panic（fail-closed）；`tests/test_policy_binding.TestFailsClosed` 锁死 |
@@ -185,19 +192,19 @@ zk-policy/
 
 ```bash
 # 只跑参考层（秒级，无需 Rust）
-python3 -m unittest discover tests -v            # 667 passed / 15 skip
+python3 -m unittest discover tests -v            # 675 passed / 15 skip
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
 python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
 
 # 交叉验证（需要先构建 circuits，见 docs/reproduce.md §2）
-SP1_PROVER=cpu python3 scripts/cross_validate.py          # host 19/19 · prove 19/19（约 45 min，分块口径见 08 §5）
+SP1_PROVER=cpu python3 scripts/prove/cross_validate.py          # host 19/19 · prove 19/19（约 45 min，分块口径见 08 §5）
 
 # T3 全量回归：出证 + 验证两条腿，按次留痕（同样 ≈45 min；08 §3.8）
-SP1_PROVER=cpu python3 scripts/regression_prove.py --label weekly
-python3 scripts/regression_prove.py --print               # 只看历史摘要，秒级
+SP1_PROVER=cpu python3 scripts/prove/regression_prove.py --label weekly
+python3 scripts/prove/regression_prove.py --print               # 只看历史摘要，秒级
 
 # 一条命令跑通端到端（含链上锚定）
-bash scripts/anchor_e2e.sh                                # 秒级，--prove 加真实证明
+bash scripts/anchor/anchor_e2e.sh                                # 秒级，--prove 加真实证明
 ```
 
 完整的复现步骤、环境要求与故障排查见 [`../reproduce.md`](../reproduce.md)。

@@ -7,23 +7,23 @@ P0-3 之前证书用硬编码的公开 HMAC 密钥签名 —— 任何人都能�
 
 用法：
   # 生成到 .pop-keys/（已 gitignore；私钥 0600、不覆盖已有文件）
-  python3 scripts/gen_key.py
+  python3 scripts/prove/gen_key.py
 
   # 生成到指定目录，并把公钥单独存一份便于分发
-  python3 scripts/gen_key.py --out-dir keys/ --name demo
+  python3 scripts/prove/gen_key.py --out-dir keys/ --name demo
 
   # 只打印已有密钥的 keyid / 公钥（不生成、不写盘）
-  python3 scripts/gen_key.py --show
+  python3 scripts/prove/gen_key.py --show
 
   # 由**公钥**算 keyid（验证方手上通常只有公钥）
-  python3 scripts/gen_key.py --pubkey keys/demo.pub.hex
+  python3 scripts/prove/gen_key.py --pubkey keys/demo.pub.hex
 
 验证方需要的东西（脚本会打印）：
   keyid（``ed25519:<sha256(原始公钥)>``）—— 出现在证书信封里，用来选密钥；
   public key（hex 或 PEM）—— 拿去构造 keyring。
 
 给证书验签：
-  python3 scripts/verify_cert.py --cert c.json --pack p.json --ledger l.jsonl \\
+  python3 scripts/verify/verify_cert.py --cert c.json --pack p.json --ledger l.jsonl \\
       --keyring keys/demo.pub.hex
 """
 
@@ -34,8 +34,10 @@ import json
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_bootstrap 所在）
+from _bootstrap import REPO, bootstrap  # noqa: E402
+
+bootstrap()
 
 from policydsl.evidence import keys  # noqa: E402
 
@@ -108,7 +110,7 @@ def main() -> int:
     print(f"\npublic key  : {hex_file}")
     print(f"              {pem_file}")
     print(f"\n验证方只需要公钥：\n"
-          f"  python3 scripts/verify_cert.py ... --keyring {hex_file}")
+          f"  python3 scripts/verify/verify_cert.py ... --keyring {hex_file}")
     print(json.dumps({"keyid": signer.keyid, "public_hex": keys.public_hex(pub)},
                      ensure_ascii=False))
     return 0
