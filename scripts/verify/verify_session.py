@@ -16,6 +16,16 @@
   5. （可选）链上锚定核对：每个证书摘要都能在 Anchor 合约上读回，且链上记录与本地
      账本 meta 里的 tx/区块/时间戳一致（**需要 RPC**，见下）。
 
+实现按**具名函数**分段，:func:`main` 只负责把它们串起来并打印。函数名按**代码里
+那套**编号（与上面这份清单的编号差一位，清单多算了「公钥」那一条前置）：
+
+  ``check_signers``(0 公钥) / ``check_certificates``(0 账本链 + 1 逐证书) /
+  ``check_stream_chains``(2 流式链) / ``check_zk_proofs``(3 zk 证明) /
+  ``check_chain_anchoring``(4 链上锚定) / :func:`print_report`。
+
+每个函数只产出自己那几张卡片，由 :func:`main` 按调用顺序合并 —— 「卡片顺序」是
+输出的可观察契约，不靠各函数自己去 append。
+
 用法：
   python3 scripts/verify/verify_session.py --session scripts/examples/out/e2e/session.json
   # 链上核对：--rpc/--contract 显式给出，或用 session 里记录的 chain 字段
@@ -45,7 +55,7 @@ from policydsl.adapters.langchain_adapter import verify_chain  # noqa: E402
 from policydsl.core.model import Policy  # noqa: E402
 # 快路径判定（二进制 + 边车 + 非 core 模式）在 policydsl.evidence.verifier；此处再导出以兼容旧导入
 from policydsl.evidence.verifier import prefer_verifier_only  # noqa: E402,F401
-from policydsl.paths import POP_SCRIPT, POP_VERIFY
+from policydsl.paths import POP_SCRIPT, POP_VERIFY  # noqa: E402
 
 
 def load_policy(path: Path) -> Policy:
@@ -53,25 +63,23 @@ def load_policy(path: Path) -> Policy:
     return Policy.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--session", type=Path, required=True)
-    ap.add_argument("--rpc", default=None, help="EVM RPC 端点（链上锚定核对）")
-    ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
-    ap.add_argument("--no-chain", action="store_true", help="即使 session 记录了 chain 也跳过链上核对")
-    ap.add_argument("--private-key", default=None, help=argparse.SUPPRESS)  # 只读核对用不到，保留兼容
-    ap.add_argument("--keyring", default=None,
-                    help="出证方公钥（key.json / *.pub.hex / hex 文本）。缺省读 "
-                         "session.json 里的 signers 字段，再回退到同目录 key.json")
-    args = ap.parse_args()
+def spec_for(pack: str, cache: dict) -> dict:
+    """按需编译策略包规范；``cache`` 让同一策略包在一个会话里只编译一次。
 
-    base = args.session.parent
-    session = json.loads(args.session.read_text(encoding="utf-8"))
-    ledger = base / session.get("ledger", "ledger.jsonl")
-    entries = session["certificates"]
-    results = []
+    缓存由 :func:`main` 建、第 1 步与第 3 步共用 —— 两步都会拿它做 policy_hash
+    比对，各建一份会把同一个包白编译两次。
+    """
+    if pack not in cache:
+        cache[pack] = compile_policy(load_policy(REPO / pack))
+    return cache[pack]
 
-    # 0) 出证方公钥（P0-3）：只拿公钥就能验签，拿不到就没法开始
+
+def check_signers(args, base: Path, session: dict):
+    """步骤 0）：出证方公钥（P0-3）—— 只拿公钥就能验签，拿不到就没法开始。
+
+    返回 keyring；``None`` 表示**到此为止**。两条出口各自打印 FAIL 行，
+    ``RESULT: FAIL`` 由调用方的 :func:`print_fail` 统一收口（与 verify_cert.py 同款）。
+    """
     try:
         keyring = keys.merge_keyrings(args.keyring,
                                       session.get("signers"),
@@ -79,26 +87,29 @@ def main() -> int:
     except (OSError, ValueError, TypeError) as exc:
         print(f"  [FAIL] keyring         无法获得出证方公钥：{exc}\n"
               f"         请用 --keyring 指定")
-        print("\nRESULT: FAIL")
-        return 1
+        return None
     if not keyring:
         print("  [FAIL] keyring         session 未记录 signers，且同目录没有 key.json；"
               "请用 --keyring 给出公钥")
-        print("\nRESULT: FAIL")
-        return 1
+        return None
+    return keyring
 
-    # 0) 账本链
+
+def check_certificates(entries: list, keyring: dict, ledger: Path, cache: dict) -> tuple:
+    """步骤 0）+1）：账本链 + **逐证书**检查。
+
+    逐证书四项：签名 / policy_hash 三方比对（链下部分）/ 响应绑定自洽 /
+    证明模式与 vkey 标注的诚实性；再加「证书摘要存在于账本中」。
+
+    返回 ``(cards, kinds)``：``kinds`` 是「各类证书各几张」，报告头要用。
+
+    三张汇总卡的**细节文案**分别是：策略包数、绑定自洽的证书数、标注过的证书数
+    —— 它们由循环里的计数器汇总，所以计数器在这里而不是调用方。
+    """
+    cards: list = []
     ok_chain, reason = anchor.verify_ledger(ledger)
-    results.append(("ledger_chain", ok_chain, reason))
+    cards.append(("ledger_chain", ok_chain, reason))
 
-    # policy hash 缓存（同一策略包只编译一次）
-    spec_cache = {}
-    def spec_for(pack: str):
-        if pack not in spec_cache:
-            spec_cache[pack] = compile_policy(load_policy(REPO / pack))
-        return spec_cache[pack]
-
-    # 1) 逐证书检查：签名 / policy_hash / 锚定
     sig_ok = pol_ok = anch_ok = True
     pol_bad: list[str] = []
     bind_ok = True
@@ -126,7 +137,7 @@ def main() -> int:
         ok_pol, pol_detail = verifier.check_policy_binding([
             ("cert", payload.get("policy_hash")),
             ("cert.outcome", (payload.get("outcome") or {}).get("policy_hash")),
-            ("recompiled", spec_for(e["policy_pack"])["sha256"]),
+            ("recompiled", spec_for(e["policy_pack"], cache)["sha256"]),
         ])
         pol_ok &= ok_pol
         if not ok_pol:
@@ -178,22 +189,25 @@ def main() -> int:
                     f"{e['kind']}: vkey_hash={declared_vk} 但 proof_sha256="
                     f"{'有' if has_proof_vk else 'null'}")
         anch_ok &= anchor.find_anchor(ledger, cert.cert_digest(payload)) is not None
-    results.append(("certificates_signature", sig_ok,
-                    f"{len(entries)} certs, {len(keyring)} key(s) in ring"))
-    pol_detail = f"{len(spec_cache)} pack(s), 3 sources" if pol_ok else "; ".join(pol_bad[:2])
-    results.append(("certificates_policy_hash", pol_ok, pol_detail))
-    results.append(("certificates_response_binding", bind_ok,
-                    f"{bound_n} challenge-bound cert(s), self-consistent"
-                    if bind_ok else "; ".join(bind_bad[:2])))
-    results.append(("certificates_proof_mode", mode_ok,
-                    f"{mode_marked} cert(s) labeled, {mode_skipped} predate the field"
-                    if mode_ok else "; ".join(mode_bad[:2])))
-    results.append(("certificates_vkey_label", vk_ok,
-                    f"{vk_marked} cert(s) labeled, {vk_skipped} predate the field"
-                    if vk_ok else "; ".join(vk_bad[:2])))
-    results.append(("certificates_anchored", anch_ok, "digest present in ledger"))
+    cards.append(("certificates_signature", sig_ok,
+                  f"{len(entries)} certs, {len(keyring)} key(s) in ring"))
+    pol_detail = f"{len(cache)} pack(s), 3 sources" if pol_ok else "; ".join(pol_bad[:2])
+    cards.append(("certificates_policy_hash", pol_ok, pol_detail))
+    cards.append(("certificates_response_binding", bind_ok,
+                  f"{bound_n} challenge-bound cert(s), self-consistent"
+                  if bind_ok else "; ".join(bind_bad[:2])))
+    cards.append(("certificates_proof_mode", mode_ok,
+                  f"{mode_marked} cert(s) labeled, {mode_skipped} predate the field"
+                  if mode_ok else "; ".join(mode_bad[:2])))
+    cards.append(("certificates_vkey_label", vk_ok,
+                  f"{vk_marked} cert(s) labeled, {vk_skipped} predate the field"
+                  if vk_ok else "; ".join(vk_bad[:2])))
+    cards.append(("certificates_anchored", anch_ok, "digest present in ledger"))
+    return cards, kinds
 
-    # 2) 流式链：在 chain.index == 0 处拆成多个 run
+
+def check_stream_chains(entries: list) -> list:
+    """步骤 2）：流式链 —— 在 chain.index == 0 处拆成多个 run，每个 run 是一条哈希链。"""
     groups, current = [], []
     for e in entries:
         if e["kind"] != "stream":
@@ -206,9 +220,16 @@ def main() -> int:
     if current:
         groups.append(current)
     chain_ok = all(verify_chain(g) for g in groups) if groups else True
-    results.append(("stream_chains", chain_ok, f"{len(groups)} run(s)"))
+    return [("stream_chains", chain_ok, f"{len(groups)} run(s)")]
 
-    # 3) zk 证明 —— 存在边车时优先走 verifier-only 二进制
+
+def check_zk_proofs(entries: list, base: Path, cache: dict) -> list:
+    """步骤 3）：zk 证书的 SP1 证明 —— 存在边车时优先走 verifier-only 二进制。
+
+    每条 zk 证书要过四关：证明有效、公开值解出的 outcome 逐字段等于证书载荷、
+    vkey 哈希一致、证明工件哈希一致；再补上策略绑定与响应绑定各自缺失的那条腿
+    （证明公开值承诺的那一方），以及 `proof_mode` 的自报一致性。
+    """
     zk_entries = [e for e in entries if e["kind"] == "zk"]
     zk_ok = True
     # 逐条记录每种结局的**条数**再汇总 —— 早先这里是一个被覆盖的 `detail` 标量，
@@ -268,7 +289,7 @@ def main() -> int:
         # 一致，也必须与「该证书所用的策略包现场重编译」所得一致。
         ok_bind, bind_detail = verifier.check_policy_binding([
             ("cert", payload.get("policy_hash")),
-            ("recompiled", spec_for(e["policy_pack"])["sha256"]),
+            ("recompiled", spec_for(e["policy_pack"], cache)["sha256"]),
             ("proof", verifier.committed_policy_hash(v)),
         ])
         zk_ok &= ok_bind
@@ -290,47 +311,55 @@ def main() -> int:
             tally[key] = tally.get(key, 0) + 1
     # 汇总成「每种结局各几条」，形如 `SP1 proof verified (pop-script)×1 + unproven×2`。
     detail = " + ".join(f"{k}×{n}" if n > 1 else k for k, n in tally.items()) or "n/a"
-    results.append(("zk_proof", zk_ok, detail))
+    return [("zk_proof", zk_ok, detail)]
 
-    # 4) 链上锚定核对（可选）：每个证书摘要都能从 Anchor 合约读回，且链上时间戳
-    #    与本地账本 meta 记录的区块一致（用了 --rpc 或 session 里记录了 chain）
+
+def check_chain_anchoring(args, session: dict, entries: list, ledger: Path) -> list:
+    """步骤 4）：链上锚定核对（可选）。
+
+    每个证书摘要都能从 Anchor 合约读回，且链上时间戳与本地账本 meta 记录的区块
+    一致。用了 ``--rpc``，或 session 里记录了 ``chain`` 才做；``--no-chain`` 强制
+    跳过 —— 三种「没做」彼此不同，细节文案也各不相同。
+    """
     chain_cfg = session.get("chain") or {}
     rpc = args.rpc or chain_cfg.get("rpc_url")
     contract = args.contract or chain_cfg.get("contract")
     if args.no_chain:
-        results.append(("chain_anchored", True, "skipped (--no-chain)"))
-    elif not (rpc and contract):
-        results.append(("chain_anchored", True, "not anchored on chain (file ledger only)"))
-    else:
-        try:
-            cli = anchor.CastRpc(rpc)
-            on_chain, mismatch, checked = 0, [], 0
-            for e in entries:
-                digest = cert.cert_digest(cert.envelope_payload(e["envelope"]))
-                rec = anchor.verify_digest_on_chain(digest, rpc, contract, client=cli)
-                if rec is None:
-                    continue
-                on_chain += 1
-                # 强核对：本地账本 meta 里记的区块时间戳 == 链上登记时间戳
-                local = anchor.find_anchor(ledger, digest) or {}
-                oc = (local.get("meta") or {}).get("on_chain") or {}
-                if oc:
-                    checked += 1
-                    if oc.get("chain_ts") != rec["chain_ts"]:
-                        mismatch.append(f"{digest[:10]}… ts {oc.get('chain_ts')}≠{rec['chain_ts']}")
-                    elif oc.get("block") is not None:
-                        bts = cli.timestamp_of_block(int(oc["block"]))
-                        if bts != rec["chain_ts"]:
-                            mismatch.append(f"{digest[:10]}… block {oc['block']} ts {bts}≠{rec['chain_ts']}")
-            ok = on_chain == len(entries) and not mismatch
-            det = (f"{on_chain}/{len(entries)} digests on chain {contract[:10]}… "
-                   f"({checked} cross-checked)")
-            if mismatch:
-                det += " MISMATCH: " + "; ".join(mismatch[:3])
-            results.append(("chain_anchored", ok, det))
-        except anchor.AnchorError as exc:
-            results.append(("chain_anchored", False, f"rpc error: {exc}"))
+        return [("chain_anchored", True, "skipped (--no-chain)")]
+    if not (rpc and contract):
+        return [("chain_anchored", True, "not anchored on chain (file ledger only)")]
+    try:
+        cli = anchor.CastRpc(rpc)
+        on_chain, mismatch, checked = 0, [], 0
+        for e in entries:
+            digest = cert.cert_digest(cert.envelope_payload(e["envelope"]))
+            rec = anchor.verify_digest_on_chain(digest, rpc, contract, client=cli)
+            if rec is None:
+                continue
+            on_chain += 1
+            # 强核对：本地账本 meta 里记的区块时间戳 == 链上登记时间戳
+            local = anchor.find_anchor(ledger, digest) or {}
+            oc = (local.get("meta") or {}).get("on_chain") or {}
+            if oc:
+                checked += 1
+                if oc.get("chain_ts") != rec["chain_ts"]:
+                    mismatch.append(f"{digest[:10]}… ts {oc.get('chain_ts')}≠{rec['chain_ts']}")
+                elif oc.get("block") is not None:
+                    bts = cli.timestamp_of_block(int(oc["block"]))
+                    if bts != rec["chain_ts"]:
+                        mismatch.append(f"{digest[:10]}… block {oc['block']} ts {bts}≠{rec['chain_ts']}")
+        ok = on_chain == len(entries) and not mismatch
+        det = (f"{on_chain}/{len(entries)} digests on chain {contract[:10]}… "
+               f"({checked} cross-checked)")
+        if mismatch:
+            det += " MISMATCH: " + "; ".join(mismatch[:3])
+        return [("chain_anchored", ok, det)]
+    except anchor.AnchorError as exc:
+        return [("chain_anchored", False, f"rpc error: {exc}")]
 
+
+def print_report(args, kinds: dict, results: list) -> int:
+    """打印会话头、每张卡片与 ``RESULT:``；返回退出码。"""
     ok_all = all(r[1] for r in results)
     print(f"session: {args.session}")
     print(f"certificates by kind: {kinds}")
@@ -338,6 +367,58 @@ def main() -> int:
         print(f"  [{'PASS' if ok else 'FAIL'}] {name:24s} {det}")
     print("\nRESULT: " + ("PASS" if ok_all else "FAIL"))
     return 0 if ok_all else 1
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--session", type=Path, required=True)
+    ap.add_argument("--rpc", default=None, help="EVM RPC 端点（链上锚定核对）")
+    ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
+    ap.add_argument("--no-chain", action="store_true", help="即使 session 记录了 chain 也跳过链上核对")
+    ap.add_argument("--private-key", default=None, help=argparse.SUPPRESS)  # 只读核对用不到，保留兼容
+    ap.add_argument("--keyring", default=None,
+                    help="出证方公钥（key.json / *.pub.hex / hex 文本）。缺省读 "
+                         "session.json 里的 signers 字段，再回退到同目录 key.json")
+    args = ap.parse_args()
+
+    base = args.session.parent
+    session = json.loads(args.session.read_text(encoding="utf-8"))
+    ledger = base / session.get("ledger", "ledger.jsonl")
+    entries = session["certificates"]
+
+    # 卡片**按步骤顺序**合并：这张表的次序就是输出的次序。
+    results: list = []
+
+    # 0) 公钥拿不到就没法开始
+    keyring = check_signers(args, base, session)
+    if keyring is None:
+        print_fail(results)
+        return 1
+
+    # policy hash 缓存：第 1 步与第 3 步共用，同一策略包只编译一次
+    spec_cache: dict = {}
+
+    # 0) 账本链 + 1) 逐证书检查
+    cards, kinds = check_certificates(entries, keyring, ledger, spec_cache)
+    results += cards
+
+    # 2) 流式链
+    results += check_stream_chains(entries)
+
+    # 3) zk 证明
+    results += check_zk_proofs(entries, base, spec_cache)
+
+    # 4) 链上锚定核对（可选）
+    results += check_chain_anchoring(args, session, entries, ledger)
+
+    return print_report(args, kinds, results)
+
+
+def print_fail(results) -> None:
+    """公钥不可得时打印已得结果并返回失败（与 verify_cert.py 同款收口）。"""
+    for name, ok, detail in results:
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name:14s} {detail}")
+    print("\nRESULT: FAIL")
 
 
 if __name__ == "__main__":

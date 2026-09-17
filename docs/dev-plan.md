@@ -1925,3 +1925,104 @@ R7 引入 `from_dict` 之后，验收基线的「畸形包 → CLI」那一面**
 | 分钟 | `verify_session.py --session …` | **10 项 PASS** |
 
 真出证随 P1 阶段末统一跑（`--label P1-acceptance`）。
+
+#### 5.7.13 P1-⑥ R8：拆 `verify_cert` / `verify_session` 的 `main`（2026-09-17，✅ 已交付）
+
+##### 改了什么
+
+两个第三方验证脚本的 `main()` 是「一个函数走完 13 张卡 / 10 张卡」。按**已有
+的步骤注释**把它们切成具名函数，函数名与注释里那套编号一一对应：
+
+| 文件 | 切出来的函数 |
+|---|---|
+| `verify_cert.py` | `check_signature`(1) / `check_proof`(2) / `check_artifact_claims`(2b+2c) / `check_policy_binding`(3) / `check_response_binding`(3b) / `check_trace_binding`(3c+3d) / `check_semantic`(3e) / `check_anchor`(4+4b) / `print_report` |
+| `verify_session.py` | `check_signers`(0) / `check_certificates`(0+1) / `check_stream_chains`(2) / `check_zk_proofs`(3) / `check_chain_anchoring`(4) / `print_report` |
+
+`verify_cert.main`：**434 行 → 65 行**（文件 518 → 608 行，多出来的是 docstring
+与函数头）。`verify_session.main`：330 → 44 行。合计 `+495 / −324`。
+
+**分工约定**：每个 `check_*` 只产出**自己那几张卡片**，由 `main` 按调用顺序
+`results +=` 合并。「卡片顺序」是这批脚本的可观察契约（`tests/` 里多处按名取用），
+所以它由 `main` 一处掌管，而不是让各函数自己去 append 一个共享列表。
+
+##### 三处**刻意保持原样**，不做「顺手变好」
+
+1. `check_response_binding` **就地重读** `args.response`，不复用 `main` 已经读好的
+   `response_text`。两份内容必然相同，但重算路径与拆分前逐字一致 —— R8 的差异面
+   越接近零，等效性的证据越硬。（`response_text` 仍只在 3e 用。）
+2. `check_trace_binding` 把 3c 与 3d 合成**一个**函数，不做成两个。二者共用
+   `gw_ring`（网关公钥只加载一次）与解析出来的 `receipts`；拆开就得让这两个量
+   跨函数传递，反而更难读。
+3. `verify_session` 的 `spec_for` 保留成「显式传 `cache`」的纯函数，缓存由 `main`
+   建、第 1 步与第 3 步共用。各建一份会把同一个包白编译两次。
+
+##### 等效性证据（机械证明，非人工阅读）
+
+采集器把 **19 次真实调用**的 stdout+stderr+退出码归一后落盘（只归一 SP1 的
+耗时字段与绝对路径；**刻意不做通用浮点归一** —— 那会把 `@0.1.0` 一起吃掉，
+等于把「版本号变了」这条本该报警的差异藏掉），重构前后逐字节比：
+
+| | |
+|---|---|
+| 调用数 | **19**（`verify_cert` 14 + `verify_session` 5）|
+| 结果 | **逐字节一致**（`diff -rq` 无输出）|
+| 覆盖的卡片名 | **28** 个（去重后），含 `signature` / `proof_*` / `proof_mode` / `vkey_label` / `policy_hash` / `response_binding` / `receipt_chain` / `trace_binding` / `trace_seal` / `semantic` / `anchor*` / `certificates_*` / `stream_chains` / `zk_proof` |
+| 覆盖的出口 | 含 4 条早期返回（公钥不可得 ×2、签名不对、空 ring）与 3 种退出码（0/1/2）|
+
+覆盖面是**故意**凑的：其中 6 例（`o`–`s`）用 `tests/test_generic_adapter.py`
+生成的那份**带回执链与 `trace_seal`** 的工具会话包，专门喂 3c/3d 的三种结局
+（齐全 / 缺 `--receipts` / 换别人的网关钥 / 网关公钥打不开）。
+
+**没被覆盖的卡片名：`verify_only` / `public_values` / `vkey_hash`** —— 它们是
+`prefer_verifier_only` 那条快路径。全仓 **17 份边车 `proof_mode` 全是 `core`**，
+没有一份落在 `VERIFIER_ONLY_MODES = ("compressed", "groth16", "plonk")` 里，
+而这条路径要的 compressed 工件（`circuits/testdata/audit_proof/`，由
+`scripts/ops/make_audit_proof.sh` 生成）本机不存在。所以**这 3 张卡本机跑不到**，
+不是「跑了没差异」。它们本轮的变化**只有缩进与 `results.append` → `cards.append`**。
+
+`semantic[...]` 那一张采集器也没覆盖（要有 ezkl 材料），但**测试套件覆盖了**：
+`tests/test_semantic.py:671` 断言 `[FAIL] semantic[low_harm_probability]`。
+
+##### 顺带发现的仓库缺陷
+
+**两份文件的模块 docstring 与代码注释用了两套步骤编号**（docstring 把「公钥」
+算作第 0 条、账本链是第 1 条；代码注释里账本链是 `0)`、逐证书是 `1)`）。本轮
+新函数的 docstring 统一按**代码注释那套**，并在 `verify_session` 的模块 docstring
+里把这份对照写出来 —— 没改原有的两套编号本身（那是**既有**的文档不一致，
+不在 R8 的改动面内；见 §3「明确不做」的口径）。
+
+##### 一条**未复现**的观察（如实记录，不当作已解决）
+
+R8 改完之后**第一次**跑全量测试得到 `FAILED (failures=1, skipped=15)`。
+当时只留了 `tail -5`，**失败用例的名字没留下来**。此后：
+
+| 尝试 | 结果 |
+|---|---|
+| 全量套件（含首次） | **23 次：1 失败 / 22 次 OK**（`751 tests / skipped=15` 恒定）|
+| 只跑「驱动了这两个文件」的 6 个模块 | **6 次全绿**（74 tests / skipped=3）|
+| 排查计时类断言 | `tests/test_verifier_only.py:55` 的 `assertLess(secs, 20)` 是唯一硬阈值 —— 但它 `skipTest`（**没有 compressed 夹具**），不是它 |
+| 排查内存类 | 全部真出证用例都由 `POP_TEST_*` 开关守着，**默认全 skip**（skip 集合里逐条可见）|
+| 排查网络类 | `tests/test_doc_links.py` 明确**跳过所有 `http(s)://`**，不连网 |
+
+**结论：无法归因到 R8，但也无法证明无关。** 证据是「外部行为在 19 次调用上
+逐字节相同」+「22 次全绿」，但这是一份**统计性**的辩护，不是机制性的。按本仓
+「不响的失败」的口径，这条**留在案上**，并在 P1 大验收（`--label P1-acceptance`）
+里继续观察；若再现，第一件事是**留住失败的用例名**。
+
+（附：批次里连续 4 次耗时 40→54→55→62 s 一度像是「越跑越慢」。查证结果是
+**我自己的采集器在并发跑**（每次含两趟 22 s 的 `pop-script --verify`）；
+空载复测回到 **38.3 s**，仓库里没有任何随时间增长的东西 —— `git status` 全程
+只有本轮改的两个文件。）
+
+##### 验收（风险标「低」，回退判据「13 项 PASS 逐项复现」→ **成立，不回退**）
+
+| 档 | 命令 | 结果 |
+|---|---|---|
+| 判据 | `verify_cert.py --proof …`（那条 canonical 配方）| **13 项 PASS 逐项复现**，`RESULT: PASS`，与重构前**逐字节相同** |
+| 秒级 | `python3 -m unittest discover -s tests -t .` | **751 passed / 15 skipped**（22/23 次；首次 1 失败见上）|
+| 秒级 | `cross_validate.py --no-prove` | **host 19/19** PASS |
+| 秒级 | `verify/acceptance.py --verify` | **七面逐路径零差异**（未重采快照 —— 本轮没动任何被快照观测的行为）|
+| 分钟 | `demo_all.sh`（fast） | **8 支路全 PASS，SKIP 集合 = ∅** |
+| 分钟 | `verify_session.py --session …` | **10 项 PASS** |
+
+真出证随 P1 阶段末统一跑（`--label P1-acceptance`）。

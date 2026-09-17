@@ -31,6 +31,14 @@
 
 步骤 2 必须排在步骤 3/3b 之前：比对里的「证明公开值」要先验出来才谈得上比对。
 
+实现按**具名函数**分段，函数名与上面的编号一一对应，:func:`main` 只负责把它们
+串起来并打印：``check_signature``(1) / ``check_proof``(2) /
+``check_artifact_claims``(2b+2c) / ``check_policy_binding``(3) /
+``check_response_binding``(3b) / ``check_trace_binding``(3c+3d) /
+``check_semantic``(3e) / ``check_anchor``(4+4b) / :func:`print_report`。
+每个函数**只产出自己那几张卡片**，由 :func:`main` 按调用顺序合并 —— 「卡片顺序」
+是这份输出的可观察契约（``tests/`` 里多处按名取用），不靠各函数自己去 append。
+
 **不带 --proof 时的边界**：步骤 3/3b 仍会跑，但参与比对的来源只剩证书自己的两处
 声称（载荷顶层 vs outcome 内嵌）。那两处都是签发者写的，所以它挡得住「证书自相
 矛盾」，挡不住「签发者整体造假」—— 真正的密码学保证来自步骤 2 的证明。
@@ -74,70 +82,45 @@ def load_policy(path: Path) -> Policy:
     return Policy.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--cert", type=Path, required=True)
-    ap.add_argument("--pack", type=Path, required=True)
-    ap.add_argument("--ledger", type=Path, required=True)
-    ap.add_argument("--proof", type=Path, default=None)
-    ap.add_argument("--response", type=Path, default=None,
-                    help="送达的响应 T′：给了才能把「被证明的 T」与「收到的 T′」对上")
-    ap.add_argument("--nonce", default=None,
-                    help="覆盖证书里的挑战值（十六进制）；用于验证重放/换 nonce 会被拒")
-    ap.add_argument("--rpc", default=None, help="EVM RPC 端点（链上锚定核对）")
-    ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
-    ap.add_argument("--keyring", default=None,
-                    help="出证方公钥：key.json / *.pub.hex / *.pub.pem / hex 文本。"
-                         "缺省读证书同目录的 key.json")
-    ap.add_argument("--receipts", type=Path, default=None,
-                    help="P1-5：**网关侧收到的**工具回执链（JSON 数组）。给了才能把"
-                         "「证明承诺的链尾」与「自己手上这条链」对上")
-    ap.add_argument("--gateway-key", default=None,
-                    help="工具网关公钥（P1-5，形式同 --keyring）：给了就对回执链逐条验签，"
-                         "并核对会话末端承诺 trace_seal（P1-5b，拦截尾）")
-    ap.add_argument("--semantic-dir", type=Path, default=None,
-                    help="P2-9：语义规则的 ezkl 材料目录（vk.ezkl / settings.json / srs / "
-                         "陪伴证明）。策略含 semantic_bound 时**必给** —— 那部分不在 SP1 "
-                         "证明里，不给就核不了（本工具会 fail closed）")
-    ap.add_argument("--semantic-skip-ezkl", action="store_true",
-                    help="P2-9：只核对指纹与响应绑定，**不跑 ezkl 验证器**。用于没有 ezkl 的"
-                         "环境；此时「证明本身有效」这一条未被核验，结果会如实标注")
-    args = ap.parse_args()
+def check_signature(args, env: dict) -> tuple:
+    """步骤 1：DSSE 信封签名（P0-3）—— 非对称，验证方只拿公钥，无法伪造签名。
 
-    env = json.loads(args.cert.read_text(encoding="utf-8"))
-    results = []
-    # 送达的响应 T′ 原文（**不加工**，见 scripts/prove/ezkl_prove.py::_read_response）。
-    # 语义规则的陪伴证明要对着它核对 encode(T′)，逐字符都必须一致。
-    response_text = (args.response.read_text(encoding="utf-8")
-                     if args.response is not None else None)
-
-    # 1) 签名校验（P0-3）：非对称 —— 验证方只拿公钥，无法伪造签名。
+    返回 ``(cards, payload)``。``payload is None`` 表示**到此为止**（拿不到公钥，
+    或签名不对）；调用方打印已得卡片并以 1 收尾。两条「公钥」出口的 ``cards``
+    是空的，所以那条出口打印的就是原来那句 ``RESULT: FAIL``，不带卡片行。
+    """
+    cards: list = []
     try:
         keyring = keys.load_keyring(args.keyring) if args.keyring else keys.load_keyring(
             args.cert.parent / "key.json")
     except (OSError, ValueError, TypeError) as exc:
         print(f"  [FAIL] keyring        无法获得出证方公钥：{exc}\n"
               f"         请用 --keyring 指定（见 scripts/prove/gen_key.py --pubkey）")
-        print("\nRESULT: FAIL")
-        return 1
+        return cards, None
     if not keyring:
         print("  [FAIL] keyring        公钥 ring 为空，无法验签")
-        print("\nRESULT: FAIL")
-        return 1
+        return cards, None
     ok_sig, payload = cert.verify_envelope(env, keyring)
     scheme = cert.envelope_scheme(env)
-    results.append(("signature", ok_sig,
-                    f"{scheme or 'no-signature'} envelope verified [{cert.envelope_keyid(env) or '-'}]"
-                    if ok_sig else "bad signature (or unknown/revoked scheme)"))
+    cards.append(("signature", ok_sig,
+                  f"{scheme or 'no-signature'} envelope verified [{cert.envelope_keyid(env) or '-'}]"
+                  if ok_sig else "bad signature (or unknown/revoked scheme)"))
     if not ok_sig or payload is None:
-        print_fail(results)
-        return 1
+        return cards, None
+    return cards, payload
 
-    # 2) 证明校验（可选，密码学）—— 优先走 verifier-only 二进制（免构造证明器）
-    #
-    #    放在策略绑定之前：绑定要做「三方比对」，其中一方是**证明公开值承诺的
-    #    policy_hash**，必须先把证明验出来才谈得上比对。否则验证方只能核对
-    #    「证书自称 == 重编译」，而漏掉「证明其实是对另一个策略做的」。
+
+def check_proof(args, payload: dict) -> tuple:
+    """步骤 2：证明校验（可选，密码学）—— 优先走 verifier-only 二进制（免构造证明器）。
+
+    放在策略绑定之前：绑定要做「三方比对」，其中一方是**证明公开值承诺的
+    policy_hash**，必须先把证明验出来才谈得上比对。否则验证方只能核对
+    「证书自称 == 重编译」，而漏掉「证明其实是对另一个策略做的」。
+
+    返回 ``(cards, proof_result)``：后者是验证器输出的原始 JSON（没有证明工件时
+    为 ``None``），2b/2c/3/3b/3c 都从它取「证明公开值」那一方。
+    """
+    cards: list = []
     sidecar = verifier.sidecar_path(args.proof) if args.proof else None
     proof_result = None  # 验证器输出的原始 JSON；policy_hash 三方比对要用
     if args.proof is not None and args.proof.exists() and verifier.prefer_verifier_only(args.proof, POP_VERIFY):
@@ -147,16 +130,16 @@ def main() -> int:
                        check=True, cwd=str(REPO))
         v = proof_result = json.loads(out.read_text())
         b = payload["binding"]
-        results.append(("verify_only", bool(v.get("verified")),
-                        f"pop-verify ({v.get('proof_mode')}, no prover)"))
-        results.append(("public_values", v.get("public_values_sha256") == b.get("public_values_sha256"),
-                        "committed public values match"))
-        results.append(("vkey_hash", v.get("vkey_hash") == b.get("vkey_hash"), "vkey matches"))
+        cards.append(("verify_only", bool(v.get("verified")),
+                      f"pop-verify ({v.get('proof_mode')}, no prover)"))
+        cards.append(("public_values", v.get("public_values_sha256") == b.get("public_values_sha256"),
+                      "committed public values match"))
+        cards.append(("vkey_hash", v.get("vkey_hash") == b.get("vkey_hash"), "vkey matches"))
         # 快路径过去只比公开值的哈希，证书里的 outcome 完全没被核对过；
         # 现在 pop-verify 会把公开值解回 Outcome，这里逐字段比对。
         decoded = verifier.outcome_without_meta(v)
-        results.append(("proof_outcome", decoded is not None and decoded == payload["outcome"],
-                        "decoded public values == certificate outcome"))
+        cards.append(("proof_outcome", decoded is not None and decoded == payload["outcome"],
+                      "decoded public values == certificate outcome"))
     elif args.proof is not None and args.proof.exists():
         # 无边车 → 用 pop-script 重新验证（core 证明路径）
         out = args.proof.parent / "verify_out.json"
@@ -167,66 +150,73 @@ def main() -> int:
         ok_outcome = verifier.outcome_without_meta(v) == payload["outcome"]
         ok_vkey = v.get("vkey_hash") == payload["binding"]["vkey_hash"]
         ok_sha = sha256_file(args.proof) == payload["binding"]["proof_sha256"]
-        results.append(("proof_verify", ok_verified, "SP1 proof verified (pop-script)"))
-        results.append(("proof_outcome", ok_outcome, "committed outcome == certificate"))
-        results.append(("proof_vkey", ok_vkey, "vkey hash matches"))
-        results.append(("proof_sha256", ok_sha, "proof artifact hash matches"))
+        cards.append(("proof_verify", ok_verified, "SP1 proof verified (pop-script)"))
+        cards.append(("proof_outcome", ok_outcome, "committed outcome == certificate"))
+        cards.append(("proof_vkey", ok_vkey, "vkey hash matches"))
+        cards.append(("proof_sha256", ok_sha, "proof artifact hash matches"))
     elif payload["binding"]["proof_sha256"] is None:
         # 证书未声称有证明（host-check only）→ 跳过
-        results.append(("proof", True, "certificate is unproven (host-check only) — skipped"))
+        cards.append(("proof", True, "certificate is unproven (host-check only) — skipped"))
     else:
-        results.append(("proof", False, "certificate claims a proof but --proof not given"))
+        cards.append(("proof", False, "certificate claims a proof but --proof not given"))
+    return cards, proof_result
 
-    # 2b) 证明模式标注（P0-4）：证书自称的那一档，要与**工件自报的**一致。
-    #
-    #     core/compressed 的 STARK **不是零知识**证明（见 docs/sp1-zk-audit.md），
-    #     所以「这张证书到底是哪一档证据」不能只由出证方一句话决定 —— 工件的
-    #     边车与元信息都自报模式，三者必须指向同一档。没有工件的证书则只允许
-    #     标 unproven：声称 core/compressed 却拿不出证明，是**过度声明**。
+
+def check_artifact_claims(args, payload: dict, proof_result) -> list:
+    """步骤 2b+2c：证书**自称**字段的诚实性 —— 两处同构的不变量。
+
+    2b（P0-4）证明模式：core/compressed 的 STARK **不是零知识**证明（见
+    docs/sp1-zk-audit.md），所以「这张证书到底是哪一档证据」不能只由出证方一句话
+    决定 —— 工件的边车与元信息都自报模式，三者必须指向同一档。没有工件的证书则
+    只允许标 unproven：声称 core/compressed 却拿不出证明，是**过度声明**。
+
+    2c vkey 标注：``binding.vkey_hash`` 的语义是「**哪块电路**判定了它」。宿主判定
+    （Python 参考评估器在进程内判的 stream/llm/tool 三类证书）根本没有电路参与，
+    没有验证密钥可指，唯一诚实的取值就是 ``unproven``。
+
+    这一卡此前**不存在**：上面几条只比对「证书 vs 证明」（``vkey_hash`` /
+    ``proof_vkey``），从不问这个值**本身**是否可能是真的。于是 ``demo_e2e.py``
+    里写过的魔法值 ``"demo"`` 可以全绿通过验证 —— 一个有内容、却没有任何东西
+    能证伪的字段。
+
+    反向同样要拦：附了工件却标 ``unproven`` 是**低报**，会让这个字段失去意义
+    （与 2b 的「低报也算失败」同一条理由）。
+    """
+    cards: list = []
+
+    # --- 2b) 证明模式标注 ---------------------------------------------------
     declared_mode = (payload.get("binding") or {}).get("proof_mode")
     has_artifact = args.proof is not None and args.proof.exists()
     observed = verifier.artifact_proof_modes(args.proof, proof_result) if has_artifact else {}
     if declared_mode is None:
         # P0-4 之前签发的证书没有这个字段：如实跳过，而不是当成通过。
-        results.append(("proof_mode", True, "certificate predates the field — skipped"))
+        cards.append(("proof_mode", True, "certificate predates the field — skipped"))
     elif observed:
         modes = sorted(set(observed.values()))
         agree = len(modes) == 1 and modes[0] == declared_mode
         srcs = " == ".join(f"{m}[{s}]" for s, m in observed.items())
-        results.append(("proof_mode", agree,
-                        f"cert={declared_mode} (hiding: {cert.proof_hiding(declared_mode)}); {srcs}"
-                        if agree else f"MISMATCH: cert={declared_mode} vs {srcs}"))
+        cards.append(("proof_mode", agree,
+                      f"cert={declared_mode} (hiding: {cert.proof_hiding(declared_mode)}); {srcs}"
+                      if agree else f"MISMATCH: cert={declared_mode} vs {srcs}"))
     elif has_artifact:
-        results.append(("proof_mode", True,
-                        f"cert={declared_mode} — 工件未自报模式，无法核对 (skipped)"))
+        cards.append(("proof_mode", True,
+                      f"cert={declared_mode} — 工件未自报模式，无法核对 (skipped)"))
     elif (payload.get("binding") or {}).get("proof_sha256") is None:
         # 没有证明工件：唯一诚实的标注就是 unproven。
         ok_unproven = declared_mode == cert.PROOF_MODE_UNPROVEN
-        results.append(("proof_mode", ok_unproven,
-                        f"{declared_mode} (hiding: {cert.proof_hiding(declared_mode)})"
-                        + ("" if ok_unproven else
-                           " — 未附证明的证书只能标注 unproven，不得声称某档证据")))
+        cards.append(("proof_mode", ok_unproven,
+                      f"{declared_mode} (hiding: {cert.proof_hiding(declared_mode)})"
+                      + ("" if ok_unproven else
+                         " — 未附证明的证书只能标注 unproven，不得声称某档证据")))
     else:
-        results.append(("proof_mode", True,
-                        f"cert={declared_mode} — no --proof given, 无法核对 (skipped)"))
+        cards.append(("proof_mode", True,
+                      f"cert={declared_mode} — no --proof given, 无法核对 (skipped)"))
 
-    # 2c) vkey 标注的诚实性 —— 与 2b 的 proof_mode **同构**的那条不变量。
-    #
-    #     ``binding.vkey_hash`` 的语义是「**哪块电路**判定了它」。宿主判定
-    #     （Python 参考评估器在进程内判的 stream/llm/tool 三类证书）根本没有
-    #     电路参与，没有验证密钥可指，唯一诚实的取值就是 ``unproven``。
-    #
-    #     这一卡此前**不存在**：上面几条只比对「证书 vs 证明」（``vkey_hash`` /
-    #     ``proof_vkey``），从不问这个值**本身**是否可能是真的。于是
-    #     ``demo_e2e.py`` 里写过的魔法值 ``"demo"`` 可以全绿通过验证 ——
-    #     一个有内容、却没有任何东西能证伪的字段。
-    #
-    #     注意反向同样要拦：附了工件却标 ``unproven`` 是**低报**，会让这个字段
-    #     失去意义（与 2b 的「低报也算失败」同一条理由）。
+    # --- 2c) vkey 标注的诚实性 ----------------------------------------------
     declared_vk = (payload.get("binding") or {}).get("vkey_hash")
     if declared_vk is None:
         # 缺字段（早期证书）如实跳过，而不是「因为缺字段」判失败 —— 与 2b 同款。
-        results.append(("vkey_label", True, "certificate predates the field — skipped"))
+        cards.append(("vkey_label", True, "certificate predates the field — skipped"))
     else:
         claims_proof = (payload.get("binding") or {}).get("proof_sha256") is not None
         honest = (declared_vk != cert.VKEY_HASH_UNPROVEN) == claims_proof
@@ -239,15 +229,21 @@ def main() -> int:
         else:
             note = (f"{declared_vk} — 未附任何证明工件，却声明了一个 vkey；"
                     "宿主判定的证书只能标 unproven（没有电路参与，无 vkey 可指）")
-        results.append(("vkey_label", honest, note))
+        cards.append(("vkey_label", honest, note))
+    return cards
 
-    # 3) 策略绑定（三方比对）：
-    #      a. 证书载荷声明的 policy_hash
-    #      b. 证书 outcome 内嵌的 policy_hash（证书内部两处声称必须自洽）
-    #      c. 由策略包**现场重编译**得到的 sha256
-    #      d. 证明公开值承诺的 policy_hash（有证明时）
-    #    任何两个相等都可能有盲区：只比 a==c 会漏掉「证明是对别的策略做的」，
-    #    只比 a==d 会漏掉「证书声称的策略根本不是这个策略包」。必须一起比。
+
+def check_policy_binding(args, payload: dict, proof_result) -> list:
+    """步骤 3：策略绑定（三方比对）。
+
+      a. 证书载荷声明的 policy_hash
+      b. 证书 outcome 内嵌的 policy_hash（证书内部两处声称必须自洽）
+      c. 由策略包**现场重编译**得到的 sha256
+      d. 证明公开值承诺的 policy_hash（有证明时）
+
+    任何两个相等都可能有盲区：只比 a==c 会漏掉「证明是对别的策略做的」，
+    只比 a==d 会漏掉「证书声称的策略根本不是这个策略包」。必须一起比。
+    """
     spec = compile_policy(load_policy(args.pack))
     sources = [
         ("cert", payload.get("policy_hash")),
@@ -256,51 +252,67 @@ def main() -> int:
         ("proof", verifier.committed_policy_hash(proof_result) if proof_result else None),
     ]
     ok_pol, pol_detail = verifier.check_policy_binding(sources)
-    results.append(("policy_hash", ok_pol, pol_detail))
+    return [("policy_hash", ok_pol, pol_detail)]
 
-    # 3b) 响应绑定（P0-2）：被证明的 T 是不是送达的 T′。
-    #
-    #     策略绑定保证「判定的规则就是声明的策略」，却完全不提「判定的是哪条
-    #     响应」—— 公开模式还好（T 至少是证明的输入），私有模式下验证者连 T 的
-    #     影子都看不到。这一卡补的就是那一段：把 T 拴到本次会话的 nonce 上。
-    #
-    #     证书里**没有** challenge 块（或证明的公开值里没有 response_binding）时
-    #     如实跳过 —— 那是「这张证书本来就没绑定响应」，不是「绑定通过」。
+
+def check_response_binding(args, payload: dict, proof_result) -> list:
+    """步骤 3b：响应绑定（P0-2）—— 被证明的 T 是不是送达的 T′。
+
+    策略绑定保证「判定的规则就是声明的策略」，却完全不提「判定的是哪条响应」
+    —— 公开模式还好（T 至少是证明的输入），私有模式下验证者连 T 的影子都看不到。
+    这一卡补的就是那一段：把 T 拴到本次会话的 nonce 上。
+
+    证书里**没有** challenge 块（或证明的公开值里没有 response_binding）时如实
+    跳过 —— 那是「这张证书本来就没绑定响应」，不是「绑定通过」。
+
+    这里**就地重读** ``args.response``（而不是复用 :func:`main` 读好的那份）：
+    两份内容必然相同，但重算路径保持与拆分前逐字一致，差异面为零。
+    """
     ch = payload.get("challenge") or {}
     proof_binding = verifier.committed_response_binding(proof_result) if proof_result else None
     if not ch and proof_binding is None:
-        results.append(("response_binding", True,
-                        "certificate is not challenge-bound — skipped (no challenge block)"))
-    else:
-        nonce_hex = args.nonce if args.nonce is not None else ch.get("nonce")
-        recomputed, note = None, ""
-        if args.response is not None:
-            if nonce_hex is None:
-                note = " (--response given 但证书没有 nonce，无法重算)"
-            else:
-                try:
-                    recomputed = commit.response_binding(
-                        challenge.parse_nonce(nonce_hex),
-                        args.response.read_text(encoding="utf-8"))
-                    note = " — 送达的 T′ 就是被证明的 T"
-                except ValueError as exc:
-                    note = f" (nonce 无法解析: {exc})"
-        ok_bind, bind_detail = verifier.check_response_binding([
-            ("cert.challenge", ch.get("response_binding")),
-            ("cert.outcome", (payload.get("outcome") or {}).get("response_binding")),
-            ("proof", proof_binding),
-            ("response", recomputed),
-        ])
-        if not ok_bind and recomputed is not None:
-            note = " — 送达的 T′ 与被证明的 T 对不上"
-        results.append(("response_binding", ok_bind, bind_detail + note))
+        return [("response_binding", True,
+                 "certificate is not challenge-bound — skipped (no challenge block)")]
+    nonce_hex = args.nonce if args.nonce is not None else ch.get("nonce")
+    recomputed, note = None, ""
+    if args.response is not None:
+        if nonce_hex is None:
+            note = " (--response given 但证书没有 nonce，无法重算)"
+        else:
+            try:
+                recomputed = commit.response_binding(
+                    challenge.parse_nonce(nonce_hex),
+                    args.response.read_text(encoding="utf-8"))
+                note = " — 送达的 T′ 就是被证明的 T"
+            except ValueError as exc:
+                note = f" (nonce 无法解析: {exc})"
+    ok_bind, bind_detail = verifier.check_response_binding([
+        ("cert.challenge", ch.get("response_binding")),
+        ("cert.outcome", (payload.get("outcome") or {}).get("response_binding")),
+        ("proof", proof_binding),
+        ("response", recomputed),
+    ])
+    if not ok_bind and recomputed is not None:
+        note = " — 送达的 T′ 与被证明的 T 对不上"
+    return [("response_binding", ok_bind, bind_detail + note)]
 
-    # 3c) 轨迹绑定（P1-5）：被证明的轨迹是不是**我手上这条**链。
-    #
-    #     与 3b 同构，但绑的对象从「响应」换成「工具回执链」。缺 `--receipts`
-    #     时这一路来源就没有 —— 此时证书里那些 `trace_root` 只能证明「出证方
-    #     前后自洽」，证明不了链里到底有什么。链长了也不必把链塞进公开值：
-    #     验证方本来就持有网关发给它的回执，重算链尾即可。
+
+def check_trace_binding(args, payload: dict, proof_result) -> list:
+    """步骤 3c+3d：轨迹绑定与**会话末端承诺** —— 一对，必须放在一起。
+
+    3c 绑的对象是「工具回执链」。缺 `--receipts` 时这一路来源就没有 —— 此时证书
+    里那些 `trace_root` 只能证明「出证方前后自洽」，证明不了链里到底有什么。链长
+    了也不必把链塞进公开值：验证方本来就持有网关发给它的回执，重算链尾即可。
+
+    3d 回答的是 3c **回答不了**的那个问题：这条链**有没有被截尾**。3c 比的是
+    「证书绑的链」与「送检的链」两份检材，而两份都可以是那条被截断的链 —— 任何
+    只看交付链的检查都无从知道「后面还有没有」。唯一的补法是让网关对会话末端
+    签字：seal 里带 `count` 与 `trace_root`，截尾必然让其中之一对不上。
+
+    两者共用网关公钥（只加载一次）、共用 `--receipts` 解析出来的那条链，所以
+    合成一个函数；拆开就得让 `gw_ring` / `receipts` 跨函数传递，反而更难读。
+    """
+    cards: list = []
     tr_cert = (payload.get("outcome") or {}).get("trace_root")
     tr_proof = verifier.committed_trace_root(proof_result) if proof_result else None
 
@@ -325,79 +337,82 @@ def main() -> int:
         # 给了网关公钥就顺带验一遍（这与电路内的结构校验是两道独立的关）。
         if not args.gateway_key:
             # 单独给了 --receipts 却没给网关公钥：如实说明「签名未验」
-            results.append(("receipt_chain", True,
-                            "只重算了链尾摘要；未给 --gateway-key，回执签名未验"))
+            cards.append(("receipt_chain", True,
+                          "只重算了链尾摘要；未给 --gateway-key，回执签名未验"))
         elif gw_ring is None:
-            results.append(("receipt_chain", False, gw_note))
+            cards.append(("receipt_chain", False, gw_note))
         else:
             ok_chain, why = trace.verify_chain(receipts, gw_ring)
-            results.append(("receipt_chain", ok_chain,
-                            f"{len(receipts)} 条回执验签通过" if ok_chain else why))
+            cards.append(("receipt_chain", ok_chain,
+                          f"{len(receipts)} 条回执验签通过" if ok_chain else why))
     if tr_cert is None and tr_proof is None:
-        results.append(("trace_binding", True,
-                        "certificate has no trace_root — skipped（P1-5 之前签发的证书）"))
+        cards.append(("trace_binding", True,
+                      "certificate has no trace_root — skipped（P1-5 之前签发的证书）"))
+        return cards
+
+    ok_tr, tr_detail = verifier.check_trace_binding([
+        ("cert.outcome", tr_cert),
+        ("proof", tr_proof),
+        ("receipts", tr_gateway),
+    ])
+    if not ok_tr and tr_gateway is not None:
+        tr_note = " — 网关侧回执链与证书对不上"
+    cards.append(("trace_binding", ok_tr, tr_detail + tr_note))
+
+    # 3d) 会话末端承诺（P1-5b）：这条链**有没有被截尾**。
+    #
+    # 三处一起比：seal 自称的链尾 == 证书/证明承诺的 trace_root（说明这条 seal
+    # 说的就是被证明的那条链）；再（有 --receipts 时）核对手上这条检材的长度与
+    # 链尾。签名那一关与回执验签同级，都靠 --gateway-key。
+    #
+    # 它在载荷**顶层**而不是 outcome 里：outcome 是证明公开值的镜像
+    # （上面 proof_outcome 卡逐字段比过），而 seal 是链下网关签的，电路里没有。
+    seal = trace.seal_from_json(payload.get("trace_seal"))
+    if seal is None and args.gateway_key:
+        # 验证方给了网关公钥 ⇒ 它知道这段会话由一个（这把钥匙的）网关经手，
+        # 证书却没有任何末端承诺 —— 「链尾被整条删掉」无从排除。这是**矛盾**，
+        # 不是「旧版证书」，所以判 FAIL 而不是跳过。
+        cards.append(("trace_seal", False,
+                      "证书没有 trace_seal（P1-5b 之前签发，或出证方未承诺会话末端）"
+                      "—— 无法排除链尾被整条删掉；请重签"))
+    elif seal is None:
+        # 没给网关公钥：seal 的真伪本来就核不了，「没有 seal」与「出证方没承诺」
+        # 也分不开。如实记一条 PASS + 说明（与 3c 的「只有一份来源」同类），
+        # 绝不写成「截尾已排除」。
+        cards.append(("trace_seal", True,
+                      "证书未附 trace_seal —— 会话末端未被承诺，**截尾不可排除**；"
+                      "未给 --gateway-key，此处无从进一步核对 (skipped)"))
+    elif tr_cert is not None and seal.trace_root != tr_cert:
+        cards.append(("trace_seal", False,
+                      f"seal.trace_root={seal.trace_root[:12]}… != 证书承诺的 "
+                      f"trace_root={tr_cert[:12]}…"
+                      "（seal 承诺的链尾与证书承诺的不一致：链被截尾或换成了另一条）"))
+    elif args.gateway_key and gw_ring is None:
+        # 给了钥匙却加载不了：不能降级成「结构对就算过」——那等于假装验过。
+        cards.append(("trace_seal", False, gw_note))
     else:
-        ok_tr, tr_detail = verifier.check_trace_binding([
-            ("cert.outcome", tr_cert),
-            ("proof", tr_proof),
-            ("receipts", tr_gateway),
-        ])
-        if not ok_tr and tr_gateway is not None:
-            tr_note = " — 网关侧回执链与证书对不上"
-        results.append(("trace_binding", ok_tr, tr_detail + tr_note))
+        ok_seal, why_seal = trace.verify_seal(seal, gw_ring, receipts)
+        if ok_seal and not gw_ring:
+            why_seal = ("seal 与链长/链尾一致；未给 --gateway-key，seal 签名未验")
+        cards.append(("trace_seal", ok_seal, why_seal))
+    return cards
 
-        # 3d) 会话末端承诺（P1-5b）：这条链**有没有被截尾**。
-        #
-        #     3c 回答「证明绑的是不是我手上这条链」，但它比的是**两份检材**，
-        #     而两份都可以是那条被截断的链 —— 任何只看交付链的检查都无从知道
-        #     「后面还有没有」。唯一的补法是让网关对会话末端签字：seal 里带
-        #     `count` 与 `trace_root`，截尾必然让其中之一对不上。
-        #
-        #     三处一起比：seal 自称的链尾 == 证书/证明承诺的 trace_root（说明
-        #     这条 seal 说的就是被证明的那条链）；再（有 --receipts 时）核对手上
-        #     这条检材的长度与链尾。签名那一关与回执验签同级，都靠 --gateway-key。
-        #
-        #     它在载荷**顶层**而不是 outcome 里：outcome 是证明公开值的镜像
-        #     （上面 proof_outcome 卡逐字段比过），而 seal 是链下网关签的，
-        #     电路里没有这个东西。
-        seal = trace.seal_from_json(payload.get("trace_seal"))
-        if seal is None and args.gateway_key:
-            # 验证方给了网关公钥 ⇒ 它知道这段会话由一个（这把钥匙的）网关经手，
-            # 证书却没有任何末端承诺 —— 「链尾被整条删掉」无从排除。这是**矛盾**，
-            # 不是「旧版证书」，所以判 FAIL 而不是跳过。
-            results.append(("trace_seal", False,
-                            "证书没有 trace_seal（P1-5b 之前签发，或出证方未承诺会话末端）"
-                            "—— 无法排除链尾被整条删掉；请重签"))
-        elif seal is None:
-            # 没给网关公钥：seal 的真伪本来就核不了，「没有 seal」与「出证方没承诺」
-            # 也分不开。如实记一条 PASS + 说明（与 3c 的「只有一份来源」同类），
-            # 绝不写成「截尾已排除」。
-            results.append(("trace_seal", True,
-                            "证书未附 trace_seal —— 会话末端未被承诺，**截尾不可排除**；"
-                            "未给 --gateway-key，此处无从进一步核对 (skipped)"))
-        elif tr_cert is not None and seal.trace_root != tr_cert:
-            results.append(("trace_seal", False,
-                            f"seal.trace_root={seal.trace_root[:12]}… != 证书承诺的 "
-                            f"trace_root={tr_cert[:12]}…"
-                            "（seal 承诺的链尾与证书承诺的不一致：链被截尾或换成了另一条）"))
-        elif args.gateway_key and gw_ring is None:
-            # 给了钥匙却加载不了：不能降级成「结构对就算过」——那等于假装验过。
-            results.append(("trace_seal", False, gw_note))
-        else:
-            ok_seal, why_seal = trace.verify_seal(seal, gw_ring, receipts)
-            if ok_seal and not gw_ring:
-                why_seal = ("seal 与链长/链尾一致；未给 --gateway-key，seal 签名未验")
-            results.append(("trace_seal", ok_seal, why_seal))
 
-    # 3e) 语义规则（P2-9）：**SP1 证明判不了的那部分**，必须由陪伴证明补上。
-    #
-    #     这一块的特殊之处：它是本项目里**唯一**一处「证明通过了、但结论还不完整」
-    #     的地方。`outcome.delegated` 非空 == 电路在说「这几条我没判，你去找陪伴
-    #     证明」。所以这里的默认行为必须是 **fail closed**：delegated 里有一条
-    #     找不到对应的 companion，就是 FAIL —— 而不是「跳过」。
-    #
-    #     跳过会得到一个**静默的空壳**：证书看起来全绿，而语义规则那条根本没被
-    #     判定。这正是 P0-1 的形态（「看起来验过了」），只是换了个位置。
+def check_semantic(args, payload: dict, response_text) -> tuple:
+    """步骤 3e：语义规则（P2-9）—— **SP1 证明判不了的那部分**，必须由陪伴证明补上。
+
+    这一块的特殊之处：它是本项目里**唯一**一处「证明通过了、但结论还不完整」的
+    地方。`outcome.delegated` 非空 == 电路在说「这几条我没判，你去找陪伴证明」。
+    所以这里的默认行为必须是 **fail closed**：delegated 里有一条找不到对应的
+    companion，就是 FAIL —— 而不是「跳过」。
+
+    跳过会得到一个**静默的空壳**：证书看起来全绿，而语义规则那条根本没被判定。
+    这正是 P0-1 的形态（「看起来验过了」），只是换了个位置。
+
+    返回 ``(cards, semantic_satisfied)``：后者是「**规则是否满足**」（与证书真伪
+    分开记，见 :func:`print_report` 的「合规」行），元素为 ``(规则名, 是否命中)``。
+    """
+    cards: list = []
     delegated = (payload.get("outcome") or {}).get("delegated") or []
     # 语义规则的**满足情况**（与证书真伪分开记，见下面的「合规」行）。
     semantic_satisfied: list = []
@@ -405,24 +420,24 @@ def main() -> int:
         comps = ((payload.get("semantic") or {}).get("companions")) or []
         by_rule = {c.get("rule"): c for c in comps if isinstance(c, dict)}
         if not args.semantic_dir:
-            results.append(("semantic", False,
-                            f"策略里有 {len(delegated)} 条语义规则被委托给陪伴证明，"
-                            f"但没有给 --semantic-dir —— 无法核验；"
-                            f"（这些规则**没有被 SP1 证明判定**，不能默认通过）"))
+            cards.append(("semantic", False,
+                          f"策略里有 {len(delegated)} 条语义规则被委托给陪伴证明，"
+                          f"但没有给 --semantic-dir —— 无法核验；"
+                          f"（这些规则**没有被 SP1 证明判定**，不能默认通过）"))
         elif response_text is None:
             # 绑定核对要拿 T′ 重算 encode(T′)。没有 T′ 就核不了第 5 步，
             # 而第 5 步正是「这份 ezkl 证明说的是这条响应」的**唯一**依据。
-            results.append(("semantic", False,
-                            "策略含语义规则但没给 --response：无法把陪伴证明绑到送达的"
-                            "响应上（信任边界 ③）—— 只验 ezkl 证明本身是不够的"))
+            cards.append(("semantic", False,
+                          "策略含语义规则但没给 --response：无法把陪伴证明绑到送达的"
+                          "响应上（信任边界 ③）—— 只验 ezkl 证明本身是不够的"))
         else:
             for dep in delegated:
                 rule = dep.get("name")
                 comp = by_rule.get(rule)
                 if comp is None:
-                    results.append((f"semantic[{rule}]", False,
-                                    "证书里没有这条规则的陪伴证明（delegated 非空而 "
-                                    "companions 缺失/不全）—— 语义规则未被判定"))
+                    cards.append((f"semantic[{rule}]", False,
+                                  "证书里没有这条规则的陪伴证明（delegated 非空而 "
+                                  "companions 缺失/不全）—— 语义规则未被判定"))
                     continue
                 ok_c, why_c, hits = S.verify_companion(
                     dep, comp, response_text, args.semantic_dir,
@@ -432,7 +447,7 @@ def main() -> int:
                 # 这一栏是**证书真伪**：证明是真的、绑在这条响应上。
                 # 「规则是否满足」是证书内容，另记在下面的合规行里 —— 见
                 # `policydsl.proofs.verify_companion` 的返回值说明。
-                results.append((f"semantic[{rule}]", ok_c, why_c))
+                cards.append((f"semantic[{rule}]", ok_c, why_c))
                 if ok_c:
                     semantic_satisfied.append((rule, hits))
     else:
@@ -440,36 +455,47 @@ def main() -> int:
         # 对策略的理解不一致 —— 宁可报出来，也不要默默忽略一个多余的证明。
         comps = ((payload.get("semantic") or {}).get("companions")) or []
         if comps:
-            results.append(("semantic", False,
-                            f"公开值里 delegated 为空，证书却带了 {len(comps)} 份陪伴证明"
-                            f"—— 证书与证明对策略的描述不一致"))
+            cards.append(("semantic", False,
+                          f"公开值里 delegated 为空，证书却带了 {len(comps)} 份陪伴证明"
+                          f"—— 证书与证明对策略的描述不一致"))
         else:
-            results.append(("semantic", True, "策略里没有语义规则（无需陪伴证明）"))
+            cards.append(("semantic", True, "策略里没有语义规则（无需陪伴证明）"))
+    return cards, semantic_satisfied
 
-    # 4) 锚定账本：链完整 + 证书摘要确实在账本中
+
+def check_anchor(args, payload: dict) -> list:
+    """步骤 4+4b：锚定账本（链完整 + 证书摘要确实在账本中）与可选的链上核对。
+
+    4b 是**只读**核对：证书摘要能在 Anchor 合约上读回，且链上时间戳与本地账本
+    meta 里记的一致（``--rpc`` 与 ``--contract`` 必须成对给）。
+    """
+    cards: list = []
     ok_chain, reason = anchor.verify_ledger(args.ledger)
     digest = cert.cert_digest(payload)
     entry = anchor.find_anchor(args.ledger, digest)
     ok_anchor = ok_chain and entry is not None
-    results.append(("anchor", ok_anchor, f"chain={reason} entry={'found' if entry else 'MISSING'}"))
+    cards.append(("anchor", ok_anchor, f"chain={reason} entry={'found' if entry else 'MISSING'}"))
 
-    # 4b) 链上锚定（可选，只读核对）
     if args.rpc and args.contract:
         try:
             rec = anchor.verify_digest_on_chain(digest, args.rpc, args.contract)
             if rec is None:
-                results.append(("anchor_on_chain", False, f"digest not found on {args.contract}"))
+                cards.append(("anchor_on_chain", False, f"digest not found on {args.contract}"))
             else:
                 oc = (entry.get("meta") or {}).get("on_chain") if entry else None
                 consistent = oc is None or oc.get("chain_ts") == rec["chain_ts"]
-                results.append(("anchor_on_chain", consistent,
-                                f"ts={rec['chain_ts']} ({rec['chain_ts_iso']}) by={rec['anchored_by']}"
-                                + ("" if consistent else f" ≠ ledger meta {oc.get('chain_ts')}")))
+                cards.append(("anchor_on_chain", consistent,
+                              f"ts={rec['chain_ts']} ({rec['chain_ts_iso']}) by={rec['anchored_by']}"
+                              + ("" if consistent else f" ≠ ledger meta {oc.get('chain_ts')}")))
         except anchor.AnchorError as exc:
-            results.append(("anchor_on_chain", False, f"rpc error: {exc}"))
+            cards.append(("anchor_on_chain", False, f"rpc error: {exc}"))
     elif args.rpc or args.contract:
-        results.append(("anchor_on_chain", False, "--rpc and --contract must be given together"))
+        cards.append(("anchor_on_chain", False, "--rpc and --contract must be given together"))
+    return cards
 
+
+def print_report(args, payload: dict, results: list, semantic_satisfied: list) -> int:
+    """打印每张卡片与 ``RESULT:``，必要时再打「合规」行；返回退出码。"""
     ok_all = all(r[1] for r in results)
     print(f"certificate: {args.cert}")
     print(f"policy={payload['policy']['id']}@{payload['policy']['version']} mode={payload['mode']} "
@@ -505,6 +531,70 @@ def main() -> int:
         print(f"合规: {verdict} {why}" if verdict != "未核（--semantic-skip-ezkl）"
               else f"合规: {verdict}")
     return 0 if ok_all else 1
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--cert", type=Path, required=True)
+    ap.add_argument("--pack", type=Path, required=True)
+    ap.add_argument("--ledger", type=Path, required=True)
+    ap.add_argument("--proof", type=Path, default=None)
+    ap.add_argument("--response", type=Path, default=None,
+                    help="送达的响应 T′：给了才能把「被证明的 T」与「收到的 T′」对上")
+    ap.add_argument("--nonce", default=None,
+                    help="覆盖证书里的挑战值（十六进制）；用于验证重放/换 nonce 会被拒")
+    ap.add_argument("--rpc", default=None, help="EVM RPC 端点（链上锚定核对）")
+    ap.add_argument("--contract", default=None, help="已部署的 Anchor 合约地址")
+    ap.add_argument("--keyring", default=None,
+                    help="出证方公钥：key.json / *.pub.hex / *.pub.pem / hex 文本。"
+                         "缺省读证书同目录的 key.json")
+    ap.add_argument("--receipts", type=Path, default=None,
+                    help="P1-5：**网关侧收到的**工具回执链（JSON 数组）。给了才能把"
+                         "「证明承诺的链尾」与「自己手上这条链」对上")
+    ap.add_argument("--gateway-key", default=None,
+                    help="工具网关公钥（P1-5，形式同 --keyring）：给了就对回执链逐条验签，"
+                         "并核对会话末端承诺 trace_seal（P1-5b，拦截尾）")
+    ap.add_argument("--semantic-dir", type=Path, default=None,
+                    help="P2-9：语义规则的 ezkl 材料目录（vk.ezkl / settings.json / srs / "
+                         "陪伴证明）。策略含 semantic_bound 时**必给** —— 那部分不在 SP1 "
+                         "证明里，不给就核不了（本工具会 fail closed）")
+    ap.add_argument("--semantic-skip-ezkl", action="store_true",
+                    help="P2-9：只核对指纹与响应绑定，**不跑 ezkl 验证器**。用于没有 ezkl 的"
+                         "环境；此时「证明本身有效」这一条未被核验，结果会如实标注")
+    args = ap.parse_args()
+
+    env = json.loads(args.cert.read_text(encoding="utf-8"))
+    # 送达的响应 T′ 原文（**不加工**，见 scripts/prove/ezkl_prove.py::_read_response）。
+    # 语义规则的陪伴证明要对着它核对 encode(T′)，逐字符都必须一致。
+    response_text = (args.response.read_text(encoding="utf-8")
+                     if args.response is not None else None)
+
+    # 卡片**按步骤顺序**合并：这张表的次序就是输出的次序。
+    results: list = []
+
+    # 1) 签名校验 —— 拿不到公钥或签名不对就到此为止，只打印已得的。
+    cards, payload = check_signature(args, env)
+    results += cards
+    if payload is None:
+        print_fail(results)
+        return 1
+
+    # 2) 证明校验 与 2b/2c 自称字段的诚实性
+    cards, proof_result = check_proof(args, payload)
+    results += cards
+    results += check_artifact_claims(args, payload, proof_result)
+
+    # 3) 策略绑定 / 3b 响应绑定 / 3c+3d 轨迹与末端承诺 / 3e 语义规则
+    results += check_policy_binding(args, payload, proof_result)
+    results += check_response_binding(args, payload, proof_result)
+    results += check_trace_binding(args, payload, proof_result)
+    cards, semantic_satisfied = check_semantic(args, payload, response_text)
+    results += cards
+
+    # 4) 锚定账本（+ 4b 链上核对）
+    results += check_anchor(args, payload)
+
+    return print_report(args, payload, results, semantic_satisfied)
 
 
 def print_fail(results) -> None:
