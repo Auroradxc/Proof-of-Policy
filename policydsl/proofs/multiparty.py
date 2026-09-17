@@ -364,11 +364,6 @@ class MultipartyCertificate:
                 return p
         return None
 
-    @property
-    def proved_parts(self) -> List[SlicePart]:
-        """非空切片（= 真的出了证明的那几段）。"""
-        return [p for p in self.parts if not p.empty]
-
     def to_json(self) -> Dict[str, Any]:
         return {
             "version": self.version,
