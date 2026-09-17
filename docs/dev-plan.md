@@ -2035,3 +2035,95 @@ R8 改完之后**第一次**跑全量测试得到 `FAILED (failures=1, skipped=1
 | 分钟 | `verify_session.py --session …` | **10 项 PASS** |
 
 真出证随 P1 阶段末统一跑（`--label P1-acceptance`）。
+
+#### 5.7.14 P1 大验收（2026-09-17，含真出证）
+
+按 §5.7.3 的三档跑完。判据同 P0（§5.7.6）：**「SKIP 集合前后逐条一致」**，
+不是「没有 FAIL」。
+
+| 档 | 命令 | 结果 |
+|---|---|---|
+| 秒级 | `unittest discover -s tests -t .` | **751 passed / 15 skipped** |
+| 秒级 | `cross_validate.py --no-prove` | **host 19/19** PASS（退出码 0）|
+| 秒级 | `verify/acceptance.py --verify` | **七面逐路径零差异** |
+| 分钟 | `demo_all.sh`（fast） | 8 支路全 PASS，**SKIP 集合 = ∅** |
+| 分钟 | `verify_session.py --session …` | **10 项 PASS** |
+| 真出证 | `regression_prove.py --label P1-acceptance` | 出证 **19/19**（1987.5 s，峰值 **10,905 MB**）+ 验证腿 `clean_pass`（151.1 s）；`regression-prove.jsonl` 追加**第 3 行** |
+| 真出证 | `demo_all.sh --prove` | **8 支路全 PASS，SKIP 集合 = ∅**，合计 ~21 min |
+
+##### 跑法：⑥⑦ 严格串行，且都脱开工具进程组
+
+两条腿各自峰值都在 **10.9–11.1 GiB**，本机总内存 **11,958 MB** —— 重叠跑必炸。
+故 ⑥ 起（`setsid nohup … & disown`）、**等它退干净**（`free` 回到 10.7 GiB 可用）
+才起 ⑦。这是 §5.7.6「结论是跑法问题」那条的直接沿用。
+
+##### 真出证确实出了证明（不是「跑了一遍」）
+
+同一个 `verify_session` 的 `zk_proof` 卡，fast 模式是
+`unproven (host-check only)×3`，prove 模式变成
+**`SP1 proof verified (pop-script) + unproven (host-check only)×2`** ——
+这一行的差别就是「真出证」与「宿主对拍」的分界。`RESULT: PASS`（10/10）。
+另：`demo_all.sh --prove` 的汇总表**没有 SKIP 行**，与 fast 那次的 `SKIP = ∅`
+一致。
+
+> **一处顺序上的取舍（记下来）**：`demo_all.sh`（fast）与 `--prove` 写的是**同一个
+> 产物目录** `scripts/examples/out/all/`，所以 ⑦ 跑完之后**不能**再跑 ③ 的 fast ——
+> 那会把刚验过的真证明产物覆盖掉。因此 ③ 的数取自 ⑥⑦ **之前**那一轮（P1 代码已
+> 全部落地，只是还没出证），④ 则在 ⑦ **之后**重跑一次，验的是真证明产物。
+> 上表 ① ② ⑤ 也在 ⑦ 之后各重跑了一次，数值不变。**③ 没有在 ⑦ 之后重跑**，
+> 这是刻意的，不是漏跑。
+
+##### 真出证的记录（`bench/results/regression-prove.jsonl`，只追加）
+
+第 3 行 `label=P1-acceptance`：`result=PASS` / `vectors=19` / `chunk=2` /
+`seconds=2139.4` / `ts=2026-09-17T15:03:49Z`，驱动 `bytes=90880016`、
+`mtime=2026-09-17T00:31:35Z`（**与 P0 那次是同一个二进制**，本轮没有重建驱动）。
+出证腿 `prove_leg.prove=19/19`、`host_matched=19`、`peak_rss_mb=10905`；
+验证腿 `verify_leg.ok=True`、`proof_bytes=2782131`、`vkey_hash=0x00a3566…880b`
+（与 P0 那行的 vkey 一致 —— 驱动的 vkey 没动过，这正是本轮**不碰
+`circuits/types/src/lib.rs`** 那条界限要保的东西）。
+
+`git.dirty=True` 的原因**与 P0 相同**：工作树里那两个刻意未提交的未跟踪文件
+`bench/results/ablation_live.{json,md}`。所有**被跟踪**的文件停在 `2ecabd6`。
+
+##### 中高风险项逐条判定（§5.7.3 的回退判据）
+
+| 项 | 回退判据 | 实测 | 判定 |
+|---|---|---|---|
+| **R7**（中） | ① 7 包 `policy_hash` 有任一不一致且非申报归一 | `tests/loader_parity_baseline.json` **在 R7 的提交里一个字没动**（`git log` 上只有 P1-① 一个提交），且新加的 `test_the_live_delta_is_exactly_the_declared_normalization` 断言 `policy_hash` 一个字不许动 | ✅ |
+| **R7** | ② 全量测试非全绿 | 751 passed / 15 skipped，**多轮恒定** | ✅ |
+| **R7** | ③ demo fast 出现新 FAIL/SKIP | 8 支路全 PASS，SKIP = ∅ | ✅ |
+| **R8**（低） | 13 项 PASS 逐项复现 | 19 次调用逐字节相同（§5.7.13）| ✅ |
+
+**R7 附带的那处「非等效」变更是走过流程的**：它把畸形包的异常从
+`KeyError` / `AttributeError` 换成 `PolicyError`（§5.7.12），于是验收第 3 面
+**必红**。处理方式正是验收工具 docstring 与 §5.7.4 定的那条 —— **人工确认后
+重新采集快照，diff 进提交**（`0be2edd` 里 `tests/acceptance_baseline.json`
+共 40 个叶子变化，全部落在申报的 `3a_model_robustness`(28) 与
+`3b_cli_robustness`(12) 两类里，其余五面零差异）。**这是「变更被承认」，不是
+「等效性被证明」** —— 两者在记录里分开写。
+
+##### 回退记录
+
+**P1 没有发生回退。** 唯一标「中」的 R7 三条判据全过；R4/R5/R6 极低风险、R8 低
+风险，各自的判据也都成立。故 `git revert` 一次没用过，工作树里没有残留的半成品。
+
+##### 尚在案上的一条（继承 §5.7.13，**未销案**）
+
+R8 之后第一次全量套件出现过 `FAILED (failures=1)`，因只留了 `tail -5` 而**丢了
+用例名**；其后 **23 次全量 + 6 次定向** 全绿。§5.7.13 承诺「在 P1 大验收里继续
+观察」——本轮的结果是：**又是多次全绿（含 ① 在 ⑦ 前后各一次），仍然没有再现**。
+但它**只能算统计性辩护，机制上仍无法排除**，所以**继续留在案上**，带到 P2；
+若再现，第一件事是留住失败用例名。
+
+##### 一处事后更正
+
+§5.7.13 里的「`434 → 65` / `330 → 44` 行」是错的，真值是
+**`433 → 64` / `287 → 45`**（量法：下一个顶层定义的行号 − 本函数起始行号）。
+已在 `2ecabd6` 更正，只动文档、不动代码。
+
+##### 未决事项（需要用户拍板）
+
+`bench/results/ablation_live.{json,md}` 两个未跟踪文件仍在原地，本轮**既不提交
+也不删除** —— 它们是 `regression-prove.jsonl` 里 `git.dirty=True` 的**唯一**来源。
+去留待定。
