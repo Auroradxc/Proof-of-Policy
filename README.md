@@ -219,18 +219,23 @@ curl -s -X POST localhost:8787/v1/check -H 'Content-Type: application/json' \
 
 ```
 zk-policy/
-├── policydsl/            # Python DSL + 参考评估 + 私密/证书/锚定 + 框架适配（langchain/langgraph/mcp）
+├── policydsl/            # Python 参考层，6 个子包：core（DSL+判定）/ privacy（承诺）/
+│                         #   evidence（证书+密钥+锚定）/ proofs（出证与组合，每条一个 guest）/
+│                         #   adapters（框架适配，唯一允许带可选依赖的地方）/ runtime（常驻服务）
 ├── policy_packs/         # 示例策略包（JSON）
 ├── semantic/             # P2-9：语义规则的模型与特征（确定性 ONNX 导出 + ezkl 产物）
 ├── circuits/             # SP1 程序与驱动（Rust，v6 workspace：types/program/infer-program/session-program/script/verifier）
 ├── contracts/            # Anchor.sol + 入库 artifact（Anchor.json，部署无需 solc）
-├── scripts/              # 交叉验证 / demo / 证书签发与验证 / 链上锚定 / 安装脚本
+├── scripts/              # 端到端脚本，按用途分 5 组：demo / prove / verify / anchor / ops
 ├── tests/                # 单测与集成测试（unittest，stdlib + 可选框架）
 ├── bench/                # 评测（周期数 / 证明成本 / 验证成本；结果在 bench/results/）
-├── paper/                # 论文初稿
-├── docs/                 # 架构 / DSL / 复现指南 / 安全模型 / **modules/（分板块模块文档）**
+├── paper/                # 论文（proof-of-policy.tex 是权威源，.md 是镜像）
+├── docs/                 # 架构 / DSL / 复现指南 / 安全模型 / 分板块模块文档 modules/
 └── roadmap.md            # 8 周开发映射
 ```
+
+**文档总入口**：[`docs/README.md`](docs/README.md) —— 全部文档的索引、各自的状态标注
+（哪篇是维护中的当前说明、哪篇是刻意保留的历史记录）、以及三条「唯一权威源」约定。
 
 ## 学习路线（0 基础研究生）
 
