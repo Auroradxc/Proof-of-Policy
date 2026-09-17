@@ -33,6 +33,7 @@ ASCII 语义说明：``\\w \\d \\s`` 这里分别指 ASCII 的
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import List, Optional, Tuple, Union
@@ -383,7 +384,9 @@ _PATTERN_CACHE_SIZE = 4096
 
 
 class _CompiledPattern(dict):
-    """编译好的 NFA spec：**行为上与普通 dict 完全相同**，只多挂一个 ε-闭包表。
+    """编译好的 NFA spec：**行为上与普通 dict 完全相同**，只多挂两份记忆表
+    （``closure_memo`` 是 ε-闭包表，``trans_memo`` 是匹配用的转移表，见
+    :func:`_transition_table`）。二者都是**纯派生量**，不进 dict 内容。
 
     为什么要子类化：``_closure_table`` 需要一个「跟着 spec 走」的记忆位置，而 spec
     是 dict（不可哈希、不可弱引用）。三条替代路都更差 ——
@@ -398,11 +401,12 @@ class _CompiledPattern(dict):
     这一点由 ``tests/test_nfa_cache.py`` 对着规范文本钉死。
     """
 
-    __slots__ = ("closure_memo",)
+    __slots__ = ("closure_memo", "trans_memo")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.closure_memo: Optional[List[frozenset]] = None
+        self.trans_memo: Optional[Tuple] = None
 
 
 @lru_cache(maxsize=_PATTERN_CACHE_SIZE)
@@ -490,6 +494,52 @@ def _point_in_ranges(cp: int, ranges: List[List[int]]) -> bool:
     return False
 
 
+def _transition_table(spec: dict) -> Tuple:
+    """匹配用的转移表：每个状态一行，行内每条边一项 ``(starts, ends, 闭包)``。
+
+    ``match_search`` 的最内层是「对 ``cur`` 里每个状态、每条边，问一句
+    ``cp`` 落不落在它的区间里」。原先那里直接调 :func:`_point_in_ranges`：一个
+    **Python 写的**二分（每次 3–4 轮解释器循环），外加 ``states[s]["edges"]``
+    的逐次 dict 查找。两者都在按 (状态, 边, 字符) 计的粒度上跑 —— 实测
+    ``pii_redaction_v1`` 的流式路径上，``_point_in_ranges`` 独占总耗时的 42%
+    （504 万次调用 / 1.56 s）。
+
+    这里把边**预先解包**成两个平行的已排序数组，查询换成 C 级的
+    :func:`bisect.bisect_right`。语义与逐边调 ``_point_in_ranges`` **逐字相同**：
+    每条边照旧单独判一次，命中的边把其目标的闭包并进来。
+
+    ⚠️ **不做「把同状态的多条边合并成一张表」那种更省的优化**：那要求边与边、
+    区间与区间两两不交，而「当前 8 条 pattern 恰好都不相交」是**巧合，不是契约**
+    （本仓的老话：「恰好」不是契约）。这里只做等价变形。
+
+    同理，**区间的排序与两两不交也照旧是前提**（``_point_in_ranges`` 的 docstring
+    早就写着「已排序的」）：一条边只要不是「已排序且两两不交」，这一项的
+    ``starts`` 就是 ``None``，循环里退回逐条 ``_point_in_ranges`` —— 于是对手工
+    构造的 spec，新旧行为**依然**逐字相同（两边都错得一样，而不是一边悄悄"修好"）。
+
+    缓存与 :func:`_closure_table` 同款：只挂在 ``_CompiledPattern`` 上
+    （``trans_memo``）；手工构造的普通 dict 每次现算。
+    """
+    memo = getattr(spec, "trans_memo", None)
+    if memo is not None:
+        return memo
+    closure = _closure_table(spec)
+    table: List[Tuple] = []
+    for st in spec["states"]:
+        rows = []
+        for e in st["edges"]:
+            rs = e["ranges"]
+            if any(rs[i][1] >= rs[i + 1][0] for i in range(len(rs) - 1)):
+                rows.append((None, rs, closure[e["to"]]))   # 退回逐条二分
+            else:
+                rows.append(([r[0] for r in rs], [r[1] for r in rs], closure[e["to"]]))
+        table.append(tuple(rows))
+    table = tuple(table)
+    if isinstance(spec, _CompiledPattern):
+        spec.trans_memo = table
+    return table
+
+
 def match_search(spec: dict, text: str) -> bool:
     """若 ``text`` 中存在与编译后 NFA 匹配的子串则返回 True
     （无锚点存在性搜索，对应子集上的 ``re.search``）。
@@ -498,22 +548,30 @@ def match_search(spec: dict, text: str) -> bool:
     从而覆盖「匹配不从头开始」的情况。
     """
     closure = _closure_table(spec)
-    states = spec["states"]
+    rows = _transition_table(spec)
     accept = frozenset(spec["accept"])
+    start_closure = closure[spec["start"]]
 
-    cur = set(closure[spec["start"]])
-    if cur & accept:
+    cur = set(start_closure)
+    if not cur.isdisjoint(accept):
         return True  # 匹配空前缀
     for ch in text:
         cp = ord(ch)
-        nxt = set()
+        # 「允许在当前字符位置重新开始」这一条用**初始值**表达，而不是算完再并一次：
+        # 并集与顺序无关，集合也没有顺序，所以结果逐元素相同 —— 少的是一次
+        # 集合合并（每个字符一次，正是热路径）。
+        nxt = set(start_closure)
         for s in cur:
-            for e in states[s]["edges"]:
-                if _point_in_ranges(cp, e["ranges"]):
-                    nxt.update(closure[e["to"]])
-        nxt.update(closure[spec["start"]])  # 允许在当前字符位置重新开始
+            for starts, ends, cl in rows[s]:
+                if starts is None:
+                    hit = _point_in_ranges(cp, ends)
+                else:
+                    i = bisect_right(starts, cp) - 1
+                    hit = i >= 0 and cp <= ends[i]
+                if hit:
+                    nxt.update(cl)
         cur = nxt
-        if cur & accept:
+        if not cur.isdisjoint(accept):
             return True
     return False
 

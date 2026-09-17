@@ -110,6 +110,12 @@ class TestCachedSpecIsReadOnly(unittest.TestCase):
         self.assertIsNotNone(spec.closure_memo, "消费者没走到闭包表？这一条就成了空断言")
         self.assertEqual(nfa._build_closure_table(spec), spec.closure_memo,
                          "有消费者改动了共享的 ε-闭包表")
+        # 转移表（R10）同样是挂在 slot 上的共享状态，而且它装的是**列表**
+        # （starts / ends），比 frozenset 更容易被就地改 —— 所以一并钉住。
+        self.assertIsNotNone(spec.trans_memo, "消费者没走到转移表？这一条就成了空断言")
+        recold = fresh_compile(PATTERN)
+        self.assertEqual(nfa._transition_table(recold), spec.trans_memo,
+                         "有消费者改动了共享的转移表")
 
     def test_repeated_calls_stay_equal(self):
         """同一份 spec 反复判同一段文本，结论必须稳定（不是「第一次对」）。"""

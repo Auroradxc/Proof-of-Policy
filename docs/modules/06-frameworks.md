@@ -136,13 +136,13 @@ self._sstopped[run_id]  # 是否已早停
 
 | L | `agent_tool` | `multiparty_demo` | `agent_content` | `finance_redaction` | `eu_ai_act` | `pii_redaction` |
 |---:|---:|---:|---:|---:|---:|---:|
-| 500 | 2 ms | 7 ms | 45 ms | 78 ms | 147 ms | 289 ms |
-| 1000 | 3 ms | 22 ms | 172 ms | 311 ms | 568 ms | 1,160 ms |
-| 2000 | 6 ms | 81 ms | 672 ms | **越界，不测** | 2,271 ms | 4,604 ms |
+| 500 | 2 ms | 7 ms | 27 ms | 46 ms | 79 ms | 145 ms |
+| 1000 | 3 ms | 23 ms | 100 ms | 175 ms | 288 ms | 568 ms |
+| 2000 | 6 ms | 83 ms | 393 ms | **越界，不测** | 1,138 ms | 2,261 ms |
 
 数字与复跑命令在 **[`bench/results/streaming.md`](../../bench/results/streaming.md)**
-（`python3 bench/bench_streaming.py`，~12 s）。读法看那张表的两栏倍率：**L 长 4 倍，
-每字符成本也跟着长 ~3.7–4.0 倍**（拟合常数 `c = 总耗时/(L(L+1)/2)` 在各 L 上稳定在
+（`python3 bench/bench_streaming.py`，~6 s）。读法看那张表的两栏倍率：**L 长 4 倍，
+每字符成本也跟着长 ~3.6–3.9 倍**（拟合常数 `c = 总耗时/(L(L+1)/2)` 在各 L 上稳定在
 同一个值上，说明 `总耗时 ≈ c·L²/2` 站得住）。若总代价是线性的，每字符成本应当是
 **常数** —— 它随 L 同步上升，这就是 `Θ(L²)`。
 
@@ -159,13 +159,30 @@ self._sstopped[run_id]  # 是否已早停
 > 已被「每次调用的固定开销」盖住，所以它那一行的每字符成本几乎不随 L 涨。
 > **这不代表它在更大 L 上也是线性的** —— 它没有 `length_bound`，见下。
 
+> **R10：`match_search` 的最内层换成预计算转移表**（2026-09-17）。`pattern_block` 的
+> 每个采样点、每条 pattern、每个字符都要问一次「这个码点落不落在某条边的区间里」，
+> 原先问的是 `nfa._point_in_ranges` —— 一个 **Python 写的**二分。实测它单独占了
+> `pii_redaction_v1` 流式路径总耗时的 **42%**（504 万次调用 / 1.56 s）。换成把边
+> 预先解包成两个有序数组 + C 级的 `bisect_right` 之后：**`agent_content` 672 → 393 ms、
+> `eu_ai_act` 2,271 → 1,138 ms、`pii_redaction` 4,604 → 2,261 ms（同为 2000 字符，
+> 都是 ~1.7–2.0×）**；而**不扫描文本的 `agent_tool` / `multiparty_demo` 不动** ——
+> 它们没有 `pattern_block`，这条路根本不在里面。
+>
+> 这不改变 `Θ(L²)` 的**阶**：它换掉的是每一格里的那个常数（L=2000 上的拟合常数，
+> `0ccaf6c` → 本次：`agent_content` 0.336 → 0.196、`eu_ai_act` 1.135 → 0.569、
+> `pii_redaction` 2.301 → 1.130 µs/字符²）。
+> 等效性由 `tests/test_nfa_transition_table.py` 逐输入对拍（与 R10 之前的实现、
+> 以及算法不同的 `match_search_naive` 三方比对）钉住。
+
 ⚠️ **不要把某个 L 上的「每字符」当常数外推**。本文件早先写过「~0.07 ms/字符，
 10k 字符的响应约 0.7 s」：那 0.07 是 `L≈200` 处的**瞬时值**；以 `agent_content`
-的 `c=0.35 µs/字符²` 外推，10k 字符实为 **~18 s**（低估 25×）。同理，**包间差 827×**
-也是真的 —— 同为 2000 字符，`pii_redaction_v1` 是 `agent_tool_v1` 的 827 倍，因为每个
-采样点要跑**全部** pattern 的 NFA。（R9(b) 之前这个差是 **44×**；差值变大恰恰因为
-`agent_tool_v1` 变快了，不是 `pii` 变慢了。）所以「流式要多久」**没有单一答案，必须
-连着策略包说**。
+（R10 后）的 `c=0.196 µs/字符²` 外推，10k 字符实为 **~10 s**（低估 ~14×）。同理，
+**包间差 405×** 也是真的 —— 同为 2000 字符，`pii_redaction_v1` 是 `agent_tool_v1` 的
+405 倍，因为每个采样点要跑**全部** pattern 的 NFA。（R9(b) 之前这个差是 **44×**，
+R9(b) 之后一度是 827×，R10 又把 `pii` 那一侧拉回来 —— 这条比值对**分母**极敏感：
+`agent_tool_v1` 在 2000 上只有个位数毫秒，跑一次的抖动就能让比值跳一个量级，
+读数时请看 [`streaming.md`](../../bench/results/streaming.md) 里同一行内的两个数，
+而不是这句转述。）所以「流式要多久」**没有单一答案，必须连着策略包说**。
 
 > `finance_redaction_v1` 在 2000 上标「越界」：它的 `length_bound.max=1500`，前缀越过
 > 上界会翻转判定、**多签一张证书**，把签发成本混进被测路径。`bench_streaming.py`
