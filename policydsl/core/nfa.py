@@ -34,6 +34,7 @@ ASCII 语义说明：``\\w \\d \\s`` 这里分别指 ASCII 的
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import List, Optional, Tuple, Union
 
 MAX_CP = 0x10FFFF
@@ -373,12 +374,54 @@ class _Builder:
         return frags[0][0], frags[-1][1]
 
 
+#: 一条规则的 pattern 会被**反复**编译：``evaluate.check`` 每次判定都重编一遍，
+#: 流式路径每采样点再各判一次。实测每次编译 ~22 µs，占 ``check()`` 中位耗时的
+#: 约四分之一，而同一个 pattern 编出来的 NFA 逐字节相同 —— 纯重复劳动。
+#: 上界取 4096：策略包的 pattern 总数是常数级（7 个包合计不到 40 条），
+#: 这个数是为了挡住「有人拿它做逐请求的正则编译」这种用法撑爆内存。
+_PATTERN_CACHE_SIZE = 4096
+
+
+class _CompiledPattern(dict):
+    """编译好的 NFA spec：**行为上与普通 dict 完全相同**，只多挂一个 ε-闭包表。
+
+    为什么要子类化：``_closure_table`` 需要一个「跟着 spec 走」的记忆位置，而 spec
+    是 dict（不可哈希、不可弱引用）。三条替代路都更差 ——
+
+    * 按 ``id(spec)`` 建全局表，必须**强引用**住 spec 才防得住 id 复用 ⇒ 只增不减；
+    * 按内容算哈希键，构键成本与闭包表本身同量级 ⇒ 白忙；
+    * 往 dict 里塞一个 ``"_closure"`` 键 ⇒ **改变了规范字节**，而这份 spec 就是
+      跨层契约，``policy_hash`` 会跟着变。
+
+    代价是 ``type(spec) is dict`` 变成 False（全仓库没有这种写法，``isinstance``
+    不受影响）；``json.dumps`` / ``==`` / 迭代 / 下标都是 dict 语义，逐字节相同。
+    这一点由 ``tests/test_nfa_cache.py`` 对着规范文本钉死。
+    """
+
+    __slots__ = ("closure_memo",)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.closure_memo: Optional[List[frozenset]] = None
+
+
+@lru_cache(maxsize=_PATTERN_CACHE_SIZE)
 def compile_pattern(pattern: str) -> dict:
-    """把 ``pattern`` 编译成可序列化的 NFA spec 字典（即跨层契约）。"""
+    """把 ``pattern`` 编译成可序列化的 NFA spec 字典（即跨层契约）。
+
+    ⚠️ **返回值是共享的、只读的**（带缓存）。同一份 ``pattern`` 只会编译一次，
+    之后每次都返回**同一个对象**。所有消费者（``match_search`` / ``find_spans`` /
+    ``anchored_full_match`` / ``mask_indices`` / 规范序列化）都只读，这才使得共享
+    是安全的 —— 谁要是就地改它，改的就不只是自己手里那份。这条前提由
+    ``tests/test_nfa_cache.py::TestCachedSpecIsReadOnly`` 钉住：那组用例把四个
+    消费者跑一遍，再与「新鲜编译」的结果比，谁动了缓存当场红。
+
+    ⚠️ 也**不要把它拿去改完当新 spec 用** —— 需要变体就 ``copy.deepcopy``。
+    """
     ast = parse(pattern)
     b = _Builder()
     start, end = b.build(ast)
-    return {
+    return _CompiledPattern({
         "start": start,
         "accept": [end],
         "states": [
@@ -388,15 +431,15 @@ def compile_pattern(pattern: str) -> dict:
             }
             for st in b.states
         ],
-    }
+    })
 
 
 # --------------------------------------------------------------------------- #
 # Pike VM：在 spec 上做无锚点的存在性搜索
 # --------------------------------------------------------------------------- #
 
-def _closure_table(spec: dict) -> List[frozenset]:
-    """预计算每个状态的 ε-闭包（含自身），加速后续匹配。"""
+def _build_closure_table(spec: dict) -> List[frozenset]:
+    """现算每个状态的 ε-闭包（含自身）。**无缓存**的实际计算。"""
     n = len(spec["states"])
     table: List[frozenset] = []
     for i in range(n):
@@ -410,6 +453,25 @@ def _closure_table(spec: dict) -> List[frozenset]:
             for e in spec["states"][s]["eps"]:
                 stack.append(e)
         table.append(frozenset(seen))
+    return table
+
+
+def _closure_table(spec: dict) -> List[frozenset]:
+    """每个状态的 ε-闭包（含自身），加速后续匹配。
+
+    结果缓存在 spec **自己身上**（``_CompiledPattern.closure_memo``）：闭包只取决于
+    spec 的结构，而 spec 是编译产物、调用方只读。实测这一步占 ``check()`` 中位耗时
+    约 8%（6.9 µs / 83 µs），缓存后降到一次属性读取。
+
+    **普通 dict 不缓存**（手工构造的 spec 照旧每次现算）—— 不为了性能去改动
+    对外的行为面；而 ``_CompiledPattern`` 是我们自己造的、只读的，缓存它才安全。
+    """
+    memo = getattr(spec, "closure_memo", None)
+    if memo is not None:
+        return memo
+    table = _build_closure_table(spec)
+    if isinstance(spec, _CompiledPattern):
+        spec.closure_memo = table
     return table
 
 
