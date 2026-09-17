@@ -299,7 +299,12 @@ python3 -m policydsl check --policy policy_packs/<你的包>.json <响应.txt>  
 ```bash
 python3 scripts/prove/cross_validate.py --no-prove    # 0.048 s，先在这里对拍
 python3 -m unittest tests.test_rules_incircuit tests.test_dsl
+python3 -m unittest tests.test_rule_kinds             # 机械核对下面几张表是否同步
 ```
+
+`tests/test_rule_kinds.py` 会**逐字面量**核对 `model.py` / `compile.py` / `evaluate.py` /
+`privacy/commit.py` 四处分派与 `multiparty.KIND_OWNER` 是否覆盖同一组 kind ——
+漏改其中任何一处都会当场红，不必等你自己想起来。
 
 **未入电路的 kind 是 fail-closed 的**（`test_policy_binding` 守着这条）—— 忘了改 Rust 侧
 不会静默放行，会当场判 FAIL。但**前提是你跑了那条测试**。

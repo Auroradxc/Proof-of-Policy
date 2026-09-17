@@ -306,6 +306,10 @@ python3 -m policydsl check <response.txt> --policy <policy.json>
    跑 `cross_validate` 确认 host/prove 都对上；私有模式另需一条证据承诺对齐用例
    （`tests/test_rules_incircuit.py::TestEvidenceCommitmentParity`）。
 
+> 第 1、2、3、5 步都是「同一个 kind 的四份分派」。`tests/test_rule_kinds.py` 会
+> 机械核对这四处（外加 `multiparty.KIND_OWNER`）是否指向同一组 kind —— 漏改任何
+> 一处都会红，且报错会直接告诉你少了哪个 kind。加完记得把这个测试也跑一遍。
+
 若该规则只打算**链下**支持（不打算证），则**不要**加第 2 步：让未知 kind 原样进规范
 字节，电路侧解析失败即产不出证明（fail-closed）。这是刻意设计，不要改成静默跳过。
 

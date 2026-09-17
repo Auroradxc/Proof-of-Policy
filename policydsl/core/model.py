@@ -36,7 +36,7 @@ Python 层是「参考语义」（reference semantics）：单测与 SP1 程序�
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 from policydsl.core import normalize  # 只用标准库，无循环导入风险（见 normalize 模块 docstring）
 
@@ -49,6 +49,147 @@ class PolicyError(ValueError):
 
     继承自 ValueError，便于上层统一捕获策略解析/校验阶段的错误。
     """
+
+
+# ============================================================
+# Rule 参数校验：每种 kind 一个函数，由下面的 _RULE_VALIDATORS 分派。
+#
+# 做法与 ``policydsl/proofs/multiparty.py`` 的 ``KIND_OWNER`` 相同 —— 一张显式的
+# 模块级表 + 若干小函数，不引入注册框架。这么拆的好处有二：
+#   * Rule.validate 是策略包的入口闸门（手写 Policy / 测试 / 脚本都走它），
+#     可读性直接决定出错定位速度；
+#   * 新增一种 kind 时只动「写一个函数 + 表里加一行」两处，不牵扯入口逻辑。
+#
+# **报错文案是诊断契约**（上层按 `PolicyError` 捕获并展示），所以每条 message
+# 都与拆分前逐字一致，一个字都不改。
+# ============================================================
+
+
+def _validate_keyword_block(rule: "Rule") -> None:
+    """关键词规则：keywords 必须是非空字符串列表。"""
+    words = rule.params.get("keywords")
+    if not isinstance(words, list) or not words:
+        raise PolicyError(f"rule '{rule.name}': keyword_block needs non-empty 'keywords'")
+    if not all(isinstance(w, str) for w in words):
+        raise PolicyError(f"rule '{rule.name}': keywords must be strings")
+
+
+def _validate_normalized_keyword_block(rule: "Rule") -> None:
+    """规范化关键词规则（P2-9b）：keywords 与 keyword_block 同形，
+    外加一个 fold 声明（预设名，或显式折叠表）。
+
+    校验放在**这里**而不是只放在 compile 里：Rule.validate 是策略包的入口闸门，
+    手写的 Policy（测试、脚本）也走它。折叠表非法 = 语义未定，必须编译期快速失败，
+    绝不能带着一张「读不懂的表」出证。
+    """
+    words = rule.params.get("keywords")
+    if not isinstance(words, list) or not words:
+        raise PolicyError(
+            f"rule '{rule.name}': normalized_keyword_block needs non-empty 'keywords'")
+    if not all(isinstance(w, str) for w in words):
+        raise PolicyError(f"rule '{rule.name}': keywords must be strings")
+    if not all(words):
+        raise PolicyError(
+            f"rule '{rule.name}': keywords must be non-empty strings"
+            f"（空串是任意文本的子串，该规则会恒真命中）")
+    try:
+        normalize.resolve_fold(rule.params.get("fold", normalize.DEFAULT_PRESET))
+    except normalize.FoldError as exc:
+        raise PolicyError(f"rule '{rule.name}': bad 'fold': {exc}") from exc
+
+
+def _validate_length_bound(rule: "Rule") -> None:
+    """长度规则：min/max 必须是整数，且 0 <= min <= max。"""
+    lo, hi = rule.params.get("min"), rule.params.get("max")
+    if not (isinstance(lo, int) and isinstance(hi, int) and 0 <= lo <= hi):
+        raise PolicyError(f"rule '{rule.name}': length_bound needs ints 0 <= min <= max")
+
+
+def _validate_pattern_block(rule: "Rule") -> None:
+    """正则规则：patterns 必须非空；可选 match_mode 只能是 pike/naive。"""
+    pats = rule.params.get("patterns")
+    if not isinstance(pats, list) or not pats:
+        raise PolicyError(f"rule '{rule.name}': pattern_block needs non-empty 'patterns'")
+    mm = rule.params.get("match_mode")
+    if mm is not None and mm not in ("pike", "naive"):
+        raise PolicyError(
+            f"rule '{rule.name}': match_mode must be 'pike' or 'naive', got {mm!r}")
+
+
+def _validate_format_check(rule: "Rule") -> None:
+    """格式规则：format 只能是 json/int/float 之一。"""
+    fmt = rule.params.get("format")
+    if fmt not in ("json", "int", "float"):
+        raise PolicyError(
+            f"rule '{rule.name}': format_check needs format in {{json,int,float}}, got {fmt!r}")
+
+
+def _validate_tool_arg_guard(rule: "Rule") -> None:
+    """工具参数规则：forbidden_fields 必须非空且全为字符串；
+    可选的 tools 若存在必须是字符串列表（用于限定只约束哪些工具）。
+    """
+    fields = rule.params.get("forbidden_fields")
+    if not isinstance(fields, list) or not fields or not all(
+        isinstance(f, str) for f in fields
+    ):
+        raise PolicyError(
+            f"rule '{rule.name}': tool_arg_guard needs non-empty 'forbidden_fields' strings")
+    tools = rule.params.get("tools")
+    if tools is not None and (
+        not isinstance(tools, list) or not all(isinstance(t, str) for t in tools)
+    ):
+        raise PolicyError(f"rule '{rule.name}': optional 'tools' must be a list of str")
+
+
+def _validate_budget_bound(rule: "Rule") -> None:
+    """预算规则：budget 是非负整数；unit 只能是 calls/tokens。"""
+    budget = rule.params.get("budget")
+    unit = rule.params.get("unit", "calls")
+    if not isinstance(budget, int) or budget < 0:
+        raise PolicyError(f"rule '{rule.name}': budget_bound needs int budget >= 0")
+    if unit not in ("calls", "tokens"):
+        raise PolicyError(f"rule '{rule.name}': budget_bound unit must be 'calls' or 'tokens'")
+
+
+def _validate_semantic_bound(rule: "Rule") -> None:
+    """语义规则：阈值（万分点）+ 方向必填；模型指纹可选。
+
+    指纹**可选**是刻意的：多数策略作者只想说「有害概率不得超过 5%」，
+    而不想手抄一串 sha256。缺省时由 compile 从仓库里的模型现场解析
+    （`policydsl.proofs.model_manifest`）并**固化进约束** —— 一旦固化，
+    模型再变就会导致 policy_hash 变、证明对不上。显式给出时则要求它与
+    实际模型一致，否则编译期直接失败（「用另一个模型去证」必须报错）。
+    """
+    thr = rule.params.get("threshold_bp")
+    if not isinstance(thr, int) or isinstance(thr, bool) or not (0 <= thr <= 10000):
+        raise PolicyError(
+            f"rule '{rule.name}': semantic_bound needs int 'threshold_bp' in [0,10000]"
+            f"（万分点刻度，与 ezkl 公开实例同刻度），got {thr!r}")
+    direction = rule.params.get("direction")
+    if direction not in ("le", "ge"):
+        raise PolicyError(
+            f"rule '{rule.name}': semantic_bound needs 'direction' in {{'le','ge'}}, "
+            f"got {direction!r}（le: 分数 <= 阈值；ge: 分数 >= 阈值）")
+    for key in ("onnx_sha256", "model_vkey"):
+        v = rule.params.get(key)
+        if v is not None and not (isinstance(v, str) and v):
+            raise PolicyError(
+                f"rule '{rule.name}': optional '{key}' must be a non-empty string")
+
+
+# kind → 校验函数。新增 kind 时在这张表里加一行
+# （另需同步 evaluate.check / compile.compile_constraints，
+#  tests/test_rule_kinds.py 会盯着这三处是否漂移）。
+_RULE_VALIDATORS: Dict[str, Callable[["Rule"], None]] = {
+    "keyword_block":            _validate_keyword_block,
+    "normalized_keyword_block": _validate_normalized_keyword_block,
+    "length_bound":             _validate_length_bound,
+    "pattern_block":            _validate_pattern_block,
+    "format_check":             _validate_format_check,
+    "tool_arg_guard":           _validate_tool_arg_guard,
+    "budget_bound":             _validate_budget_bound,
+    "semantic_bound":           _validate_semantic_bound,
+}
 
 
 @dataclass
@@ -67,105 +208,21 @@ class Rule:
     def validate(self) -> None:
         """校验本规则的参数是否合法，非法则抛出 PolicyError。
 
-        每种 kind 有各自的合法参数约束，此处逐类型校验，做到「编译期快速失败」，
-        避免非法策略进入后续编译/证明流程。
+        每种 kind 有各自的合法参数约束，逐类型分派到上面的 ``_validate_*``，
+        做到「编译期快速失败」，避免非法策略进入后续编译/证明流程。
         """
-        if self.kind == "keyword_block":
-            # 关键词规则：keywords 必须是非空字符串列表
-            words = self.params.get("keywords")
-            if not isinstance(words, list) or not words:
-                raise PolicyError(f"rule '{self.name}': keyword_block needs non-empty 'keywords'")
-            if not all(isinstance(w, str) for w in words):
-                raise PolicyError(f"rule '{self.name}': keywords must be strings")
-        elif self.kind == "normalized_keyword_block":
-            # 规范化关键词规则（P2-9b）：关键词与 keyword_block 同形，
-            # 外加一个 fold 声明（预设名，或显式折叠表）。
-            #
-            # 校验放在**这里**而不是只放在 compile 里：Rule.validate 是策略包的
-            # 入口闸门，手写的 Policy（测试、脚本）也走它。折叠表非法 = 语义未定，
-            # 必须编译期快速失败，绝不能带着一张「读不懂的表」出证。
-            words = self.params.get("keywords")
-            if not isinstance(words, list) or not words:
-                raise PolicyError(
-                    f"rule '{self.name}': normalized_keyword_block needs non-empty 'keywords'")
-            if not all(isinstance(w, str) for w in words):
-                raise PolicyError(f"rule '{self.name}': keywords must be strings")
-            if not all(words):
-                raise PolicyError(
-                    f"rule '{self.name}': keywords must be non-empty strings"
-                    f"（空串是任意文本的子串，该规则会恒真命中）")
-            try:
-                normalize.resolve_fold(self.params.get("fold", normalize.DEFAULT_PRESET))
-            except normalize.FoldError as exc:
-                raise PolicyError(f"rule '{self.name}': bad 'fold': {exc}") from exc
-        elif self.kind == "length_bound":
-            # 长度规则：min/max 必须是整数，且 0 <= min <= max
-            lo, hi = self.params.get("min"), self.params.get("max")
-            if not (isinstance(lo, int) and isinstance(hi, int) and 0 <= lo <= hi):
-                raise PolicyError(f"rule '{self.name}': length_bound needs ints 0 <= min <= max")
-        elif self.kind == "pattern_block":
-            # 正则规则：patterns 必须非空；可选 match_mode 只能是 pike/naive
-            pats = self.params.get("patterns")
-            if not isinstance(pats, list) or not pats:
-                raise PolicyError(f"rule '{self.name}': pattern_block needs non-empty 'patterns'")
-            mm = self.params.get("match_mode")
-            if mm is not None and mm not in ("pike", "naive"):
-                raise PolicyError(
-                    f"rule '{self.name}': match_mode must be 'pike' or 'naive', got {mm!r}")
-        elif self.kind == "format_check":
-            # 格式规则：format 只能是 json/int/float 之一
-            fmt = self.params.get("format")
-            if fmt not in ("json", "int", "float"):
-                raise PolicyError(
-                    f"rule '{self.name}': format_check needs format in {{json,int,float}}, got {fmt!r}")
-        elif self.kind == "tool_arg_guard":
-            # 工具参数规则：forbidden_fields 必须非空且全为字符串；
-            # 可选的 tools 若存在必须是字符串列表（用于限定只约束哪些工具）
-            fields = self.params.get("forbidden_fields")
-            if not isinstance(fields, list) or not fields or not all(
-                isinstance(f, str) for f in fields
-            ):
-                raise PolicyError(
-                    f"rule '{self.name}': tool_arg_guard needs non-empty 'forbidden_fields' strings")
-            tools = self.params.get("tools")
-            if tools is not None and (
-                not isinstance(tools, list) or not all(isinstance(t, str) for t in tools)
-            ):
-                raise PolicyError(f"rule '{self.name}': optional 'tools' must be a list of str")
-        elif self.kind == "budget_bound":
-            # 预算规则：budget 是非负整数；unit 只能是 calls/tokens
-            budget = self.params.get("budget")
-            unit = self.params.get("unit", "calls")
-            if not isinstance(budget, int) or budget < 0:
-                raise PolicyError(f"rule '{self.name}': budget_bound needs int budget >= 0")
-            if unit not in ("calls", "tokens"):
-                raise PolicyError(f"rule '{self.name}': budget_bound unit must be 'calls' or 'tokens'")
-        elif self.kind == "semantic_bound":
-            # 语义规则：阈值（万分点）+ 方向必填；模型指纹可选。
-            #
-            # 指纹**可选**是刻意的：多数策略作者只想说「有害概率不得超过 5%」，
-            # 而不想手抄一串 sha256。缺省时由 compile 从仓库里的模型现场解析
-            # （`policydsl.proofs.model_manifest`）并**固化进约束** —— 一旦固化，
-            # 模型再变就会导致 policy_hash 变、证明对不上。显式给出时则要求它与
-            # 实际模型一致，否则编译期直接失败（「用另一个模型去证」必须报错）。
-            thr = self.params.get("threshold_bp")
-            if not isinstance(thr, int) or isinstance(thr, bool) or not (0 <= thr <= 10000):
-                raise PolicyError(
-                    f"rule '{self.name}': semantic_bound needs int 'threshold_bp' in [0,10000]"
-                    f"（万分点刻度，与 ezkl 公开实例同刻度），got {thr!r}")
-            direction = self.params.get("direction")
-            if direction not in ("le", "ge"):
-                raise PolicyError(
-                    f"rule '{self.name}': semantic_bound needs 'direction' in {{'le','ge'}}, "
-                    f"got {direction!r}（le: 分数 <= 阈值；ge: 分数 >= 阈值）")
-            for key in ("onnx_sha256", "model_vkey"):
-                v = self.params.get(key)
-                if v is not None and not (isinstance(v, str) and v):
-                    raise PolicyError(
-                        f"rule '{self.name}': optional '{key}' must be a non-empty string")
-        else:
-            # 未知规则类型：直接拒绝，防止拼写错误悄悄变成「无操作」
+        # 未知规则类型直接拒绝，防止拼写错误悄悄变成「无操作」。
+        #
+        # `isinstance(kind, str)` 这个前置判断不能省：策略包的 kind 来自 JSON
+        # （policydsl/__main__.py 的 _load_policy 原样透传，不做类型检查），而
+        # JSON 的值可以是数组/对象。不可哈希的 kind 若直接喂给 dict.get 会抛
+        # TypeError 绕过 PolicyError，让「畸形策略包」从可诊断的校验错误变成
+        # 未捕获的崩溃 —— 逐值比较的写法没有这个问题，改用查表后必须显式防住。
+        kind = self.kind
+        validator = _RULE_VALIDATORS.get(kind) if isinstance(kind, str) else None
+        if validator is None:
             raise PolicyError(f"rule '{self.name}': unknown kind '{self.kind}'")
+        validator(self)
 
     def to_dict(self) -> Dict[str, Any]:
         """把规则序列化为可 JSON 化的字典。"""
