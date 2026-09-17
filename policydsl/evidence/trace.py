@@ -218,11 +218,6 @@ def canonical_seal_bytes(s: ToolSeal) -> bytes:
     ])
 
 
-def seal_digest(s: ToolSeal) -> str:
-    """seal 的摘要（十六进制）—— 需要把「用的是哪条 seal」压成一个值时用它。"""
-    return hashlib.sha256(canonical_seal_bytes(s)).hexdigest()
-
-
 def seal_for(receipts: Sequence[ToolReceipt], gateway: "ToolGateway",
              ts: Optional[str] = None) -> ToolSeal:
     """用 ``gateway`` 给一条**已经签好的链**补一条 seal（便捷函数）。
