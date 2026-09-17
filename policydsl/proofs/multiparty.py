@@ -264,12 +264,8 @@ def _meta_vkey(proof: Path) -> Optional[str]:
 
 
 def _load_policy(path: Path) -> Policy:
-    """从 JSON 载入策略包（与 ``compose._load_policy`` 同口径，避免循环导入）。"""
-    from policydsl.core.model import Rule
-    d = json.loads(Path(path).read_text(encoding="utf-8"))
-    rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
-             for i, r in enumerate(d["rules"])]
-    return Policy(d["id"], d.get("version", "0.1.0"), rules=rules)
+    """从 JSON 载入策略包（唯一出处 :meth:`policydsl.core.model.Policy.from_dict`）。"""
+    return Policy.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
 # --------------------------------------------------------------------------- #

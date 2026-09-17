@@ -53,7 +53,7 @@ from policydsl.evidence.cert import sha256_file
 from policydsl.privacy import challenge, commit
 from policydsl.core import evaluate
 from policydsl.core.compile import compile_policy
-from policydsl.core.model import Policy, PolicyError, Rule, Transcript
+from policydsl.core.model import Policy, PolicyError, Transcript
 from policydsl.core.serialize import build_vectors, vector_entry
 
 #: 链上连通性自检的缓存时长（秒）。自检要起一个 ``cast`` 子进程，而
@@ -142,17 +142,16 @@ class VerdictMismatch(ServiceError):
 def load_policy(path: Path) -> Policy:
     """从 JSON 文件加载策略包。
 
-    口径与 ``scripts/verify/verify_cert.py`` / ``issue_cert.py`` 的 ``load_policy``
-    **逐字段相同**（``description`` 不进 :class:`Policy`，``semantic`` 取缺省的
-    ``"and"``）—— 刻意如此：``compile_policy`` 会把 ``policy.semantic`` 写进
-    规范 JSON，而 ``policy_hash`` 是**验证方自己重编译一遍**来核对的
-    （``verify_cert.py`` 的 ``policy_hash`` 卡）。两处若用了不同口径的加载器，
-    出证方与服务方会就同一个策略包算出两个哈希，而那张证书在第三方手里验不过。
+    唯一出处 :meth:`policydsl.core.model.Policy.from_dict`。
+
+    这段 docstring 原先写的是「与 ``verify_cert.py`` / ``issue_cert.py`` 的
+    ``load_policy`` **逐字段相同**」—— 一句话承认了重复，却没有任何东西保证它
+    **继续**相同。``compile_policy`` 会把 ``policy.semantic`` 写进规范 JSON，
+    而 ``policy_hash`` 是**验证方自己重编译一遍**来核对的：两份加载器一旦分叉，
+    出证方与服务方会就同一个策略包算出两个哈希，而那张证书在第三方手里才验不过。
+    R7 之后它们本来就是**同一个函数**，那句话不必再靠人维持。
     """
-    d = json.loads(path.read_text(encoding="utf-8"))
-    rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
-             for i, r in enumerate(d["rules"])]
-    return Policy(d["id"], d.get("version", "0.1.0"), rules=rules)
+    return Policy.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
 @dataclass(frozen=True)

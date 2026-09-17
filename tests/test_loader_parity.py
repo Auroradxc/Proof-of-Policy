@@ -27,6 +27,15 @@
 比对的东西自然从「11 份旧加载器」变成「收敛后的那一份」，而它比的**仍然是同一份快照**：
 那一步就是等效替代的证明本身。
 
+**R7 已经落地（2026-09-17），上面那句话照办了。** 11 份加载器全部改成
+``Policy.from_dict`` 的一行委派，``LOADERS`` 表**保持 11 行**（标签留着，逐份比对才有
+对象 —— 它们现在是同一个函数的 11 个入口，不是 11 份实现）。快照没重采，只按
+:data:`DECLARED_R7_NORMALIZATION` **折算了一次再比**：R7 把 ``description`` 统一成
+「带」，于是快照里那 8 份「丢」的记录要按这条归一改写成「带」。折算不是免检 ——
+:meth:`TestLiveLoadersMatchSnapshot.test_the_live_delta_is_exactly_the_declared_normalization`
+逐 ``(加载器, 包)`` 断言**差异恰好就是这一处**：除了 ``description`` 由 ``''`` 变成包里
+那句，别的字段一个都不许动，``policy_hash`` 尤其不许动。
+
 变红了怎么办，同 ``tests/test_acceptance_baseline.py``：**不该变的变了** → 改代码；
 **有意变更** → 人工确认后重新采集（``--snapshot``），diff 连同代码一起提交。
 但先读完上一段 —— 重新采集会**抹掉 R7 的比对依据**，采集器会拒绝一份采不到东西的快照，
@@ -34,6 +43,7 @@
 """
 
 import ast
+import copy
 import json
 import sys
 import unittest
@@ -54,11 +64,44 @@ BASELINE = Path(__file__).resolve().parent / "loader_parity_baseline.json"
 #:
 #: 名单是钉住的常量而非从快照现算：从快照现算的话，快照被重新采集过就自动跟着变，
 #: 「有人动过这几份加载器」这件事就再也不会有人知道。
+#:
+#: .. note:: 这两个名单描述的是**快照当时**（R7 之前）的状态。R7 之后 11 份全都保留
+#:   ``description`` —— 那处变化按 :data:`DECLARED_R7_NORMALIZATION` 折算，两个名单
+#:   本身**不改**：改了就抹掉了「快照记的是什么」。
 DESCRIPTION_KEEPERS = (
     "policydsl/__main__._load_policy",
     "scripts/prove/prove_multiparty.load_policy",
     "scripts/prove/prove_policy.load_policy",
 )
+
+#: R7 之前**丢掉** ``description`` 的那 8 份（= 全部 11 份减去上面 3 份）。
+DESCRIPTION_DROPPERS = (
+    "policydsl/proofs/compose._load_policy",
+    "policydsl/proofs/multiparty._load_policy",
+    "policydsl/proofs/session._load_policy",
+    "policydsl/runtime/service.load_policy",
+    "scripts/prove/compose_proof.load_policy",
+    "scripts/prove/issue_cert.load_policy",
+    "scripts/verify/verify_cert.load_policy",
+    "scripts/verify/verify_session.load_policy",
+)
+
+#: ── R7 的**一处已声明归一** ─────────────────────────────────────────────────
+#:
+#: 内容是：``description`` 统一取**包内声明的那一句**。理由见 ``docs/dev-plan.md``
+#: §5.7.7 末段 —— 这个字段存在就是为了承载包作者的声明，而 :class:`Policy` 的缺省值
+#: 本就是 ``''``，**只有显式不传的加载器**才得到它；丢是信息丢失，不是省略。
+#:
+#: **为什么不直接重采快照**：重采会**抹掉 R7 的比对依据**（快照变成「一份加载器与
+#: 它自己一致」）。采集器拦得住一份**采不到东西**的快照（覆盖守卫），却拦不住一份
+#: 「采到了、但因此什么都证明不了」的快照 —— :meth:`TestSnapshotShape` 只是补了
+#: 「≥2 份」这道下限。所以归一**写在消费方**，快照原样留着。
+#:
+#: 折算**不是免检**：归一后的快照与现算之间的差异被逐处断言（见
+#: :meth:`TestLiveLoadersMatchSnapshot.test_the_live_delta_is_exactly_the_declared_normalization`），
+#: 差异集必须**恰好**是这 3 处名字里那 8 份 × 7 个包的 ``description``，
+#: 且只许 ``''`` → 包里那句。
+DECLARED_R7_NORMALIZATION = "description 统一取包内声明的那一句（不再丢成 ''）"
 
 #: 同一份输入喂给**每一次**采集，结论必须逐字相同 —— 快照里记的就是这一条。
 _golden_cache = None
@@ -79,6 +122,35 @@ def fresh() -> dict:
     if _fresh_cache is None:
         _fresh_cache = loader_parity.collect()
     return _fresh_cache
+
+
+def _declared_description(pack: str) -> str:
+    """包文件里写的那句 ``description``（归一的**目标值**，从包现读、不从快照取）。"""
+    data = json.loads((REPO / "policy_packs" / pack).read_text(encoding="utf-8"))
+    text = data.get("description")
+    if not text:
+        raise AssertionError(f"{pack} 里没有 description —— 这一处归一成了空断言")
+    return text
+
+
+def normalized_golden() -> dict:
+    """快照按 :data:`DECLARED_R7_NORMALIZATION` **折算一次**后的形态。
+
+    只改 ``policy.description`` 一个字段，且只改「原来是 ``''``」的那些记录 ——
+    折算完把 ``judged`` / ``differences`` 用与采集器**同一个函数**重算，避免
+    「归一了记录、忘了归一判据载荷」这种半截折算（那样比的是两个不同口径的东西，
+    反而比不折算更容易假绿）。
+    """
+    out = copy.deepcopy(golden())
+    for pack in out["packs"]:
+        declared = _declared_description(pack)
+        for rec in out["loaders"].values():
+            entry = rec.get(pack)
+            if entry and "policy" in entry and entry["policy"]["description"] == "":
+                entry["policy"]["description"] = declared
+    out["judged"] = loader_parity._judged(out["loaders"], out["packs"])
+    out["differences"] = loader_parity._differences(out["loaders"], out["packs"])
+    return out
 
 
 def _coverage_of(report: dict) -> dict:
@@ -213,7 +285,9 @@ class TestLiveLoadersMatchSnapshot(unittest.TestCase):
     """
 
     def test_live_agrees_with_the_snapshot(self):
-        want = loader_parity.judged_payload(golden())
+        # 快照按 R7 的那一处已声明归一折算后再比 —— 理由见 DECLARED_R7_NORMALIZATION。
+        # 折算本身由下面 test_the_live_delta_is_exactly_the_declared_normalization 逐处核。
+        want = loader_parity.judged_payload(normalized_golden())
         got = loader_parity.judged_payload(fresh())
         if want != got:
             lines = []
@@ -239,17 +313,64 @@ class TestLiveLoadersMatchSnapshot(unittest.TestCase):
 
         标签只在一边出现的（R7 把 11 行缩成 1 行时就是这种情形）不参与逐份比对：
         那时整体判据由上面那条承担。
+
+        R7 之后比的是**折算过的**快照（见 :func:`normalized_golden`）：11 行标签
+        全留着，所以逐份比对一点没退化 —— 每一份入口都仍被单独盯着。
         """
-        want, got = golden()["loaders"], fresh()["loaders"]
+        want, got = normalized_golden()["loaders"], fresh()["loaders"]
         common = sorted(set(want) & set(got))
         self.assertTrue(common, "两边没有任何共同标签 —— 逐份比对退化成了空断言")
         for label in common:
             with self.subTest(loader=label):
                 self.assertEqual(
                     got[label], want[label],
-                    f"{label} 的行为与快照不一致。它的每一次改动都该是有意的："
-                    "若是 R7 的归一（比如统一成「带 description」），就在本文件里"
-                    "把这处归一**声明**出来，而不是重采快照。")
+                    f"{label} 的行为与快照（按 R7 归一折算后）不一致。它的每一次改动"
+                    "都该是有意的：若是 R7 的归一（比如统一成「带 description」），"
+                    "就在本文件里把这处归一**声明**出来，而不是重采快照。")
+
+    def test_the_live_delta_is_exactly_the_declared_normalization(self):
+        """**折算不是免检**：现算与入库快照的差异，必须逐处等于申报的那一处归一并仅此而已。
+
+        只比折算后的快照是不够的 —— 那样「折算」就成了一个可以夹带任何东西的黑箱。
+        这条把黑箱打开：逐 ``(加载器, 包)`` 列出差异，要求
+
+        * 有差异的**恰好**是 :data:`DESCRIPTION_DROPPERS` 那 8 份 × 全部 7 个包；
+        * 差异只出现在 ``policy.description`` 一个字段上（其余字段逐字相同，
+          ``policy_hash`` 尤其 —— **它是 R7 那条回退判据**）；
+        * 且方向唯一：``''`` → 包文件里写的那句。
+
+        任何一条不成立，R7 就不是「等效替代 + 一处已声明归一」，而是一次未申报的
+        行为变化 —— 那正是这套闸门存在的理由。
+        """
+        want, got = golden()["loaders"], fresh()["loaders"]
+        changed: dict = {}
+        for label in sorted(set(want) & set(got)):
+            for pack in golden()["packs"]:
+                a = (want[label].get(pack) or {})
+                b = (got[label].get(pack) or {})
+                if a == b:
+                    continue
+                changed.setdefault(label, set()).add(pack)
+                with self.subTest(loader=label, pack=pack):
+                    self.assertEqual(sorted(set(a) | set(b)), ["policy", "policy_hash"],
+                                     "记录顶层字段变了")
+                    self.assertEqual(a["policy_hash"], b["policy_hash"],
+                                     "policy_hash 变了 —— 这正是 R7 要防的那件事")
+                    self.assertEqual(
+                        sorted(set(a["policy"]) | set(b["policy"])),
+                        ["description", "id", "rules", "semantic", "version"])
+                    for field in ("id", "version", "rules", "semantic"):
+                        self.assertEqual(a["policy"][field], b["policy"][field],
+                                         f"{field} 不该被这处归一碰到")
+                    self.assertEqual(a["policy"]["description"], "",
+                                     "差异不是从「丢」这一侧发生的")
+                    self.assertEqual(b["policy"]["description"], _declared_description(pack),
+                                     "归一后的值不是包文件里写的那句")
+        self.assertEqual(
+            {lab: sorted(packs) for lab, packs in changed.items()},
+            {lab: sorted(golden()["packs"]) for lab in DESCRIPTION_DROPPERS},
+            "差异集不是「那 8 份 × 全部 7 个包」。多了 = 有未申报的变化；"
+            "少了 = 申报的归一没真的发生（或者快照被重采过）")
 
     def test_live_run_is_itself_not_vacuous(self):
         """现算这一份也必须采满 —— 否则上一条比的是两堆空集合。"""

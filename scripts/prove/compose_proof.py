@@ -50,17 +50,14 @@ from policydsl.proofs import infer as I                      # noqa: E402
 from policydsl.proofs import compose as C                    # noqa: E402
 from policydsl.privacy import challenge                       # noqa: E402
 from policydsl.core.compile import compile_policy          # noqa: E402
-from policydsl.core.model import Policy, Rule, PolicyError # noqa: E402
+from policydsl.core.model import Policy, PolicyError # noqa: E402
 from policydsl.core.serialize import spec_canonical_text   # noqa: E402
 from policydsl.paths import POP_SCRIPT, POP_VERIFY  # noqa: E402
 
 
 def load_policy(path: Path) -> Policy:
-    """从 JSON 文件加载策略包。"""
-    d = json.loads(path.read_text(encoding="utf-8"))
-    rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
-             for i, r in enumerate(d["rules"])]
-    return Policy(d["id"], d.get("version", "0.1.0"), rules=rules)
+    """从 JSON 文件加载策略包（唯一出处 :meth:`policydsl.core.model.Policy.from_dict`）。"""
+    return Policy.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
 def run_pop(args: list[str]) -> None:

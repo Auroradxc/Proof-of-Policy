@@ -3494,15 +3494,15 @@
    },
    "missing_id": {
     "error": {
-     "msg": "'id'",
-     "type": "KeyError"
+     "msg": "policy pack missing 'id'",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
    "rules_not_a_list": {
     "error": {
-     "msg": "'str' object has no attribute 'get'",
-     "type": "AttributeError"
+     "msg": "policy pack 'rules' must be a list, got dict",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
@@ -3630,15 +3630,15 @@
    },
    "missing_id": {
     "error": {
-     "msg": "'id'",
-     "type": "KeyError"
+     "msg": "policy pack missing 'id'",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
    "rules_not_a_list": {
     "error": {
-     "msg": "'str' object has no attribute 'get'",
-     "type": "AttributeError"
+     "msg": "policy pack 'rules' must be a list, got dict",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
@@ -3766,15 +3766,15 @@
    },
    "missing_id": {
     "error": {
-     "msg": "'id'",
-     "type": "KeyError"
+     "msg": "policy pack missing 'id'",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
    "rules_not_a_list": {
     "error": {
-     "msg": "'str' object has no attribute 'get'",
-     "type": "AttributeError"
+     "msg": "policy pack 'rules' must be a list, got dict",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
@@ -3902,15 +3902,15 @@
    },
    "missing_id": {
     "error": {
-     "msg": "'id'",
-     "type": "KeyError"
+     "msg": "policy pack missing 'id'",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
    "rules_not_a_list": {
     "error": {
-     "msg": "'str' object has no attribute 'get'",
-     "type": "AttributeError"
+     "msg": "policy pack 'rules' must be a list, got dict",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
@@ -4038,15 +4038,15 @@
    },
    "missing_id": {
     "error": {
-     "msg": "'id'",
-     "type": "KeyError"
+     "msg": "policy pack missing 'id'",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
    "rules_not_a_list": {
     "error": {
-     "msg": "'str' object has no attribute 'get'",
-     "type": "AttributeError"
+     "msg": "policy pack 'rules' must be a list, got dict",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
@@ -4174,15 +4174,15 @@
    },
    "missing_id": {
     "error": {
-     "msg": "'id'",
-     "type": "KeyError"
+     "msg": "policy pack missing 'id'",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
    "rules_not_a_list": {
     "error": {
-     "msg": "'str' object has no attribute 'get'",
-     "type": "AttributeError"
+     "msg": "policy pack 'rules' must be a list, got dict",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
@@ -4310,15 +4310,15 @@
    },
    "missing_id": {
     "error": {
-     "msg": "'id'",
-     "type": "KeyError"
+     "msg": "policy pack missing 'id'",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
    "rules_not_a_list": {
     "error": {
-     "msg": "'str' object has no attribute 'get'",
-     "type": "AttributeError"
+     "msg": "policy pack 'rules' must be a list, got dict",
+     "type": "PolicyError"
     },
     "stage": "load"
    },
@@ -4351,29 +4351,29 @@
    "stdout": ""
   },
   "missing_id": {
-   "exit": 1,
+   "exit": 2,
    "stderr": {
-    "first": "Traceback (most recent call last):",
-    "last": "KeyError: 'id'",
-    "lines": 12
+    "first": "error: policy pack missing 'id'",
+    "last": "error: policy pack missing 'id'",
+    "lines": 1
    },
    "stdout": ""
   },
   "rules_not_list": {
-   "exit": 1,
+   "exit": 2,
    "stderr": {
-    "first": "Traceback (most recent call last):",
-    "last": "AttributeError: 'str' object has no attribute 'get'",
-    "lines": 14
+    "first": "error: policy pack 'rules' must be a list, got str",
+    "last": "error: policy pack 'rules' must be a list, got str",
+    "lines": 1
    },
    "stdout": ""
   },
   "top_level_list": {
-   "exit": 1,
+   "exit": 2,
    "stderr": {
-    "first": "Traceback (most recent call last):",
-    "last": "AttributeError: 'list' object has no attribute 'get'",
-    "lines": 12
+    "first": "error: policy pack must be a JSON object, got list",
+    "last": "error: policy pack must be a JSON object, got list",
+    "lines": 1
    },
    "stdout": ""
   },

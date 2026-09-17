@@ -47,15 +47,9 @@ from policydsl.proofs import multiparty as M  # noqa: E402
 
 
 def load_policy(path: Path):
-    """从 JSON 载入策略包（与 ``prove_policy.load_policy`` 同口径）。"""
-    from policydsl.core.model import Policy, Rule
-    d = json.loads(path.read_text(encoding="utf-8"))
-    return Policy(id=d["id"], version=d.get("version", "0.1.0"),
-                  description=d.get("description", ""),
-                  rules=[Rule(kind=r["kind"], name=r.get("name", f"rule-{i}"),
-                              params=r.get("params", {}))
-                         for i, r in enumerate(d.get("rules", []))],
-                  semantic=d.get("semantic", "and"))
+    """从 JSON 载入策略包（唯一出处 :meth:`policydsl.core.model.Policy.from_dict`）。"""
+    from policydsl.core.model import Policy
+    return Policy.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
 def role_signers(args) -> "tuple[dict, str]":

@@ -214,7 +214,7 @@ class Rule:
         # 未知规则类型直接拒绝，防止拼写错误悄悄变成「无操作」。
         #
         # `isinstance(kind, str)` 这个前置判断不能省：策略包的 kind 来自 JSON
-        # （policydsl/__main__.py 的 _load_policy 原样透传，不做类型检查），而
+        # （Policy.from_dict 只查包的**形状**、不查字段类型，原样透传），而
         # JSON 的值可以是数组/对象。不可哈希的 kind 若直接喂给 dict.get 会抛
         # TypeError 绕过 PolicyError，让「畸形策略包」从可诊断的校验错误变成
         # 未捕获的崩溃 —— 逐值比较的写法没有这个问题，改用查表后必须显式防住。
@@ -227,6 +227,47 @@ class Rule:
     def to_dict(self) -> Dict[str, Any]:
         """把规则序列化为可 JSON 化的字典。"""
         return {"kind": self.kind, "name": self.name, "params": self.params}
+
+
+def _require_pack_shape(data: Any) -> None:
+    """「这份 JSON 根本不像策略包」——一律报 :class:`PolicyError`，绝不漏内建异常。
+
+    与 :meth:`Policy.validate` 分工：``validate`` 诊断的是**包格式对、内容有问题**
+    （未知 kind、参数越界）；这里拦的是**连包都算不上**的四种形状。二者都用
+    ``PolicyError``，于是「加载 + 校验」两段对所有调用方是**一个**异常类型 ——
+    这正是把加载收敛成 :meth:`Policy.from_dict` 之后才可能做到的。
+
+    为什么必须显式拦而不是「让它自己炸」。这些形状原先各自漏出内建异常：
+
+    ==================  ==========================  ===================================
+    形状                原先漏出的                  后果
+    ==================  ==========================  ===================================
+    顶层不是对象        ``TypeError``/``AttributeError``   ``[1,2,3]`` → ``'list' object has no attribute 'get'``
+    缺 ``id``           ``KeyError: 'id'``          CLI 里无人接住 → 未捕获 traceback
+    ``rules`` 不是数组  ``AttributeError``/``TypeError``  ``"oops"`` → 逐字符取 ``.get``
+    规则项不是对象      ``AttributeError``          ``5`` → ``'int' object has no attribute 'get'``
+    ==================  ==========================  ===================================
+
+    四条的后果是同一条：**调用方的 ``except PolicyError`` 接不住**，于是一个
+    「用户把包写错了」的诊断问题，表现成「工具崩了」（``policydsl -m compile``
+    退出码 1 + 一坨 traceback，而不是退出码 2 + 一行 ``error: …``）。这是实测
+    发现的 —— 见 ``docs/dev-plan.md`` §5.7.12 与验收快照的第 3 面。
+
+    文案里**不带文件路径**：路径属于调用方（``_load_policy`` 那一层已经知道自己在读
+    哪个文件），这里只描述包的形状，免得两处各拼一次路径、拼出两种写法。
+    """
+    if not isinstance(data, dict):
+        raise PolicyError(
+            f"policy pack must be a JSON object, got {type(data).__name__}")
+    if "id" not in data:
+        raise PolicyError("policy pack missing 'id'")
+    if not isinstance(data["rules"], list):
+        raise PolicyError(
+            f"policy pack 'rules' must be a list, got {type(data['rules']).__name__}")
+    for i, r in enumerate(data["rules"]):
+        if not isinstance(r, dict):
+            raise PolicyError(
+                f"policy pack rule #{i} must be a JSON object, got {type(r).__name__}")
 
 
 @dataclass
@@ -250,6 +291,59 @@ class Policy:
             raise PolicyError(f"unsupported semantic '{self.semantic}' (only 'and' for now)")
         for r in self.rules:
             r.validate()
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> Policy:
+        """从**已解析**的策略包 JSON 建 :class:`Policy` —— 全仓唯一出处。
+
+        「把策略包 JSON 读成 Policy」这个动作一度被抄成 **11 份**（R7）。它们长得
+        很像，但**像不等于同**：规则名的兜底串一份写 ``f"r{i}"``、另一份写
+        ``f"rule-{i}"``；``semantic`` / ``description`` 有的带、有的丢；``rules``
+        有的用 ``data["rules"]``、有的用 ``data.get("rules", [])``。后果不是报错，
+        是**同一个包被两份加载器编译出两个 ``policy_hash``** —— 出证方算一个、
+        验证方算另一个，两边都自洽，证书在第三方手里才验不过。这与 R4 的驱动路径、
+        R5 的工件摘要是同一类事故。
+
+        **分层很干脆：形状在这里拦，内容交给下游。** 形状不对（顶层不是对象、缺
+        ``id``、``rules`` 不是数组、规则项不是对象）由 :func:`_require_pack_shape`
+        当场报 ``PolicyError``；内容不对（未知 kind、参数越界）留给 :meth:`validate`
+        —— 它把 ``PolicyError`` 的文案写成了诊断契约（``tests/test_rule_kinds.py``
+        专门钉着「畸形的 kind 必须是 ``PolicyError``，不能漏成 ``TypeError``」）。
+        两段报的是同一个类型，所以调用方一个 ``except PolicyError`` 就接得住全部。
+
+        * ``data["id"]`` —— **缺了当场报错**，不兜底成 ``""``。``id`` 是必填位置字段，
+          没有它连对象都构造不出来；兜底会把「忘了写 id 的包」与「id 写成空串的包」
+          压成同一件事，而后者 :meth:`validate` 能说清楚。
+        * ``data["rules"]`` —— **缺了当场报错**，而不是 ``.get("rules", [])``。
+          理由与 ``id`` 不同、值得写下来：``rules`` 缺键若静默当成 ``[]``，得到的
+          是一条**合法的空策略**（``validate`` 允许空规则表），于是「一个什么都没
+          声明的包」会被编译成「没有任何规则的约束」并出证 —— 那是 fail-open，
+          下游**诊断不出来**，所以只能在这里拦。
+        * ``r.get("kind", "")`` —— 与上两条相反，**缺 kind 不在这里炸**，留给
+          :meth:`Rule.validate` 报 ``PolicyError: rule '…': unknown kind ''``。
+          ``""`` 不是合法 kind，所以这不是 fail-open，只是把报错挪到说得更清楚的那一层
+          —— 而它报的仍是 ``PolicyError``，调用方看不出区别。
+
+        另两处：规则名兜底取 ``f"rule-{i}"``（与 ``policydsl.__main__`` 一致）——
+        7 个随包发行的策略里每条规则都显式写了 ``name``，两种兜底**都没被走到**
+        （见 ``docs/dev-plan.md`` §5.7.7）；``description`` 取包内声明，这是 R7 的
+        **一处已声明归一**（11 份里 8 份丢成 ``''``）：这个字段存在就是为了承载包作者
+        的声明，而 :class:`Policy` 的缺省值本就是 ``''``，**只有显式不传的加载器**
+        才得到它 —— 丢是信息丢失，不是省略。``semantic`` 进 ``policy_hash``，
+        11 份本来就一致。
+
+        申报与对拍见 ``tests/test_loader_parity.py``（快照
+        ``tests/loader_parity_baseline.json`` 采于收敛之前，**不重采**）。
+        """
+        _require_pack_shape(data)
+        rules = [
+            Rule(kind=r.get("kind", ""), name=r.get("name", f"rule-{i}"),
+                 params=r.get("params", {}))
+            for i, r in enumerate(data["rules"])
+        ]
+        return cls(id=data["id"], version=data.get("version", "0.1.0"),
+                   description=data.get("description", ""), rules=rules,
+                   semantic=data.get("semantic", "and"))
 
 
 @dataclass

@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（38 个模块，746 个用例）与 `bench/`（7 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（38 个模块，751 个用例）与 `bench/`（7 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,13 +8,13 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 期望 746 passed, 15 skipped
+python3 -m unittest discover -s tests -t . -v   # 期望 751 passed, 15 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
 |---|---:|---|
 | `test_trace` | 41 | **P1-5**：四条验收（①完整链通过 ②删/换/重排失败 ③伪造「参数干净」的回执验签失败 ④旧 `tool_calls` 向量被拒）；`trace_root` 与 Python **逐字节一致**（实测 `--check`）；编码层的长度前缀/键序/keyid 覆盖；链尾篡改**只有链下验签抓得住**的边界；**第三方核对**（`verify_cert.py --receipts [--gateway-key]` 7 例：摘要重算对齐 / 换链对不上 / 重排结构先炸 / 伪造链尾只被验签抓住 / 缺网关公钥时如实报「签名未验」/ 没有 `--receipts` 时仍单独核 seal / 截尾三路全拒）；**P1-5b 截尾对策**（`TestSeal` 9 例：确定性 / 空链 genesis / 四个字段都进签名原像 / 回执签名不能冒充 seal（域分隔）/ 三类失败形态 / 早期 seal 被后续调用作废 / 无公钥时如实报「签名未验」/ **seal 只进载荷顶层不进 outcome** / 缺 seal 的诚实口径）+ **`test_tail_truncation_is_rejected`**（原 seal+截断链 / 冒充 keyid 的伪造 seal / 索性不带 seal 三路全拒 + 「没截尾时全 PASS」的正对照；原「缺口」用例已翻转，见安全模型 §5.3 与待办 T4） |
-| `test_dsl` | 29 | 领域模型、七类规则的通过/违规矩阵（含 P2-9b 的 `normalized_keyword_block`）、`PolicyError` 路径；**P1-5**：链坏 fail-closed、tokens 电路内自算（不可自填） |
+| `test_dsl` | 33 | 领域模型、七类规则的通过/违规矩阵（含 P2-9b 的 `normalized_keyword_block`）、`PolicyError` 路径；**P1-5**：链坏 fail-closed、tokens 电路内自算（不可自填）；**R7**：`TestFromDictRejectsShape`（4 例）钉住「**不像策略包**的 JSON 只抛 `PolicyError`」——顶层不是对象 / 缺 `id` / `rules` 不是数组 / 规则项不是对象，四种形状原先各自漏 `KeyError`、`AttributeError`、`TypeError`，而调用方（11 份加载器、每个 CLI、常驻服务）**统统只接 `PolicyError`**，漏一个就是「用户把包写错了」表现成「工具崩了」（退出码 1 + 一坨 traceback，而不是退出码 2 + 一行 `error: …`）。两条**反向**用例同样重要：闸门不能反过来吞掉合法的包（空规则表合法、多余顶层字段允许）、形状对内容错仍须由 `Rule.validate` 报到**具体规则名**。见 `docs/dev-plan.md` §5.7.12 |
 | `test_nfa` | 7 | 正则子集解析、NFA 构造、`match_search` 与 `re` 的行为对照、fail-fast |
 | `test_pii` | 8 | 四个 PII 模式的命中/漏报、IBAN MOD-97 校验位 |
 | `test_serialize` | 10 | serde 外部标签枚举形状、未知 kind 抛 `NotImplementedError`、`spec_canonical` 字节稳定 |
@@ -48,10 +48,10 @@ python3 -m unittest discover -s tests -t . -v   # 期望 746 passed, 15 skipped
 | `test_cross_layer_constants` | 6 | **跨层域分隔符逐字节相同**（R2）。域分隔符是「同一哈希在两个用途下不互相冒充」的**全部实现**，写错一个字符的后果不是报错，是**两侧各自自洽、合起来对不上**。比 5 条：`TRACE_DOMAIN`(pop-trace-v1) / `BIND_DOMAIN`(pop-bind-v1) / `INFER_DOMAIN`(pop-infer-v1) / `MERKLE_NODE_DOMAIN`(pop-session-node-v1) 四个 `&[u8]` 前缀、`INFER_DOMAIN_STR` 的 `&str` 形式、`FOLD_VERSIONS` 列表。**关键：它不需要 Rust 工具链** —— 比的是 `circuits/types/src/lib.rs` 里**声明的字面量**（正则抽取），所以进得了零依赖的那条 CI 通道，而 `skipUnless(POP_SCRIPT.exists())` 那些用例在缺驱动的机器上是**静默全绿**的。两条防退化：`test_a_missing_declaration_is_reported_not_ignored` 要求常量被改名/删掉时**报错而不是返回空串**（否则断言会拿 `b""` 去比、照样绿），`test_extractor_reads_the_declared_value_not_a_substring` 钉住「认声明、不认源码里出现过」，外加 `test_domains_are_distinct` 盯住域分离本身（两个域被合并成全同时，逐条比对**可能全部照样通过**）| 
 | `test_scripts_layout` | 8 | **`scripts/` 分组的机械化保障**（见 `docs/dev-plan.md` §5.6）。存在理由很具体：每个脚本头部都自己写一行按**层数**算的 `sys.path.insert(…, parents[1])` 再 `from _bootstrap import` —— 脚本再搬一次家，这一行就**静默**指错，而它坏掉的是**跑 demo 才会走到**的路径，单测可能全绿（`policydsl/` 拆包时同一个毛病让 66 个用例一起红）。三件事：① **每个脚本都导入得动且 `REPO` == 仓库根**（16 个脚本逐个起子进程导入、不执行 `main`；另有 `test_at_least_one_script_and_five_groups` 防「空集合上全绿」——先断言至少发现 10 个脚本且组名恰是那 5 个）② **`_bootstrap` 是按标记搜索而不是数层数**（`test_finds_root_in_a_foreign_tree` 把它种进一棵陌生树仍找到根 ⇒ 是搜出来的不是写死的；`test_raises_loudly_when_markers_absent` 缺标记抛 `RuntimeError` 且消息里点名 `policydsl`/`circuits`；`test_raises_when_scripts_is_not_at_the_root` 把「嵌套 checkout 会接错树」这条自查本身变成被测行为；`test_bootstrap_is_idempotent_and_orders_repo_first` 在**子进程 + 临时 cwd** 里验连调两次不重复塞路径、且 `REPO` 排在脚本组**前面**）③ **组间不重名 + 根上不放计划外的东西**（5 个组目录是**并排**进 `sys.path` 的，同名文件会让 `import X` 取决于路径顺序 —— 这是 `bootstrap()` 成立的前提；另允许 `scripts/` 根上只有 `_bootstrap.py` + 5 组 + `examples/`，多出来的要么是误提交的产物要么是没想清楚放哪） |
 | `test_nfa_cache` | 10 | **编译产物被共享之后，前提必须是显式的**（R3）。改之前 `compile_pattern` 每次返回一个**全新的**可变 dict，改之后同一个 pattern 永远返回**同一个对象** —— 这是本项目第一次出现「编译产物被多个调用方共享」，而它成立的前提是**谁都不改它**。这个前提今天成立（四个消费者都只读），但它是**隐式**的：将来谁往里写一行「顺手规整一下 `states`」不会报错，只会让**别人**手里那份悄悄变了 —— 于是判据变了、而没有任何一处响。所以钉成会红的断言：跑完 `match_search` / `find_spans` / `mask_indices` / `anchored_full_match` / `match_search_naive` 之后，与**新鲜编译**的那一份深度相等（`test_consumers_do_not_mutate_the_cached_spec`）。第二条是**序列化**：缓存对象是 dict 子类（为了挂 ε-闭包表），子类若改变规范字节，**跨层契约就变了、`policy_hash` 跟着变**，已入库的证明会集体对不上 —— 因此逐字节比一次，并在整条策略链上再比一次 `spec["sha256"]`（含「清掉缓存走冷路径」的对照）。另钉：闭包表记忆化命中的是**同一个**对象且等于现算、手工构造的普通 dict**不**被记忆化（不为性能改动对外行为面）、`deepcopy` 出来的确实独立。**防恒真**：四条变异探针实测 —— 往共享 spec 挂一个统计字段、把 ε-转移列表倒序（语义等价但内容变了）→ 两条都是 `failures` 而非崩溃；追加到共享闭包表 → 红；不注入 → 绿。`sorted(eps)` 那条探针**自己失效**（编译出来本就已序），如实记下：那是探针空转，不是用例失效 |
-| `test_loader_parity` | 10 | **十六份策略加载器其实是同一件事 —— 这话得查出来，不能读出来**（P1-①，R7 的闸门）。同一个「包 JSON → `Policy`」的动作在仓库里抄了 11 份，长得很像但**像不等于同**：规则名兜底一份写 `r{i}`、一份写 `rule-{i}`；有的把 `semantic` / `description` 带进 `Policy`，有的丢掉（`semantic` **进**哈希，`description` **不进**）；有的用 `data["rules"]`（缺键 `KeyError`），有的用 `.get(..., [])`（缺键**静默变成空策略**，fail-open）。后果不是报错，是**同一个包被两份加载器编译出两个哈希** —— 出证方算一个、验证方算另一个，两边都自洽，证书在第三方手里才验不过。**顺序不能倒**：R7 要删的就是那 11 份，删完就再也比不了了，所以先采快照（`tests/loader_parity_baseline.json`）再动 R7。判据是**逐包的去重哈希集合与去重签名集合**（取「集合」而非「逐份记录」，才能让「11 份旧加载器」与「1 份收敛后的」逐路径可比），另加两条更严的：**两边都有的标签逐份比完整记录**（集合级判据不记「谁持哪种」，某一份从「丢」翻成「带」时集合不变、一条都不会红 —— 这个缺口是变异探针 A 暴露出来的）与**覆盖守卫**（每个包必须读到 `expected` 份，不足即拒绝出结果，比的是两堆空集合时集合级判据**是绿的**）。**采集结果**：7 包 × 11 份覆盖 77/77，`policy_hash` **每包恰好 1 种**，签名每包 2 种且分歧**只在 `description`**（3 份带、8 份丢成 `''`，含全部验证侧）—— 它不进哈希、不进证书、CLI 也不打印，对当前所有可观察输出是**惰性**的，所以 P0 的七面基线与它全都对不上。四条变异探针实测非恒真，其中一条**自身失效**（`version` 兜底的改动在 7 个包上走不到）已如实记下。见 `docs/dev-plan.md` §5.7.7 |
+| `test_loader_parity` | 11 | **十一份策略加载器其实是同一件事 —— 这话得查出来，不能读出来**（P1-①，R7 的闸门）。同一个「包 JSON → `Policy`」的动作在仓库里抄了 11 份，长得很像但**像不等于同**：规则名兜底一份写 `r{i}`、一份写 `rule-{i}`；有的把 `semantic` / `description` 带进 `Policy`，有的丢掉（`semantic` **进**哈希，`description` **不进**）；有的用 `data["rules"]`（缺键 `KeyError`），有的用 `.get(..., [])`（缺键**静默变成空策略**，fail-open）。后果不是报错，是**同一个包被两份加载器编译出两个哈希** —— 出证方算一个、验证方算另一个，两边都自洽，证书在第三方手里才验不过。**顺序不能倒**：R7 要删的就是那 11 份，删完就再也比不了了，所以先采快照（`tests/loader_parity_baseline.json`）再动 R7。判据是**逐包的去重哈希集合与去重签名集合**（取「集合」而非「逐份记录」，才能让「11 份旧加载器」与「1 份收敛后的」逐路径可比），另加两条更严的：**两边都有的标签逐份比完整记录**（集合级判据不记「谁持哪种」，某一份从「丢」翻成「带」时集合不变、一条都不会红 —— 这个缺口是变异探针 A 暴露出来的）与**覆盖守卫**（每个包必须读到 `expected` 份，不足即拒绝出结果，比的是两堆空集合时集合级判据**是绿的**）。**采集结果**：7 包 × 11 份覆盖 77/77，`policy_hash` **每包恰好 1 种**，签名每包 2 种且分歧**只在 `description`**（3 份带、8 份丢成 `''`，含全部验证侧）—— 它不进哈希、不进证书、CLI 也不打印，对当前所有可观察输出是**惰性**的，所以 P0 的七面基线与它全都对不上。四条变异探针实测非恒真，其中一条**自身失效**（`version` 兜底的改动在 7 个包上走不到）已如实记下。**R7 落地后又加了一条**：收敛之后 8 份旧加载器丢掉的 `description` 由新的统一加载器**按包内声明**填回，这是 R7 唯一的**已声明归一**，所以 `test_the_live_delta_is_exactly_the_declared_normalization` 不只「把差异归一掉」，而是**反过来断言这处差异恰好就是申报的那一处**（逐 `(加载器, 包)` 比：变的集合恰是 8 份丢 description 的加载器 × 7 个包、顶层只许 `policy`/`policy_hash` 动、`policy_hash` 一个字都不许动、只有 `description` 值在变且恰好是 `'' → 包内声明值`）。归一**加上**这条断言，快照才不会退化成一张空白支票。见 `docs/dev-plan.md` §5.7.7、§5.7.12 |
 | `test_driver_paths` | 9 | **驱动路径只能有一个出处 —— 把它钉成结构，而不是钉成一次普查**（R4）。`pop-script` / `pop-verify` 的字面量一度抄在 **26 个文件 / 33 行**里。抄得一字不差，所以从任何一处看都没问题 —— 问题在于「一字不差」是靠人抄对维持的，而抄错的后果恰好落在 `policydsl/paths.py` docstring 记的那类事故上：路径指向一个**不存在**的位置，且 26 处各自决定怎么办（抛 `FileNotFoundError` / `skipUnless` 静默跳过 / `raise SystemExit`），同一个故障有 26 种表现。闸门用 **AST** 扫，只认**恰好等于**驱动器名的字符串常量，并**排除 docstring**（那是在**叙述**，不是在**定位**）；另单扫**模块级别名**（`POP_SCRIPT = 别处.POP_SCRIPT` 照样是第二处出处 —— `policydsl/proofs/session.py:65` 与 `tests/test_session.py:44` 历史上就是）。例外**逐条申报、且条数钉死**：多一处要改数字、少一处也要改，于是例外既不会悄悄长大、也不会腐烂成「反正这个文件豁免」（对照 §5.7.7 的做法）。另钉三条：出处必须是**叶子**（只许 `import pathlib` / `from __future__` —— 出处若依赖重型模块，「读路径」这件事就付不起代价，正是它当初被抄的原因之一）；`cross_validate.py` 的 `$POP_SCRIPT` 覆盖**行为级**复测（两个子进程：缺省 = 出处、设了环境变量 = 该值，这是 R4 **必须保留**的能力，定时回归与单测靠它注入替身驱动）；`paths.POP_SCRIPT/POP_VERIFY` 确实解析在 `circuits/target/release/` 下。**防恒真**：扫描范围（≥100 个 `.py`，实测 106）与「确有模块从出处取路径」（≥25，实测 29）都有下限 —— 把 import 全删光不会全绿；两条变异探针实测非恒真（在**已被豁免**的文件里加一处 → 条数不符报红；在**未被豁免**的文件里加一处 → 红）。见 `docs/dev-plan.md` §5.7.9 |
 | `test_artifact_digest` | 11 | **工件摘要只有一个口径，且这个口径没变过**（R5）。R5 之前，「对文件字节求 SHA-256」在仓库里写过 **7 份定义 + 1 段内联**（`proofs/compose.py`、`proofs/multiparty.py`、`runtime/service.py`、`scripts/prove/issue_cert.py`、`scripts/verify/verify_cert.py`、`scripts/verify/verify_session.py`、以及 `proofs/semantic.py` 那份带缓存的 `_sha256_of_file`，外加 `regression_prove.driver_fingerprint` 里一段**没有名字**的内联循环）。**为什么这不是「可读性问题」**：它们摘要的证明工件/公开值文件/驱动二进制会进证书的 `binding.proof_sha256` —— 出证方算一个值、验证方另算一个值，两处只要有一处口径变了（大写十六进制、按文本模式打开、少读一块），**两边各自自洽**，证书在第三方手里才验不过。这与 R4 的驱动路径是同一类事故：抄得一字不差，所以没有任何基线看得见。钉两件事：① **口径相同** —— 分块读（1 MiB）与 `read_bytes()` 在块的边界两侧（0 / 1 / 1 MiB−1 / 1 MiB / 1 MiB+1 / 2 MiB+12345 字节）给出**同一个**摘要，这是「收敛是等效替代」的全部内容；另钉小写十六进制（改大小写会让已入库证书集体对不上、且两边都「看起来对」）、`str`/`Path` 都收、失败模式（`FileNotFoundError`/`IsADirectoryError`）不变。② **口径只有一处** —— AST 扫全仓，除申报例外外谁都不许再定义摘要函数，**也不许再写那段流式读惯用法**（`driver_fingerprint` 当年就是没有名字的内联实现，只扫函数名的话整条漏掉）；例外逐条申报、条数钉死。两处**有意保留**：`semantic._sha256_of_file` 是**纯缓存壳**（mtime/size 是缓存键不参与计算，函数体只剩 `return sha256_file(path)`，另有「第二次真的命中缓存」的断言）与 `tests/test_regression_prove.py::_sha256` 是**独立参照**（它验的是生产代码算出来的值，复用同一实现就成了自证 —— 对照本仓「两处独立算」的用法）。**防恒真**：扫描范围（≥100 个 `.py`）与「真有模块从出处取摘要」（≥8）都有下限，另有一条**给扫描器本身喂已知样本**的探针（认不出东西的扫描器与没有扫描器在结论上无法区分）。四条变异探针实测非恒真：别处新增一份 `def _sha256` / 口径改大写 / 每块漏读一个字节 / 缓存壳长回自己那份分块实现 → 各自报红。见 `docs/dev-plan.md` §5.7.10 |
-| **合计** | **746** | |
+| **合计** | **751** | |
 
 ### 15 个 skip（都是设计内的）
 
@@ -452,7 +452,7 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **746 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后与验收基线加入后重测、2026-09-17 R3（NFA 编译缓存）后重测、2026-09-17 P1-①（加载器对拍）后重测、2026-09-17 R4（驱动路径收敛）后重测、2026-09-17 R5（工件摘要收敛）后重测、2026-09-17 R6（kind 翻译表收敛）后重测；CI 上更多 skip，见 §1）、
+  当前验收判据是 **751 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后与验收基线加入后重测、2026-09-17 R3（NFA 编译缓存）后重测、2026-09-17 P1-①（加载器对拍）后重测、2026-09-17 R4（驱动路径收敛）后重测、2026-09-17 R5（工件摘要收敛）后重测、2026-09-17 R6（kind 翻译表收敛）后重测、2026-09-17 R7（策略加载器收敛 + 包形状闸门）后重测；CI 上更多 skip，见 §1）、
   `cross_validate` **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 整批重跑，见下）。
   这条判据现在**有自动留痕**：`scripts/prove/regression_prove.py` 每次运行把它追加进
   `bench/results/regression-prove.jsonl`（只追加），并附 git sha / 硬件 / 证明器二进制摘要
@@ -474,7 +474,7 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
 ### 1. 跑测试
 
 ```bash
-python3 -m unittest discover tests                # 全量：746 passed / 15 skipped，~42 s
+python3 -m unittest discover tests                # 全量：751 passed / 15 skipped，~42 s
 python3 -m unittest tests.test_dsl -v             # 单个模块（哪一板块 → 见 §1 的表）
 python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 ```
@@ -512,7 +512,7 @@ python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 
 **唯一有留痕的是 `cross_validate` 的判据**：`scripts/prove/regression_prove.py`
 每次运行把它追加进 `bench/results/regression-prove.jsonl`（**只追加**），并附
-git sha / 硬件 / 证明器二进制摘要，所以「746 passed」这类数字指得回具体的某一次运行（T3）。
+git sha / 硬件 / 证明器二进制摘要，所以「751 passed」这类数字指得回具体的某一次运行（T3）。
 
 ## 怎么改它
 
@@ -527,8 +527,8 @@ git sha / 硬件 / 证明器二进制摘要，所以「746 passed」这类数字
 **「四处同步」清单**（改测试计数时，这四处都写着同一批数字）：
 
 1. 本文件 §1 表的**那一行**与**合计行**；
-2. 本文件**顶部**那句「38 个模块，746 个用例」；
-3. 本文件 §5 扩展指引里的**验收判据**（`746 passed / 15 skip`）；
+2. 本文件**顶部**那句「38 个模块，751 个用例」；
+3. 本文件 §5 扩展指引里的**验收判据**（`751 passed / 15 skip`）；
 4. `docs/README.md` 的计数口径 + `README.md` / `docs/reproduce.md` 的验收判据。
 
 （`docs/README.md` §3 已把「测试计数 → 08」写成约定：**本文件是唯一权威源**，
@@ -552,7 +552,7 @@ git sha / 硬件 / 证明器二进制摘要，所以「746 passed」这类数字
 
 ```bash
 # 改完测试层的两条验证
-python3 -m unittest discover tests                # 746 passed / 15 skipped（数对不上先查 §1 表）
+python3 -m unittest discover tests                # 751 passed / 15 skipped（数对不上先查 §1 表）
 python3 -m unittest tests.test_scripts_layout     # 若动过 scripts/ 分组
 ```
 

@@ -42,18 +42,15 @@ from policydsl.evidence import anchor, cert, keys, verifier  # noqa: E402
 from policydsl.evidence.cert import sha256_file  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.adapters.langchain_adapter import verify_chain  # noqa: E402
-from policydsl.core.model import Policy, Rule  # noqa: E402
+from policydsl.core.model import Policy  # noqa: E402
 # 快路径判定（二进制 + 边车 + 非 core 模式）在 policydsl.evidence.verifier；此处再导出以兼容旧导入
 from policydsl.evidence.verifier import prefer_verifier_only  # noqa: E402,F401
 from policydsl.paths import POP_SCRIPT, POP_VERIFY
 
 
 def load_policy(path: Path) -> Policy:
-    """从 JSON 文件加载策略包。"""
-    d = json.loads(path.read_text(encoding="utf-8"))
-    rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
-             for i, r in enumerate(d["rules"])]
-    return Policy(d["id"], d.get("version", "0.1.0"), rules=rules)
+    """从 JSON 文件加载策略包（唯一出处 :meth:`policydsl.core.model.Policy.from_dict`）。"""
+    return Policy.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
 def main() -> int:

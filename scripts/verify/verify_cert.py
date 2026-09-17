@@ -65,16 +65,13 @@ from policydsl.evidence.cert import sha256_file
 from policydsl.privacy import challenge, commit
 from policydsl.proofs import semantic as S
 from policydsl.core.compile import compile_policy
-from policydsl.core.model import Policy, Rule
+from policydsl.core.model import Policy
 from policydsl.paths import POP_SCRIPT, POP_VERIFY
 
 
 def load_policy(path: Path) -> Policy:
-    """从 JSON 文件加载策略包。"""
-    d = json.loads(path.read_text(encoding="utf-8"))
-    rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
-             for i, r in enumerate(d["rules"])]
-    return Policy(d["id"], d.get("version", "0.1.0"), rules=rules)
+    """从 JSON 文件加载策略包（唯一出处 :meth:`policydsl.core.model.Policy.from_dict`）。"""
+    return Policy.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
 def main() -> int:

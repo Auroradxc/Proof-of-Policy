@@ -14,7 +14,7 @@ from pathlib import Path
 
 from policydsl.core.compile import compile_policy
 from policydsl.core.evaluate import check
-from policydsl.core.model import Policy, PolicyError, Rule
+from policydsl.core.model import Policy, PolicyError
 
 
 def _load_policy(path: Path) -> Policy:
@@ -25,17 +25,7 @@ def _load_policy(path: Path) -> Policy:
         raise SystemExit(f"policy file not found: {path}")
     except json.JSONDecodeError as exc:
         raise SystemExit(f"invalid JSON in {path}: {exc}")
-    rules = [
-        Rule(kind=r.get("kind", ""), name=r.get("name", f"rule-{i}"), params=r.get("params", {}))
-        for i, r in enumerate(data.get("rules", []))
-    ]
-    return Policy(
-        id=data["id"],
-        version=data.get("version", "0.1.0"),
-        description=data.get("description", ""),
-        rules=rules,
-        semantic=data.get("semantic", "and"),
-    )
+    return Policy.from_dict(data)
 
 
 def main(argv: list[str] | None = None) -> int:

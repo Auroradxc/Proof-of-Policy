@@ -33,21 +33,14 @@ bootstrap()
 
 from policydsl.core.compile import compile_policy
 from policydsl.core.evaluate import EVIDENCE_KIND_TO_RULE_KIND, check
-from policydsl.core.model import Policy, PolicyError, Rule
+from policydsl.core.model import Policy, PolicyError
 from policydsl.core.serialize import spec_canonical_text
 from policydsl.paths import POP_SCRIPT
 
 
 def load_policy(path: Path) -> Policy:
-    """从 JSON 文件加载策略包。"""
-    data = json.loads(path.read_text(encoding="utf-8"))
-    rules = [
-        Rule(kind=r["kind"], name=r.get("name", f"rule-{i}"), params=r.get("params", {}))
-        for i, r in enumerate(data.get("rules", []))
-    ]
-    return Policy(id=data["id"], version=data.get("version", "0.1.0"),
-                  description=data.get("description", ""), rules=rules,
-                  semantic=data.get("semantic", "and"))
+    """从 JSON 文件加载策略包（唯一出处 :meth:`policydsl.core.model.Policy.from_dict`）。"""
+    return Policy.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
 def golden(policy: Policy, response: str) -> dict:

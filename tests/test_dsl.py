@@ -5,6 +5,7 @@
 """
 
 import dataclasses
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -150,6 +151,80 @@ class TestValidation(unittest.TestCase):
         # min > max 是非法区间。
         with self.assertRaises(PolicyError):
             Policy("p", "1", rules=[Rule("length_bound", "lb", {"min": 5, "max": 1})]).validate()
+
+
+class TestFromDictRejectsShape(unittest.TestCase):
+    """``Policy.from_dict`` 对「这份 JSON 根本不像策略包」只抛 ``PolicyError``。
+
+    这条契约是 R7 把 11 份加载器收敛到唯一出处之后才成立的，值得**独立**钉住，
+    而不是只靠验收快照：快照记的是「那一刻的文案」，谁重新采集一次，保证就悄悄
+    没了。这里钉的是**类型**。
+
+    为什么类型本身是契约：调用方（11 份加载器、每个 CLI、常驻服务）**统统只接
+    ``PolicyError``**。四种形状原先各自漏 ``KeyError`` / ``AttributeError`` /
+    ``TypeError`` —— 一个都接不住，于是「用户把包写错了」表现成「工具崩了」：
+    ``python3 -m policydsl compile`` 退出码 1 + 一坨 traceback，而不是退出码 2 +
+    一行 ``error: …``。实测与取舍见 ``docs/dev-plan.md`` §5.7.12。
+    """
+
+    GOOD = {"id": "p", "version": "1",
+            "rules": [{"kind": "keyword_block", "name": "kb",
+                       "params": {"keywords": ["x"]}}]}
+
+    def _pack(self, **over):
+        """在**合法包**上做一处变形（深拷贝，用例之间互不影响）。"""
+        d = json.loads(json.dumps(self.GOOD))
+        d.update(over)
+        return d
+
+    def test_the_four_shapes_are_policy_errors(self):
+        # 注意 assertRaises(PolicyError) 本身就是可证伪的：PolicyError 继承
+        # ValueError，KeyError/AttributeError/TypeError 都不是它的子类，
+        # 闸门一旦被摘掉，这四条会各自以原本的内建异常炸红。
+        cases = {
+            "顶层不是对象": [1, 2, 3],
+            "顶层是字符串": "oops",
+            "缺 id": {k: v for k, v in self.GOOD.items() if k != "id"},
+            "rules 不是数组（字符串）": self._pack(rules="oops"),
+            "rules 不是数组（对象）": self._pack(rules={"a": 1}),
+            "rules 是 null": self._pack(rules=None),
+            "规则项不是对象": self._pack(rules=[5]),
+        }
+        for label, data in cases.items():
+            with self.subTest(label):
+                with self.assertRaises(PolicyError):
+                    Policy.from_dict(data)
+
+    def test_the_message_names_the_fault(self):
+        # 报错文案是诊断契约（与 Policy.validate 同一口径）：光有类型不算，
+        # 得说清是哪个字段、拿到了什么类型的值。
+        cases = [
+            ({k: v for k, v in self.GOOD.items() if k != "id"}, "id"),
+            (self._pack(rules="oops"), "rules"),
+            (self._pack(rules=[5]), "rule #0"),
+            ([1, 2, 3], "list"),
+        ]
+        for data, want in cases:
+            with self.subTest(want):
+                with self.assertRaises(PolicyError) as ctx:
+                    Policy.from_dict(data)
+                self.assertIn(want, str(ctx.exception))
+
+    def test_a_shapely_pack_is_not_swallowed(self):
+        # 闸门只能拦形状，不能顺手把合法的包也拦掉 —— 这是它最可能的失效方向
+        # （区间写得过宽，代价是所有调用方一起不可用）。
+        self.assertEqual(Policy.from_dict(self._pack(rules=[])).rules, [])
+        # 多余的顶层字段是**允许**的：包格式向后兼容，未知字段不参与编译。
+        self.assertEqual(len(Policy.from_dict(self._pack(unknown_field=[1, 2])).rules), 1)
+
+    def test_content_faults_are_still_diagnosed_by_validate(self):
+        # 另一半：形状对、内容错，仍须由 Rule.validate 报到**具体规则名**，
+        # 不能被形状闸门吞成一句笼统的「包不对」。
+        p = Policy.from_dict(self._pack(rules=[{"kind": "nope", "name": "r0", "params": {}}]))
+        with self.assertRaises(PolicyError) as ctx:
+            p.validate()
+        self.assertIn("r0", str(ctx.exception))
+        self.assertIn("nope", str(ctx.exception))
 
 
 class TestFormatCheck(unittest.TestCase):

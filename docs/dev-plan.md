@@ -1785,3 +1785,143 @@ R4 修的是「同一件事有 26 份」，所以闸门也必须是**结构**而
 | 分钟 | `verify_session.py --session …` | **10 项 PASS** |
 
 真出证随 P1 阶段末统一跑（`--label P1-acceptance`）。
+
+#### 5.7.12 P1-⑤ R7：策略加载器 11 份 → 1 处（2026-09-17，✅ 已交付）
+
+##### 改了什么
+
+「把策略包 JSON 读成 `Policy`」这个动作抄在 **11 个模块**里，每个模块一份
+`_load_policy` / `load_policy`。§5.7.7 的采集器实测：**7 个包上 `policy_hash`
+每包恰好 1 种**（所以这批不等于「已经在出事」），但**签名每包 2 种**，分歧只在
+`description`（3 份带、8 份丢成 `''`）。`description` 不进哈希，所以今天所有
+可观察输出都对不上它 —— 这正是 §5.7.8 那条元结论：**「恰好」不是契约**。
+
+唯一出处：**`policydsl/core/model.py::Policy.from_dict`**。11 份各自变成**一行
+委派**，**函数名与签名一个没动**（`LOADERS` 表保持 11 行）——名字留着，逐份
+对拍才继续把这 11 个入口都罩在观察之下；删掉名字等于把「这些入口存在过」这件事
+从闸门里删掉。
+
+| 组 | 位置 | 备注 |
+|---|---|---|
+| 包内 | `policydsl/__main__.py` | 保留自己的 `FileNotFoundError` / `json.JSONDecodeError` → `SystemExit` 包装 |
+| 包内 | `proofs/multiparty.py`、`proofs/compose.py`、`proofs/session.py`、`runtime/service.py` | `service.py` 的 docstring 里那句「与 `verify_cert.py` / `issue_cert.py` 的 `load_policy` **逐字段相同**」被留作**反面标本**：它一句话承认了重复，却没有任何东西保证它 |
+| 脚本 | `scripts/prove/{issue_cert,prove_policy,prove_multiparty,compose_proof}.py`、`scripts/verify/{verify_cert,verify_session}.py` | 同一行 |
+
+顺带删掉 7 个文件里已成为死引用的 `Rule` / `Policy` 局部 import。
+
+##### 一处**已声明归一**：`description`
+
+8 份加载器把包内声明的 `description` 丢成 `''`。收敛后统一**取包内声明**。
+理由是 `Policy` 的缺省值本就是 `''` —— **只有显式不传的加载器**才得到它，所以
+「丢」是**信息丢失**，不是「省略」。且它不进 `policy_hash`、不进证书、CLI 也不
+打印，对当前所有可观察输出是**惰性**的（§5.7.7 已实测）。
+
+`tests/test_loader_parity.py` **不改快照**（`tests/loader_parity_baseline.json`
+仍是**收敛之前**那份记录），而是加一层 `normalized_golden()` 把差异归一掉 ——
+并且**再加一条反向断言** `test_the_live_delta_is_exactly_the_declared_normalization`：
+逐 `(加载器, 包)` 比，变的集合**恰好**是 8 份丢 `description` 的加载器 × 7 个包、
+顶层只许 `policy` / `policy_hash` 两个键动、`policy_hash` **一个字都不许动**、
+只有 `description` 的值在变且恰好是 `'' → 包内声明值`。
+**归一 + 这条断言**，快照才不会退化成一张空白支票（只归一、不断言，等于把
+「R7 有没有多改东西」这件事从闸门里拿掉）。
+
+##### 顺带补齐的契约：`_require_pack_shape`（**用户 2026-09-17 拍板**）
+
+R7 引入 `from_dict` 之后，验收基线的「畸形包 → CLI」那一面**必红 4 处**，且
+**没有任何写法能保住它**：多一层栈帧 → 每个 traceback 多 2 行；`from_dict` 先读
+`data["id"]` → 「顶层是数组」从 `AttributeError` 变成 `TypeError`。
+
+用户的选择是「**先把 CLI 修干净再重采**」——于是把「换了个 traceback」变成
+「从崩溃变成干净拒绝」。做法不是在 CLI 里加特例，而是**把形状闸门放进唯一出处**，
+于是**11 个入口一起受益**：
+
+| 形状 | 原先漏出 | 之后 |
+|---|---|---|
+| 顶层不是对象 | `TypeError` / `AttributeError` | `PolicyError: policy pack must be a JSON object, got list` |
+| 缺 `id` | `KeyError: 'id'` | `PolicyError: policy pack missing 'id'` |
+| `rules` 不是数组 | `AttributeError` / `TypeError` | `PolicyError: policy pack 'rules' must be a list, got str` |
+| 规则项不是对象 | `AttributeError` | `PolicyError: policy pack rule #0 must be a JSON object, got int` |
+
+**为什么这四条是一件事而不是四件事**：调用方（11 份加载器、每个 CLI、常驻服务）
+**统统只接 `PolicyError`**，四种形状一个都接不住 —— 于是「用户把包写错了」表现成
+「工具崩了」：`python3 -m policydsl compile` 退出码 1 + 一坨 traceback，而不是
+退出码 2 + 一行 `error: …`。
+
+**分层的界线**：**形状在这里拦，内容交给 `validate`**。缺 `kind` **不在这里炸**
+（那是内容问题），仍由 `Rule.validate` 报 `PolicyError: rule '…': unknown kind ''`
+——两段报同一个类型，调用方看不出区别。这一条不是装饰：`r.get("kind", "")` 若改成
+在这里拦，验收第 3 面的 `drop_kind` / `kind_is_list` 会跟着变，而它们**本来就不是
+问题**。实测确认：40 处基线差异里**没有一处**落在 `empty_rules`（合法的空规则表）、
+`extra_top_level`（多余的顶层字段允许）或任何 kind 相关用例上。
+
+##### 验收基线为什么要**重采**（人工确认，`tests/acceptance_baseline.json`）
+
+`scripts/verify/acceptance.py` 的 docstring 与 §5.7.4 都写着：**有意变更要显式改
+快照，且必须人工确认后重新生成，diff 进提交**。这是「等效性被证明」与「变更被
+承认」的分界。本次的 diff：**1567 个叶子里变了 40 个**，全部落在**申报的两类**里：
+
+| 面 | 处数 | 内容 |
+|---|---:|---|
+| `3a_model_robustness` | 28 | 7 包 × `missing_id` / `rules_not_a_list` 各 × {`error.type`, `error.msg`} |
+| `3b_cli_robustness` | 12 | `missing_id` / `rules_not_list` / `top_level_list` 各 × {`exit`, `stderr.first`, `stderr.last`, `stderr.lines`} |
+
+**其余五面零差异**：`1_contract`（完整 `ConstraintSpec` 规范字节 + `policy_hash`）、
+`2_verdicts`（两条判定路径 × 7 包 × 24 条语料）、`4_streaming`（流式证书序列）、
+`5_cli`（正常路径）、`6_import_surface`。**第 1 面逐字节不变是 R7 最要紧的一条**：
+它正是「同一个包被两份加载器编译出两个哈希」那类事故的唯一观测点。
+
+##### 等效替代性（机械证明，不是读一遍）
+
+1. **加载器对拍** —— `tests/loader_parity_baseline.json`（**收敛之前**采的）vs
+   `--against from_dict`：7 包 × 11 份覆盖 **77/77**，`policy_hash` **每包恰好
+   1 种**，签名差异**恰好**是申报的那一处。
+2. **验收基线** —— 七面里五面逐字节零差异，另两面的 40 处差异**逐条归入申报**。
+3. **端到端** —— `cross_validate --no-prove` **host 19/19 PASS**；`demo_all.sh`
+   （fast）**8 支路全 PASS，SKIP 集合 = ∅**；`verify_session.py` **10 项 PASS**。
+4. **R7 自己的三条回退判据**（§2 P1 表）：① 7 包 × 11 份 `policy_hash` 有任一
+   不一致（非申报归一）—— **不触发**；② 全量测试非全绿 —— **不触发**；③ demo
+   fast 出现新 FAIL/SKIP —— **不触发**。
+
+##### 闸门（新增 `tests/test_dsl.py::TestFromDictRejectsShape` 4 例；`test_loader_parity` 10 → 11 例）
+
+形状闸门**不只挂在验收快照上** —— 快照记的是「那一刻的文案」，谁重采一次保证就
+悄悄没了。所以另钉**类型本身**：`assertRaises(PolicyError)` 是可证伪的
+（`PolicyError` 继承 `ValueError`，`KeyError` / `AttributeError` / `TypeError`
+都不是它的子类）。另两条**反向**用例同样重要：闸门不能反过来吞掉合法的包
+（空规则表合法、多余顶层字段允许）、形状对内容错仍须由 `Rule.validate` 报到
+**具体规则名**（不能被形状闸门吞成一句笼统的「包不对」）。
+
+##### 变异探针（实测，非恒真）
+
+| 变异 | 结果 |
+|---|---|
+| 摘掉 `_require_pack_shape(data)` 这一行 | 红（`test_dsl` **11 errors** = 7 个 subTest + 4 例）|
+| `test_loader_parity` 里改回「丢 `description`」 | 红（9 例）|
+| 把 `version` 兜底改成 `"9.9.9"` | 红（9 例）|
+| 还原 | 绿（751 passed / 15 skipped，工作树与探针前逐字节相同）|
+
+##### 顺带发现（**本轮未修，只记录**）
+
+**「数字四处同步」这条规矩没有自动化检查，而它已经漂了。** `docs/reproduce.md`
+（§5 明确列出的同步点之一）两处写着 **675 passed**，而当时的真实值是 **746**
+—— 漂了 **71 个用例**，横跨 R3–R6 四次改动都没被发现。本次按规矩一并改成 751，
+并在 `modules/08-tests-bench.md` 的验收判据里补上 R7 这一次重测的日期。
+`docs/dev-plan.md` 里各次验收表中的旧数字（如 §5.7.11 验收表里的 746）是
+**那一次运行的留痕**，按 §5.7.4 的口径**不改**。
+
+同为顺带：`modules/08-tests-bench.md` 里 `test_loader_parity` 那一行的**标题**
+写着「**十六份**策略加载器」，而同一行正文与 §5.7.7 都写着 **11 份**（16 是
+「重复的加载动作」的粗计，含测试与文档里的副本）。标题改回 11 份。
+
+##### 验收（风险标「中」，三条回退判据全部不触发 → **不回退**）
+
+| 档 | 命令 | 结果 |
+|---|---|---|
+| 秒级 | `unittest discover -s tests -t .` | **751 passed / 15 skipped**（746 + 新增 5：`test_dsl` +4、`test_loader_parity` +1；skip 集合不变）|
+| 秒级 | `python3 -m unittest tests.test_dsl tests.test_loader_parity` | **44 passed** |
+| 秒级 | `cross_validate.py --no-prove` | **host 19/19** PASS |
+| 秒级 | `verify/acceptance.py --verify`（重采后） | **七面逐路径零差异** |
+| 分钟 | `demo_all.sh`（fast） | **8 支路全 PASS，SKIP 集合 = ∅** |
+| 分钟 | `verify_session.py --session …` | **10 项 PASS** |
+
+真出证随 P1 阶段末统一跑（`--label P1-acceptance`）。
