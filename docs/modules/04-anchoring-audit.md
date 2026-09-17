@@ -278,6 +278,58 @@ CI（`.github/workflows/ci.yml`）单独跑 `tests.test_anchor` + `tests.test_an
 
 ---
 
+---
+
+## 怎么用它
+
+**最省事的入口是一条命令**（起本地链 → 部署 → 锚定 → 用独立只读客户端核对 → 附带反例）：
+
+```bash
+bash scripts/anchor/anchor_e2e.sh            # ~10 s（fast）；加 --prove 会真出证明
+```
+
+**接自己的链**：
+
+```bash
+# 1) 部署到目标节点，拿到两行环境变量
+python3 scripts/anchor/deploy_anchor.py --rpc <URL>
+#    → POP_ANCHOR_RPC=…  POP_ANCHOR_CONTRACT=0x…
+
+# 2) 出证时带上（不给这两个参数就退回本地文件账本）
+python3 scripts/prove/issue_cert.py --pack P --response R --out-dir D \
+    --rpc "$POP_ANCHOR_RPC" --contract "$POP_ANCHOR_CONTRACT"
+```
+
+- **⚠️ 链上只锚定摘要，不验证证明。** 合约实测只有 `anchor / anchoredAt / anchoredBy /
+  count / isAnchored`，**没有** `anchorWithProof` / `verifyProof`。链上得到的是
+  「该摘要某时刻已存在」，**不是**「已证明的结论」——对外说「链上可验证」是过度声明。
+- **⚠️ `--rpc` 必须与 `--contract` 成对**：只给一个会**拒绝启动**（`require=True`），
+  这是刻意的 —— 否则调用方会以为上了链，其实只写了本地文件。
+- **默认后端不需要任何依赖**：`FileLedgerBackend` 是哈希链，**离线可验**。
+  只想做可审计记录、不想碰链，就用默认的。
+- **验证方怎么核**：`verify_cert.py --ledger …` 逐条 `verify_ledger`；
+  `verify_session.py` 还会做交叉核对（链上后端时另比 `on_chain` meta）。
+
+## 怎么改它
+
+| 我想改…… | 改哪里 | 注意 |
+|---|---|---|
+| **接自备节点 / 测试网** | `scripts/anchor/deploy_anchor.py --rpc <URL>` | 它打印 `POP_ANCHOR_RPC` / `POP_ANCHOR_CONTRACT` 两行，照抄即可 |
+| **换生产签名 / 硬件钱包** | `CastRpc._run` 的构造处（目前 `--private-key` 传明文） | 可扩展成 `--account <keystore>` 等；改动集中在这一处 |
+| **换锚定后端**（透明日志 / CT 式 Merkle） | 实现 `AnchorBackend` 的 `anchor` / `get`，让 `backend_from_env` 认识新配置 | **返回字段名必须保持一致**，这样 `verify_session` 的交叉核对无需改 |
+| **改合约** | `contracts/Anchor.sol` | ⚠️ **必须重新生成 `contracts/Anchor.json`**，否则部署的还是旧字节码（§7 第 7 条）；并同步 `tests/test_anchor_chain.py::TestArtifact` 的期望函数集 |
+| **改账本条目形状** | `evidence/anchor.py` | 账本是**仅追加**的：改形状会让**已有**账本 `verify_ledger` 失败。这是破坏性变更，别顺手改 |
+
+```bash
+python3 -m unittest tests.test_anchor tests.test_anchor_chain tests.test_verifier_only
+bash scripts/anchor/anchor_e2e.sh          # 真起 anvil 跑一遍（含反例对照）
+```
+
+`tests/test_anchor_chain.py` 里有一条**故意的反例对照**（`TestAnvilEndToEnd`）——
+跑绿不代表接线对，得看那份对照里的**负例也真的失败**了。见 §4「为什么这个 PASS 不是恒真」。
+
+---
+
 **相关**：被锚定的摘要怎么来的 → [`03-certificate.md`](03-certificate.md)；
 一键端到端脚本怎么用 → [`07-cli-scripts.md`](07-cli-scripts.md)；
 安全论证（记录完整性）→ [`../security-model.md`](../security-model.md)。

@@ -788,5 +788,79 @@ bash scripts/anchor/anchor_e2e.sh --keep          # 结束后不关 anvil
 
 ---
 
+## 怎么用它
+
+**别从 §1 的地图逐行读。先想你手上有什么、想问什么，再照这张表挑。**
+
+| 我手上有什么 / 想问什么 | 敲这个 | 大约多久 |
+|---|---|---|
+| 什么都没跑过，先看全貌 | `bash scripts/demo/demo_all.sh --list` | 秒（只列 8 条支路） |
+| 想看完整链路，但不想等证明 | `python3 scripts/demo/demo_e2e.py --no-prove` | **~1.2 s**（本机实测） |
+| 要一次跑完 8 条支路 | `bash scripts/demo/demo_all.sh` | **~13 s**（fast 模式） |
+| 同上，但要真证书 | `bash scripts/demo/demo_all.sh --prove` | 25–30 min，且期间别跑别的重活 |
+| 最小的一件事：一条响应 × 一条策略 | `SP1_PROVER=cpu python3 scripts/prove/prove_policy.py --pack <pack>.json --response <resp>.txt` | 数分钟 |
+| 改完规则做回归 | `SP1_PROVER=cpu python3 scripts/prove/cross_validate.py …` | 真出证 ≈45 min；`--no-prove` 秒级 |
+| 核验**一张**证书（第三方视角） | `python3 scripts/verify/verify_cert.py --cert <cert>.json [--response <resp>.txt]` | 秒 |
+| 核验**一整个**会话 | `python3 scripts/verify/verify_session.py --session <session>.json` | 秒 |
+| 起证明服务（第二步） | `python3 scripts/ops/proof_service.py …`（见 §2.14） | 常驻 |
+
+三条**不看源码就会踩**的事：
+
+1. **在哪个目录敲都一样。** 每个脚本开头都 `bootstrap()`，它**按标记搜索**仓库根
+   （`policydsl/` + `circuits/` 同时存在），不数层数。实测从 `/tmp` 敲
+   `python3 <repo>/scripts/prove/prove_policy.py --help` 正常。反过来说：脚本内部的
+   相对路径**一律以仓库根为基准**算，你在哪儿敲都不影响产物落点。
+2. **产物落两处，都在 `.gitignore` 里**：草稿在 `scripts/.work/`，demo/脚本的正式产物
+   在 `scripts/examples/out/`。要另存一份就 `--out-dir <dir>`。
+3. **退出码的含义两套，别混用**：
+   - `verify_cert.py` / `verify_session.py` 都是 `return 0 if ok_all else 1`。
+   - **⚠️ `verify_cert.py` 的退出码只看「证书真不真」（`RESULT`），不看「合规」那一行。**
+     源码里 `合规: PASS/FAIL` 是在 `ok_all` 算完之后才打印的，两者不互相喂。
+     所以拿它当 CI 判据时，`$? -eq 0` **不足以**说明策略被满足了 —— 要么同时 grep
+     `合规: PASS`，要么用 `verify_session.py`（它把各类结论一起并进 `ok_all`）。
+     这条正是 §2.5 那个「两行」陷阱的命令行版本。
+   - `demo_all.sh` 的 `exit` 是**失败计数**：0 = 所有应有步骤 PASS。SKIP（缺依赖）
+     单列，不算失败。
+4. **要真出证就设 `SP1_PROVER=cpu`，并且一次只跑一件事** —— SP1 证明器的内存峰值
+   ~10.3 GB，整轮测试和出证抢内存必被 OOM 杀（见 08 §3.3）。
+
+## 怎么改它
+
+**这一节讲「改脚本层本身」。要加的是某个验证维度或某个后端，去 §7 扩展指引。**
+
+| 我想改…… | 去哪 | 改完必须跑 |
+|---|---|---|
+| **加一个新脚本** | 放进 5 组里的某一组，开头三行照抄 `scripts/_bootstrap.py` 的「用法」代码块 | `python3 -m unittest tests.test_scripts_layout` |
+| **给脚本换个名字 / 挪个组** | 同上 —— **组间不能有同名文件**，5 个组是**并排**进 `sys.path` 的 | 同上（`TestGroupsAreCollisionFree` 会红） |
+| **往 `scripts/` 根上放东西** | 别放。根上只该有 `_bootstrap.py` + 5 个组 + `examples/` | 同上（`test_scripts_root_holds_only_bootstrap_groups_and_examples`） |
+| **改脚本的输出格式 / 判定标准** | 同步改 §2 对应小节 + §6 表里那一行测试 | 那一行测试的模块 |
+| **加一条 demo 支路** | `scripts/demo/demo_all.sh` 的 `LANES` 数组，格式 `key\|中文名\|驱动脚本\|说明` | `bash scripts/demo/demo_all.sh --list`，并按 [`../demo/README.md`](../demo/README.md) §3 补一行 |
+| **改「仓库根在哪」** | **两处，改一处就得改另一处**：`scripts/_bootstrap.py` 的 `_MARKERS` 与 `policydsl/paths.py` 的同一对标记 | `tests.test_scripts_layout`（只管 scripts 这侧）；`policydsl` 那侧**没有专门测试**，改它请跑全量 |
+
+**⚠️ 三件绝对不能做：**
+
+1. **不要给 `scripts/` 或任何组加 `__init__.py`。** `tests/test_proof_service.py` 里有
+   4 处 `from scripts.ops.proof_service import make_server`，靠的是**命名空间包**语义；
+   一加 `__init__.py`，这些导入的解析路径就变了。现在 `find scripts -name __init__.py`
+   是 0 个，保持这样。
+2. **不要把脚本开头的 `sys.path.insert(0, str(Path(__file__).resolve().parents[1]))`
+   换成「更聪明」的写法。** 那一行**是按层数写的**，是这个设计里唯一的取舍：让 16 个
+   文件各写一行，换掉 16 份重复的定位逻辑。真正的保障不是这一行有多聪明，而是
+   `tests/test_scripts_layout.py` 把每个脚本都导入一遍、并断言它看到的 `REPO`
+   就是仓库根 —— 再搬一次家，它当场红，而不是等你哪天跑 demo 才发现。
+   （同一个毛病在 `policydsl/` 拆包时让 66 个用例一起红过，见 [`../dev-plan.md`](../dev-plan.md) §5.6.7。）
+3. **别让两个组出现同名文件**（`verify_cert.py` 只能有一个）。组是并排进 `sys.path` 的，
+   重名会让 `import <name>` 的结果取决于 `sys.path` 顺序 —— 典型的「今天绿明天红」。
+
+```bash
+# 改完脚本层的三条验证（由快到慢）
+python3 -m unittest tests.test_scripts_layout        # 8 例：逐个导入 + 搜根 + 不重名
+bash scripts/demo/demo_all.sh --list                 # 8 条支路还列得出来
+bash scripts/demo/demo_all.sh                        # fast 全量，~13 s，8 条支路应全 PASS
+```
+
+---
+
 **相关**：一键锚定的原理 → [`04-anchoring-audit.md`](04-anchoring-audit.md)；
-完整复现步骤与环境要求 → [`../reproduce.md`](../reproduce.md)。
+完整复现步骤与环境要求 → [`../reproduce.md`](../reproduce.md)；
+8 条支路各自「看到什么算对」→ [`../demo/README.md`](../demo/README.md)。

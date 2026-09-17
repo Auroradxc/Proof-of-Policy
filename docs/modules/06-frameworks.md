@@ -573,6 +573,65 @@ FAIL**（第三方重算不了链尾），不是「默认通过」。这就是�
 
 ---
 
+---
+
+## 怎么用它
+
+**这一节是「用别人写好的适配器」。要接一个新框架，直接跳 §8。**
+
+```bash
+# 装框架（缺了也不影响：适配器会导入回退，单测照样跑）
+bash scripts/ops/install_frameworks.sh
+
+# 最省事的用法：跑一遍主 demo，看证书是怎么出的
+python3 scripts/demo/demo_e2e.py --no-prove          # 秒级
+python3 scripts/demo/demo_e2e.py --model openai:gpt-4o-mini   # 真模型（走真 langchain_openai）
+```
+
+```python
+# LangChain：挂一个回调即可，不改链
+from policydsl.adapters.langchain_adapter import PoPCallbackHandler
+handler = PoPCallbackHandler(monitor, gateway=gw, vkey_hash=…, proof_mode="unproven")
+chain.invoke(prompt, config={"callbacks": [handler]})
+
+# LangGraph：节点包装（不改图）或直接复用同一个回调
+from policydsl.adapters.langgraph_adapter import LangGraphGuard
+guard = LangGraphGuard(monitor, gateway=gw, …)
+
+# MCP：工具守护，参数侧 + 结果侧
+from policydsl.adapters.mcp_adapter import MCPGuard
+g = MCPGuard(monitor, gateway=gw, …)
+result, args_cert = g.call_tool_sync(session, "search_kb", {"query": "refund"})
+# 已有事件循环时用 await g.call_tool(session, name, arguments)——签名一致，只多一个 session
+```
+
+- **⚠️ 生成路径与工具路径必须共用一把网关**（§8.2 第 3 条）：不共用 ⇒ 两条链各指一条
+  `trace_root`，会话被劈成两条，截尾检测形同虚设。
+- **⚠️ 缺省是离线桩，不是真模型**：终端会打出 `llm model : fake (offline)`。
+  `--model` 才会走真客户端。始终真实的是 **callback 管线**本身。
+- **⚠️ 工具描述字符串是功能性的**：`@tool` 的 docstring 会被发给模型，不是注释。
+- **对照表在 §5**：三个适配器出的证书形态差异，一眼看完。
+
+## 怎么改它
+
+| 我想改…… | 去哪 |
+|---|---|
+| **接一个新框架** | **§8**（8.0 分清「①提取 vs ②出证」→ 8.1 跑参考实现 → 8.2 九条契约清单 → 8.3 步骤） |
+| **改某个已有适配器的事件映射** | 对应适配器里的 `_extract_text` / `_parse_args`，**保持宽松解析**（拿不到就返回空，别抛） |
+| **要早停** | §8.4 的红线：`stop_on_violation` 只停出证，`hard_stop=True` 才真掐断。**换框架必须重验**「异常会不会被回调系统吞掉」与「掐断后走哪条错误路由」 |
+| **给工具路径加结果侧认证** | 不用写新代码 —— 传 `result_monitor=<内容策略 monitor>`，且与 `monitor` **共用同一把网关**（§8.5） |
+| **换模型 / 加 provider** | `llm.py` 的规格解析（`provider:model`）。缺依赖/缺 key 都要**当场说清是哪一个**，别静默退回桩 |
+
+```bash
+python3 -m unittest tests.test_agent tests.test_frameworks tests.test_mcp \
+                        tests.test_real_llm tests.test_generic_adapter
+```
+
+**新写了适配器就照着 §8.6 做一遍变异测试**：这条线的测试极易「看着绿、其实没咬住」——
+仓库里真发生过一次变异存活（改动等价、其余 17 例全绿）。**「恰好对」的测量比明显错的更危险。**
+
+---
+
 **相关**：证书与信封结构 → [`03-certificate.md`](03-certificate.md)；
 端到端 demo 怎么跑 → [`07-cli-scripts.md`](07-cli-scripts.md)；
 参考适配器源码 → [`../../policydsl/adapters/generic_adapter.py`](../../policydsl/adapters/generic_adapter.py)。

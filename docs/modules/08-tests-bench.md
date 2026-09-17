@@ -457,5 +457,97 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
 
 ---
 
+## 怎么用它
+
+这里其实是**两件事**：跑测试（证明性质被守住了）、跑评测（产出论文里的数字）。
+
+### 1. 跑测试
+
+```bash
+python3 -m unittest discover tests                # 全量：675 passed / 15 skipped，~33 s
+python3 -m unittest tests.test_dsl -v             # 单个模块（哪一板块 → 见 §1 的表）
+python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
+```
+
+三条纪律：
+
+1. **⚠️ `unittest` 的 skip 是静默的绿。** 末行是 `OK (skipped=15)` —— `OK` 只说
+   「没失败」，不说「都跑了」。要判断某个性质**到底被守住了没**，得看那个 skip 数，
+   再看 §1.1 那张表里跳过的是不是设计内的。**这一条是本项目付出过代价的**：
+   `test_generic_adapter` 的一次变异改动**等价**，其余 17 例全绿，直到补了断言才杀掉。
+2. **默认这一档不需要网络、不需要 key、也不出证明**，所以可以随时跑、随便跑
+   （CI 跑的就是它）。要真证明 / 真 ezkl / 真 provider 的全部是**环境变量门控** ——
+   `POP_TEST_PROOF` / `POP_TEST_COMPOSE` / `POP_TEST_SESSION` / `POP_TEST_MULTIPARTY`
+   / `POP_TEST_EZKL` / `POP_TEST_LLM`，逐条的「怎么启用 + 实测耗时 + 峰值内存」在 §1.1。
+3. **开这些门之前先让机器腾空。** 它们每一条都要 ~10 GiB 峰值，和别的重活并跑
+   必被 OOM 杀（`test_proof_service` 那一条本机实测：**腾空即过、并跑即 OOM**）。
+
+### 2. 跑评测
+
+| 命令 | 出什么 | 大概多久 |
+|---|---|---|
+| `python3 bench/bench_cycles.py` | `bench/results/cycles.{json,md}` | 每点数秒 |
+| `python3 bench/bench_ablation.py` | `bench/results/ablation.{json,md}` | 每点数秒 |
+| `SP1_PROVER=cpu python3 bench/bench_proofs.py [--points "200,1 2000,1"]` | `bench/results/proofs.{json,md}` | 本机每点 **119–173 s** |
+| `SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>` | `bench/results/verify.{json,md}` | 每次 ~20 s |
+| `python3 bench/bench_semantic.py` | `bench/results/semantic.{json,md}` | 真出 ezkl 证明 |
+| `SP1_PROVER=cpu python3 bench/bench_compose.py` | `bench/results/compose.{json,md}` | 真出两份 SP1 证明 |
+| `python3 bench/bench_compose.py --render-only` | 同上（只重渲染 `.md`） | 秒（改措辞时用，省掉几分钟出证） |
+
+**`bench/work/` 是中间产物**（已 gitignore），入库的只有 `bench/results/`。
+
+**⚠️ 改数字这件事没有自动化检查。** 跑完 bench，硬编码了同一批数字的地方**至少四处**：
+`README.md`、`paper/proof-of-policy.md` §7、`docs/reproduce.md` 的验收判据、以及本文件
+§3.x。它们不会自己发现不一致 —— 只能人肉核对。
+
+**唯一有留痕的是 `cross_validate` 的判据**：`scripts/prove/regression_prove.py`
+每次运行把它追加进 `bench/results/regression-prove.jsonl`（**只追加**），并附
+git sha / 硬件 / 证明器二进制摘要，所以「675 passed」这类数字指得回具体的某一次运行（T3）。
+
+## 怎么改它
+
+| 我想改…… | 去哪 | 别忘了 |
+|---|---|---|
+| **加一个测试** | 放进**对应板块**的 `tests/test_<板块>.py`（§1 的表就是板块清单） | 见下「四处同步」 |
+| **新增一个测试模块** | 同上，新开 `tests/test_<新板块>.py` | **四处同步 + 改本文件顶部那句「30 个模块」** |
+| **加一条默认关闭的端到端** | `@unittest.skipUnless(os.environ.get("POP_TEST_XXX"), "…")` | 在 §1.1 登记：原因 / 怎么启用 / **实测耗时与峰值内存**（这三项是这张表的价值所在） |
+| **加一个 bench 脚本** | 结果写 `bench/results/<name>.{json,md}`，模板抄 `bench_cycles.py`（纯标准库 + `policydsl`，不引 numpy） | §3 的表加一行 + 在 `bench/README.md` 加一条命令 |
+| **改「证明模式 / 规则 kind / 契约字段」这类会动数字的东西** | 重跑对应 bench | 上面那四处硬编码数字 |
+
+**「四处同步」清单**（改测试计数时，这四处都写着同一批数字）：
+
+1. 本文件 §1 表的**那一行**与**合计行**；
+2. 本文件**顶部**那句「30 个模块，675 个用例」；
+3. 本文件 §5 扩展指引里的**验收判据**（`675 passed / 15 skip`）；
+4. `docs/README.md` 的计数口径 + `README.md` / `docs/reproduce.md` 的验收判据。
+
+（`docs/README.md` §3 已把「测试计数 → 08」写成约定：**本文件是唯一权威源**，
+别处只引用不复算。所以改的时候以本文件为准，其余三处跟着改。）
+
+### ⚠️ 写新测试时一定会再踩的三个坑
+
+这三个都是**本项目真踩过的**，不是通用建议：
+
+1. **「恰好对」的测量比明显错的更危险。** `test_generic_adapter` 的一处变异一度
+   **存活**：把网关链改成 `[receipt]`（等价于两条链），其余 17 例全绿 —— 因为
+   `trace_root` 只取**最后一条**回执的摘要，`passed` 与规则名**恰好都一样**，
+   差别只在 `kind` 和「计到几条」。补了一条断言咬在 `kind`/`evidence` 上的用例才杀掉。
+   **写断言时问自己：把它改坏，哪个字段会变？如果答案是「没有」，这条断言不咬人。**
+2. **别写「打得太宽」的断言。** `test_proof_service` 的一条用例打的是**全进程**
+   `Path.write_text`，连工作线程写的产物一起打中，约 **1/4 概率假失败**。
+   （那一轮 6 处变异测试查出三件事：两件是**测试自身**的毛病，一件是真产品 bug。）
+3. **断言要咬在结论上，咬「没崩」是咬不住的。** `test_policy_binding` 的
+   `test_same_type` 用 `assertIs(type(a), type(b))` 而不是「都继承 `RuntimeError`」，
+   并**专门配了一条反例对照**证明前两条不是恒真的（原写法确实接不住）。
+
+```bash
+# 改完测试层的两条验证
+python3 -m unittest discover tests                # 675 passed / 15 skipped（数对不上先查 §1 表）
+python3 -m unittest tests.test_scripts_layout     # 若动过 scripts/ 分组
+```
+
+---
+
 **相关**：各板块覆盖了什么 → [`01`](01-policy-dsl.md)～[`07`](07-cli-scripts.md) 各文档的「测试对应」小节；
-跑起来 → [`../reproduce.md`](../reproduce.md)。
+跑起来 → [`../reproduce.md`](../reproduce.md)；
+8 条 demo 支路与「看到什么算对」→ [`../demo/README.md`](../demo/README.md)。

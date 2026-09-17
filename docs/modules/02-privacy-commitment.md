@@ -275,6 +275,76 @@ Python 侧与 `pop_types::response_binding` 必须逐字节一致 —— 否则�
 
 ---
 
+---
+
+## 怎么用它
+
+**看一遍六个实验** —— 这一板块的入口是 demo，不是 API：
+
+```bash
+python3 scripts/demo/private_demo.py --no-prove    # 秒级：承诺/脱敏/开示/绑定逐项演示
+python3 scripts/demo/private_demo.py               # 加真实证明（≈70 s）
+```
+
+**在代码里用**（三条最常见的需求）：
+
+```python
+from policydsl import Policy, Rule, compile_policy
+from policydsl.privacy import challenge, commit
+from policydsl.core import pii
+
+resp = "My details: reach dev@example.com anytime."
+spec = compile_policy(Policy(id="p", version="0.1.0", semantic="and",
+        rules=[Rule("pattern_block", "no_email",
+                    {"patterns": [pii.PII_PATTERNS["email"]]})]))
+
+# ① 承诺一个响应（只公开哈希，不公开内容）
+print(commit.commitment(resp))                     # → response_commitment
+
+# ② 造一个一次性挑战值，并把响应绑上去（P0-2）
+nonce = challenge.new_nonce()                      # 32 字节
+print(commit.response_binding(nonce, resp))        # → response_binding
+
+# ③ 可证明脱敏：证明「我遮掉的确实是我声称命中的那段」
+mask = commit.mask_from_patterns([pii.PII_PATTERNS["email"]], resp)
+red = commit.redact(resp, mask)                    # → "My details: reach *************** anytime."
+assert commit.redaction_ok(resp, red, mask)        # 等长 + 掩码位对 + 其余位置不变
+assert commit.mask_covered(mask, commit.spec_spans(spec, resp))   # 掩码**确实**盖住了命中的区间
+```
+
+`redact` 返回的是**字符串**（不是对象）；`redaction_ok` 与 `mask_covered` 是两道**分开**的检查 ——
+前者「脱敏动作本身做得对不对」，后者「遮的位置确实是我声称命中的位置」。**两个都要过。**
+
+- **什么时候该用私有模式**：响应内容不能给验证方看，但你要证明「判定过了、
+  结论是什么」。它公开的是 §1 列的五样东西，**不公开响应全文**。
+- **⚠️ 它不是「内容零知识」**：能主张的是**策略零知识**。响应内容隐藏对**低熵 `T`**
+  有上界 —— 攻击者可以猜测—验证还原。见
+  [`../sp1-zk-audit.md`](../sp1-zk-audit.md) §4。
+- **⚠️ `spans` 与 `mask` 是两个独立输入**：只给 `mask` 而不给能覆盖它的 `spans`，
+  `mask_covered` 为 **False**（§7 第 5 条）。这不是 bug，是「不许自称遮了却没给见证」。
+- **一次性 nonce 要记账**：`challenge.NonceStore` 负责重放拒绝与持久化；不记账就等于允许重放。
+
+## 怎么改它
+
+| 我想改…… | 改哪里 | ⚠️ 必须同步 |
+|---|---|---|
+| 改**证据字符串**形状 | `commit.canonical_violations` | `circuits/types/src/lib.rs::evaluate` 对应分支，**逐字节**一致。改了它 = **破坏性变更**：已有证书的证据承诺全部对不上 |
+| 让脱敏覆盖新规则 | **不用改代码** —— 在策略包里加 `pattern_block` 规则即可（`spec_spans` 会遍历所有 pattern_block 自动纳入） | 跑一遍 `private_demo.py` 确认见证区间真的变宽了 |
+| 改绑定公式 | `commit.response_binding` | `pop_types::response_binding`（含 `len` 长度前缀）；`tests/test_binding.py::TestPythonRustParity` 专门钉这条 |
+| 换 nonce 生命周期 | `privacy/challenge.py` | 重放语义变了就不只是实现细节 —— 安全模型 §L2 的口径要跟着改 |
+| 把 IBAN MOD-97 纳入私有证明 | 目前 `pii.iban_mod97` 是**纯链下**辅助函数 | 要入电路得新增约束类型，走 [`01`](01-policy-dsl.md) §7 的六步 |
+
+```bash
+python3 -m unittest tests.test_commit tests.test_binding    # 改任何一处都先跑这个
+python3 scripts/demo/private_demo.py --no-prove             # 逐字段对拍 host ↔ golden
+```
+
+**改动落在 `canonical_violations` 时**，单测绿**不足以**说明没改坏 ——
+它只证明 Python 侧自洽。真要确认得跑带真证明的 `private_demo.py`
+（含电路内证据承诺比对，`tests/test_rules_incircuit.py::TestEvidenceCommitmentParity`）。
+
+---
+
 **相关**：这些承诺如何进证书 → [`03-certificate.md`](03-certificate.md)；
 同一套私有判定在电路里怎么跑 → [`05-zk-circuits.md`](05-zk-circuits.md) §4；
 安全论证 → [`../security-model.md`](../security-model.md)。

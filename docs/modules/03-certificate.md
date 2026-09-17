@@ -418,5 +418,71 @@ build_payload(policy_id, policy_version, spec, mode, outcome,
 
 ---
 
+---
+
+## 怎么用它
+
+**签发一张证书**（脚本是最短的路径）：
+
+```bash
+# 1) 先有一把出证密钥（只跑一次；私钥落在 .pop-keys/，绝不入库）
+python3 scripts/prove/gen_key.py
+
+# 2) 签发 + 锚定（加 --no-prove 可只做宿主校验）
+python3 scripts/prove/issue_cert.py --pack policy_packs/eu_ai_act_v1.json \
+    --response scripts/examples/eu_agent_reply.txt --out-dir /tmp/cert-demo
+
+# 3) 第三方验证（只用公开产物）
+python3 scripts/verify/verify_cert.py --cert /tmp/cert-demo/cert.json \
+    --pack policy_packs/eu_ai_act_v1.json --ledger /tmp/cert-demo/ledger.jsonl \
+    [--proof /tmp/cert-demo/proof.bin] [--response scripts/examples/eu_agent_reply.txt]
+```
+
+```python
+# 库用法：自己接一段判定结果（完整签名见 §3）
+from policydsl.evidence import cert, keys
+
+signer = keys.load_or_create(".pop-keys")      # 只要满足 Signer 协议：keyid + sign
+payload = cert.build_payload(policy_id, policy_version, spec, mode, outcome,
+                             vkey_hash, proof_sha256=..., proof_mode=...,
+                             challenge=..., trace_seal=..., extra=...)
+env = cert.sign_payload(payload, signer)
+ok, back = cert.verify_envelope(env, keyring)  # ok 为假时 back 是 None
+```
+
+参数多，但**谁是权威的要分清**：`policy_hash` 由 `build_payload` 自己从 `spec["sha256"]`
+取（不会替你重编译策略）；而 `vkey_hash` / `proof_sha256` / `public_values_sha256` 得由
+**调用方给**，它不算、也不核。想省事先看 `issue_cert.py` 怎么装配 —— 它就是把这些
+参数从证明产物里剥出来的。
+
+- **⚠️ 先判 `ok` 再用 payload**：`verify_envelope` 失败返回 `(False, None)`（§7 第 3 条）。
+- **⚠️ `RESULT` 与「合规」是两件事**：`verify_cert.py` 打印**两行** —— `RESULT:` 说证书真不真，
+  `合规:` 说策略满足没满足。含语义规则的证书可以「证书为真」而「策略未满足」。
+- **⚠️ 没有工件时档位是 `unproven` 而不是「尽力而为」**：`proof_mode` 缺省表示
+  **什么都没说**，不是最宽松的那个档位。验证方会拿它与工件自报的模式交叉核对。
+- **`challenge` 块单独看只是一句声明**：它的可信度来自「与证明公开值一致」。
+  不给 `--proof`、也不给 `--response` 时仍会通过，但报告会写明「来源只有证书自己」。
+
+## 怎么改它
+
+| 我想改…… | 改哪里 | 注意 |
+|---|---|---|
+| **换签名算法** | 新增带 `scheme` 的 `Signer` 子类 + `verify_envelope` 的**方案白名单** + `keys.load_keyring` 识别其公钥编码 | `keyid` **不进** `cert_digest`，所以换算法**不会**让已有锚定失效 |
+| **轮换密钥** | 新旧公钥同时进 keyring（一个 ring 可持多把，按信封 `keyid` 选） | **吊销**是另一回事：把 keyid 移出 ring 只挡「找不到密钥」，与「方案本身不被接受」不同 |
+| **接 HSM / KMS** | 把 `keys.load_or_create` 换成取远程句柄 | 只要满足 `Signer` 协议（`keyid` + `sign`）；`Ed25519Signer` 只是一个实现，不是接口 |
+| **加证书字段** | 优先走 `extra`（流式注解就是这么加的） | 进**稳定字段**就会改 `cert_digest` ⇒ **旧证书摘要对不上**，属破坏性变更 |
+| **接新的证明模式** | `PROOF_MODE_HIDING` 加档位 + 让 `verifier.artifact_proof_modes` 读得到自报来源 | ⚠️ **必须写实测的隐藏程度**。没实测就标 `"full"` 正是 P0-4 揪出来的问题形态 |
+| **加一条新路径**（如模型加载） | `AgentMonitor` 上加一对 `*_outcome` / `on_*` | `mode` 字符串会进 `ai_act_claims`，想清楚再定 |
+
+```bash
+python3 -m unittest tests.test_cert tests.test_agent tests.test_policy_binding
+python3 scripts/verify/verify_cert.py --cert … --pack … --ledger …   # 端到端 9 项检查
+```
+
+**改了 `build_payload` 的稳定字段，单测绿不代表没改坏** —— 单测里的期望摘要是现算的，
+跟着一起变。真要确认，得拿一份**改动前签的**证书跑 `verify_cert.py`，看它是否如你预期地红。
+
+---
+
 **相关**：摘要如何被锚定 → [`04-anchoring-audit.md`](04-anchoring-audit.md)；
 钩子如何接到真实框架 → [`06-frameworks.md`](06-frameworks.md)。

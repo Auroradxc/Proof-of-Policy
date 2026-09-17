@@ -315,6 +315,64 @@ python3 -m policydsl check <response.txt> --policy <policy.json>
 
 ---
 
+---
+
+## 怎么用它
+
+**三个入口，按你需要多少东西选：**
+
+```bash
+# 1) 只要「这条策略编译成什么」—— 打印 ConstraintSpec（含 policy_hash）
+python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
+
+# 2) 只要「这条响应过不过」—— 秒级，不需要 Rust 工具链
+python3 -m policydsl check scripts/examples/eu_agent_reply.txt \
+    --policy policy_packs/eu_ai_act_v1.json
+# → {"passed": true, "violations": [], "notes": [], "delegated": []}
+
+# 3) 写代码时直接用门面（**这个门面是稳定的**，不随内部搬家而变）
+python3 -c "
+from policydsl import Policy, Rule, Transcript, compile_policy, check
+p = Policy(id='demo', version='0.1.0', semantic='and',
+           rules=[Rule('length_bound', 'len_ok', {'min': 1, 'max': 100})])
+print(check(p, Transcript(response='hello')).passed)
+print(compile_policy(p)['sha256'][:16])
+"
+```
+
+- **`--emit-proof-request` 是给谁用的**：它多写一份 `proof-request.json`，那是喂给
+  `scripts/prove/prove_policy.py` / 电路驱动的输入。只想知道判定就别加 —— 这个文件
+  会落在**当前目录**（`.gitignore` 里有它）。
+- **什么时候不该用这一层**：想要一份**可签名的证书** → [`03`](03-certificate.md)；
+  想要**证明**而不是结论 → [`05`](05-zk-circuits.md)。本板块只产「契约」与「参考结论」，
+  不写文件、不联网、不算证明。
+- **`delegated` 非空要当心**：那表示策略里含语义规则，`passed=true` 只是
+  「SP1 那半判过了」，**不等于策略被满足** —— 必须再合取一份陪伴证明，见
+  [`../design-semantic-rules.md`](../design-semantic-rules.md)。
+
+## 怎么改它
+
+| 我想改…… | 改哪里 | 还要同步改什么 |
+|---|---|---|
+| **加一种规则类型** | `model.py::Rule.validate` → `compile.py` → `evaluate.py` | ⚠️ **必须同时改 `circuits/types/src/lib.rs`**（同一种 kind 的两侧实现）+ `commit.py::canonical_violations`（私有模式镜像）。**完整 6 步清单见 §7**，别跳步 |
+| **加/改 PII 模式** | `pii.py` 的 `PII_PATTERNS` | 正则必须落在 **NFA 子集**内（见 §3.3），否则 `compile_pattern` 直接 fail-fast；补 `tests/test_pii.py` 的命中**与漏报**两侧 |
+| **改同形异义折叠表** | `normalize.py` | ⚠️ 折叠表**进契约**，改表即改 `policy_hash` —— 所有旧证书的 `policy_hash` 会对不上，这是**故意的**（改口径就得重签） |
+| **改哈希口径**（键排序/分隔符/去重） | `compile._canonical_hash` | ⚠️ **必须**同时改 Rust 侧（I2「契约哈希稳定」是跨层契约，不是单侧实现细节）；改完所有 golden 数字都要重取 |
+| **加一条新策略包** | `policy_packs/*.json` | 补 `tests/test_dsl.py` 一条 pass + 一条 violate |
+
+**改完怎么验证**（由快到慢，按改动半径选）：
+
+```bash
+python3 -m unittest tests.test_dsl tests.test_serialize tests.test_normalize tests.test_nfa tests.test_pii
+python3 -m unittest tests.test_policy_binding tests.test_rules_incircuit   # 动了 kind / 哈希口径才需要
+SP1_PROVER=cpu python3 scripts/prove/cross_validate.py                     # 跨层一致性（≈45 min，需 circuits 已构建）
+```
+
+**改了 kind 或哈希口径，第三条是必须的** —— 前两条只证明「Python 侧自洽」，
+证明不了两侧还算同一个东西。这正是 I1 存在的理由。
+
+---
+
 **相关**：契约如何被证书绑定 → [`03-certificate.md`](03-certificate.md)；
 同一份契约在 zkVM 内怎么跑 → [`05-zk-circuits.md`](05-zk-circuits.md)；
 私有模式下证据是怎么被承诺的 → [`02-privacy-commitment.md`](02-privacy-commitment.md)。

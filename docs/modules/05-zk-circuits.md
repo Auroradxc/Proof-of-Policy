@@ -641,6 +641,63 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
 
 ---
 
+---
+
+## 怎么用它
+
+**绝大多数时候你不直接调它** —— 这一层藏在 `scripts/` 的驱动后面。直接调的场景只有两个：
+
+```bash
+# 1) 只跑判定、不出证明（秒级，写规则时最快的回路）
+SP1_PROVER=cpu ./circuits/target/release/pop-script --check \
+    --vectors v.json --out r.json
+#    驱动脚本里到处在用：cross_validate 的 host 腿、各 demo 的 --no-prove
+
+# 2) 出一份真证明（--proof-out **只支持单向量**，多向量直接 panic）
+#    它会顺手写出边车 proof.bin.verify.json —— 有了它，验证方才不用装证明器
+SP1_PROVER=cpu ./circuits/target/release/pop-script \
+    --vectors v.json --out r.json --proof-out proof.bin
+
+# 3) 验证一份证明：两条路，按你有没有 compressed 边车选
+./circuits/target/release/pop-script --verify --proof proof.bin           # 回退路径：需**证明器**二进制
+./circuits/target/release/pop-verify  --meta proof.bin.verify.json       # 快路径：只需验证器 + 边车
+
+# 4) 挑选任务域（--job policy|infer|session，缺省 policy）
+SP1_PROVER=cpu ./circuits/target/release/pop-script --job session --vectors …
+```
+
+- **`--check` 是 I1 的一半**：它在**宿主机**上跑的是同一份 `pop-types::run_job`，
+  所以「host 对上了」证明的是**判定逻辑两侧一致**，**不是**「证明出得来」。
+  这两件事要分开看（`cross_validate` 因此分别打 host 与 prove 两行）。
+- **⚠️ 出证的内存地板 ~10.15 GiB，一份 core 证明数分钟**：一台 12 GB 的机器上
+  **同时只能有一个证明器**，且证明器内存在同一进程内**逐份累积**（所以按 `--chunk` 切进程）。
+  别在请求链路里调它 —— 出证只能**异步**，见 [`../../bench/results/proofs.md`](../../bench/results/proofs.md)。
+- **⚠️ core / compressed 证明不是零知识**：能主张的是**策略零知识**；
+  响应内容隐藏对低熵 `T` 有上界。见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md) §4。
+- **改了 `types` 就得重建三个 guest**（§8 第 9 条）：ELF 变 ⇒ vkey 变 ⇒
+  `scripts/examples/out/` 下所有旧证明与证书**全部失效**。
+
+## 怎么改它
+
+| 我想改…… | 改哪里 | ⚠️ 联动 |
+|---|---|---|
+| **加规则类型** | `types/src/lib.rs` 加 `SpecConstraint` 变体 + `evaluate` 分支 | 先做 [`01`](01-policy-dsl.md) §7 的六步；**证据字符串必须逐字节一致**；跑 `cross_validate` |
+| **加证明模式** | `pop-script` 的 `match proof_mode` 分支 + `write_verifier_sidecar` 各一处 | 若支持 verifier-only，还要更新 `policydsl.evidence.verifier.VERIFIER_ONLY_MODES` |
+| **加一个可组合的证明域** | **新开一个 guest 程序** + `pop-types` 的 `Job`/`Outcome`/`job_domain` 分支 + `proofs/compose.py::KIND_*` 与 `verify_composite` | ⚠️ **不要往现有 guest 里塞** —— 合并会让两个 vkey 变成同一个，组合义务（L6）失效。见 §8 不变量 12 |
+| **优化证明开销** | 瓶颈是证明器固定开销 + O(n·states) 的 NFA 扫描 | 改动后用 `bench/bench_cycles.py` / `bench_proofs.py`**同一脚本**复测再对比，别跨脚本比 |
+| **升级 SP1** | `types` / `program` / `script` / `verifier` **四处版本号一起动** | 确认 `circuits/patches/tempfile` 是否仍被需要（上游修好 `TempDir::keep` 后可删） |
+
+```bash
+cd circuits && cargo build --release -p pop-script        # build.rs 连三个 guest 一起编
+python3 -m unittest tests.test_rules_incircuit tests.test_ablation
+SP1_PROVER=cpu python3 scripts/prove/cross_validate.py    # ⚠️ ≈45 min、~10 GB，且期间别跑别的重活
+```
+
+**改了 `types` 之后第三步是必须的** —— 前两步只能证明「宿主机上跑得对」，
+证明不了两侧还算同一个东西。这正是 I1 存在的理由；跑完别忘 `bench/` 的数字也要重取。
+
+---
+
 **相关**：契约怎么来的 → [`01-policy-dsl.md`](01-policy-dsl.md)；
 私有模式的承诺语义 → [`02-privacy-commitment.md`](02-privacy-commitment.md)；
 数字怎么复现 → [`08-tests-bench.md`](08-tests-bench.md)、[`../reproduce.md`](../reproduce.md)。
