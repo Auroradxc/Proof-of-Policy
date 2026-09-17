@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（32 个模块，690 个用例）与 `bench/`（6 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（32 个模块，690 个用例）与 `bench/`（7 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -121,7 +121,7 @@ core 边车不得走快路径 —— 这些保证正向检查**不是恒真**的
 
 ## 3. 评测（`bench/`）
 
-**六个脚本**，覆盖六种成本：
+**七个脚本**，覆盖七种成本：
 
 | 脚本 | 测什么 | 用时不出证？ | 输出 |
 |---|---|---|---|
@@ -131,10 +131,12 @@ core 边车不得走快路径 —— 这些保证正向检查**不是恒真**的
 | `bench_verify.py` | **验证成本**（冷启动 CLI / vkey setup / 纯验证） | 每次 ~20 s | `bench/results/verify.{json,md}` |
 | `bench_semantic.py` | **ezkl 陪伴证明的成本**（setup / prove / verify） | 真出 ezkl 证明 | `bench/results/semantic.{json,md}` |
 | `bench_compose.py` | **组合证明的成本**（两半各自 prove/verify + 组合层开销） | 真出两份 SP1 证明 | `bench/results/compose.{json,md}` |
+| `bench_streaming.py` | **流式路径的 `Θ(L²)` 代价**（逐字符喂真实回调；6 个包 × 3 个长度） | 全程 **~9 s**（不出证） | `bench/results/streaming.{json,md}` |
 
 ```bash
 python3 bench/bench_cycles.py
 python3 bench/bench_ablation.py
+python3 bench/bench_streaming.py
 SP1_PROVER=cpu python3 bench/bench_proofs.py
 SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>
 SP1_PROVER=cpu python3 bench/bench_compose.py

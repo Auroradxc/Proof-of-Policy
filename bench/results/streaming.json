@@ -1,0 +1,157 @@
+{
+  "ns": [
+    500,
+    1000,
+    2000
+  ],
+  "rows": [
+    {
+      "pack": "agent_content_v1.json",
+      "n": 500,
+      "seconds": 0.053777521003212314,
+      "ms_per_char": 0.10755504200642463,
+      "c_us_per_char_sq": 0.4293614451354277,
+      "certs": 1
+    },
+    {
+      "pack": "agent_content_v1.json",
+      "n": 1000,
+      "seconds": 0.18576915199810173,
+      "ms_per_char": 0.18576915199810173,
+      "c_us_per_char_sq": 0.3711671368593441,
+      "certs": 1
+    },
+    {
+      "pack": "agent_content_v1.json",
+      "n": 2000,
+      "seconds": 0.69943837000028,
+      "ms_per_char": 0.34971918500014,
+      "c_us_per_char_sq": 0.3495444127937431,
+      "certs": 1
+    },
+    {
+      "pack": "agent_tool_v1.json",
+      "n": 500,
+      "seconds": 0.008962448002421297,
+      "ms_per_char": 0.017924896004842594,
+      "c_us_per_char_sq": 0.07155647107721594,
+      "certs": 1
+    },
+    {
+      "pack": "agent_tool_v1.json",
+      "n": 1000,
+      "seconds": 0.03196107000258053,
+      "ms_per_char": 0.03196107000258053,
+      "c_us_per_char_sq": 0.06385828172343762,
+      "certs": 1
+    },
+    {
+      "pack": "agent_tool_v1.json",
+      "n": 2000,
+      "seconds": 0.11046348099625902,
+      "ms_per_char": 0.05523174049812951,
+      "c_us_per_char_sq": 0.055204138428915056,
+      "certs": 1
+    },
+    {
+      "pack": "eu_ai_act_v1.json",
+      "n": 500,
+      "seconds": 0.16311855999811087,
+      "ms_per_char": 0.32623711999622174,
+      "c_us_per_char_sq": 1.3023437924000867,
+      "certs": 1
+    },
+    {
+      "pack": "eu_ai_act_v1.json",
+      "n": 1000,
+      "seconds": 0.6244092159977299,
+      "ms_per_char": 0.6244092159977299,
+      "c_us_per_char_sq": 1.2475708611343255,
+      "certs": 1
+    },
+    {
+      "pack": "eu_ai_act_v1.json",
+      "n": 2000,
+      "seconds": 2.420825334993424,
+      "ms_per_char": 1.210412667496712,
+      "c_us_per_char_sq": 1.2098077636149045,
+      "certs": 1
+    },
+    {
+      "pack": "finance_redaction_v1.json",
+      "n": 500,
+      "seconds": 0.10066520699911052,
+      "ms_per_char": 0.20133041399822105,
+      "c_us_per_char_sq": 0.8037142275378085,
+      "certs": 1
+    },
+    {
+      "pack": "finance_redaction_v1.json",
+      "n": 1000,
+      "seconds": 0.37628839999524644,
+      "ms_per_char": 0.37628839999524644,
+      "c_us_per_char_sq": 0.7518249750154774,
+      "certs": 1
+    },
+    {
+      "pack": "multiparty_demo_v1.json",
+      "n": 500,
+      "seconds": 0.009011455003928859,
+      "ms_per_char": 0.018022910007857718,
+      "c_us_per_char_sq": 0.07194774454234618,
+      "certs": 1
+    },
+    {
+      "pack": "multiparty_demo_v1.json",
+      "n": 1000,
+      "seconds": 0.03670188599789981,
+      "ms_per_char": 0.03670188599789981,
+      "c_us_per_char_sq": 0.07333044155424537,
+      "certs": 1
+    },
+    {
+      "pack": "multiparty_demo_v1.json",
+      "n": 2000,
+      "seconds": 0.13067424800101435,
+      "ms_per_char": 0.06533712400050717,
+      "c_us_per_char_sq": 0.06530447176462487,
+      "certs": 1
+    },
+    {
+      "pack": "pii_redaction_v1.json",
+      "n": 500,
+      "seconds": 0.3491734539929894,
+      "ms_per_char": 0.6983469079859788,
+      "c_us_per_char_sq": 2.787812007928059,
+      "certs": 1
+    },
+    {
+      "pack": "pii_redaction_v1.json",
+      "n": 1000,
+      "seconds": 1.344078531001287,
+      "ms_per_char": 1.344078531001287,
+      "c_us_per_char_sq": 2.685471590412162,
+      "certs": 1
+    },
+    {
+      "pack": "pii_redaction_v1.json",
+      "n": 2000,
+      "seconds": 4.910734113000217,
+      "ms_per_char": 2.4553670565001084,
+      "c_us_per_char_sq": 2.454139986506855,
+      "certs": 1
+    }
+  ],
+  "unsupported": {
+    "semantic_demo_v1.json": "NotImplementedError: kind 'semantic_bound' not provable in-circuit yet"
+  },
+  "skipped": [
+    {
+      "pack": "finance_redaction_v1.json",
+      "n": 2000,
+      "ceiling": 1500,
+      "why": "n > length_bound.max=1500 ⇒ 判定会在上界处翻转、多签一张证书"
+    }
+  ],
+  "note": "逐字符喂 'z'*L，走真实 on_llm_new_token，stream_step_chars=1"
+}
