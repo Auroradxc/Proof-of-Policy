@@ -197,6 +197,7 @@ curl -s -X POST localhost:8787/v1/check -H 'Content-Type: application/json' \
 - 📚 **分板块模块文档（按功能读代码的入口）**：**`docs/modules/`** —— 总览 [`README.md`](docs/modules/README.md)，
   以及 01 策略 DSL / 02 隐私与承诺 / 03 合规证书 / 04 锚定与审计 / 05 ZK 电路 / 06 框架集成 / 07 CLI 与脚本 / 08 测试与评测
 - 📄 端到端复现指南（环境 → 一次合规证明 → 验证）：**`docs/reproduce.md`**
+- 🛠 **开发与使用手册**（动手改代码的入口）：**`docs/development.md`** —— 依赖分层（装到哪层能跑到哪层）、15 分钟跑通、改一处代码跑哪几条验证、常见任务配方、环境变量速查、产物地图、故障排查。与上面那篇的分工：`reproduce.md` 按**功能**讲「每个特性怎么复现出来」，这篇按**循环与角色**讲「平时怎么在这个仓库里干活」
 - 🖼 演示报告（截图）：`docs/demo/session_report.html`、`docs/demo/session_summary.png`、`docs/demo/verify_result.png`
 - 📘 分阶段代码计划：`docs/dev-plan.md` · P7 收尾计划：`docs/plan-p7.md` · 安全模型：`docs/security-model.md` · 信任-成本四象限：`docs/quadrant.md`
 - 🔗 **轨迹绑定（P1-5）**：工具轨迹不再是 agent 自报的 `tool_calls`，而是**工具网关**签发的**回执链**（`policydsl/evidence/trace.py` + `pop-types::verify_receipt_chain`）。链**结构**由电路保证（删/换/重排 → `trace_unbound` fail-closed），**签发者身份**由链下 Ed25519 验签 + 公开值 `trace_root` 承担；`budget_bound(tokens)` 改为电路内自算。**截尾**（整条删掉链尾那条违规回执）由网关的**会话末端承诺** `trace_seal{count, trace_root, ts, keyid, sig}` 拦（P1-5b，载荷**顶层**，不在 `outcome` 里——`outcome` 是证明公开值的镜像）；验证方**须给 `--gateway-key`** 才核得了签名。验收见 `tests/test_trace.py`（41 例：四条验收 + `verify_cert.py --receipts` 的第三方核对 + seal 本身 + 截尾三路）；边界如实标注于 `docs/security-model.md` §5
