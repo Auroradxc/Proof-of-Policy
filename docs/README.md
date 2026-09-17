@@ -14,7 +14,7 @@
 |---|---|
 | **30 秒知道这项目在干嘛** | [`../README.md`](../README.md) → [`architecture.md`](architecture.md) |
 | **看懂代码怎么落地** | [`modules/README.md`](modules/README.md)（总览 + 01–08 板块索引） |
-| **亲手跑一遍完整链路** | [`reproduce.md`](reproduce.md) |
+| **亲手跑一遍完整链路** | [`reproduce.md`](reproduce.md) → [`demo/README.md`](demo/README.md) |
 | **把出证做成常驻服务** | [`runbook-proof-service.md`](runbook-proof-service.md) |
 | **评估它到底安全不安全** | [`security-model.md`](security-model.md) → [`sp1-zk-audit.md`](sp1-zk-audit.md) |
 | **知道它跟 TEE / 形式验证差在哪** | [`quadrant.md`](quadrant.md) |
@@ -41,6 +41,7 @@
 | [`eu-ai-act-mapping.md`](eu-ai-act-mapping.md) | 证书字段与 EU AI Act Art.12/13 透明义务的**工程映射**（非法律意见） |
 | [`reproduce.md`](reproduce.md) | **复现指南**：从零到「一次合规证明 + 第三方独立验证」，含环境要求与故障排查 |
 | [`runbook-proof-service.md`](runbook-proof-service.md) | 证明服务的**运维手册**：跑起来要什么 / 怎么确认它是好的 / 满载时怎么表现 / 出事怎么办 |
+| [`demo/README.md`](demo/README.md) | **全链路 demo**：`demo_all.sh` 的 8 条支路各跑什么、看到什么算对、哪条为什么没跑，以及 fast 模式下 `PASS` 的**确切含义** |
 | [`dev-plan.md`](dev-plan.md) | **当前开发计划**（唯一维护中的计划）。按代码板块 × 阶段组织，勾选即验收 |
 
 ### 2.2 历史记录（**已冻结，刻意保留原样**）

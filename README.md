@@ -96,7 +96,7 @@ python -m unittest discover tests -v
 
 > **想一次看全 8 条支路**：`bash scripts/demo/demo_all.sh`（把每条支路依次跑一遍并汇总成
 > `REPORT.md`，标出哪条跑了 / 哪条为什么跳过 / 耗时与峰值内存）。下面这一节只讲**主干**
-> 那一条（支路①）。
+> 那一条（支路①）；8 条支路逐条说明与「看到什么算对」见 [`docs/demo/README.md`](docs/demo/README.md)。
 
 真实 agent 会话（LangChain 流式 + 真实 MCP 工具）→ 证书（含流式证书链/早停、工具参数与响应侧）→ 锚定账本 →（可选）真实 SP1 证明 → **第三方独立验证**。
 
