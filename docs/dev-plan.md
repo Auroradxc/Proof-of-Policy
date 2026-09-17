@@ -2716,12 +2716,26 @@ R14 新增了一个测试文件，真实计数从 **776 变 782**（42 个模块
 
 ##### 记录在案、本轮**未修**的两处
 
-1. **`core/compile.py:304` 的笔误**：docstring 里写
-   `:func:`policydsl.proofs.shard``，**少了一段模块名** —— `shard` 定义在
-   `proofs/multiparty.py:181`，而 `proofs/__init__.py` 明写「**本子包不
-   re-export 任何符号**」，所以这个 Sphinx 目标指不到任何东西；正确的写法是
-   `policydsl.proofs.multiparty.shard`。
-   **与 R14 顺手修掉的 `core/model.py:159` 是同一类错**（同样少一段模块名），
-   纯 docstring、零行为变化；按「**一项一提交**」不与 R14 混在一起，留给下一批。
+1. **`core/compile.py:304` 写的是 `:func:`policydsl.proofs.shard``，而 `shard`
+   在 `proofs/multiparty.py:181`。** 初判是「笔误」，**量过之后推翻了**：
+
+   - 写了个一次性脚本（放 `/tmp`，不入库）扫全仓 docstring 里的 `:func:`/`:class:`
+     /`:mod:` 目标，对 `policydsl.*` 的 62 个逐个做「最长可解析模块前缀 + 属性链」
+     判定 → **34 个指不到**，`compile.py:304` 只是其中之一；
+   - 34 处**全部是同一款式**：`policydsl.<子包>.<名字>`，省略掉定义它的那个模块
+     （`policydsl.evidence.ToolReceipt`、`policydsl.core.check`、
+     `policydsl.privacy.canonical_violations` …）。而 `evidence` 与 `proofs`
+     两个子包的 `__init__.py` **都**明写「**本子包不 re-export 任何符号**」，
+     所以这些简写在运行时确实解析不到 —— 已实测确认。
+   - **本仓没有 Sphinx**（无 `conf.py`、无 `Makefile`、无依赖、CI 里零命中），
+     这些角色**从不被渲染**，是给人读的散文。所以「指不到」**不构成缺陷**。
+
+   ⇒ 结论改成：**这是一条一致的简写口径，不是笔误；本轮不改**（只改一处会让它
+   与其余 33 处不一致，收益为零）。原来的「笔误」判断是**只看了单个样本**得出的，
+   记在这里当作提醒。
+
+   （附带说明 R14 里改掉的 `core/model.py:159`：那条**必须**改 —— 模块搬了家，
+   旧路径指的东西已经不在原处，与上面这种「本来就是简写」不是一回事。）
+
 2. **`docs/plan-p0p1p2.md:6` 的「今天是 675 / 15」**：那是**计划启动时的快照**，
    文档自身标了不动。按留痕口径**不改**。
