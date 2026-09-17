@@ -8,7 +8,7 @@
 # 哪条跑了、哪条跳过了（为什么）、耗时与峰值内存、以及**哪几条是 stand-in**。
 #
 # 用法：
-#   bash scripts/demo/demo_all.sh                # 快速模式：走宿主校验，不出真证明（约半分钟）
+#   bash scripts/demo/demo_all.sh                # 快速模式：走宿主校验，不出真证明（本机实测 ~13 秒）
 #   bash scripts/demo/demo_all.sh --prove        # 出真证明（每条支路数分钟、峰值 ~10 GB，约 25–30 分钟）
 #   bash scripts/demo/demo_all.sh --out-dir DIR  # 产物与报告落 DIR
 #   bash scripts/demo/demo_all.sh --list         # 只列支路，不跑

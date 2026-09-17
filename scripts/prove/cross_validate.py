@@ -95,7 +95,7 @@ def parse_chunk(argv: list[str]) -> int:
 
 
 def parse_work_dir(argv: list[str]) -> Path:
-    """从命令行读 ``--work-dir DIR`` / ``--work-dir=DIR``（缺省 ``scripts/``）。"""
+    """从命令行读 ``--work-dir DIR`` / ``--work-dir=DIR``（缺省 ``scripts/.work/``）。"""
     for i, a in enumerate(argv):
         if a == "--work-dir" and i + 1 < len(argv):
             return Path(argv[i + 1]).resolve()
