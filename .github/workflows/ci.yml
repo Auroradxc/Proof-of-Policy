@@ -1,8 +1,14 @@
 name: ci
 
-# Fast, offline-friendly checks: the Python reference layer, the zkVM host-side
-# judging (pop-script --check), and the verifier-only plumbing. Real SP1 proofs
-# (and the compressed audit fixture) need a large runner: see docs/plan-p7.md.
+# 三个闸门，分两个 job：
+#
+#   tests  —— 纯 Python（零依赖、秒级到分钟级）。**不需要任何工具链**，所以它
+#             在任何机器上都是同一份判据。
+#   rust   —— 建宿主驱动 `pop-script`，再跑**跨语言对拍**（Python ↔ Rust 逐点比）。
+#             它要 SP1 工具链（`cargo-prove`），装一次几分钟 —— 所以单独一个 job，
+#             坏了也只坏它自己，不会把纯 Python 那一份判据一起拖红。
+#
+# 真证明（以及压缩后的审计工件）要的是大 runner，见 docs/plan-p7.md。
 
 on:
   push:
@@ -22,5 +28,48 @@ jobs:
         run: python3 -m unittest discover -s tests -t . -v
       - name: On-chain anchoring tests (offline fake-RPC; anvil e2e auto-skips without foundry)
         run: python3 -m unittest tests.test_anchor tests.test_anchor_chain -v
+
+      # 文档链接普查**就在上面那次 discover 里**（`tests/test_doc_links.py`）——
+      # 不另立判据，免得两处漂移。这里显式再跑一遍，只为让它在 CI 输出里**看得见**：
+      # 文档层的失败不会自己响（读的人只会以为自己看错了路径），得有人替它响。
+      - name: Docs — no dangling intra-repo links
+        run: python3 -m unittest tests.test_doc_links -v
       - name: Docs sanity (no absolute machine paths)
         run: "! grep -rn '/home/[a-z]*/方向二' --include='*.md' . || (echo 'stale absolute path'; exit 1)"
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # `cargo build -p pop-script` 会经 `build.rs` 用 sp1-build 编译三个 guest
+      # （pop-program / pop-infer / pop-session），所以**必须有 SP1 工具链**，
+      # 不是装了 Rust 就够。版本与 `docs/reproduce.md` 记的一致。
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the SP1 toolchain (cargo-prove)
+        run: |
+          curl -L https://sp1.succinct.xyz | bash
+          "$HOME/.sp1/bin/sp1up"
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: circuits
+
+      - name: Build the host driver (pop-script)
+        working-directory: circuits
+        run: cargo build --release -p pop-script
+
+      # 跨语言对拍：Python 结论 ↔ Rust 结论逐点比。19 条向量走 `--check`（宿主机判定），
+      # 0.05 s 一条不落。**必须显式带 `--no-prove`** —— 这个脚本不认 `--help`，
+      # 敲 `--help` 会被忽略然后**直接开跑 19 条真证明**（≈45 min）。
+      # 缺驱动时它以退出码 2 干净报错，不会静默跳过（所以它不会变成假绿）。
+      - name: Cross-language agreement (Python ↔ Rust, host-side, no proving)
+        run: python3 scripts/prove/cross_validate.py --no-prove
+
+      # 驱动在位时，套件里那些 `skipUnless(POP_SCRIPT.exists())` 的用例**真的会跑**。
+      # 注意：这会让 CI 的 skip 集合比本地少 —— 是**覆盖变多**，不是变少；
+      # 比对 skip 集合时要按「CI 有驱动 / 本地无」分开看（见 docs/development.md §4.3）。
+      - name: Python test suite (driver present → the zkVM cases actually run)
+        run: python3 -m unittest discover -s tests -t . -v
