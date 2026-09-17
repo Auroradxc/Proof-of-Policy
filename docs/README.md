@@ -45,7 +45,7 @@
 | [`runbook-proof-service.md`](runbook-proof-service.md) | 证明服务的**运维手册**：跑起来要什么 / 怎么确认它是好的 / 满载时怎么表现 / 出事怎么办 |
 | [`demo/README.md`](demo/README.md) | **全链路 demo**：`demo_all.sh` 的 8 条支路各跑什么、看到什么算对、哪条为什么没跑，以及 fast 模式下 `PASS` 的**确切含义** |
 | [`dev-plan.md`](dev-plan.md) | **当前开发计划**（唯一维护中的计划）。按代码板块 × 阶段组织，勾选即验收 |
-| [`refactor-proposal.md`](refactor-proposal.md) | **重构与优化建议书 + 执行计划**（2026-09-17，提案，尚未执行）。从技术框架 / 效率 / 内存 / 简洁四个角度普查后给出的 R1–R18 建议与 P0–P3 阶段。它是 `dev-plan.md` 的一次**专项输入**，采纳与否由那份计划决定 |
+| [`refactor-proposal.md`](refactor-proposal.md) | **重构与优化建议书 + 执行计划**（2026-09-17 立，**已采纳**）。从技术框架 / 效率 / 内存 / 简洁四个角度普查后给出的 R1–R18 建议与 P0–P3 阶段。执行进度与每阶段的验收记录见 [`dev-plan.md` §5.7](dev-plan.md) |
 
 ### 2.2 历史记录（**已冻结，刻意保留原样**）
 

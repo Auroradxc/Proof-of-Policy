@@ -223,6 +223,7 @@ python3 scripts/verify/verify_cert.py \
 | `policydsl/` 的一个模块 | `python3 -m unittest tests.test_<板块>` | `python3 -m unittest discover tests` | `--no-prove` 全链路 |
 | `scripts/` 结构 | `python3 -m unittest tests.test_scripts_layout` | 同上 | `bash scripts/demo/demo_all.sh` |
 | **策略规则（两侧）** | `python3 scripts/prove/cross_validate.py --no-prove`（**0.048 s**，19 向量对拍） | 全量测试 | `cross_validate` 真出证（**≈45 min**） |
+| **任何「不该改变行为」的重构** | `python3 scripts/verify/acceptance.py --verify tests/acceptance_baseline.json`（**1.4 s**，七面逐路径对拍；`unittest` 里也有一份，随全量测试跑） | 全量测试 | 同上 |
 | **电路 / Rust** | `cargo build --release -p pop-script`（8.9 s） | `cross_validate --no-prove` | `POP_TEST_PROOF=1` / `cross_validate` 真出证 |
 | 证书 / 信封结构 | `python3 -m unittest tests.test_cert tests.test_policy_binding` | 全量测试 | §3.7 真出证 + 核验 |
 | 框架适配器 | `python3 -m unittest tests.test_<框架>` | 全量测试 | §3.4 带 `--model` 跑真模型 |
@@ -238,7 +239,7 @@ python3 scripts/verify/verify_cert.py \
 
 ### 4.2 提交前清单
 
-1. `python3 -m unittest discover tests` → **675 / 15**，工作树里没有计划外的文件。
+1. `python3 -m unittest discover tests` → **688 / 15**，工作树里没有计划外的文件。
 2. 改了 `scripts/` 结构 → `tests.test_scripts_layout` 过。
 3. 改了会产生数字的东西 → 数字**四处同步**（见 [`modules/08`](modules/08-tests-bench.md)）。
 4. 改了文档 → 相对链接不悬空。

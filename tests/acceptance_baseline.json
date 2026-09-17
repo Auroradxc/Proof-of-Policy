@@ -1,0 +1,4600 @@
+{
+ "1_contract": {
+  "agent_content_v1.json": {
+   "canonical_spec": "{\"constraints\":[{\"keywords\":[\"doxxing\",\"exploit\",\"weaponize\"],\"kind\":\"keyword_block\",\"name\":\"no_bad_topics\"},{\"kind\":\"length_bound\",\"max\":2000,\"min\":1,\"name\":\"bounded_reply\"},{\"kind\":\"pattern_block\",\"name\":\"no_secret\",\"nfa\":{\"compiled\":[{\"accept\":[41],\"start\":0,\"states\":[{\"edges\":[{\"ranges\":[[115,115]],\"to\":1}],\"eps\":[]},{\"edges\":[],\"eps\":[2]},{\"edges\":[{\"ranges\":[[107,107]],\"to\":3}],\"eps\":[]},{\"edges\":[],\"eps\":[4]},{\"edges\":[{\"ranges\":[[45,45]],\"to\":5}],\"eps\":[]},{\"edges\":[],\"eps\":[6]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":7}],\"eps\":[]},{\"edges\":[],\"eps\":[8]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":9}],\"eps\":[]},{\"edges\":[],\"eps\":[10]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":11}],\"eps\":[]},{\"edges\":[],\"eps\":[12]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":13}],\"eps\":[]},{\"edges\":[],\"eps\":[14]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":15}],\"eps\":[]},{\"edges\":[],\"eps\":[16]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":17}],\"eps\":[]},{\"edges\":[],\"eps\":[18]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":19}],\"eps\":[]},{\"edges\":[],\"eps\":[20]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":21}],\"eps\":[]},{\"edges\":[],\"eps\":[22]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":23}],\"eps\":[]},{\"edges\":[],\"eps\":[24]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":25}],\"eps\":[]},{\"edges\":[],\"eps\":[26]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":27}],\"eps\":[]},{\"edges\":[],\"eps\":[28]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":29}],\"eps\":[]},{\"edges\":[],\"eps\":[30]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":31}],\"eps\":[]},{\"edges\":[],\"eps\":[32]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":33}],\"eps\":[]},{\"edges\":[],\"eps\":[34]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":35}],\"eps\":[]},{\"edges\":[],\"eps\":[36]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":37}],\"eps\":[]},{\"edges\":[],\"eps\":[40]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":39}],\"eps\":[]},{\"edges\":[],\"eps\":[38,41]},{\"edges\":[],\"eps\":[38,41]},{\"edges\":[],\"eps\":[]}]}]},\"patterns\":[\"sk-[A-Za-z0-9]{16,}\"]}],\"policy_id\":\"agent-content-v1\",\"policy_version\":\"0.1.0\",\"semantic\":\"and\",\"spec_version\":\"v1\"}",
+   "sha256": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+  },
+  "agent_tool_v1.json": {
+   "canonical_spec": "{\"constraints\":[{\"forbidden_fields\":[\"api_key\",\"password\",\"token\"],\"kind\":\"tool_arg_guard\",\"name\":\"no_secret_args\"},{\"budget\":5,\"kind\":\"budget_bound\",\"name\":\"call_budget\",\"unit\":\"calls\"}],\"policy_id\":\"agent-tool-v1\",\"policy_version\":\"0.1.0\",\"semantic\":\"and\",\"spec_version\":\"v1\"}",
+   "sha256": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+  },
+  "eu_ai_act_v1.json": {
+   "canonical_spec": "{\"constraints\":[{\"keywords\":[\"child abuse\",\"doxxing\",\"exploit\",\"terrorism\",\"weaponize\"],\"kind\":\"keyword_block\",\"name\":\"banned_high_risk_topics\"},{\"kind\":\"length_bound\",\"max\":2000,\"min\":1,\"name\":\"disclosure_length\"},{\"kind\":\"pattern_block\",\"name\":\"no_pii_email\",\"nfa\":{\"compiled\":[{\"accept\":[21],\"start\":0,\"states\":[{\"edges\":[{\"ranges\":[[43,43],[45,46],[48,57],[65,90],[95,95],[97,122]],\"to\":1}],\"eps\":[]},{\"edges\":[],\"eps\":[4]},{\"edges\":[{\"ranges\":[[43,43],[45,46],[48,57],[65,90],[95,95],[97,122]],\"to\":3}],\"eps\":[]},{\"edges\":[],\"eps\":[2,5]},{\"edges\":[],\"eps\":[2,5]},{\"edges\":[],\"eps\":[6]},{\"edges\":[{\"ranges\":[[64,64]],\"to\":7}],\"eps\":[]},{\"edges\":[],\"eps\":[8]},{\"edges\":[{\"ranges\":[[45,45],[48,57],[65,90],[95,95],[97,122]],\"to\":9}],\"eps\":[]},{\"edges\":[],\"eps\":[12]},{\"edges\":[{\"ranges\":[[45,45],[48,57],[65,90],[95,95],[97,122]],\"to\":11}],\"eps\":[]},{\"edges\":[],\"eps\":[10,13]},{\"edges\":[],\"eps\":[10,13]},{\"edges\":[],\"eps\":[14]},{\"edges\":[{\"ranges\":[[46,46]],\"to\":15}],\"eps\":[]},{\"edges\":[],\"eps\":[16]},{\"edges\":[{\"ranges\":[[46,46],[48,57],[65,90],[95,95],[97,122]],\"to\":17}],\"eps\":[]},{\"edges\":[],\"eps\":[20]},{\"edges\":[{\"ranges\":[[46,46],[48,57],[65,90],[95,95],[97,122]],\"to\":19}],\"eps\":[]},{\"edges\":[],\"eps\":[18,21]},{\"edges\":[],\"eps\":[18,21]},{\"edges\":[],\"eps\":[]}]}]},\"patterns\":[\"[\\\\w.+-]+@[\\\\w-]+\\\\.[\\\\w.]+\"]}],\"policy_id\":\"eu-ai-act-v1\",\"policy_version\":\"0.1.0\",\"semantic\":\"and\",\"spec_version\":\"v1\"}",
+   "sha256": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+  },
+  "finance_redaction_v1.json": {
+   "canonical_spec": "{\"constraints\":[{\"keywords\":[\"100x\",\"get rich\",\"guaranteed returns\",\"leverage\",\"margin call\"],\"kind\":\"keyword_block\",\"name\":\"no_high_leverage\"},{\"kind\":\"length_bound\",\"max\":1500,\"min\":1,\"name\":\"bounded_response\"},{\"kind\":\"pattern_block\",\"name\":\"no_credentials\",\"nfa\":{\"compiled\":[{\"accept\":[49],\"start\":0,\"states\":[{\"edges\":[{\"ranges\":[[115,115]],\"to\":1}],\"eps\":[]},{\"edges\":[],\"eps\":[2]},{\"edges\":[{\"ranges\":[[107,107]],\"to\":3}],\"eps\":[]},{\"edges\":[],\"eps\":[4]},{\"edges\":[{\"ranges\":[[45,45]],\"to\":5}],\"eps\":[]},{\"edges\":[],\"eps\":[6]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":7}],\"eps\":[]},{\"edges\":[],\"eps\":[8]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":9}],\"eps\":[]},{\"edges\":[],\"eps\":[10]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":11}],\"eps\":[]},{\"edges\":[],\"eps\":[12]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":13}],\"eps\":[]},{\"edges\":[],\"eps\":[14]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":15}],\"eps\":[]},{\"edges\":[],\"eps\":[16]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":17}],\"eps\":[]},{\"edges\":[],\"eps\":[18]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":19}],\"eps\":[]},{\"edges\":[],\"eps\":[20]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":21}],\"eps\":[]},{\"edges\":[],\"eps\":[22]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":23}],\"eps\":[]},{\"edges\":[],\"eps\":[24]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":25}],\"eps\":[]},{\"edges\":[],\"eps\":[26]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":27}],\"eps\":[]},{\"edges\":[],\"eps\":[28]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":29}],\"eps\":[]},{\"edges\":[],\"eps\":[30]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":31}],\"eps\":[]},{\"edges\":[],\"eps\":[32]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":33}],\"eps\":[]},{\"edges\":[],\"eps\":[34]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":35}],\"eps\":[]},{\"edges\":[],\"eps\":[36]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":37}],\"eps\":[]},{\"edges\":[],\"eps\":[38]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":39}],\"eps\":[]},{\"edges\":[],\"eps\":[40]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":41}],\"eps\":[]},{\"edges\":[],\"eps\":[42]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":43}],\"eps\":[]},{\"edges\":[],\"eps\":[44]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":45}],\"eps\":[]},{\"edges\":[],\"eps\":[48]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":47}],\"eps\":[]},{\"edges\":[],\"eps\":[46,49]},{\"edges\":[],\"eps\":[46,49]},{\"edges\":[],\"eps\":[]}]},{\"accept\":[57],\"start\":0,\"states\":[{\"edges\":[{\"ranges\":[[66,66]],\"to\":1}],\"eps\":[]},{\"edges\":[],\"eps\":[2]},{\"edges\":[{\"ranges\":[[101,101]],\"to\":3}],\"eps\":[]},{\"edges\":[],\"eps\":[4]},{\"edges\":[{\"ranges\":[[97,97]],\"to\":5}],\"eps\":[]},{\"edges\":[],\"eps\":[6]},{\"edges\":[{\"ranges\":[[114,114]],\"to\":7}],\"eps\":[]},{\"edges\":[],\"eps\":[8]},{\"edges\":[{\"ranges\":[[101,101]],\"to\":9}],\"eps\":[]},{\"edges\":[],\"eps\":[10]},{\"edges\":[{\"ranges\":[[114,114]],\"to\":11}],\"eps\":[]},{\"edges\":[],\"eps\":[12]},{\"edges\":[{\"ranges\":[[32,32]],\"to\":13}],\"eps\":[]},{\"edges\":[],\"eps\":[14]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":15}],\"eps\":[]},{\"edges\":[],\"eps\":[16]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":17}],\"eps\":[]},{\"edges\":[],\"eps\":[18]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":19}],\"eps\":[]},{\"edges\":[],\"eps\":[20]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":21}],\"eps\":[]},{\"edges\":[],\"eps\":[22]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":23}],\"eps\":[]},{\"edges\":[],\"eps\":[24]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":25}],\"eps\":[]},{\"edges\":[],\"eps\":[26]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":27}],\"eps\":[]},{\"edges\":[],\"eps\":[28]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":29}],\"eps\":[]},{\"edges\":[],\"eps\":[30]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":31}],\"eps\":[]},{\"edges\":[],\"eps\":[32]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":33}],\"eps\":[]},{\"edges\":[],\"eps\":[34]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":35}],\"eps\":[]},{\"edges\":[],\"eps\":[36]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":37}],\"eps\":[]},{\"edges\":[],\"eps\":[38]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":39}],\"eps\":[]},{\"edges\":[],\"eps\":[40]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":41}],\"eps\":[]},{\"edges\":[],\"eps\":[42]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":43}],\"eps\":[]},{\"edges\":[],\"eps\":[44]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":45}],\"eps\":[]},{\"edges\":[],\"eps\":[46]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":47}],\"eps\":[]},{\"edges\":[],\"eps\":[48]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":49}],\"eps\":[]},{\"edges\":[],\"eps\":[50]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":51}],\"eps\":[]},{\"edges\":[],\"eps\":[52]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":53}],\"eps\":[]},{\"edges\":[],\"eps\":[56]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":55}],\"eps\":[]},{\"edges\":[],\"eps\":[54,57]},{\"edges\":[],\"eps\":[54,57]},{\"edges\":[],\"eps\":[]}]}]},\"patterns\":[\"sk-[A-Za-z0-9]{20,}\",\"Bearer [A-Za-z0-9._~+/=-]{20,}\"]}],\"policy_id\":\"finance-redaction-v1\",\"policy_version\":\"0.1.0\",\"semantic\":\"and\",\"spec_version\":\"v1\"}",
+   "sha256": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+  },
+  "multiparty_demo_v1.json": {
+   "canonical_spec": "{\"constraints\":[{\"keywords\":[\"doxxing\",\"exploit\",\"weaponize\"],\"kind\":\"keyword_block\",\"name\":\"no_bad_topics\"},{\"kind\":\"length_bound\",\"max\":2000,\"min\":1,\"name\":\"bounded_reply\"},{\"forbidden_fields\":[\"api_key\",\"password\",\"token\"],\"kind\":\"tool_arg_guard\",\"name\":\"no_secret_args\"},{\"budget\":5,\"kind\":\"budget_bound\",\"name\":\"call_budget\",\"unit\":\"calls\"}],\"policy_id\":\"multiparty-demo-v1\",\"policy_version\":\"0.1.0\",\"semantic\":\"and\",\"spec_version\":\"v1\"}",
+   "sha256": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+  },
+  "pii_redaction_v1.json": {
+   "canonical_spec": "{\"constraints\":[{\"kind\":\"pattern_block\",\"name\":\"no_email\",\"nfa\":{\"compiled\":[{\"accept\":[21],\"start\":0,\"states\":[{\"edges\":[{\"ranges\":[[43,43],[45,46],[48,57],[65,90],[95,95],[97,122]],\"to\":1}],\"eps\":[]},{\"edges\":[],\"eps\":[4]},{\"edges\":[{\"ranges\":[[43,43],[45,46],[48,57],[65,90],[95,95],[97,122]],\"to\":3}],\"eps\":[]},{\"edges\":[],\"eps\":[2,5]},{\"edges\":[],\"eps\":[2,5]},{\"edges\":[],\"eps\":[6]},{\"edges\":[{\"ranges\":[[64,64]],\"to\":7}],\"eps\":[]},{\"edges\":[],\"eps\":[8]},{\"edges\":[{\"ranges\":[[45,45],[48,57],[65,90],[95,95],[97,122]],\"to\":9}],\"eps\":[]},{\"edges\":[],\"eps\":[12]},{\"edges\":[{\"ranges\":[[45,45],[48,57],[65,90],[95,95],[97,122]],\"to\":11}],\"eps\":[]},{\"edges\":[],\"eps\":[10,13]},{\"edges\":[],\"eps\":[10,13]},{\"edges\":[],\"eps\":[14]},{\"edges\":[{\"ranges\":[[46,46]],\"to\":15}],\"eps\":[]},{\"edges\":[],\"eps\":[16]},{\"edges\":[{\"ranges\":[[46,46],[48,57],[65,90],[95,95],[97,122]],\"to\":17}],\"eps\":[]},{\"edges\":[],\"eps\":[20]},{\"edges\":[{\"ranges\":[[46,46],[48,57],[65,90],[95,95],[97,122]],\"to\":19}],\"eps\":[]},{\"edges\":[],\"eps\":[18,21]},{\"edges\":[],\"eps\":[18,21]},{\"edges\":[],\"eps\":[]}]}]},\"patterns\":[\"[\\\\w.+-]+@[\\\\w-]+\\\\.[\\\\w.]+\"]},{\"kind\":\"pattern_block\",\"name\":\"no_phone\",\"nfa\":{\"compiled\":[{\"accept\":[21],\"start\":2,\"states\":[{\"edges\":[{\"ranges\":[[43,43]],\"to\":1}],\"eps\":[]},{\"edges\":[],\"eps\":[3]},{\"edges\":[],\"eps\":[0,3]},{\"edges\":[],\"eps\":[4]},{\"edges\":[{\"ranges\":[[32,32],[40,41],[45,45],[48,57]],\"to\":5}],\"eps\":[]},{\"edges\":[],\"eps\":[6]},{\"edges\":[{\"ranges\":[[32,32],[40,41],[45,45],[48,57]],\"to\":7}],\"eps\":[]},{\"edges\":[],\"eps\":[8]},{\"edges\":[{\"ranges\":[[32,32],[40,41],[45,45],[48,57]],\"to\":9}],\"eps\":[]},{\"edges\":[],\"eps\":[10]},{\"edges\":[{\"ranges\":[[32,32],[40,41],[45,45],[48,57]],\"to\":11}],\"eps\":[]},{\"edges\":[],\"eps\":[12]},{\"edges\":[{\"ranges\":[[32,32],[40,41],[45,45],[48,57]],\"to\":13}],\"eps\":[]},{\"edges\":[],\"eps\":[14]},{\"edges\":[{\"ranges\":[[32,32],[40,41],[45,45],[48,57]],\"to\":15}],\"eps\":[]},{\"edges\":[],\"eps\":[16]},{\"edges\":[{\"ranges\":[[32,32],[40,41],[45,45],[48,57]],\"to\":17}],\"eps\":[]},{\"edges\":[],\"eps\":[20]},{\"edges\":[{\"ranges\":[[32,32],[40,41],[45,45],[48,57]],\"to\":19}],\"eps\":[]},{\"edges\":[],\"eps\":[18,21]},{\"edges\":[],\"eps\":[18,21]},{\"edges\":[],\"eps\":[]}]}]},\"patterns\":[\"\\\\+?[0-9 ()-]{7,}\"]},{\"kind\":\"pattern_block\",\"name\":\"no_secret_key\",\"nfa\":{\"compiled\":[{\"accept\":[41],\"start\":0,\"states\":[{\"edges\":[{\"ranges\":[[115,115]],\"to\":1}],\"eps\":[]},{\"edges\":[],\"eps\":[2]},{\"edges\":[{\"ranges\":[[107,107]],\"to\":3}],\"eps\":[]},{\"edges\":[],\"eps\":[4]},{\"edges\":[{\"ranges\":[[45,45]],\"to\":5}],\"eps\":[]},{\"edges\":[],\"eps\":[6]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":7}],\"eps\":[]},{\"edges\":[],\"eps\":[8]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":9}],\"eps\":[]},{\"edges\":[],\"eps\":[10]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":11}],\"eps\":[]},{\"edges\":[],\"eps\":[12]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":13}],\"eps\":[]},{\"edges\":[],\"eps\":[14]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":15}],\"eps\":[]},{\"edges\":[],\"eps\":[16]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":17}],\"eps\":[]},{\"edges\":[],\"eps\":[18]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":19}],\"eps\":[]},{\"edges\":[],\"eps\":[20]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":21}],\"eps\":[]},{\"edges\":[],\"eps\":[22]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":23}],\"eps\":[]},{\"edges\":[],\"eps\":[24]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":25}],\"eps\":[]},{\"edges\":[],\"eps\":[26]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":27}],\"eps\":[]},{\"edges\":[],\"eps\":[28]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":29}],\"eps\":[]},{\"edges\":[],\"eps\":[30]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":31}],\"eps\":[]},{\"edges\":[],\"eps\":[32]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":33}],\"eps\":[]},{\"edges\":[],\"eps\":[34]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":35}],\"eps\":[]},{\"edges\":[],\"eps\":[36]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":37}],\"eps\":[]},{\"edges\":[],\"eps\":[40]},{\"edges\":[{\"ranges\":[[48,57],[65,90],[97,122]],\"to\":39}],\"eps\":[]},{\"edges\":[],\"eps\":[38,41]},{\"edges\":[],\"eps\":[38,41]},{\"edges\":[],\"eps\":[]}]}]},\"patterns\":[\"sk-[A-Za-z0-9]{16,}\"]},{\"kind\":\"pattern_block\",\"name\":\"no_bearer_token\",\"nfa\":{\"compiled\":[{\"accept\":[49],\"start\":0,\"states\":[{\"edges\":[{\"ranges\":[[66,66]],\"to\":1}],\"eps\":[]},{\"edges\":[],\"eps\":[2]},{\"edges\":[{\"ranges\":[[101,101]],\"to\":3}],\"eps\":[]},{\"edges\":[],\"eps\":[4]},{\"edges\":[{\"ranges\":[[97,97]],\"to\":5}],\"eps\":[]},{\"edges\":[],\"eps\":[6]},{\"edges\":[{\"ranges\":[[114,114]],\"to\":7}],\"eps\":[]},{\"edges\":[],\"eps\":[8]},{\"edges\":[{\"ranges\":[[101,101]],\"to\":9}],\"eps\":[]},{\"edges\":[],\"eps\":[10]},{\"edges\":[{\"ranges\":[[114,114]],\"to\":11}],\"eps\":[]},{\"edges\":[],\"eps\":[12]},{\"edges\":[{\"ranges\":[[32,32]],\"to\":13}],\"eps\":[]},{\"edges\":[],\"eps\":[14]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":15}],\"eps\":[]},{\"edges\":[],\"eps\":[16]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":17}],\"eps\":[]},{\"edges\":[],\"eps\":[18]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":19}],\"eps\":[]},{\"edges\":[],\"eps\":[20]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":21}],\"eps\":[]},{\"edges\":[],\"eps\":[22]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":23}],\"eps\":[]},{\"edges\":[],\"eps\":[24]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":25}],\"eps\":[]},{\"edges\":[],\"eps\":[26]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":27}],\"eps\":[]},{\"edges\":[],\"eps\":[28]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":29}],\"eps\":[]},{\"edges\":[],\"eps\":[30]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":31}],\"eps\":[]},{\"edges\":[],\"eps\":[32]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":33}],\"eps\":[]},{\"edges\":[],\"eps\":[34]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":35}],\"eps\":[]},{\"edges\":[],\"eps\":[36]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":37}],\"eps\":[]},{\"edges\":[],\"eps\":[38]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":39}],\"eps\":[]},{\"edges\":[],\"eps\":[40]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":41}],\"eps\":[]},{\"edges\":[],\"eps\":[42]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":43}],\"eps\":[]},{\"edges\":[],\"eps\":[44]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":45}],\"eps\":[]},{\"edges\":[],\"eps\":[48]},{\"edges\":[{\"ranges\":[[43,43],[45,57],[61,61],[65,90],[95,95],[97,122],[126,126]],\"to\":47}],\"eps\":[]},{\"edges\":[],\"eps\":[46,49]},{\"edges\":[],\"eps\":[46,49]},{\"edges\":[],\"eps\":[]}]}]},\"patterns\":[\"Bearer [A-Za-z0-9._~+/=-]{16,}\"]}],\"policy_id\":\"pii-redaction-v1\",\"policy_version\":\"0.1.0\",\"semantic\":\"and\",\"spec_version\":\"v1\"}",
+   "sha256": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+  },
+  "semantic_demo_v1.json": {
+   "canonical_spec": "{\"constraints\":[{\"keywords\":[\"doxxing\",\"exploit\",\"weaponize\"],\"kind\":\"keyword_block\",\"name\":\"no_bad_topics\"},{\"kind\":\"length_bound\",\"max\":64,\"min\":1,\"name\":\"bounded_reply\"},{\"direction\":\"le\",\"kind\":\"semantic_bound\",\"model_vkey\":\"c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e\",\"name\":\"low_harm_probability\",\"onnx_sha256\":\"5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01\",\"threshold_bp\":5000}],\"policy_id\":\"semantic-demo-v1\",\"policy_version\":\"0.1.0\",\"semantic\":\"and\",\"spec_version\":\"v1\"}",
+   "sha256": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+  }
+ },
+ "2_verdicts": {
+  "agent_content_v1.json": {
+   "bearer": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "benign": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "email": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "empty": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=0",
+       "kind": "length_bound",
+       "rule": "bounded_reply"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 0,
+         "max": 2000,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       }
+      ]
+     }
+    }
+   },
+   "four_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=4000",
+       "kind": "length_bound",
+       "rule": "bounded_reply"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 4000,
+         "max": 2000,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       }
+      ]
+     }
+    }
+   },
+   "json_bad": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "json_ok": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_hit": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "doxxing",
+       "kind": "keyword_block",
+       "rule": "no_bad_topics"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": [
+         "doxxing"
+        ],
+        "evidence_kind": "keyword",
+        "kind": "keyword_block",
+        "rule": "no_bad_topics"
+       }
+      ]
+     }
+    }
+   },
+   "keyword_homoglyph": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_newline": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_upper": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "doxxing",
+       "kind": "keyword_block",
+       "rule": "no_bad_topics"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": [
+         "doxxing"
+        ],
+        "evidence_kind": "keyword",
+        "kind": "keyword_block",
+        "rule": "no_bad_topics"
+       }
+      ]
+     }
+    }
+   },
+   "keyword_zerowidth": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "long_tail_secret": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=2028",
+       "kind": "length_bound",
+       "rule": "bounded_reply"
+      },
+      {
+       "evidence": "sk-[A-Za-z0-9]{16,}",
+       "kind": "pattern_block",
+       "rule": "no_secret"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 2028,
+         "max": 2000,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       },
+       {
+        "evidence": "sk-[A-Za-z0-9]{16,}",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_secret"
+       }
+      ]
+     }
+    }
+   },
+   "newlines": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "one_char": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "phone": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:broken_chain": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "receipt 0: prev mismatch",
+       "kind": "trace_unbound",
+       "rule": "<trace>"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "receipt 0: prev mismatch",
+        "evidence_kind": "trace_unbound",
+        "kind": "trace_unbound",
+        "rule": "<trace>"
+       }
+      ]
+     }
+    }
+   },
+   "receipts:clean_chain": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:dirty_chain": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:no_receipts": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "secret_key": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "sk-[A-Za-z0-9]{16,}",
+       "kind": "pattern_block",
+       "rule": "no_secret"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "sk-[A-Za-z0-9]{16,}",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_secret"
+       }
+      ]
+     }
+    }
+   },
+   "two_hundred": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "two_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "unicode": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   }
+  },
+  "agent_tool_v1.json": {
+   "bearer": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "benign": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "email": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "empty": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "four_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "json_bad": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "json_ok": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_hit": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_homoglyph": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_newline": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_upper": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_zerowidth": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "long_tail_secret": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "newlines": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "one_char": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "phone": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:broken_chain": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "receipt 0: prev mismatch",
+       "kind": "trace_unbound",
+       "rule": "no_secret_args"
+      },
+      {
+       "evidence": "receipt 0: prev mismatch",
+       "kind": "trace_unbound",
+       "rule": "call_budget"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "receipt 0: prev mismatch",
+        "evidence_kind": "trace_unbound",
+        "kind": "tool_arg_guard",
+        "rule": "no_secret_args"
+       },
+       {
+        "evidence": "receipt 0: prev mismatch",
+        "evidence_kind": "trace_unbound",
+        "kind": "budget_bound",
+        "rule": "call_budget"
+       }
+      ]
+     }
+    }
+   },
+   "receipts:clean_chain": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:dirty_chain": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "search_kb:token",
+       "kind": "tool_arg_guard",
+       "rule": "no_secret_args"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "field": "token",
+         "tool": "search_kb"
+        },
+        "evidence_kind": "tool_arg",
+        "kind": "tool_arg_guard",
+        "rule": "no_secret_args"
+       }
+      ]
+     }
+    }
+   },
+   "receipts:no_receipts": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "secret_key": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "two_hundred": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "two_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "unicode": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   }
+  },
+  "eu_ai_act_v1.json": {
+   "bearer": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "benign": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "email": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "[\\w.+-]+@[\\w-]+\\.[\\w.]+",
+       "kind": "pattern_block",
+       "rule": "no_pii_email"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "[\\w.+-]+@[\\w-]+\\.[\\w.]+",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_pii_email"
+       }
+      ]
+     }
+    }
+   },
+   "empty": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=0",
+       "kind": "length_bound",
+       "rule": "disclosure_length"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 0,
+         "max": 2000,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "disclosure_length"
+       }
+      ]
+     }
+    }
+   },
+   "four_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=4000",
+       "kind": "length_bound",
+       "rule": "disclosure_length"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 4000,
+         "max": 2000,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "disclosure_length"
+       }
+      ]
+     }
+    }
+   },
+   "json_bad": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "json_ok": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_hit": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "child abuse",
+       "kind": "keyword_block",
+       "rule": "banned_high_risk_topics"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": [
+         "child abuse"
+        ],
+        "evidence_kind": "keyword",
+        "kind": "keyword_block",
+        "rule": "banned_high_risk_topics"
+       }
+      ]
+     }
+    }
+   },
+   "keyword_homoglyph": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_newline": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_upper": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "child abuse",
+       "kind": "keyword_block",
+       "rule": "banned_high_risk_topics"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": [
+         "child abuse"
+        ],
+        "evidence_kind": "keyword",
+        "kind": "keyword_block",
+        "rule": "banned_high_risk_topics"
+       }
+      ]
+     }
+    }
+   },
+   "keyword_zerowidth": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "long_tail_secret": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=2028",
+       "kind": "length_bound",
+       "rule": "disclosure_length"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 2028,
+         "max": 2000,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "disclosure_length"
+       }
+      ]
+     }
+    }
+   },
+   "newlines": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "one_char": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "phone": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:broken_chain": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "receipt 0: prev mismatch",
+       "kind": "trace_unbound",
+       "rule": "<trace>"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "receipt 0: prev mismatch",
+        "evidence_kind": "trace_unbound",
+        "kind": "trace_unbound",
+        "rule": "<trace>"
+       }
+      ]
+     }
+    }
+   },
+   "receipts:clean_chain": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:dirty_chain": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:no_receipts": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "secret_key": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "two_hundred": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "two_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "unicode": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   }
+  },
+  "finance_redaction_v1.json": {
+   "bearer": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "Bearer [A-Za-z0-9._~+/=-]{20,}",
+       "kind": "pattern_block",
+       "rule": "no_credentials"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "Bearer [A-Za-z0-9._~+/=-]{20,}",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_credentials"
+       }
+      ]
+     }
+    }
+   },
+   "benign": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "email": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "empty": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=0",
+       "kind": "length_bound",
+       "rule": "bounded_response"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 0,
+         "max": 1500,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_response"
+       }
+      ]
+     }
+    }
+   },
+   "four_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=4000",
+       "kind": "length_bound",
+       "rule": "bounded_response"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 4000,
+         "max": 1500,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_response"
+       }
+      ]
+     }
+    }
+   },
+   "json_bad": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "json_ok": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_hit": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "100x",
+       "kind": "keyword_block",
+       "rule": "no_high_leverage"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": [
+         "100x"
+        ],
+        "evidence_kind": "keyword",
+        "kind": "keyword_block",
+        "rule": "no_high_leverage"
+       }
+      ]
+     }
+    }
+   },
+   "keyword_homoglyph": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_newline": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_upper": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "100x",
+       "kind": "keyword_block",
+       "rule": "no_high_leverage"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": [
+         "100x"
+        ],
+        "evidence_kind": "keyword",
+        "kind": "keyword_block",
+        "rule": "no_high_leverage"
+       }
+      ]
+     }
+    }
+   },
+   "keyword_zerowidth": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "long_tail_secret": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=2028",
+       "kind": "length_bound",
+       "rule": "bounded_response"
+      },
+      {
+       "evidence": "sk-[A-Za-z0-9]{20,}",
+       "kind": "pattern_block",
+       "rule": "no_credentials"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 2028,
+         "max": 1500,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_response"
+       },
+       {
+        "evidence": "sk-[A-Za-z0-9]{20,}",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_credentials"
+       }
+      ]
+     }
+    }
+   },
+   "newlines": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "one_char": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "phone": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:broken_chain": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "receipt 0: prev mismatch",
+       "kind": "trace_unbound",
+       "rule": "<trace>"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "receipt 0: prev mismatch",
+        "evidence_kind": "trace_unbound",
+        "kind": "trace_unbound",
+        "rule": "<trace>"
+       }
+      ]
+     }
+    }
+   },
+   "receipts:clean_chain": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:dirty_chain": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:no_receipts": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "secret_key": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "sk-[A-Za-z0-9]{20,}",
+       "kind": "pattern_block",
+       "rule": "no_credentials"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "sk-[A-Za-z0-9]{20,}",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_credentials"
+       }
+      ]
+     }
+    }
+   },
+   "two_hundred": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "two_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=2000",
+       "kind": "length_bound",
+       "rule": "bounded_response"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 2000,
+         "max": 1500,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_response"
+       }
+      ]
+     }
+    }
+   },
+   "unicode": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   }
+  },
+  "multiparty_demo_v1.json": {
+   "bearer": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "benign": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "email": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "empty": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=0",
+       "kind": "length_bound",
+       "rule": "bounded_reply"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 0,
+         "max": 2000,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       }
+      ]
+     }
+    }
+   },
+   "four_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=4000",
+       "kind": "length_bound",
+       "rule": "bounded_reply"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 4000,
+         "max": 2000,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       }
+      ]
+     }
+    }
+   },
+   "json_bad": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "json_ok": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_hit": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "doxxing",
+       "kind": "keyword_block",
+       "rule": "no_bad_topics"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": [
+         "doxxing"
+        ],
+        "evidence_kind": "keyword",
+        "kind": "keyword_block",
+        "rule": "no_bad_topics"
+       }
+      ]
+     }
+    }
+   },
+   "keyword_homoglyph": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_newline": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_upper": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "doxxing",
+       "kind": "keyword_block",
+       "rule": "no_bad_topics"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": [
+         "doxxing"
+        ],
+        "evidence_kind": "keyword",
+        "kind": "keyword_block",
+        "rule": "no_bad_topics"
+       }
+      ]
+     }
+    }
+   },
+   "keyword_zerowidth": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "long_tail_secret": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "len=2028",
+       "kind": "length_bound",
+       "rule": "bounded_reply"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 2028,
+         "max": 2000,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       }
+      ]
+     }
+    }
+   },
+   "newlines": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "one_char": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "phone": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:broken_chain": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "receipt 0: prev mismatch",
+       "kind": "trace_unbound",
+       "rule": "no_secret_args"
+      },
+      {
+       "evidence": "receipt 0: prev mismatch",
+       "kind": "trace_unbound",
+       "rule": "call_budget"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "receipt 0: prev mismatch",
+        "evidence_kind": "trace_unbound",
+        "kind": "tool_arg_guard",
+        "rule": "no_secret_args"
+       },
+       {
+        "evidence": "receipt 0: prev mismatch",
+        "evidence_kind": "trace_unbound",
+        "kind": "budget_bound",
+        "rule": "call_budget"
+       }
+      ]
+     }
+    }
+   },
+   "receipts:clean_chain": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:dirty_chain": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "search_kb:token",
+       "kind": "tool_arg_guard",
+       "rule": "no_secret_args"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "field": "token",
+         "tool": "search_kb"
+        },
+        "evidence_kind": "tool_arg",
+        "kind": "tool_arg_guard",
+        "rule": "no_secret_args"
+       }
+      ]
+     }
+    }
+   },
+   "receipts:no_receipts": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "secret_key": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "two_hundred": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "two_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "unicode": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   }
+  },
+  "pii_redaction_v1.json": {
+   "bearer": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "Bearer [A-Za-z0-9._~+/=-]{16,}",
+       "kind": "pattern_block",
+       "rule": "no_bearer_token"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "Bearer [A-Za-z0-9._~+/=-]{16,}",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_bearer_token"
+       }
+      ]
+     }
+    }
+   },
+   "benign": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "email": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "[\\w.+-]+@[\\w-]+\\.[\\w.]+",
+       "kind": "pattern_block",
+       "rule": "no_email"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "[\\w.+-]+@[\\w-]+\\.[\\w.]+",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_email"
+       }
+      ]
+     }
+    }
+   },
+   "empty": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "four_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "json_bad": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "json_ok": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_hit": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_homoglyph": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_newline": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_upper": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_zerowidth": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "long_tail_secret": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "sk-[A-Za-z0-9]{16,}",
+       "kind": "pattern_block",
+       "rule": "no_secret_key"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "sk-[A-Za-z0-9]{16,}",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_secret_key"
+       }
+      ]
+     }
+    }
+   },
+   "newlines": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "one_char": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "phone": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "\\+?[0-9 ()-]{7,}",
+       "kind": "pattern_block",
+       "rule": "no_phone"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "\\+?[0-9 ()-]{7,}",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_phone"
+       }
+      ]
+     }
+    }
+   },
+   "receipts:broken_chain": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "receipt 0: prev mismatch",
+       "kind": "trace_unbound",
+       "rule": "<trace>"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "receipt 0: prev mismatch",
+        "evidence_kind": "trace_unbound",
+        "kind": "trace_unbound",
+        "rule": "<trace>"
+       }
+      ]
+     }
+    }
+   },
+   "receipts:clean_chain": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:dirty_chain": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:no_receipts": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "secret_key": {
+    "canonical": {
+     "ok": true,
+     "value": [
+      {
+       "evidence": "sk-[A-Za-z0-9]{16,}",
+       "kind": "pattern_block",
+       "rule": "no_secret_key"
+      }
+     ]
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "sk-[A-Za-z0-9]{16,}",
+        "evidence_kind": "pattern",
+        "kind": "pattern_block",
+        "rule": "no_secret_key"
+       }
+      ]
+     }
+    }
+   },
+   "two_hundred": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "two_thousand": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "unicode": {
+    "canonical": {
+     "ok": true,
+     "value": []
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [],
+      "passed": true,
+      "violations": []
+     }
+    }
+   }
+  },
+  "semantic_demo_v1.json": {
+   "bearer": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "benign": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "email": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "empty": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 0,
+         "max": 64,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       }
+      ]
+     }
+    }
+   },
+   "four_thousand": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 4000,
+         "max": 64,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       }
+      ]
+     }
+    }
+   },
+   "json_bad": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "json_ok": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_hit": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": [
+         "doxxing"
+        ],
+        "evidence_kind": "keyword",
+        "kind": "keyword_block",
+        "rule": "no_bad_topics"
+       }
+      ]
+     }
+    }
+   },
+   "keyword_homoglyph": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_newline": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "keyword_upper": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": [
+         "doxxing"
+        ],
+        "evidence_kind": "keyword",
+        "kind": "keyword_block",
+        "rule": "no_bad_topics"
+       }
+      ]
+     }
+    }
+   },
+   "keyword_zerowidth": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "long_tail_secret": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 2028,
+         "max": 64,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       }
+      ]
+     }
+    }
+   },
+   "newlines": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "one_char": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "phone": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:broken_chain": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": "receipt 0: prev mismatch",
+        "evidence_kind": "trace_unbound",
+        "kind": "trace_unbound",
+        "rule": "<trace>"
+       }
+      ]
+     }
+    }
+   },
+   "receipts:clean_chain": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:dirty_chain": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "receipts:no_receipts": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "secret_key": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   },
+   "two_hundred": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 200,
+         "max": 64,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       }
+      ]
+     }
+    }
+   },
+   "two_thousand": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": false,
+      "violations": [
+       {
+        "evidence": {
+         "len": 2000,
+         "max": 64,
+         "min": 1
+        },
+        "evidence_kind": "length",
+        "kind": "length_bound",
+        "rule": "bounded_reply"
+       }
+      ]
+     }
+    }
+   },
+   "unicode": {
+    "canonical": {
+     "error": {
+      "msg": "kind 'semantic_bound' not provable in-circuit yet",
+      "type": "NotImplementedError"
+     },
+     "ok": false
+    },
+    "check": {
+     "ok": true,
+     "value": {
+      "delegated": [
+       {
+        "direction": "le",
+        "model_vkey": "c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e",
+        "name": "low_harm_probability",
+        "onnx_sha256": "5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01",
+        "system": "ezkl-halo2",
+        "threshold_bp": 5000
+       }
+      ],
+      "passed": true,
+      "violations": []
+     }
+    }
+   }
+  }
+ },
+ "3a_model_robustness": {
+  "agent_content_v1.json": {
+   "bad_budget_negative": {
+    "error": {
+     "msg": "rule 'bad': budget_bound needs int budget >= 0",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_budget_unit": {
+    "error": {
+     "msg": "rule 'bad': budget_bound unit must be 'calls' or 'tokens'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_format": {
+    "error": {
+     "msg": "rule 'bad': format_check needs format in {json,int,float}, got 'yaml'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_empty": {
+    "error": {
+     "msg": "rule 'bad': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_type": {
+    "error": {
+     "msg": "rule 'bad': keywords must be strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_length": {
+    "error": {
+     "msg": "rule 'bad': length_bound needs ints 0 <= min <= max",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_norm_keyword_fold": {
+    "error": {
+     "msg": "rule 'bad': bad 'fold': 未知的折叠预设 'nope-preset'（可用：v1, pop-fold-v1）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_empty": {
+    "error": {
+     "msg": "rule 'bad': pattern_block needs non-empty 'patterns'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_mode": {
+    "error": {
+     "msg": "rule 'bad': match_mode must be 'pike' or 'naive', got 'cron'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_direction": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs 'direction' in {'le','ge'}, got 'eq'（le: 分数 <= 阈值；ge: 分数 >= 阈值）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_threshold": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs int 'threshold_bp' in [0,10000]（万分点刻度，与 ezkl 公开实例同刻度），got 20000",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_tool_fields": {
+    "error": {
+     "msg": "rule 'bad': tool_arg_guard needs non-empty 'forbidden_fields' strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_kind": {
+    "error": {
+     "msg": "rule 'no_bad_topics': unknown kind ''",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_params": {
+    "error": {
+     "msg": "rule 'no_bad_topics': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "empty_rules": {
+    "sha256": "0aea38cb00f4cdf1ecb0cd311caf2d541d7b7b94df20aab0c0c7a19a156cf7ac",
+    "stage": "ok"
+   },
+   "extra_top_level": {
+    "sha256": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708",
+    "stage": "ok"
+   },
+   "kind_is_list": {
+    "error": {
+     "msg": "rule 'no_bad_topics': unknown kind '['kw']'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "missing_id": {
+    "error": {
+     "msg": "'id'",
+     "type": "KeyError"
+    },
+    "stage": "load"
+   },
+   "rules_not_a_list": {
+    "error": {
+     "msg": "'str' object has no attribute 'get'",
+     "type": "AttributeError"
+    },
+    "stage": "load"
+   },
+   "unknown_kind": {
+    "error": {
+     "msg": "rule 'no_bad_topics': unknown kind 'nope_kind'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   }
+  },
+  "agent_tool_v1.json": {
+   "bad_budget_negative": {
+    "error": {
+     "msg": "rule 'bad': budget_bound needs int budget >= 0",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_budget_unit": {
+    "error": {
+     "msg": "rule 'bad': budget_bound unit must be 'calls' or 'tokens'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_format": {
+    "error": {
+     "msg": "rule 'bad': format_check needs format in {json,int,float}, got 'yaml'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_empty": {
+    "error": {
+     "msg": "rule 'bad': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_type": {
+    "error": {
+     "msg": "rule 'bad': keywords must be strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_length": {
+    "error": {
+     "msg": "rule 'bad': length_bound needs ints 0 <= min <= max",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_norm_keyword_fold": {
+    "error": {
+     "msg": "rule 'bad': bad 'fold': 未知的折叠预设 'nope-preset'（可用：v1, pop-fold-v1）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_empty": {
+    "error": {
+     "msg": "rule 'bad': pattern_block needs non-empty 'patterns'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_mode": {
+    "error": {
+     "msg": "rule 'bad': match_mode must be 'pike' or 'naive', got 'cron'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_direction": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs 'direction' in {'le','ge'}, got 'eq'（le: 分数 <= 阈值；ge: 分数 >= 阈值）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_threshold": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs int 'threshold_bp' in [0,10000]（万分点刻度，与 ezkl 公开实例同刻度），got 20000",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_tool_fields": {
+    "error": {
+     "msg": "rule 'bad': tool_arg_guard needs non-empty 'forbidden_fields' strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_kind": {
+    "error": {
+     "msg": "rule 'no_secret_args': unknown kind ''",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_params": {
+    "error": {
+     "msg": "rule 'no_secret_args': tool_arg_guard needs non-empty 'forbidden_fields' strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "empty_rules": {
+    "sha256": "9fc0ec23d0d30c5564157d0cdac3567c37223e0f74cca8b1b6b8197c8dd24a46",
+    "stage": "ok"
+   },
+   "extra_top_level": {
+    "sha256": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548",
+    "stage": "ok"
+   },
+   "kind_is_list": {
+    "error": {
+     "msg": "rule 'no_secret_args': unknown kind '['kw']'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "missing_id": {
+    "error": {
+     "msg": "'id'",
+     "type": "KeyError"
+    },
+    "stage": "load"
+   },
+   "rules_not_a_list": {
+    "error": {
+     "msg": "'str' object has no attribute 'get'",
+     "type": "AttributeError"
+    },
+    "stage": "load"
+   },
+   "unknown_kind": {
+    "error": {
+     "msg": "rule 'no_secret_args': unknown kind 'nope_kind'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   }
+  },
+  "eu_ai_act_v1.json": {
+   "bad_budget_negative": {
+    "error": {
+     "msg": "rule 'bad': budget_bound needs int budget >= 0",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_budget_unit": {
+    "error": {
+     "msg": "rule 'bad': budget_bound unit must be 'calls' or 'tokens'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_format": {
+    "error": {
+     "msg": "rule 'bad': format_check needs format in {json,int,float}, got 'yaml'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_empty": {
+    "error": {
+     "msg": "rule 'bad': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_type": {
+    "error": {
+     "msg": "rule 'bad': keywords must be strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_length": {
+    "error": {
+     "msg": "rule 'bad': length_bound needs ints 0 <= min <= max",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_norm_keyword_fold": {
+    "error": {
+     "msg": "rule 'bad': bad 'fold': 未知的折叠预设 'nope-preset'（可用：v1, pop-fold-v1）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_empty": {
+    "error": {
+     "msg": "rule 'bad': pattern_block needs non-empty 'patterns'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_mode": {
+    "error": {
+     "msg": "rule 'bad': match_mode must be 'pike' or 'naive', got 'cron'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_direction": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs 'direction' in {'le','ge'}, got 'eq'（le: 分数 <= 阈值；ge: 分数 >= 阈值）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_threshold": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs int 'threshold_bp' in [0,10000]（万分点刻度，与 ezkl 公开实例同刻度），got 20000",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_tool_fields": {
+    "error": {
+     "msg": "rule 'bad': tool_arg_guard needs non-empty 'forbidden_fields' strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_kind": {
+    "error": {
+     "msg": "rule 'banned_high_risk_topics': unknown kind ''",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_params": {
+    "error": {
+     "msg": "rule 'banned_high_risk_topics': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "empty_rules": {
+    "sha256": "be419bca08001e59e6b1be5a44f4e136afb38dd2df0e1198a6ae055933793ae4",
+    "stage": "ok"
+   },
+   "extra_top_level": {
+    "sha256": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55",
+    "stage": "ok"
+   },
+   "kind_is_list": {
+    "error": {
+     "msg": "rule 'banned_high_risk_topics': unknown kind '['kw']'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "missing_id": {
+    "error": {
+     "msg": "'id'",
+     "type": "KeyError"
+    },
+    "stage": "load"
+   },
+   "rules_not_a_list": {
+    "error": {
+     "msg": "'str' object has no attribute 'get'",
+     "type": "AttributeError"
+    },
+    "stage": "load"
+   },
+   "unknown_kind": {
+    "error": {
+     "msg": "rule 'banned_high_risk_topics': unknown kind 'nope_kind'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   }
+  },
+  "finance_redaction_v1.json": {
+   "bad_budget_negative": {
+    "error": {
+     "msg": "rule 'bad': budget_bound needs int budget >= 0",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_budget_unit": {
+    "error": {
+     "msg": "rule 'bad': budget_bound unit must be 'calls' or 'tokens'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_format": {
+    "error": {
+     "msg": "rule 'bad': format_check needs format in {json,int,float}, got 'yaml'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_empty": {
+    "error": {
+     "msg": "rule 'bad': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_type": {
+    "error": {
+     "msg": "rule 'bad': keywords must be strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_length": {
+    "error": {
+     "msg": "rule 'bad': length_bound needs ints 0 <= min <= max",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_norm_keyword_fold": {
+    "error": {
+     "msg": "rule 'bad': bad 'fold': 未知的折叠预设 'nope-preset'（可用：v1, pop-fold-v1）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_empty": {
+    "error": {
+     "msg": "rule 'bad': pattern_block needs non-empty 'patterns'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_mode": {
+    "error": {
+     "msg": "rule 'bad': match_mode must be 'pike' or 'naive', got 'cron'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_direction": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs 'direction' in {'le','ge'}, got 'eq'（le: 分数 <= 阈值；ge: 分数 >= 阈值）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_threshold": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs int 'threshold_bp' in [0,10000]（万分点刻度，与 ezkl 公开实例同刻度），got 20000",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_tool_fields": {
+    "error": {
+     "msg": "rule 'bad': tool_arg_guard needs non-empty 'forbidden_fields' strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_kind": {
+    "error": {
+     "msg": "rule 'no_high_leverage': unknown kind ''",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_params": {
+    "error": {
+     "msg": "rule 'no_high_leverage': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "empty_rules": {
+    "sha256": "268c63d24cc9b613fe20c03e66df9142b269472f648cb1b7858b424c243e4425",
+    "stage": "ok"
+   },
+   "extra_top_level": {
+    "sha256": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef",
+    "stage": "ok"
+   },
+   "kind_is_list": {
+    "error": {
+     "msg": "rule 'no_high_leverage': unknown kind '['kw']'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "missing_id": {
+    "error": {
+     "msg": "'id'",
+     "type": "KeyError"
+    },
+    "stage": "load"
+   },
+   "rules_not_a_list": {
+    "error": {
+     "msg": "'str' object has no attribute 'get'",
+     "type": "AttributeError"
+    },
+    "stage": "load"
+   },
+   "unknown_kind": {
+    "error": {
+     "msg": "rule 'no_high_leverage': unknown kind 'nope_kind'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   }
+  },
+  "multiparty_demo_v1.json": {
+   "bad_budget_negative": {
+    "error": {
+     "msg": "rule 'bad': budget_bound needs int budget >= 0",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_budget_unit": {
+    "error": {
+     "msg": "rule 'bad': budget_bound unit must be 'calls' or 'tokens'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_format": {
+    "error": {
+     "msg": "rule 'bad': format_check needs format in {json,int,float}, got 'yaml'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_empty": {
+    "error": {
+     "msg": "rule 'bad': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_type": {
+    "error": {
+     "msg": "rule 'bad': keywords must be strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_length": {
+    "error": {
+     "msg": "rule 'bad': length_bound needs ints 0 <= min <= max",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_norm_keyword_fold": {
+    "error": {
+     "msg": "rule 'bad': bad 'fold': 未知的折叠预设 'nope-preset'（可用：v1, pop-fold-v1）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_empty": {
+    "error": {
+     "msg": "rule 'bad': pattern_block needs non-empty 'patterns'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_mode": {
+    "error": {
+     "msg": "rule 'bad': match_mode must be 'pike' or 'naive', got 'cron'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_direction": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs 'direction' in {'le','ge'}, got 'eq'（le: 分数 <= 阈值；ge: 分数 >= 阈值）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_threshold": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs int 'threshold_bp' in [0,10000]（万分点刻度，与 ezkl 公开实例同刻度），got 20000",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_tool_fields": {
+    "error": {
+     "msg": "rule 'bad': tool_arg_guard needs non-empty 'forbidden_fields' strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_kind": {
+    "error": {
+     "msg": "rule 'no_bad_topics': unknown kind ''",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_params": {
+    "error": {
+     "msg": "rule 'no_bad_topics': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "empty_rules": {
+    "sha256": "e3dc788737c053170a867a2852768f9ae7d6d2bc5582bb6a08e9e40295067e52",
+    "stage": "ok"
+   },
+   "extra_top_level": {
+    "sha256": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7",
+    "stage": "ok"
+   },
+   "kind_is_list": {
+    "error": {
+     "msg": "rule 'no_bad_topics': unknown kind '['kw']'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "missing_id": {
+    "error": {
+     "msg": "'id'",
+     "type": "KeyError"
+    },
+    "stage": "load"
+   },
+   "rules_not_a_list": {
+    "error": {
+     "msg": "'str' object has no attribute 'get'",
+     "type": "AttributeError"
+    },
+    "stage": "load"
+   },
+   "unknown_kind": {
+    "error": {
+     "msg": "rule 'no_bad_topics': unknown kind 'nope_kind'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   }
+  },
+  "pii_redaction_v1.json": {
+   "bad_budget_negative": {
+    "error": {
+     "msg": "rule 'bad': budget_bound needs int budget >= 0",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_budget_unit": {
+    "error": {
+     "msg": "rule 'bad': budget_bound unit must be 'calls' or 'tokens'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_format": {
+    "error": {
+     "msg": "rule 'bad': format_check needs format in {json,int,float}, got 'yaml'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_empty": {
+    "error": {
+     "msg": "rule 'bad': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_type": {
+    "error": {
+     "msg": "rule 'bad': keywords must be strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_length": {
+    "error": {
+     "msg": "rule 'bad': length_bound needs ints 0 <= min <= max",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_norm_keyword_fold": {
+    "error": {
+     "msg": "rule 'bad': bad 'fold': 未知的折叠预设 'nope-preset'（可用：v1, pop-fold-v1）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_empty": {
+    "error": {
+     "msg": "rule 'bad': pattern_block needs non-empty 'patterns'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_mode": {
+    "error": {
+     "msg": "rule 'bad': match_mode must be 'pike' or 'naive', got 'cron'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_direction": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs 'direction' in {'le','ge'}, got 'eq'（le: 分数 <= 阈值；ge: 分数 >= 阈值）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_threshold": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs int 'threshold_bp' in [0,10000]（万分点刻度，与 ezkl 公开实例同刻度），got 20000",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_tool_fields": {
+    "error": {
+     "msg": "rule 'bad': tool_arg_guard needs non-empty 'forbidden_fields' strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_kind": {
+    "error": {
+     "msg": "rule 'no_email': unknown kind ''",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_params": {
+    "error": {
+     "msg": "rule 'no_email': pattern_block needs non-empty 'patterns'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "empty_rules": {
+    "sha256": "1385cf0f5c6f2cc446f53b0b3871777e87fa89a423c0eabcc231c7d16d7ce0b1",
+    "stage": "ok"
+   },
+   "extra_top_level": {
+    "sha256": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a",
+    "stage": "ok"
+   },
+   "kind_is_list": {
+    "error": {
+     "msg": "rule 'no_email': unknown kind '['kw']'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "missing_id": {
+    "error": {
+     "msg": "'id'",
+     "type": "KeyError"
+    },
+    "stage": "load"
+   },
+   "rules_not_a_list": {
+    "error": {
+     "msg": "'str' object has no attribute 'get'",
+     "type": "AttributeError"
+    },
+    "stage": "load"
+   },
+   "unknown_kind": {
+    "error": {
+     "msg": "rule 'no_email': unknown kind 'nope_kind'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   }
+  },
+  "semantic_demo_v1.json": {
+   "bad_budget_negative": {
+    "error": {
+     "msg": "rule 'bad': budget_bound needs int budget >= 0",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_budget_unit": {
+    "error": {
+     "msg": "rule 'bad': budget_bound unit must be 'calls' or 'tokens'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_format": {
+    "error": {
+     "msg": "rule 'bad': format_check needs format in {json,int,float}, got 'yaml'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_empty": {
+    "error": {
+     "msg": "rule 'bad': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_keyword_type": {
+    "error": {
+     "msg": "rule 'bad': keywords must be strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_length": {
+    "error": {
+     "msg": "rule 'bad': length_bound needs ints 0 <= min <= max",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_norm_keyword_fold": {
+    "error": {
+     "msg": "rule 'bad': bad 'fold': 未知的折叠预设 'nope-preset'（可用：v1, pop-fold-v1）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_empty": {
+    "error": {
+     "msg": "rule 'bad': pattern_block needs non-empty 'patterns'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_pattern_mode": {
+    "error": {
+     "msg": "rule 'bad': match_mode must be 'pike' or 'naive', got 'cron'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_direction": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs 'direction' in {'le','ge'}, got 'eq'（le: 分数 <= 阈值；ge: 分数 >= 阈值）",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_semantic_threshold": {
+    "error": {
+     "msg": "rule 'bad': semantic_bound needs int 'threshold_bp' in [0,10000]（万分点刻度，与 ezkl 公开实例同刻度），got 20000",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "bad_tool_fields": {
+    "error": {
+     "msg": "rule 'bad': tool_arg_guard needs non-empty 'forbidden_fields' strings",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_kind": {
+    "error": {
+     "msg": "rule 'no_bad_topics': unknown kind ''",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "drop_params": {
+    "error": {
+     "msg": "rule 'no_bad_topics': keyword_block needs non-empty 'keywords'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "empty_rules": {
+    "sha256": "d02ce6e4ab2dfd34b3221bca4013f09f2ebf4f54aa95f67e8b99b44862e1b69a",
+    "stage": "ok"
+   },
+   "extra_top_level": {
+    "sha256": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9",
+    "stage": "ok"
+   },
+   "kind_is_list": {
+    "error": {
+     "msg": "rule 'no_bad_topics': unknown kind '['kw']'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   },
+   "missing_id": {
+    "error": {
+     "msg": "'id'",
+     "type": "KeyError"
+    },
+    "stage": "load"
+   },
+   "rules_not_a_list": {
+    "error": {
+     "msg": "'str' object has no attribute 'get'",
+     "type": "AttributeError"
+    },
+    "stage": "load"
+   },
+   "unknown_kind": {
+    "error": {
+     "msg": "rule 'no_bad_topics': unknown kind 'nope_kind'",
+     "type": "PolicyError"
+    },
+    "stage": "validate"
+   }
+  }
+ },
+ "3b_cli_robustness": {
+  "bad_json": {
+   "exit": 1,
+   "stderr": {
+    "first": "invalid JSON in <TMP>/bad_json.json: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+    "last": "invalid JSON in <TMP>/bad_json.json: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+    "lines": 1
+   },
+   "stdout": ""
+  },
+  "empty_file": {
+   "exit": 1,
+   "stderr": {
+    "first": "invalid JSON in <TMP>/empty_file.json: Expecting value: line 1 column 1 (char 0)",
+    "last": "invalid JSON in <TMP>/empty_file.json: Expecting value: line 1 column 1 (char 0)",
+    "lines": 1
+   },
+   "stdout": ""
+  },
+  "missing_id": {
+   "exit": 1,
+   "stderr": {
+    "first": "Traceback (most recent call last):",
+    "last": "KeyError: 'id'",
+    "lines": 12
+   },
+   "stdout": ""
+  },
+  "rules_not_list": {
+   "exit": 1,
+   "stderr": {
+    "first": "Traceback (most recent call last):",
+    "last": "AttributeError: 'str' object has no attribute 'get'",
+    "lines": 14
+   },
+   "stdout": ""
+  },
+  "top_level_list": {
+   "exit": 1,
+   "stderr": {
+    "first": "Traceback (most recent call last):",
+    "last": "AttributeError: 'list' object has no attribute 'get'",
+    "lines": 12
+   },
+   "stdout": ""
+  },
+  "unknown_kind": {
+   "exit": 2,
+   "stderr": {
+    "first": "error: rule 'no_bad_topics': unknown kind 'nope'",
+    "last": "error: rule 'no_bad_topics': unknown kind 'nope'",
+    "lines": 1
+   },
+   "stdout": ""
+  }
+ },
+ "4_streaming": {
+  "agent_content_v1.json#stop=False": {
+   "certs": 2,
+   "sequence": [
+    {
+     "chars": 1,
+     "partial": true,
+     "passed": true,
+     "stop": null
+    },
+    {
+     "chars": 277,
+     "partial": true,
+     "passed": false,
+     "stop": null
+    }
+   ],
+   "step_chars": 1,
+   "text_len": 415
+  },
+  "agent_content_v1.json#stop=True": {
+   "certs": 3,
+   "sequence": [
+    {
+     "chars": 1,
+     "partial": true,
+     "passed": true,
+     "stop": null
+    },
+    {
+     "chars": 277,
+     "partial": true,
+     "passed": false,
+     "stop": null
+    },
+    {
+     "chars": 277,
+     "partial": false,
+     "passed": false,
+     "stop": "violation"
+    }
+   ],
+   "step_chars": 1,
+   "text_len": 415
+  },
+  "agent_tool_v1.json#stop=False": {
+   "certs": 1,
+   "sequence": [
+    {
+     "chars": 1,
+     "partial": true,
+     "passed": true,
+     "stop": null
+    }
+   ],
+   "step_chars": 1,
+   "text_len": 415
+  },
+  "pii_redaction_v1.json#stop=False": {
+   "certs": 2,
+   "sequence": [
+    {
+     "chars": 1,
+     "partial": true,
+     "passed": true,
+     "stop": null
+    },
+    {
+     "chars": 174,
+     "partial": true,
+     "passed": false,
+     "stop": null
+    }
+   ],
+   "step_chars": 1,
+   "text_len": 415
+  }
+ },
+ "5_cli": {
+  "agent_content_v1.json": {
+   "check": {
+    "exit": 0,
+    "stderr": "",
+    "stdout": "{\n  \"passed\": true,\n  \"violations\": [],\n  \"notes\": [],\n  \"delegated\": []\n}\n",
+    "stdout_len": 75,
+    "stdout_sha256": "f67d0dcfd8d4b87ab98e3e78d6c45d8b6d96fbccbd46225acf27f30430a67250"
+   },
+   "compile": {
+    "exit": 0,
+    "stderr": "",
+    "stdout_len": 13776,
+    "stdout_sha256": "486b451fed9c804c6ee5ce074f83be46dd716c4c29fe2bfaa5256a1222c620e4"
+   }
+  },
+  "agent_tool_v1.json": {
+   "check": {
+    "exit": 0,
+    "stderr": "",
+    "stdout": "{\n  \"passed\": true,\n  \"violations\": [],\n  \"notes\": [],\n  \"delegated\": []\n}\n",
+    "stdout_len": 75,
+    "stdout_sha256": "f67d0dcfd8d4b87ab98e3e78d6c45d8b6d96fbccbd46225acf27f30430a67250"
+   },
+   "compile": {
+    "exit": 0,
+    "stderr": "",
+    "stdout": "{\n  \"spec_version\": \"v1\",\n  \"policy_id\": \"agent-tool-v1\",\n  \"policy_version\": \"0.1.0\",\n  \"semantic\": \"and\",\n  \"constraints\": [\n    {\n      \"kind\": \"tool_arg_guard\",\n      \"name\": \"no_secret_args\",\n      \"forbidden_fields\": [\n        \"api_key\",\n        \"password\",\n        \"token\"\n      ]\n    },\n    {\n      \"kind\": \"budget_bound\",\n      \"name\": \"call_budget\",\n      \"budget\": 5,\n      \"unit\": \"calls\"\n    }\n  ],\n  \"sha256\": \"68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548\"\n}\n",
+    "stdout_len": 493,
+    "stdout_sha256": "3c3dae003322735aeb691716871dc2ce171d3244d189685c57861470100c1f82"
+   }
+  },
+  "eu_ai_act_v1.json": {
+   "check": {
+    "exit": 0,
+    "stderr": "",
+    "stdout": "{\n  \"passed\": true,\n  \"violations\": [],\n  \"notes\": [],\n  \"delegated\": []\n}\n",
+    "stdout_len": 75,
+    "stdout_sha256": "f67d0dcfd8d4b87ab98e3e78d6c45d8b6d96fbccbd46225acf27f30430a67250"
+   },
+   "compile": {
+    "exit": 0,
+    "stderr": "",
+    "stdout_len": 8088,
+    "stdout_sha256": "96368eee8ab8f10b7756fa6c33f06ce7c98b79dd247109e944cefeb7d742c0c4"
+   }
+  },
+  "finance_redaction_v1.json": {
+   "check": {
+    "exit": 0,
+    "stderr": "",
+    "stdout": "{\n  \"passed\": true,\n  \"violations\": [],\n  \"notes\": [],\n  \"delegated\": []\n}\n",
+    "stdout_len": 75,
+    "stdout_sha256": "f67d0dcfd8d4b87ab98e3e78d6c45d8b6d96fbccbd46225acf27f30430a67250"
+   },
+   "compile": {
+    "exit": 0,
+    "stderr": "",
+    "stdout_len": 42941,
+    "stdout_sha256": "74c227d9e626c14a937ef586dcba4da2c3afdde73f06b45987c01a9c8e56808b"
+   }
+  },
+  "multiparty_demo_v1.json": {
+   "check": {
+    "exit": 0,
+    "stderr": "",
+    "stdout": "{\n  \"passed\": true,\n  \"violations\": [],\n  \"notes\": [],\n  \"delegated\": []\n}\n",
+    "stdout_len": 75,
+    "stdout_sha256": "f67d0dcfd8d4b87ab98e3e78d6c45d8b6d96fbccbd46225acf27f30430a67250"
+   },
+   "compile": {
+    "exit": 0,
+    "stderr": "",
+    "stdout": "{\n  \"spec_version\": \"v1\",\n  \"policy_id\": \"multiparty-demo-v1\",\n  \"policy_version\": \"0.1.0\",\n  \"semantic\": \"and\",\n  \"constraints\": [\n    {\n      \"kind\": \"keyword_block\",\n      \"name\": \"no_bad_topics\",\n      \"keywords\": [\n        \"doxxing\",\n        \"exploit\",\n        \"weaponize\"\n      ]\n    },\n    {\n      \"kind\": \"length_bound\",\n      \"name\": \"bounded_reply\",\n      \"min\": 1,\n      \"max\": 2000\n    },\n    {\n      \"kind\": \"tool_arg_guard\",\n      \"name\": \"no_secret_args\",\n      \"forbidden_fields\": [\n        \"api_key\",\n        \"password\",\n        \"token\"\n      ]\n    },\n    {\n      \"kind\": \"budget_bound\",\n      \"name\": \"call_budget\",\n      \"budget\": 5,\n      \"unit\": \"calls\"\n    }\n  ],\n  \"sha256\": \"fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7\"\n}\n",
+    "stdout_len": 767,
+    "stdout_sha256": "94542af69868963c1e9e92d487855111f8a16128b46d4572b5a30cab5f650ea5"
+   }
+  },
+  "pii_redaction_v1.json": {
+   "check": {
+    "exit": 0,
+    "stderr": "",
+    "stdout": "{\n  \"passed\": true,\n  \"violations\": [],\n  \"notes\": [],\n  \"delegated\": []\n}\n",
+    "stdout_len": 75,
+    "stdout_sha256": "f67d0dcfd8d4b87ab98e3e78d6c45d8b6d96fbccbd46225acf27f30430a67250"
+   },
+   "compile": {
+    "exit": 0,
+    "stderr": "",
+    "stdout_len": 50771,
+    "stdout_sha256": "c0ca651845e05cb3a4a2266cf620e4e9193ac7a905cd6ac0f8310fbde154a913"
+   }
+  },
+  "semantic_demo_v1.json": {
+   "check": {
+    "exit": 0,
+    "stderr": "",
+    "stdout": "{\n  \"passed\": true,\n  \"violations\": [],\n  \"notes\": [],\n  \"delegated\": [\n    {\n      \"name\": \"low_harm_probability\",\n      \"system\": \"ezkl-halo2\",\n      \"model_vkey\": \"c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e\",\n      \"onnx_sha256\": \"5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01\",\n      \"threshold_bp\": 5000,\n      \"direction\": \"le\"\n    }\n  ]\n}\n",
+    "stdout_len": 387,
+    "stdout_sha256": "179386ce3e6aa75bce360fe4c5431dba171e8120fcc758a58939715ddad6785c"
+   },
+   "compile": {
+    "exit": 0,
+    "stderr": "",
+    "stdout": "{\n  \"spec_version\": \"v1\",\n  \"policy_id\": \"semantic-demo-v1\",\n  \"policy_version\": \"0.1.0\",\n  \"semantic\": \"and\",\n  \"constraints\": [\n    {\n      \"kind\": \"keyword_block\",\n      \"name\": \"no_bad_topics\",\n      \"keywords\": [\n        \"doxxing\",\n        \"exploit\",\n        \"weaponize\"\n      ]\n    },\n    {\n      \"kind\": \"length_bound\",\n      \"name\": \"bounded_reply\",\n      \"min\": 1,\n      \"max\": 64\n    },\n    {\n      \"kind\": \"semantic_bound\",\n      \"name\": \"low_harm_probability\",\n      \"model_vkey\": \"c5b0829e1378c60d0824433cb94501259dfc07ebe1165894d68ca2c23855150e\",\n      \"onnx_sha256\": \"5931f59c6d2fedfb1fa3d1e5d5bcc4bda59ea6c503e7a048bb173420c2834f01\",\n      \"threshold_bp\": 5000,\n      \"direction\": \"le\"\n    }\n  ],\n  \"sha256\": \"4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9\"\n}\n",
+    "stdout_len": 794,
+    "stdout_sha256": "4f519ee850d636f5acc6fa7723c0ab3f8558a482803cd2db50480e1b7bea87ef"
+   }
+  }
+ },
+ "6_import_surface": {
+  "all": [
+   "CheckResult",
+   "DelegatedConstraint",
+   "Policy",
+   "PolicyError",
+   "Rule",
+   "SPEC_VERSION",
+   "ToolGateway",
+   "ToolReceipt",
+   "ToolSeal",
+   "Transcript",
+   "Violation",
+   "check",
+   "compile_policy",
+   "require_covering_length_bound",
+   "verify_chain",
+   "verify_seal"
+  ],
+  "duplicates": [],
+  "unresolvable": []
+ }
+}
