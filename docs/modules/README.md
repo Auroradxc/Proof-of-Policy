@@ -90,7 +90,7 @@ zk-policy/
 │   ├── ops/                      #   常驻服务与安装（proof_service / install_* / retry_install_* / make_audit_proof）
 │   └── examples/                 #   输入样本与 demo 产物（不是脚本，故意不分组）
 ├── bench/                        # 评测（周期数矩阵 / 证明成本 / 验证成本 / ezkl / 组合 / 对标）
-├── tests/                        # 单测与集成测试（675 passed / 15 skip）
+├── tests/                        # 单测与集成测试（782 passed / 15 skip）
 ├── policy_packs/                 # 示例策略包（EU AI Act / PII / 金融 / agent 内容与工具）
 └── docs/                         # 文档（本目录为分板块模块文档）
 ```
@@ -157,7 +157,7 @@ zk-policy/
 | 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/`：`types` `program` `infer-program` `session-program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证；**三个 guest 的键分离**（P1-6 / P2-10）（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
 | 06 | [框架集成](06-frameworks.md) | `adapters/`：`langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` `generic_adapter.py` `llm.py` | 把两个钩子接到真实 agent 框架上（含流式、真早停、飞行前拦截与工具清单发现）；**§8 接入指南**：框架无关的参考适配器 + 契约清单 + 接新框架的步骤与红线 |
 | 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/`（5 组：`demo/` `prove/` `verify/` `anchor/` `ops/`，外加引导 `_bootstrap.py`；含散落在其中的库用法：`proofs/multiparty.py` §2.9） | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
-| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 675 个测试覆盖什么、评测数字怎么来的 |
+| 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 782 个测试覆盖什么、评测数字怎么来的 |
 
 三条**不在本目录**但同样属于实现层的线（各自有独立文档，故未拆成板块）：
 
@@ -197,7 +197,7 @@ zk-policy/
 
 ```bash
 # 只跑参考层（秒级，无需 Rust）
-python3 -m unittest discover tests -v            # 675 passed / 15 skip
+python3 -m unittest discover tests -v            # 782 passed / 15 skip
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json
 python3 -m policydsl check scripts/examples/eu_agent_reply.txt --policy policy_packs/eu_ai_act_v1.json
 
