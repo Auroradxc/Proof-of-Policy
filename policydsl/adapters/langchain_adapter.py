@@ -173,8 +173,18 @@ class PoPCallbackHandler(BaseCallbackHandler):
     因此采样点固定为 ``step, 2*step, 3*step, …``（累计前缀的**字符**长度），
     与这一句话被切成几片无关：同一文本 + 同一 ``step`` ⇒ 同一串部分证书。
 
-    代价是每个采样点都要对**完整前缀**跑一次参考评估器（实测 ~0.07 ms/字符，
-    10k 字符的响应约 0.7 s）。``stream_check=False`` 关掉整条流式路径。
+    代价是**二次的（``Θ(L²)``）**：每个采样点都要对**完整前缀**跑一次参考评估器，
+    而前缀长度随采样点线性增长 —— 实测 L 长 4 倍、每字符成本也长 ~3.1–3.7 倍，
+    且**包间差 44×**（同为 2000 字符）。数字、复跑命令与读法见
+    ``bench/results/streaming.md``（``python3 bench/bench_streaming.py``）。
+    别把某个 L 上的「每字符」当常数外推：这里曾写过「~0.07 ms/字符，10k 字符
+    约 0.7 s」，那 0.07 是 L≈200 的瞬时值，10k 字符实为 ~18 s。
+    ``stream_check=False`` 关掉整条流式路径。
+
+    ⚠️ 含 ``semantic_bound`` 的策略**流不了**：``canonical_violations`` 只覆盖
+    7 类入电路规则，遇到委托给 ezkl 的那一类直接 ``raise NotImplementedError``，
+    而本处不接这个异常 —— 第一个字符就崩。证明服务对这类策略是**当面拒**（400），
+    这条路径还没有对应的干净拒绝。
 
     ⚠️ ``streaming.tokens`` 是**回调次数**，仍然 provider 相关，只作诊断用；
     要跨 provider 比较，用 ``streaming.chars``（累计前缀的字符数）。

@@ -1377,7 +1377,55 @@ CI 的裸 Python 上跑。
 > `KeyError` 而不是 `PolicyError`）本身就是判据的一部分，只钉「有没有报错」
 > 会漏掉它。
 
-#### 5.7.5 一条元结论（值得单独记住）
+##### 建流式代价基准时又撞到的第三条（**同样是记事实，不改**）
+
+✅ **含 `semantic_bound` 的策略在流式路径上直接崩**：`policydsl/privacy/commit.py:180`
+的 `canonical_violations` 只覆盖 7 类入电路规则，遇到委托给 ezkl 的那一类
+`raise NotImplementedError(f"kind '{kind}' not provable in-circuit yet")`；而
+`PoPCallbackHandler.on_llm_new_token` **不接这个异常** —— 于是
+`policy_packs/semantic_demo_v1.json` 喂**第一个字符**就抛 `NotImplementedError`。
+
+它与上面两条不同：这是**运行期崩溃**，不是诊断体验问题。但仍然只记不改，因为
+「该怎么改」有好几种都说得通（构造 handler 时就拒 / 按服务那样 clean 400 /
+支持它），选哪个都是**替使用者做决定**：
+
+- 证明服务对这类策略是**当面拒**的（400 + `GET /v1/policies` 标 `serviceable: false`，
+  见 `runbook-proof-service.md` §2），所以「干净拒绝」这条口径**已经存在**，
+  只是没接到流式路径上；
+- 现存文档（`architecture.md:79`、`security-model.md:449`、`design-semantic-rules.md:194`）
+  说的都是「**不由本电路判定**」，没有一处说过**流式**时的行为。
+
+`bench/bench_streaming.py` 把这条边界**当断言跑**（`probe_unsupported`）：
+哪天它不再抛了，基准会当场失败并提示把它挪进成本表 —— 边界要响，不能只是注释。
+`langchain_adapter.py` 的 docstring 也补了 ⚠️ 一行。**修它留到 R9(b) 之后单独定**。
+
+#### 5.7.5 P0 执行记录（逐项）
+
+按 §5.7.3 的纪律：一项一提交、验收过了才推。**真出证见文末整段大验收**。
+
+| 项 | 提交 | 内容与验收 |
+|---|---|---|
+| 阶段 0 | `b07c646` | 验收基线（七面）+ 采集/比对工具（见 §5.7.4）|
+| **R18** | `f287c95` | `bench_ablation` 的 `parse_ints` 私有副本把 `replace(",", " ")` 写成 `replace(";", " ")` —— 于是**它自己 docstring 举的例子跑不过**。改法不是「把 `;` 换回 `,`」而是**让两份变一份**（从 `bench_cycles` import）。变异探针确认非空洞：抄回一份副本 ⇒ `test_single_definition` 当场红。判定：**收益够**（脚本可用 + 漂移被结构性钉死），保留 |
+| **R17b** | 见下 | 流式代价的说明从「~0.07 ms/字符」改成 `Θ(L²)` 事实。**这一项超出原计划地多花了一个脚本**：原计划只说「两处 docstring 改字」，但 R17b 的验收是「数字**指得回一份结果文件**」，而那个文件不存在（`refactor-proposal.md` §2.2.3 自己承认「本文还没有对应的 `bench/results/` 文件」）。于是先建 `bench/bench_streaming.py` + `bench/results/streaming.{json,md}`，再改文档。**这笔开销不是新增范围**：P2 的 R9(b) 判据要的「agent_tool 在 2000 字符上改善 ≥2×（基线 115.8 ms）」本来就需要同一个 harness，先建它才能让前后对比是**同一把尺子** |
+| R17a | — | **不做**（用户已定）：不给缺 `length_bound` 的包补上界。事实已在 `bench_streaming.md` 里量化：`agent_tool_v1` 与 `pii_redaction_v1` **没有上界 ⇒ 代价没有天花板**，而后者是 6 个可流式包里最贵的 |
+
+**R17b 的取证过程本身产出了两条结论**（都进了 `bench/results/streaming.md`）：
+
+1. **采样上限必须逐包判，不能全表取最小。** 首版默认 `--ns 500,1000,2000` 跑出来
+   被守卫拦下：`finance_redaction_v1` 的上界是 **1500**，`"z"*2000` 在越过 1500 时
+   判定翻转、**多签一张证书**，签发成本混进了被测路径。这不是「跑挂了」，是
+   **被测的东西变了** —— 守卫报出来而不是让它混进比值。中间试过「全表压到 1500」，
+   又不行：那样 `agent_tool_v1` 的 2000 点也测不成，而**那正是 R9(b) 判据要用的
+   基线点**。最终改成越界的 (包, L) **单点不测**、如实记进 `streaming.json` 的
+   `skipped`，表里标「越界」。（判据是 `lo <= n <= hi`，所以恰好等于上界仍合规。）
+2. **它同时把 P2 的 R9(b) 判据基线钉成了权威值。** 同一次运行量到
+   `agent_tool_v1` 在 **2000 字符**上 **111.8 ms**（提案记 115.8 ms、`refactor-proposal.md`
+   记 116 ms —— 三者在机器噪声内一致）。R9(b) 的门槛「改善 ≥2×」从此比的是
+   **同一个脚本的前后两次运行**，而不是两次手搓的临时测量。6 个包 × 3 长度全跑
+   只 **8.8 s**，复跑成本可以忽略 —— 「数字指得回文件」这件事在这里是便宜的。
+
+#### 5.7.6 一条元结论（值得单独记住）
 
 普查里**已经漂移的三处**（`KIND_MAP` 3 vs 7 项、策略加载器 3 种行为、
 `parse_ints` `;` vs `,`）里，**前两处今天不出错，只是因为 7 个策略包恰好都写全了

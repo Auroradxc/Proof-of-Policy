@@ -130,9 +130,37 @@ self._sstopped[run_id]  # 是否已早停
 > 新口径下三种切法**逐条相同**（用例
 > `tests/test_frameworks.py::TestStreamingGranularity`）。
 
-**代价是明确的、有界的**：每个采样点要对**完整前缀**跑一次参考评估器（实测 ~0.07 ms/字符，
-10k 字符的响应约 0.7 s）；把 `stream_step_chars` 调粗只会把检测推迟到「违规成立之后的
-第一个网格点」，**最多晚 `step - 1` 个字符**，仍然与 provider 无关。
+**代价是二次的（`Θ(L²)`），不是「有界」的**：每个采样点都要对**完整前缀**跑一次参考
+评估器，而前缀长度随采样点线性增长 ⇒ 总代价二次。实测（逐字符喂、`stream_step_chars=1`，
+本机 2026-09-17）：
+
+| L | `agent_tool` | `multiparty_demo` | `agent_content` | `finance_redaction` | `eu_ai_act` | `pii_redaction` |
+|---:|---:|---:|---:|---:|---:|---:|
+| 500 | 9 ms | 9 ms | 54 ms | 101 ms | 163 ms | 349 ms |
+| 1000 | 32 ms | 37 ms | 186 ms | 376 ms | 624 ms | 1,344 ms |
+| 2000 | 110 ms | 131 ms | 699 ms | **越界，不测** | 2,421 ms | 4,911 ms |
+
+数字与复跑命令在 **[`bench/results/streaming.md`](../../bench/results/streaming.md)**
+（`python3 bench/bench_streaming.py`，~12 s）。读法看那张表的两栏倍率：**L 长 4 倍，
+每字符成本也跟着长 ~3.1–3.7 倍**（拟合常数 `c = 总耗时/(L(L+1)/2)` 在各 L 上稳定在
+同一个值上，说明 `总耗时 ≈ c·L²/2` 站得住）。若总代价是线性的，每字符成本应当是
+**常数** —— 它随 L 同步上升，这就是 `Θ(L²)`。
+
+⚠️ **不要把某个 L 上的「每字符」当常数外推**。本文件早先写过「~0.07 ms/字符，
+10k 字符的响应约 0.7 s」：那 0.07 是 `L≈200` 处的**瞬时值**；以 `agent_content`
+的 `c=0.35 µs/字符²` 外推，10k 字符实为 **~18 s**（低估 25×）。同理，**包间差 44×**
+也是真的 —— 同为 2000 字符，`pii_redaction_v1` 是 `agent_tool_v1` 的 44 倍，因为每个
+采样点要跑**全部** pattern 的 NFA。所以「流式要多久」**没有单一答案，必须连着策略包说**。
+
+> `finance_redaction_v1` 在 2000 上标「越界」：它的 `length_bound.max=1500`，前缀越过
+> 上界会翻转判定、**多签一张证书**，把签发成本混进被测路径。`bench_streaming.py`
+> 逐个包判上界、越界的点单点不测并记进结果文件 —— 不让它停在「恰好没越过」。
+> 另外：`agent_tool_v1` 与 `pii_redaction_v1` **没有 `length_bound`**，它们的代价
+> **没有天花板**，而后者正是表里最贵的（见 [`dev-plan.md` §5.7.1](../dev-plan.md) R17a）。
+
+把 `stream_step_chars` 调粗只会把检测推迟到「违规成立之后的第一个网格点」，
+**最多晚 `step - 1` 个字符**，仍然与 provider 无关；它顺便把采样点数（因而总代价）
+按 `1/step` 摊薄，但摊薄的是常数，**二次性不变**。
 
 载荷里的两个数字口径不同，别用错：`streaming.chars` 是**判到第几个字符**（跨 provider 可比，
 私有模式下响应只剩承诺时它是唯一说明「判到哪了」的字段）；`streaming.tokens` 是**回调次数**
