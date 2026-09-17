@@ -265,17 +265,17 @@ def check(policy: Policy, target: Target) -> CheckResult:
             # 指纹在这里解析（与 compile 同一口径）：参考层不信任策略里写的值，
             # 只把它当作「作者声明的目标」，实际比对交给 verify_cert。
             #
-            # 正因为**这里不是校验点**，取指纹可以走 sem 的进程内缓存：校验点
-            # （sem.model_manifest / verifier）那边一律现算，见 semantic 里那段
+            # 正因为**这里不是校验点**，取指纹可以走 model_fp 的进程内缓存：校验点
+            # （model_fp.model_manifest / verifier）那边一律现算，见该模块里那段
             # 「只给热路径用」的说明。缓存键带 mtime+size，进程内换模型仍会察觉。
             from policydsl.core.compile import _model_vkey
-            from policydsl.proofs import semantic as sem
+            from policydsl.core import model_fp
 
             delegated.append(DelegatedConstraint(
                 name=rule.name,
                 system="ezkl-halo2",
                 model_vkey=rule.params.get("model_vkey") or _model_vkey(),
-                onnx_sha256=rule.params.get("onnx_sha256") or sem.cached_onnx_sha256(),
+                onnx_sha256=rule.params.get("onnx_sha256") or model_fp.cached_onnx_sha256(),
                 threshold_bp=thr,
                 direction=rule.params["direction"],
             ))

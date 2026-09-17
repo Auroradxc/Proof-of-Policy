@@ -156,7 +156,7 @@ def _validate_semantic_bound(rule: "Rule") -> None:
 
     指纹**可选**是刻意的：多数策略作者只想说「有害概率不得超过 5%」，
     而不想手抄一串 sha256。缺省时由 compile 从仓库里的模型现场解析
-    （`policydsl.proofs.model_manifest`）并**固化进约束** —— 一旦固化，
+    （`policydsl.core.model_fp.model_manifest`）并**固化进约束** —— 一旦固化，
     模型再变就会导致 policy_hash 变、证明对不上。显式给出时则要求它与
     实际模型一致，否则编译期直接失败（「用另一个模型去证」必须报错）。
     """

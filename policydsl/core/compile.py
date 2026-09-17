@@ -89,9 +89,9 @@ def _semantic_constraint(rule: "Rule") -> Dict[str, Any]:
       策略包本身不自足（换机器要先有同一份模型才能重编译），这一点如实记在
       ``docs/design-semantic-rules.md``。
     """
-    from policydsl.proofs import semantic as sem
+    from policydsl.core import model_fp
 
-    manifest = sem.model_manifest()
+    manifest = model_fp.model_manifest()
     for key, actual in (("onnx_sha256", manifest["onnx_sha256"]),
                         ("model_vkey", _model_vkey())):
         want = rule.params.get(key)
@@ -116,16 +116,16 @@ def _model_vkey() -> str:
     少了它，约束只能承诺「模型是这一张」，承诺不了「证明是由这个电路出的」——
     而恰好是后者把整张图（含特征投影表）唯一确定了。
     """
-    from policydsl.proofs import semantic as sem
+    from policydsl.core import model_fp
 
-    p = sem.vk_path()
+    p = model_fp.vk_path()
     if not p.exists():
         raise PolicyError(
             f"缺少 {p} —— 语义规则需要 ezkl 的验证钥匙指纹。"
             f"先跑 `python3 scripts/prove/ezkl_prove.py setup` 生成它")
-    # 走 sem 的缓存入口：本函数被 evaluate.check 逐请求调用（热路径），而指纹
+    # 走 model_fp 的缓存入口：本函数被 evaluate.check 逐请求调用（热路径），而指纹
     # 在那里不参与校验，只是填 DelegatedConstraint 的字段。报错类型与文案不变。
-    return sem.cached_file_sha256(p)
+    return model_fp.cached_file_sha256(p)
 
 
 def require_covering_length_bound(policy: Policy) -> None:
@@ -142,11 +142,11 @@ def require_covering_length_bound(policy: Policy) -> None:
     缺了它，语义规则在**任何**超长响应上都判不了（encode 会报错），策略实际上
     是残缺的 —— 与其等到出证时才炸，不如编译期就说清楚。
     """
-    from policydsl.proofs import semantic as sem
+    from policydsl.core import model_fp
 
     if not any(r.kind == "semantic_bound" for r in policy.rules):
         return
-    width = sem.input_width()
+    width = model_fp.input_width()
     lens = [r for r in policy.rules if r.kind == "length_bound"]
     if not lens:
         raise PolicyError(

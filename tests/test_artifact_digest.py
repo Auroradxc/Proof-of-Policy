@@ -53,7 +53,11 @@ DECLARED_HELPER_EXCEPTIONS = {
     # **纯缓存壳**：签名里的 mtime_ns/size 是缓存键、不参与计算，函数体只剩
     # 一句 `return sha256_file(path)`。留着它是因为「按 mtime+size 缓存」这个
     # 契约与摘要口径是两件事，而后者已经收走了。
-    "policydsl/proofs/semantic.py": ["_sha256_of_file"],
+    #
+    # 它原先申报在 `policydsl/proofs/semantic.py` 名下；R14 把模型指纹那组函数
+    # 整体下沉到 `core/model_fp.py`（消掉 `core → proofs` 倒置），这层缓存壳跟着
+    # 搬了家 —— 名字与行为都没动，只是换了文件，所以这里跟着改路径。
+    "policydsl/core/model_fp.py": ["_sha256_of_file"],
     # **独立参照**，故意不复用生产实现：它验的是 `driver_fingerprint()` 的输出，
     # 用同一份实现去算就成了自己证明自己（本仓对「两处独立算」的用法见
     # test_session.py 与 Rust `pop-types::evaluate` 的对拍）。
@@ -188,18 +192,27 @@ class TestEveryCallerResolvesToOneImplementation(unittest.TestCase):
                               f"{dotted}.{attr} 不是唯一出处那个函数")
 
     def test_the_kept_cache_wrapper_delegates_and_still_caches(self):
-        """`semantic._sha256_of_file` 留下的理由是「缓存」，那就得真的还在缓存，
-        且算出来的值与唯一出处一致。"""
+        """`model_fp._sha256_of_file` 留下的理由是「缓存」，那就得真的还在缓存，
+        且算出来的值与唯一出处一致。
+
+        R14 之后它在 `core/model_fp.py`（原 `proofs/semantic.py`），下面顺带
+        钉住「re-import 之后仍是同一个对象」—— 这正是那次下沉声称的性质。
+        用**公开**名字来钉：`_sha256_of_file` 是私有的，`semantic` 侧不该再
+        re-export 一个自己用不上的私有壳。
+        """
+        from policydsl.core import model_fp
         from policydsl.proofs import semantic
+        self.assertIs(semantic.model_manifest, model_fp.model_manifest,
+                      "semantic 侧应当 re-import 同一个函数对象，不是复制品")
         with tempfile.TemporaryDirectory() as tmp:
             p = Path(tmp) / "model.bin"
             p.write_bytes(b"x" * 4096)
             st = p.stat()
-            self.assertEqual(semantic._sha256_of_file(str(p), st.st_mtime_ns, st.st_size),
+            self.assertEqual(model_fp._sha256_of_file(str(p), st.st_mtime_ns, st.st_size),
                              cert.sha256_file(p))
-            before = semantic._sha256_of_file.cache_info().hits
-            semantic._sha256_of_file(str(p), st.st_mtime_ns, st.st_size)
-            self.assertEqual(semantic._sha256_of_file.cache_info().hits, before + 1,
+            before = model_fp._sha256_of_file.cache_info().hits
+            model_fp._sha256_of_file(str(p), st.st_mtime_ns, st.st_size)
+            self.assertEqual(model_fp._sha256_of_file.cache_info().hits, before + 1,
                              "同一个 (路径, mtime, size) 第二次没有命中缓存")
 
 
