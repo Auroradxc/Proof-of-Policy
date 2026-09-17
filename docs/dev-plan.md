@@ -979,7 +979,7 @@ docs/
 | 3 | 文档结构与索引：`docs/README.md` + 根 README 目录结构订正 | 交叉链接逐条可点开 | ✅ 2026-09-17，214 条相对链接**悬空 0**（见 §5.6.9） |
 | 4 | demo 文档 `docs/demo/README.md` | 对照 `demo_all.sh` 的 8 条支路逐条核对 | ✅ 2026-09-17，机械比对 **8/8 一致**（见 §5.6.9） |
 | 5 | `modules/01–08` 各补「怎么用 / 怎么改」两节 | 08 的测试计数与实际一致 | ✅ 2026-09-17，**30 个模块 / 675 passed / 15 skipped** 逐字对上（见 §5.6.9） |
-| 6 | 总手册 `docs/development.md` | 手册里的每条命令**实际敲一遍** | |
+| 6 | 总手册 `docs/development.md` | 手册里的每条命令**实际敲一遍** | ✅ 2026-09-17，15 条命令全部实跑；含一次真出证（2:07 / 10.85 GiB），见 §5.6.10 |
 | 7 | 收尾：测试计数、交叉链接、推送 | **675 passed / 15 skipped** + 工作树干净 + origin 同步 | |
 
 #### 5.6.7 第 1 步实测：两条被绿测试掩盖的隐藏依赖
@@ -1107,6 +1107,64 @@ verify       第三方独立验证     PASS   0.1 s    scripts/verify/verify_ses
   （`demo/README.md`、`development.md`）。闸门是「逐条可点开」，所以先删掉，
   第 4 步补回 demo 那条，`development.md` 那条留给第 6 步 —— **不为了让索引好看而
   先写一条点不开的链接**。
+
+#### 5.6.10 第 6 步实测：手册的闸门是「每条命令敲一遍」（2026-09-17）
+
+第 6 步产出 [`docs/development.md`](development.md)（开发与使用手册）。它的闸门与前三步
+都不同：不是「链接能点开」，也不是「数对得上」，而是**手册里的每条命令实际敲一遍** ——
+因为手册的价值全在「照着敲能work」，而**一条没跑过的命令与一条跑不通的命令，
+在纸面上长得一模一样**。
+
+所以这一节就是那张实测表（全部 2026-09-17 本机）：
+
+| 手册里的命令 | 实测 | 数对上了吗 |
+|---|---:|---|
+| `python3 -m unittest discover tests` | 33.4 s（第二次 35.7 s） | `Ran 675 tests … OK (skipped=15)` ✅ |
+| `bash scripts/demo/demo_all.sh --list` | 秒 | 8 条支路 ✅ |
+| `bash scripts/demo/demo_all.sh` | **13.18 s** | 8 条支路全 PASS、`汇总：没有 FAIL` ✅ |
+| `python3 scripts/demo/demo_e2e.py --no-prove` | **1.16 s** | 末尾 `llm model : fake (offline)` ✅ |
+| `verify_session.py --session …/policy/session.json` | **0.081 s** | 10 项全 PASS ✅ |
+| `proof_service.py --host-check` + `/v1/health` + `/v1/check` + `/v1/attest` | 秒 | `status: ok` → `202` → `done` ✅ |
+| `issue_cert.py`（**真出证**） | **2:06.69**，峰值 RSS **10.85 GiB** | 无 OOM ✅ |
+| `verify_cert.py --proof … --response …` | 20.8 s | **13 项全 PASS** ✅ |
+| `python3 -m policydsl compile` / `check` | 0.011 / 0.043 s | `sha256` == 证书里的 `policy_hash` ✅ |
+| `bash scripts/anchor/anchor_e2e.sh` | **6.94 s** | `ALL PASS`，退出后 anvil 已关 ✅ |
+| `cargo build --release -p pop-script`（无改动） | 8.9 s | ✅ |
+| `cd circuits/program && cargo prove build`（无改动） | 0.37 s | ✅ |
+| `cross_validate.py --no-prove` | **0.048 s** | `host 19/19 … PASS` ✅ |
+| `bench_compose.py --render-only` | 0.043 s | 幂等（重渲染后工作树无 diff）✅ |
+
+**唯一的重活是真出证那一条**（也是唯一能把本机内存吃到边缘的一条）：它同时当作
+「§3.7 这段手册写对了吗」的验证与「`cert_public/` 那份工件还能用吗」的修复 ——
+**它不能用了**：盘上那份是 2026-09-11 出的，而 guest ELF 在其后变过，于是
+`pop-script --verify` 报 `pc_start != vk.pc_start`。**旧的证明工件与旧的测试 fixture
+会在某次 ELF 变更之后集体失效，而且失效得很晚**（在你正好要演示的那一刻）。
+这一条已写进手册 §8 的排查表。
+
+**闸门逼出来的四件事**（都不是我事先想到要写的）：
+
+1. **`python3 -m policydsl` 只在仓库根能用。** 换个目录就是 `No module named policydsl`
+   （没装机、也无意装机）。这**正好与 `scripts/` 相反** —— 脚本按标记搜仓库根，
+   在哪儿敲都一样。两条都写进手册，并给了 `PYTHONPATH=<repo>` 的解法。
+   一个「有的能在任何地方跑、有的只在一个地方能跑」的仓库，不写清楚就是坑。
+2. **`cross_validate.py --help` 会直接开跑 19 条真证明。** 它用裸 `sys.argv` 解析，
+   `--help` 被当普通参数忽略 —— 我核旗标时真踩了，靠 `head` 关管道（SIGPIPE）
+   才在真证明起来之前掐掉。手册里写成一条⚠️，并给了同类脚本的排查法（先 `grep add_argument`）。
+3. **退出码不告诉你「策略满足没满足」。** `ok_all = all(r[1] for r in results)` 收的是
+   逐项核验（签名 / 绑定 / 证明 / 语义规则逐条），**唯独不含 `outcome.passed`** ——
+   那个值只出现在 `合规:` 那一行（且该行仅在策略含语义规则时才打印）。实测：
+   `demo_all.sh` 那份会话 13 张证书里 **6 张 `passed=false`**，`verify_session.py`
+   照样 `RESULT: PASS`、退出码 `0`。**一张如实记录违规的证书是真的证书。**
+   （这一条我第一版写反了 —— 写成「退出码不看合规那一行」，读代码核对后才发现
+   真正的口径：语义规则**是**进 `ok_all` 的，不进的是 `outcome.passed`。
+   差之毫厘，但按第一版写会让读者以为「读到 0 就等于合规」。）
+4. **「绿」在这个项目里有三种含义**：真核过了、如实说「这一项这次核不了」（如
+   `trace_seal` 未附时的 PASS）、以及**没跑**（skip / `--no-prove`）。手册把这条单列。
+
+**顺带修掉的三处陈旧计时**（都是「差得不多」因而从没人回头改的那种）：
+`demo_all.sh` 头注释的「约半分钟」、`07` §1/§3 的「约 20 秒」→ 实测 **13 秒**；
+`anchor_e2e.sh` 头注释与 `07` §1 的「~10 s」→ 实测 **7 秒**；
+另修 `cross_validate.py:98` 的 docstring（`缺省 scripts/` → 实际早已是 `scripts/.work/`）。
 
 #### 5.6.5 爆炸半径（实测普查，2026-09-17）
 

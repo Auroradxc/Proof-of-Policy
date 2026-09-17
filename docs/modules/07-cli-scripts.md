@@ -11,7 +11,7 @@
 
 | 脚本 | 一句话 | 需要 Rust 二进制？ | 需要 SP1 证明？ | 典型耗时 |
 |---|---|---|---|---|
-| **`demo_all.sh`** | **总入口**：把下面各条支路依次跑一遍 + 汇总成 `REPORT.md` | 视支路 | 视支路（`--prove`） | fast 约 20 秒 / `--prove` 约 26–27 分钟（本机实测） |
+| **`demo_all.sh`** | **总入口**：把下面各条支路依次跑一遍 + 汇总成 `REPORT.md` | 视支路 | 视支路（`--prove`） | fast 约 13 秒 / `--prove` 约 26–27 分钟（本机实测） |
 | `policydsl/__main__.py` | 编译策略 / 参考判定 | 否 | 否 | 毫秒 |
 | `prove_policy.py` | 单条响应 → 真实证明 + golden 比对 | `pop-script` | 是（可 `--no-prove`） | ~70 s |
 | `cross_validate.py` | 19 条向量 × (host + prove) 与 golden 对拍 | `pop-script` | 是（可 `--no-prove`） | host 秒级；prove 约 2 分钟/条（默认分 4 块，每块峰值 ~10 GB） |
@@ -29,7 +29,7 @@
 | `prove_multiparty.py` | **多证明者**（P2-11）：三个角色各证一段策略切片 → 证书 + 两条验收判据的现场造假演示 | `pop-script` | 是（可 `--no-prove`） | 出证 ~2 分钟 × 非空切片数（示例包 2 段） |
 | `deploy_anchor.py` | 部署 `Anchor.sol`（字节码来自入库 artifact） | 否 | 否 | 秒级 |
 | `make_shots.py` | 从会话产物生成截图/HTML/SVG | 否 | 否 | 秒级 |
-| `anchor_e2e.sh` | 起 anvil → 部署 → demo → `--rpc` 核对 + 反例 | 可选 | 可 `--prove` | ~10 s / **3:10**（带真证明，2026-09-12 本机实测） |
+| `anchor_e2e.sh` | 起 anvil → 部署 → demo → `--rpc` 核对 + 反例 | 可选 | 可 `--prove` | **~7 s** / **3:10**（带真证明，2026-09-12 本机实测） |
 | `make_audit_proof.sh` | 生成 compressed 审计 fixture | `pop-script` | 是（需 ≥16 GB） | 若干分钟 |
 | `install_ezkl.sh` | 装 ezkl 栈（`ezkl==23.0.5 / onnx / torch`）到独立 venv，装前核版本、装后冒烟 `ezkl_prove.py info` | 否 | 否 | 取决于网络 |
 | `install_frameworks.sh` | 装 langchain/langgraph/mcp 到独立 venv | 否 | 否 | 取决于网络 |
@@ -655,7 +655,7 @@ curl -s -X POST localhost:8787/v1/attest -H 'Content-Type: application/json' \
 ### `demo_all.sh` —— 全链路总入口
 
 ```bash
-bash scripts/demo/demo_all.sh              # fast：走宿主校验（--no-prove），约 20 秒
+bash scripts/demo/demo_all.sh              # fast：走宿主校验（--no-prove），约 13 秒
 bash scripts/demo/demo_all.sh --prove      # 出真证明，每条支路数分钟、峰值 ~10 GB，本机实测 26–27 分钟
 bash scripts/demo/demo_all.sh --out-dir D  # 产物与报告落 D（默认 scripts/examples/out/all）
 bash scripts/demo/demo_all.sh --list       # 只列支路，不跑
@@ -814,11 +814,17 @@ bash scripts/anchor/anchor_e2e.sh --keep          # 结束后不关 anvil
    在 `scripts/examples/out/`。要另存一份就 `--out-dir <dir>`。
 3. **退出码的含义两套，别混用**：
    - `verify_cert.py` / `verify_session.py` 都是 `return 0 if ok_all else 1`。
-   - **⚠️ `verify_cert.py` 的退出码只看「证书真不真」（`RESULT`），不看「合规」那一行。**
-     源码里 `合规: PASS/FAIL` 是在 `ok_all` 算完之后才打印的，两者不互相喂。
-     所以拿它当 CI 判据时，`$? -eq 0` **不足以**说明策略被满足了 —— 要么同时 grep
-     `合规: PASS`，要么用 `verify_session.py`（它把各类结论一起并进 `ok_all`）。
-     这条正是 §2.5 那个「两行」陷阱的命令行版本。
+   - **⚠️ 退出码不告诉你「策略满足没满足」。** 源码里 `ok_all = all(r[1] for r in results)`
+     收的是**逐项核验**（签名 / 绑定 / 证明 / 语义规则逐条 …），**唯独不含
+     `outcome.passed`** —— 那个值只出现在 `合规:` 那一行里（`合规 = outcome.passed ∧
+     所有语义规则满足`，见 `verify_cert.py` 打印该行前的注释）。
+     **实测**：`demo_all.sh` 跑出的那份会话里有 **6 张证书的 `outcome.passed` 是 `false`**
+     （如实记录违规，13 张里 7 真 6 假），而 `verify_session.py` 对它 `RESULT: PASS`、
+     退出码 **0**。
+     所以拿它当 CI 判据时，`$? -eq 0` **不等于**「策略被满足了」—— 要么同时 grep
+     `合规: PASS`，要么自己读 `outcome.passed`。这条正是 §2.5 那个「两行」陷阱的命令行版本。
+   - **`合规:` 那一行只在策略含语义规则时才打印** —— 不含语义规则时它整块被跳过，
+     报告里只有 `RESULT`（上一条的 `cert_public` 核验就是这个样子）。
    - `demo_all.sh` 的 `exit` 是**失败计数**：0 = 所有应有步骤 PASS。SKIP（缺依赖）
      单列，不算失败。
 4. **要真出证就设 `SP1_PROVER=cpu`，并且一次只跑一件事** —— SP1 证明器的内存峰值
