@@ -62,10 +62,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from policydsl.proofs import infer
 from policydsl.evidence import verifier as V
 
-from policydsl.paths import REPO  # 仓库根的唯一出处（见该模块 docstring 的事故记录）
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
-POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
+# 仓库根与两个驱动路径的唯一出处（见 `policydsl/paths.py` docstring 的事故记录）
+from policydsl.paths import POP_SCRIPT, POP_VERIFY
 
 #: composite.json 的格式版本。
 COMPOSITE_VERSION = "v1"

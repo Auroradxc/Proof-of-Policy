@@ -52,9 +52,7 @@ from policydsl.privacy import challenge                       # noqa: E402
 from policydsl.core.compile import compile_policy          # noqa: E402
 from policydsl.core.model import Policy, Rule, PolicyError # noqa: E402
 from policydsl.core.serialize import spec_canonical_text   # noqa: E402
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
-POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
+from policydsl.paths import POP_SCRIPT, POP_VERIFY  # noqa: E402
 
 
 def load_policy(path: Path) -> Policy:

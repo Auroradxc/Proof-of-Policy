@@ -44,8 +44,7 @@ from policydsl.adapters.langchain_adapter import PoPCallbackHandler  # noqa: E40
 from policydsl.adapters.mcp_adapter import MCPGuard  # noqa: E402
 from policydsl.core.model import Policy, Rule, Transcript  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 
 #: 固定时间戳 —— 让回执与向量可复现（网关时间戳不进判定，只进摘要）。
 GW_TS = "2026-01-01T00:00:00+00:00"

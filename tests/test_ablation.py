@@ -22,11 +22,10 @@ from policydsl.core import nfa, pii  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.model import Policy, PolicyError, Rule  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 
 import bench_ablation as ba  # noqa: E402
 import bench_cycles as bc  # noqa: E402
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
 # 语料刻意覆盖真实 PII 模式与边界语法：量词（a+ / {2,4}）、分支、通配，
 # 以及空串和无命中文本（验证「不命中」这条路径两实现也一致）。

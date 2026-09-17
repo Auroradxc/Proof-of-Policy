@@ -49,8 +49,7 @@ from policydsl.proofs import semantic as S
 from policydsl.core.compile import compile_policy
 from policydsl.core.model import Policy, Rule
 from policydsl.core.serialize import spec_canonical_text
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+from policydsl.paths import POP_SCRIPT
 
 
 def load_policy(path: Path) -> Policy:

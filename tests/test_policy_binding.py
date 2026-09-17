@@ -43,8 +43,7 @@ from policydsl.evidence import anchor, cert, keys, verifier  # noqa: E402  (keys
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.model import Policy, Rule  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 
 #: 真实策略：响应里出现 "secret" 即违规。
 REAL = Policy("real", "1.0.0", rules=[

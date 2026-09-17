@@ -36,8 +36,7 @@ from policydsl.proofs import compose as C      # noqa: E402
 from policydsl.proofs import infer as I        # noqa: E402
 from policydsl.evidence import verifier as V     # noqa: E402
 from policydsl.privacy.commit import response_binding  # noqa: E402
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 
 #: 真•端到端要出两份证明（各 ~2 分钟、峰值 ~8.7 GiB），默认关闭。
 RUN_COMPOSE = os.environ.get("POP_TEST_COMPOSE") == "1"

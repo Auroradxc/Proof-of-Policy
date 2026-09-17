@@ -69,8 +69,8 @@ sys.path.insert(0, str(REPO / "bench"))
 import bench_cycles as bc  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 WORK = REPO / "bench" / "work"
 
 #: 默认采样点：``(响应长度, 规则条数)``，**能过的点排前面、预期被 OOM 杀的排最后**。

@@ -28,8 +28,7 @@ from policydsl.evidence import trace  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.model import Policy, Rule  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 
 #: 固定时间戳的一次性网关 —— 让向量里的回执链可复现。
 GW_TS = "2026-01-01T00:00:00+00:00"

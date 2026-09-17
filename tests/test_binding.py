@@ -45,8 +45,7 @@ from policydsl.privacy import challenge, commit  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.model import Policy, Rule  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 
 #: 一条会被下面策略拒绝的响应（用于「换货」攻击的对照）。
 POLICY = Policy("bind", "1.0.0", rules=[

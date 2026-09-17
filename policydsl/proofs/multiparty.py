@@ -112,10 +112,8 @@ from policydsl.core.compile import (compile_policy, compile_slice_policy,
 from policydsl.core.model import Policy
 from policydsl.core.serialize import build_vectors, vector_entry
 
-from policydsl.paths import REPO  # 仓库根的唯一出处（见该模块 docstring 的事故记录）
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
-POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
+# 仓库根与两个驱动路径的唯一出处（见 `policydsl/paths.py` docstring 的事故记录）
+from policydsl.paths import POP_SCRIPT, POP_VERIFY, REPO
 
 #: multiparty.json 的格式版本。
 MULTIPARTY_VERSION = "v1"

@@ -54,11 +54,13 @@ from policydsl.core.model import Policy, Rule, Transcript
 from policydsl.core.serialize import spec_canonical_text
 from policydsl.core import pii
 from policydsl.evidence import trace
+from policydsl.paths import POP_SCRIPT as _AUTHORITY_POP_SCRIPT
 
-#: 证明器驱动。可用环境变量 ``POP_SCRIPT`` 覆盖 —— 定时回归（``regression_prove.py``）
+#: 证明器驱动。缺省取自唯一出处 :data:`policydsl.paths.POP_SCRIPT`；
+#: 可用环境变量 ``POP_SCRIPT`` 覆盖 —— 定时回归（``regression_prove.py``）
 #: 与单测都靠它**注入替身驱动**，从而不必有 Rust 工具链也能走完整流程。
-POP_SCRIPT = Path(os.environ.get("POP_SCRIPT")
-                  or (REPO / "circuits" / "target" / "release" / "pop-script"))
+#: 本文件是**全仓唯一**认这个环境变量的地方（理由见 paths.py 的对应条目）。
+POP_SCRIPT = Path(os.environ.get("POP_SCRIPT") or _AUTHORITY_POP_SCRIPT)
 
 #: 产物目录（``vectors.json`` / ``results_*.json``）。可用 ``--work-dir`` 覆盖 ——
 #: 定时回归就是靠覆盖用私有目录，免得和有人手工跑的 ``cross_validate`` 互相覆盖。

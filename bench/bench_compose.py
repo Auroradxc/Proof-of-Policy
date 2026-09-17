@@ -46,8 +46,8 @@ from policydsl.proofs import infer as I            # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.model import Policy, Rule     # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 WORK = REPO / "bench" / "work"
 
 #: 用 /usr/bin/time -v 才能拿到峰值 RSS；没有就退化为不测内存（与 bench_proofs 同口径）

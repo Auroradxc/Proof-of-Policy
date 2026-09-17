@@ -35,8 +35,8 @@ from policydsl.core.compile import compile_policy
 from policydsl.core.evaluate import check
 from policydsl.core.model import Policy, PolicyError, Rule
 from policydsl.core.serialize import spec_canonical_text
+from policydsl.paths import POP_SCRIPT
 
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 # Python Violation.evidence_kind → guest 规则类型字符串
 KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block"}
 

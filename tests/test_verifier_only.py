@@ -20,7 +20,10 @@ import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
+sys.path.insert(0, str(REPO))
+
+from policydsl.paths import POP_VERIFY  # noqa: E402  驱动路径的唯一出处
+
 FIXTURE = REPO / "circuits" / "testdata" / "audit_proof"
 
 

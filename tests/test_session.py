@@ -40,8 +40,7 @@ from policydsl.evidence import cert, keys, trace  # noqa: E402
 from policydsl.proofs import session as S  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.model import Policy, Rule  # noqa: E402
-
-POP_SCRIPT = S.POP_SCRIPT
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 
 #: 真·端到端要出一次证明（~2 分钟、峰值 ~10 GB），默认关闭。
 RUN_SESSION = os.environ.get("POP_TEST_SESSION") == "1"

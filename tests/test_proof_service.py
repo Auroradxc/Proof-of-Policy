@@ -41,8 +41,8 @@ from policydsl.core import evaluate  # noqa: E402
 from policydsl.evidence import trace  # noqa: E402
 from policydsl.core.model import Policy, Rule  # noqa: E402
 from policydsl.runtime.service import ProofService  # noqa: E402
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 CONTENT_PACK = REPO / "policy_packs" / "agent_content_v1.json"
 TOOL_PACK = REPO / "policy_packs" / "agent_tool_v1.json"
 SEMANTIC_PACK = REPO / "policy_packs" / "semantic_demo_v1.json"

@@ -1559,3 +1559,66 @@ R7 的提交要在 `tests/test_loader_parity.py` 里把这处归一**写出来**
 **不进哈希、不进证书、不进 CLI** 的字段上，所以任何基于哈希的检查都看不见它。
 另一处是 `KIND_MAP`：`prove_policy.py` 那份只有 3 项，今天不炸是因为 7 个包用到的
 kind 恰好都在那 3 项里。**「恰好」的寿命等于「下一个策略包」**。
+
+#### 5.7.9 P1-② R4：驱动路径 33 处 → 1 处（2026-09-17，✅ 已交付）
+
+##### 实际改了什么（数字以 `git grep` 核过，不沿用提案里的估计）
+
+| | 提案说 | 实测（相对 HEAD） |
+|---|---|---|
+| 逐字抄写的路径字面量 | 「34 处」 | **30 行 / 24 个文件** |
+| 转手拷贝（不写字面量，照样是第二处出处） | 未提 | **3 行 / 2 个文件**：`policydsl/proofs/session.py:65,66`（`= V.POP_SCRIPT`）、`tests/test_session.py:44`（`= S.POP_SCRIPT`）|
+| 合计 | 34 | **33 行 / 26 个文件** |
+| 收敛后 | 1 | **2 行 / 1 个文件**（`policydsl/paths.py`）+ 1 处**有意**例外（`cross_validate.py`）|
+
+**提案把「唯一出处」定在 `policydsl/evidence/verifier.py:25`，实施改成了 `policydsl/paths.py`。**
+三条理由，都可用仓库事实核对：
+
+1. `verifier.py` 自己只占那 30 行里的 **2 行**（第 25、27 行）—— 它并不是「已经很权威」的那处，
+   只是提案作者扫到的第一处；
+2. `paths.py` 是**叶子**模块（只 `import pathlib`），`verifier.py` 依赖证书链/边车/SP1 验证端点。
+   把驱动路径放在一个重型模块里，「读一个路径」这个动作就付不起代价 —— 而那正是它当初被抄
+   33 次的原因之一。这条现在**有测试钉着**（`test_the_authority_is_a_leaf`）；
+3. `paths.py` 的 docstring 本来就专记这类事故，且它已经持有 `REPO`。
+
+**保留的能力**：`cross_validate.py` 的 `$POP_SCRIPT` 环境变量覆盖（`regression_prove.py:220`
+与 `tests/test_regression_prove.py` 靠它注入替身驱动）。写法从「另抄一份再让环境变量覆盖」
+改成「**以出处为缺省值**，再让环境变量覆盖」。这是全仓唯一有意认这个变量的地方，已写进
+`paths.py` 的条目里。
+
+**一处需要声明的副作用**：`verify_cert.py` 与 `verify_session.py` 里的 `POP_VERIFY` 原本是
+`main()` **函数内**的就地重算，收敛后提升成模块级导入 —— 于是这两个模块**多出一个模块属性**。
+行为无变化（同一个值，且原本就没有任何调用方从外部读它），但它确实改变了模块命名空间，
+如实记在这里而不是扫平。
+
+##### 等效替代性（机械证明，不是读一遍）
+
+| 手段 | 结果 |
+|---|---|
+| A/B 探针：14 个模块连 `_bootstrap` 导入后 dump `module.POP_SCRIPT` / `POP_VERIFY` | `POP_SCRIPT` **14/14 逐字节不变**；`POP_VERIFY` 12 处不变 + 上表声明的 2 处「从无到有」|
+| 全仓普查 `circuits" / "target"` | 24 文件 30 行 → **只剩 `paths.py` 的 2 行** |
+| 未使用导入复核（AST） | 顺手清掉 3 处 `REPO`/`POP_VERIFY` 变成的死导入（`policydsl/proofs/compose.py`、`session.py`）|
+| 验收基线七面 | **逐路径零差异** |
+
+##### 闸门（新增 `tests/test_driver_paths.py`，9 例）
+
+R4 修的是「同一件事有 26 份」，所以闸门也必须是**结构**而不是一次普查结果：AST 扫全仓
+（排除 docstring —— 叙述不是定位），字面量与模块级别名**分别**扫，例外**逐条申报且条数钉死**。
+两条防恒真下限（扫到 ≥100 个 `.py`；≥25 个模块仍从出处取路径），两条变异探针实测非恒真。
+理由写进了该文件的模块 docstring 与 `docs/modules/08-tests-bench.md`。
+
+##### 验收（R4 风险标「极低」，故无回退判据；实测全绿，不触发回退）
+
+| 档 | 命令 | 结果 |
+|---|---|---|
+| 秒级 | `unittest discover -s tests -t .` | **729 passed / 15 skipped**（720 + 新增 9，skip 集合不变）|
+| 秒级 | `unittest tests.test_driver_paths` | **9 passed**（0.84 s）|
+| 秒级 | `cross_validate.py --no-prove` | **host 19/19** PASS |
+| 秒级 | `verify/acceptance.py --verify` | **七面逐路径零差异** |
+| 分钟 | `demo_all.sh`（fast） | **8 支路全 PASS，SKIP 集合 = ∅** |
+| 分钟 | `verify_session.py --session …` | **10 项 PASS** |
+
+真出证随 P1 阶段末统一跑（`--label P1-acceptance`）。
+
+**这也第三次证实了 §5.7.8 那条元结论**：33 处抄写**今天全部正确**，所以没有任何测试或
+基线能看见它们 —— 「对得整齐」是一种**没有观察**的状态，它的寿命等于「下一次有人改名字」。

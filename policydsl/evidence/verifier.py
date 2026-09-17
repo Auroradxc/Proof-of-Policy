@@ -19,12 +19,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from policydsl.paths import REPO  # 仓库根的唯一出处（见该模块 docstring 的事故记录）
-
-#: 出证/宿主校验驱动。
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
-#: 免证明器快路径验证二进制。
-POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
+# 仓库根与两个驱动路径的唯一出处（见 `policydsl/paths.py` docstring 的事故记录）
+from policydsl.paths import POP_SCRIPT, POP_VERIFY, REPO
 
 #: 可以被 `pop-verify` 独立验证的证明模式（core 不在其中）
 VERIFIER_ONLY_MODES = ("compressed", "groth16", "plonk")

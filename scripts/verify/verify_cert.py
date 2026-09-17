@@ -66,8 +66,7 @@ from policydsl.privacy import challenge, commit
 from policydsl.proofs import semantic as S
 from policydsl.core.compile import compile_policy
 from policydsl.core.model import Policy, Rule
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+from policydsl.paths import POP_SCRIPT, POP_VERIFY
 
 
 def load_policy(path: Path) -> Policy:
@@ -147,7 +146,6 @@ def main() -> int:
     #    放在策略绑定之前：绑定要做「三方比对」，其中一方是**证明公开值承诺的
     #    policy_hash**，必须先把证明验出来才谈得上比对。否则验证方只能核对
     #    「证书自称 == 重编译」，而漏掉「证明其实是对另一个策略做的」。
-    POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
     sidecar = verifier.sidecar_path(args.proof) if args.proof else None
     proof_result = None  # 验证器输出的原始 JSON；policy_hash 三方比对要用
     if args.proof is not None and args.proof.exists() and verifier.prefer_verifier_only(args.proof, POP_VERIFY):

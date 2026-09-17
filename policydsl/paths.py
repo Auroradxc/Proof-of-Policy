@@ -54,4 +54,23 @@ def find_repo(start: Path | str | None = None) -> Path:
 #: 仓库根。**全仓唯一**，不要在别处再算一遍。
 REPO: Path = find_repo()
 
-__all__ = ["REPO", "find_repo"]
+#: 宿主侧证明器驱动（Rust 程序，``cargo build --release -p pop-script`` 的产物）。
+#:
+#: **全仓唯一出处。** 这两行一度被抄在 **21 个模块**里。它们逐字相同，所以看着
+#: 无害 —— 但「逐字相同」是靠人抄对维持的，而抄错的后果恰好落在这个模块
+#: docstring 记的那类事故上：路径指向一个**不存在**的位置，于是每个使用它的
+#: 地方各自决定怎么办（有的抛 `FileNotFoundError`、有的 `skipUnless` 静默跳过、
+#: 有的 `raise SystemExit`），同一个故障在 21 处有 21 种表现。
+#:
+#: 唯一**有意**的例外是 ``scripts/prove/cross_validate.py``：它认 ``$POP_SCRIPT``
+#: 环境变量，好让单测注入替身驱动。那里的写法是「**以本模块为缺省值**再让环境
+#: 变量覆盖」，而不是另抄一份 —— 见该文件。
+#:
+#: 缺驱动时的标准口径：**以退出码 2 响亮拒绝**（``cross_validate.py`` 是范例），
+#: 不要静默跳过 —— 见 ``docs/development.md`` §4.3 的「不响的失败」。
+POP_SCRIPT: Path = REPO / "circuits" / "target" / "release" / "pop-script"
+
+#: 宿主侧验证器驱动。与 :data:`POP_SCRIPT` 同源同理由。
+POP_VERIFY: Path = REPO / "circuits" / "target" / "release" / "pop-verify"
+
+__all__ = ["POP_SCRIPT", "POP_VERIFY", "REPO", "find_repo"]

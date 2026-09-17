@@ -60,10 +60,8 @@ from policydsl.evidence import cert
 from policydsl.evidence import verifier as V
 from policydsl.privacy.commit import response_binding
 
-from policydsl.paths import REPO  # 仓库根的唯一出处（见该模块 docstring 的事故记录）
-
-POP_SCRIPT = V.POP_SCRIPT
-POP_VERIFY = V.POP_VERIFY
+# 仓库根与两个驱动路径的唯一出处（见 `policydsl/paths.py` docstring 的事故记录）
+from policydsl.paths import POP_SCRIPT
 
 #: Merkle 内部节点的域分隔前缀（**必须与 Rust `MERKLE_NODE_DOMAIN` 逐字节相同**）。
 MERKLE_NODE_DOMAIN = b"pop-session-node-v1"

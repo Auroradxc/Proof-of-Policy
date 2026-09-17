@@ -55,9 +55,9 @@ from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.evaluate import check as check_policy  # noqa: E402
 from policydsl.core.model import Policy, PolicyError, Rule, Transcript  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
+from policydsl.paths import POP_SCRIPT  # noqa: E402
 from semantic import features as F  # noqa: E402
 
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 SEM_ART = REPO / "semantic" / "artifacts"
 
 #: 自检文本 —— 与 ``scripts/prove/ezkl_prove.py::SELFTEST_TEXTS`` **逐字相同**。

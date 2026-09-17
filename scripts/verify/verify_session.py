@@ -45,8 +45,7 @@ from policydsl.adapters.langchain_adapter import verify_chain  # noqa: E402
 from policydsl.core.model import Policy, Rule  # noqa: E402
 # 快路径判定（二进制 + 边车 + 非 core 模式）在 policydsl.evidence.verifier；此处再导出以兼容旧导入
 from policydsl.evidence.verifier import prefer_verifier_only  # noqa: E402,F401
-
-POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
+from policydsl.paths import POP_SCRIPT, POP_VERIFY
 
 
 def load_policy(path: Path) -> Policy:
@@ -218,7 +217,6 @@ def main() -> int:
     results.append(("stream_chains", chain_ok, f"{len(groups)} run(s)"))
 
     # 3) zk 证明 —— 存在边车时优先走 verifier-only 二进制
-    POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
     zk_entries = [e for e in entries if e["kind"] == "zk"]
     zk_ok = True
     # 逐条记录每种结局的**条数**再汇总 —— 早先这里是一个被覆盖的 `detail` 标量，

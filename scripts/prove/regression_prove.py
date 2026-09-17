@@ -87,10 +87,10 @@ sys.path.insert(0, str(REPO / "bench"))  # bench_proofs 在 bench/ 下，不属�
 import bench_proofs  # noqa: E402  —— 硬件记录（host_info）的唯一出处
 import cross_validate as cv  # noqa: E402  —— 向量表与 golden 比对的唯一出处
 from policydsl.evidence.cert import utc_now  # noqa: E402
+from policydsl.paths import POP_SCRIPT as DEFAULT_POP  # noqa: E402  驱动路径的唯一出处
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
 
-DEFAULT_POP = REPO / "circuits" / "target" / "release" / "pop-script"
 DEFAULT_HISTORY = REPO / "bench" / "results" / "regression-prove.jsonl"
 
 #: ``/usr/bin/time -v`` 是拿峰值 RSS 的唯一可靠途径；没有它就不测内存，如实记 None。
