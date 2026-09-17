@@ -2445,3 +2445,74 @@ policydsl/adapters/langchain_adapter.py:468  def verify_chain(certs: List[Dict[s
 
 按「加测试」这一支落地，生产代码**一行未动** —— 没有可回退的动作。测试本身在
 `tests/test_frontdoor.py`，9 条。
+
+---
+
+### 5.7.19 P2 大验收（2026-09-18，**含真出证**）
+
+按 §5.7.3 的三档跑完，判据同 P0/P1（§5.7.6）：**「SKIP 集合前后逐条一致」**，
+不是「没有 FAIL」。本轮 P2 的改动面是 R9(b) / R10 / R11 / R12。
+
+| 档 | 命令 | 结果 |
+|---|---|---|
+| 秒级 | `unittest discover -s tests -t .` | **776 passed / 15 skipped**（38.7 s；+25 条 = R11 的视图用例 6 条 + R12 的门面用例 9 条，其余为 R9/R10 的既有增补）|
+| 秒级 | `cross_validate.py --no-prove` | **host 19/19** PASS（退出码 0）|
+| 秒级 | `verify/acceptance.py --verify` | **七面逐路径零差异**（未重采快照 —— P2 没有动任何被快照观测的行为）|
+| 分钟 | `demo_all.sh`（fast） | **8 支路全 PASS，SKIP 集合 = ∅** |
+| 分钟 | `verify_session.py --session …/policy/session.json` | **10 项 PASS**，末行 `RESULT: PASS`；证书按 kind：`tool-args` 3 / `tool-result` 2 / `stream` 4 / `llm` 1 / `zk` 3 |
+| 真出证 | `regression_prove.py --label P2-acceptance` | 出证 **19/19**（**1986.3 s**，峰值 **10,874 MB**）+ 验证腿 `clean_pass`（138.7 s，`proof_bytes` 2,782,131）；`regression-prove.jsonl` 追加**第 4 行** |
+| 真出证 | `demo_all.sh --prove` | **8 支路全 PASS，SKIP 集合 = ∅**，合计 ≈20.3 min |
+
+##### 跑法：⑥⑦ 严格串行（沿用 §5.7.6 那条）
+
+两条腿各自峰值都在 **10.4–11.1 GiB**，本机总内存 **11,958 MB** —— 重叠必炸。
+故 ⑥ 起（`setsid nohup … & disown`）、**等它退干净**（`free` 回到 10.7 GiB 可用、
+`pgrep` 无残留）才起 ⑦。
+
+> 一处跑法上的教训留在 R11 里：`grep 文件 | tail -f` 这种**顺序写反**的监视管道，
+> `grep` 一到 EOF 就退出、`tail` 永远等不到输入，于是**监视器整场静默**。静默与
+> 「一切正常」看起来一模一样 —— 后来改成 `tail -f 文件 | grep --line-buffered`。
+> 而又因为 `cross_validate` 的输出在重定向下是**块缓冲**的，行级监视看不到进度，
+> 最终用的是**进程退出**作为信号。**「没消息」不能当「没出事」用。**
+
+##### 真出证确实出了证明（不是「跑了一遍」）
+
+- 出证腿 19/19 `host_matched`，**19 个向量各出一份 core 证明**，且逐点与 golden 对拍；
+- 验证腿**独立进程**复验 `clean_pass` 通过，`vkey_hash = 0x00a35666586fb939…`；
+- **`vkey_hash` 在 P0 / P1 / P2 三轮上逐字节相同**，且 P2 与 P1 用的**是同一个
+  `pop-script`**（`sha256 8366dba6250c…`，P0 起未再重建）—— 这是「P2 没有动
+  `ConstraintSpec` 规范字节 / `STABLE_KEYS` / 任何域分隔符」的**机械证据**，
+  而不是一句自查。驱动二进制只在 P0 前重建过一次（`first-real-run` 的
+  `a5b70e1aff77` → `8366dba6250c`），此后三轮不变。
+
+##### `git.dirty = true` 是**已知的两条未跟踪文件**，不是未提交的改动
+
+记录里 P2 那行的 `dirty=true` 值得说清，否则下一个人会以为验收时树是脏的。
+实测 `git status --porcelain` 的全部内容：
+
+```
+ M bench/results/regression-prove.jsonl      ← 本次运行自己追加的那一行（预期）
+?? bench/results/ablation_live.json          ← 待用户拍板的两条，见 §5.7.14
+?? bench/results/ablation_live.md
+```
+
+**没有任何未提交的源码改动。** `demo_all.sh` 重新生成的
+`scripts/examples/out/**` 是 gitignore 的，跑完不留痕。
+
+##### ⑧ 中高风险项判定：**P2 无回退项**
+
+| 项 | 风险 | 事先写死的判据 | 判定 |
+|---|---|---|---|
+| R9(b) | 中 | 快照零差异 + 全量全绿 + `agent_tool_v1`@2000 字符流式耗时改善 ≥2× | **通过**，见 §5.7.15 |
+| R10 | 中 | 逐输入对拍等价 + `cross_validate` 19/19 + 加速 ≥1.5× | **通过**（实测 ~2.0×），见 §5.7.16 |
+| R11 | 中 | 纯实验，**无代码可回退** | **无回退项**，见 §5.7.17 |
+| R12 | 低 | 二选一，不留现状 | 选「加测试」，**生产代码一行未动**，见 §5.7.18 |
+
+⇒ **P0 / P1 / P2 三阶段累计回退 0 项。**
+
+##### 尚在案上（**继续继承**）
+
+- §5.7.13 末尾那条「R8 之后一次孤立的 `failures=1`」**仍未销案**。本轮 776/15/OK
+  是一次干净样本，但**一次干净不构成销案** —— 它当初就是不可复现的，要销案得
+  先复现出它。**继续继承到 P3 大验收。**
+- 未决事项（`bench/results/ablation_live.*` 的去留）**仍未决**，见 §5.7.14。
