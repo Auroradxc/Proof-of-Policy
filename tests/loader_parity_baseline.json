@@ -1,0 +1,3418 @@
+{
+  "coverage": {
+    "agent_content_v1.json": {
+      "expected": 11,
+      "loaded": 11,
+      "reasons": []
+    },
+    "agent_tool_v1.json": {
+      "expected": 11,
+      "loaded": 11,
+      "reasons": []
+    },
+    "eu_ai_act_v1.json": {
+      "expected": 11,
+      "loaded": 11,
+      "reasons": []
+    },
+    "finance_redaction_v1.json": {
+      "expected": 11,
+      "loaded": 11,
+      "reasons": []
+    },
+    "multiparty_demo_v1.json": {
+      "expected": 11,
+      "loaded": 11,
+      "reasons": []
+    },
+    "pii_redaction_v1.json": {
+      "expected": 11,
+      "loaded": 11,
+      "reasons": []
+    },
+    "semantic_demo_v1.json": {
+      "expected": 11,
+      "loaded": 11,
+      "reasons": []
+    }
+  },
+  "differences": {
+    "agent_content_v1.json": {
+      "description": {
+        "\"Content guard for an agent's generation path (in-circuit kinds only).\"": [
+          "policydsl/__main__._load_policy",
+          "scripts/prove/prove_multiparty.load_policy",
+          "scripts/prove/prove_policy.load_policy"
+        ],
+        "''": [
+          "policydsl/proofs/compose._load_policy",
+          "policydsl/proofs/multiparty._load_policy",
+          "policydsl/proofs/session._load_policy",
+          "policydsl/runtime/service.load_policy",
+          "scripts/prove/compose_proof.load_policy",
+          "scripts/prove/issue_cert.load_policy",
+          "scripts/verify/verify_cert.load_policy",
+          "scripts/verify/verify_session.load_policy"
+        ]
+      }
+    },
+    "agent_tool_v1.json": {
+      "description": {
+        "\"Guard for an agent's tool-call path (Python reference kinds).\"": [
+          "policydsl/__main__._load_policy",
+          "scripts/prove/prove_multiparty.load_policy",
+          "scripts/prove/prove_policy.load_policy"
+        ],
+        "''": [
+          "policydsl/proofs/compose._load_policy",
+          "policydsl/proofs/multiparty._load_policy",
+          "policydsl/proofs/session._load_policy",
+          "policydsl/runtime/service.load_policy",
+          "scripts/prove/compose_proof.load_policy",
+          "scripts/prove/issue_cert.load_policy",
+          "scripts/verify/verify_cert.load_policy",
+          "scripts/verify/verify_session.load_policy"
+        ]
+      }
+    },
+    "eu_ai_act_v1.json": {
+      "description": {
+        "''": [
+          "policydsl/proofs/compose._load_policy",
+          "policydsl/proofs/multiparty._load_policy",
+          "policydsl/proofs/session._load_policy",
+          "policydsl/runtime/service.load_policy",
+          "scripts/prove/compose_proof.load_policy",
+          "scripts/prove/issue_cert.load_policy",
+          "scripts/verify/verify_cert.load_policy",
+          "scripts/verify/verify_session.load_policy"
+        ],
+        "'Example pack in the spirit of EU AI Act Art.12/13: ban high-risk output, no PII, bounded disclosure.'": [
+          "policydsl/__main__._load_policy",
+          "scripts/prove/prove_multiparty.load_policy",
+          "scripts/prove/prove_policy.load_policy"
+        ]
+      }
+    },
+    "finance_redaction_v1.json": {
+      "description": {
+        "''": [
+          "policydsl/proofs/compose._load_policy",
+          "policydsl/proofs/multiparty._load_policy",
+          "policydsl/proofs/session._load_policy",
+          "policydsl/runtime/service.load_policy",
+          "scripts/prove/compose_proof.load_policy",
+          "scripts/prove/issue_cert.load_policy",
+          "scripts/verify/verify_cert.load_policy",
+          "scripts/verify/verify_session.load_policy"
+        ],
+        "'Example pack for a financial-advice channel: no high-leverage solicitation, no credentials, bounded length.'": [
+          "policydsl/__main__._load_policy",
+          "scripts/prove/prove_multiparty.load_policy",
+          "scripts/prove/prove_policy.load_policy"
+        ]
+      }
+    },
+    "multiparty_demo_v1.json": {
+      "description": {
+        "\"P2-11 demo: one policy whose rules fall to two different roles — content rules (keyword/length) belong to the model side, tool rules (tool_arg_guard/budget_bound) to the tool gateway. Neither role can prove the other's slice, so the certificate needs both signatures and both proofs (policydsl/proofs/multiparty.py::shard).\"": [
+          "policydsl/__main__._load_policy",
+          "scripts/prove/prove_multiparty.load_policy",
+          "scripts/prove/prove_policy.load_policy"
+        ],
+        "''": [
+          "policydsl/proofs/compose._load_policy",
+          "policydsl/proofs/multiparty._load_policy",
+          "policydsl/proofs/session._load_policy",
+          "policydsl/runtime/service.load_policy",
+          "scripts/prove/compose_proof.load_policy",
+          "scripts/prove/issue_cert.load_policy",
+          "scripts/verify/verify_cert.load_policy",
+          "scripts/verify/verify_session.load_policy"
+        ]
+      }
+    },
+    "pii_redaction_v1.json": {
+      "description": {
+        "''": [
+          "policydsl/proofs/compose._load_policy",
+          "policydsl/proofs/multiparty._load_policy",
+          "policydsl/proofs/session._load_policy",
+          "policydsl/runtime/service.load_policy",
+          "scripts/prove/compose_proof.load_policy",
+          "scripts/prove/issue_cert.load_policy",
+          "scripts/verify/verify_cert.load_policy",
+          "scripts/verify/verify_session.load_policy"
+        ],
+        "'PII redaction example pack: block emails, phone numbers, and secret credentials in agent output.'": [
+          "policydsl/__main__._load_policy",
+          "scripts/prove/prove_multiparty.load_policy",
+          "scripts/prove/prove_policy.load_policy"
+        ]
+      }
+    },
+    "semantic_demo_v1.json": {
+      "description": {
+        "\"P2-9 demo: a learned semantic rule (weaponize/harmful-intent) alongside in-circuit rules. The length_bound is not optional — the feature graph is fixed-width, so the policy must itself bound the response to the graph's capacity (see policydsl/core/compile.py::require_covering_length_bound).\"": [
+          "policydsl/__main__._load_policy",
+          "scripts/prove/prove_multiparty.load_policy",
+          "scripts/prove/prove_policy.load_policy"
+        ],
+        "''": [
+          "policydsl/proofs/compose._load_policy",
+          "policydsl/proofs/multiparty._load_policy",
+          "policydsl/proofs/session._load_policy",
+          "policydsl/runtime/service.load_policy",
+          "scripts/prove/compose_proof.load_policy",
+          "scripts/prove/issue_cert.load_policy",
+          "scripts/verify/verify_cert.load_policy",
+          "scripts/verify/verify_session.load_policy"
+        ]
+      }
+    }
+  },
+  "judged": {
+    "agent_content_v1.json": {
+      "hashes": [
+        "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      ],
+      "signatures": [
+        "{\"description\": \"\", \"rule_kinds\": [\"keyword_block\", \"length_bound\", \"pattern_block\"], \"rule_names\": [\"no_bad_topics\", \"bounded_reply\", \"no_secret\"], \"semantic\": \"and\"}",
+        "{\"description\": \"Content guard for an agent's generation path (in-circuit kinds only).\", \"rule_kinds\": [\"keyword_block\", \"length_bound\", \"pattern_block\"], \"rule_names\": [\"no_bad_topics\", \"bounded_reply\", \"no_secret\"], \"semantic\": \"and\"}"
+      ]
+    },
+    "agent_tool_v1.json": {
+      "hashes": [
+        "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      ],
+      "signatures": [
+        "{\"description\": \"\", \"rule_kinds\": [\"tool_arg_guard\", \"budget_bound\"], \"rule_names\": [\"no_secret_args\", \"call_budget\"], \"semantic\": \"and\"}",
+        "{\"description\": \"Guard for an agent's tool-call path (Python reference kinds).\", \"rule_kinds\": [\"tool_arg_guard\", \"budget_bound\"], \"rule_names\": [\"no_secret_args\", \"call_budget\"], \"semantic\": \"and\"}"
+      ]
+    },
+    "eu_ai_act_v1.json": {
+      "hashes": [
+        "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      ],
+      "signatures": [
+        "{\"description\": \"\", \"rule_kinds\": [\"keyword_block\", \"length_bound\", \"pattern_block\"], \"rule_names\": [\"banned_high_risk_topics\", \"disclosure_length\", \"no_pii_email\"], \"semantic\": \"and\"}",
+        "{\"description\": \"Example pack in the spirit of EU AI Act Art.12/13: ban high-risk output, no PII, bounded disclosure.\", \"rule_kinds\": [\"keyword_block\", \"length_bound\", \"pattern_block\"], \"rule_names\": [\"banned_high_risk_topics\", \"disclosure_length\", \"no_pii_email\"], \"semantic\": \"and\"}"
+      ]
+    },
+    "finance_redaction_v1.json": {
+      "hashes": [
+        "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      ],
+      "signatures": [
+        "{\"description\": \"\", \"rule_kinds\": [\"keyword_block\", \"length_bound\", \"pattern_block\"], \"rule_names\": [\"no_high_leverage\", \"bounded_response\", \"no_credentials\"], \"semantic\": \"and\"}",
+        "{\"description\": \"Example pack for a financial-advice channel: no high-leverage solicitation, no credentials, bounded length.\", \"rule_kinds\": [\"keyword_block\", \"length_bound\", \"pattern_block\"], \"rule_names\": [\"no_high_leverage\", \"bounded_response\", \"no_credentials\"], \"semantic\": \"and\"}"
+      ]
+    },
+    "multiparty_demo_v1.json": {
+      "hashes": [
+        "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      ],
+      "signatures": [
+        "{\"description\": \"\", \"rule_kinds\": [\"keyword_block\", \"length_bound\", \"tool_arg_guard\", \"budget_bound\"], \"rule_names\": [\"no_bad_topics\", \"bounded_reply\", \"no_secret_args\", \"call_budget\"], \"semantic\": \"and\"}",
+        "{\"description\": \"P2-11 demo: one policy whose rules fall to two different roles — content rules (keyword/length) belong to the model side, tool rules (tool_arg_guard/budget_bound) to the tool gateway. Neither role can prove the other's slice, so the certificate needs both signatures and both proofs (policydsl/proofs/multiparty.py::shard).\", \"rule_kinds\": [\"keyword_block\", \"length_bound\", \"tool_arg_guard\", \"budget_bound\"], \"rule_names\": [\"no_bad_topics\", \"bounded_reply\", \"no_secret_args\", \"call_budget\"], \"semantic\": \"and\"}"
+      ]
+    },
+    "pii_redaction_v1.json": {
+      "hashes": [
+        "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      ],
+      "signatures": [
+        "{\"description\": \"\", \"rule_kinds\": [\"pattern_block\", \"pattern_block\", \"pattern_block\", \"pattern_block\"], \"rule_names\": [\"no_email\", \"no_phone\", \"no_secret_key\", \"no_bearer_token\"], \"semantic\": \"and\"}",
+        "{\"description\": \"PII redaction example pack: block emails, phone numbers, and secret credentials in agent output.\", \"rule_kinds\": [\"pattern_block\", \"pattern_block\", \"pattern_block\", \"pattern_block\"], \"rule_names\": [\"no_email\", \"no_phone\", \"no_secret_key\", \"no_bearer_token\"], \"semantic\": \"and\"}"
+      ]
+    },
+    "semantic_demo_v1.json": {
+      "hashes": [
+        "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      ],
+      "signatures": [
+        "{\"description\": \"\", \"rule_kinds\": [\"keyword_block\", \"length_bound\", \"semantic_bound\"], \"rule_names\": [\"no_bad_topics\", \"bounded_reply\", \"low_harm_probability\"], \"semantic\": \"and\"}",
+        "{\"description\": \"P2-9 demo: a learned semantic rule (weaponize/harmful-intent) alongside in-circuit rules. The length_bound is not optional — the feature graph is fixed-width, so the policy must itself bound the response to the graph's capacity (see policydsl/core/compile.py::require_covering_length_bound).\", \"rule_kinds\": [\"keyword_block\", \"length_bound\", \"semantic_bound\"], \"rule_names\": [\"no_bad_topics\", \"bounded_reply\", \"low_harm_probability\"], \"semantic\": \"and\"}"
+      ]
+    }
+  },
+  "loaders": {
+    "policydsl/__main__._load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "Content guard for an agent's generation path (in-circuit kinds only).",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "Guard for an agent's tool-call path (Python reference kinds).",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "Example pack in the spirit of EU AI Act Art.12/13: ban high-risk output, no PII, bounded disclosure.",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "Example pack for a financial-advice channel: no high-leverage solicitation, no credentials, bounded length.",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "P2-11 demo: one policy whose rules fall to two different roles — content rules (keyword/length) belong to the model side, tool rules (tool_arg_guard/budget_bound) to the tool gateway. Neither role can prove the other's slice, so the certificate needs both signatures and both proofs (policydsl/proofs/multiparty.py::shard).",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "PII redaction example pack: block emails, phone numbers, and secret credentials in agent output.",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "P2-9 demo: a learned semantic rule (weaponize/harmful-intent) alongside in-circuit rules. The length_bound is not optional — the feature graph is fixed-width, so the policy must itself bound the response to the graph's capacity (see policydsl/core/compile.py::require_covering_length_bound).",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    },
+    "policydsl/proofs/compose._load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    },
+    "policydsl/proofs/multiparty._load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    },
+    "policydsl/proofs/session._load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    },
+    "policydsl/runtime/service.load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    },
+    "scripts/prove/compose_proof.load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    },
+    "scripts/prove/issue_cert.load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    },
+    "scripts/prove/prove_multiparty.load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "Content guard for an agent's generation path (in-circuit kinds only).",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "Guard for an agent's tool-call path (Python reference kinds).",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "Example pack in the spirit of EU AI Act Art.12/13: ban high-risk output, no PII, bounded disclosure.",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "Example pack for a financial-advice channel: no high-leverage solicitation, no credentials, bounded length.",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "P2-11 demo: one policy whose rules fall to two different roles — content rules (keyword/length) belong to the model side, tool rules (tool_arg_guard/budget_bound) to the tool gateway. Neither role can prove the other's slice, so the certificate needs both signatures and both proofs (policydsl/proofs/multiparty.py::shard).",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "PII redaction example pack: block emails, phone numbers, and secret credentials in agent output.",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "P2-9 demo: a learned semantic rule (weaponize/harmful-intent) alongside in-circuit rules. The length_bound is not optional — the feature graph is fixed-width, so the policy must itself bound the response to the graph's capacity (see policydsl/core/compile.py::require_covering_length_bound).",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    },
+    "scripts/prove/prove_policy.load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "Content guard for an agent's generation path (in-circuit kinds only).",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "Guard for an agent's tool-call path (Python reference kinds).",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "Example pack in the spirit of EU AI Act Art.12/13: ban high-risk output, no PII, bounded disclosure.",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "Example pack for a financial-advice channel: no high-leverage solicitation, no credentials, bounded length.",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "P2-11 demo: one policy whose rules fall to two different roles — content rules (keyword/length) belong to the model side, tool rules (tool_arg_guard/budget_bound) to the tool gateway. Neither role can prove the other's slice, so the certificate needs both signatures and both proofs (policydsl/proofs/multiparty.py::shard).",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "PII redaction example pack: block emails, phone numbers, and secret credentials in agent output.",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "P2-9 demo: a learned semantic rule (weaponize/harmful-intent) alongside in-circuit rules. The length_bound is not optional — the feature graph is fixed-width, so the policy must itself bound the response to the graph's capacity (see policydsl/core/compile.py::require_covering_length_bound).",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    },
+    "scripts/verify/verify_cert.load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    },
+    "scripts/verify/verify_session.load_policy": {
+      "agent_content_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-content-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708"
+      },
+      "agent_tool_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "agent-tool-v1",
+          "rules": [
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "68a1961fbad7dc5449b94dbb677188fcd686682f31f5a43fe6a51375ca17e548"
+      },
+      "eu_ai_act_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "eu-ai-act-v1",
+          "rules": [
+            [
+              "banned_high_risk_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "weaponize",
+                  "terrorism",
+                  "child abuse",
+                  "doxxing"
+                ]
+              }
+            ],
+            [
+              "disclosure_length",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_pii_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+      },
+      "finance_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "finance-redaction-v1",
+          "rules": [
+            [
+              "no_high_leverage",
+              "keyword_block",
+              {
+                "keywords": [
+                  "leverage",
+                  "margin call",
+                  "100x",
+                  "get rich",
+                  "guaranteed returns"
+                ]
+              }
+            ],
+            [
+              "bounded_response",
+              "length_bound",
+              {
+                "max": 1500,
+                "min": 1
+              }
+            ],
+            [
+              "no_credentials",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{20,}",
+                  "Bearer [A-Za-z0-9._~+/=-]{20,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "bc087a2a9dd44626e93c15c53262dc51e36e2afb7180c4bc489ec1dba93661ef"
+      },
+      "multiparty_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "multiparty-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "weaponize",
+                  "doxxing",
+                  "exploit"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 2000,
+                "min": 1
+              }
+            ],
+            [
+              "no_secret_args",
+              "tool_arg_guard",
+              {
+                "forbidden_fields": [
+                  "password",
+                  "token",
+                  "api_key"
+                ]
+              }
+            ],
+            [
+              "call_budget",
+              "budget_bound",
+              {
+                "budget": 5,
+                "unit": "calls"
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "fa63861cae3fd5d8b4e8a18e33982214d60c74236e32e09da438f8c3fc018de7"
+      },
+      "pii_redaction_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "pii-redaction-v1",
+          "rules": [
+            [
+              "no_email",
+              "pattern_block",
+              {
+                "patterns": [
+                  "[\\w.+-]+@[\\w-]+\\.[\\w.]+"
+                ]
+              }
+            ],
+            [
+              "no_phone",
+              "pattern_block",
+              {
+                "patterns": [
+                  "\\+?[0-9 ()-]{7,}"
+                ]
+              }
+            ],
+            [
+              "no_secret_key",
+              "pattern_block",
+              {
+                "patterns": [
+                  "sk-[A-Za-z0-9]{16,}"
+                ]
+              }
+            ],
+            [
+              "no_bearer_token",
+              "pattern_block",
+              {
+                "patterns": [
+                  "Bearer [A-Za-z0-9._~+/=-]{16,}"
+                ]
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "5ea278a6b3bb638261aed39b734d6f6ed39838ad64f1afdc261ad9c407e9ae3a"
+      },
+      "semantic_demo_v1.json": {
+        "policy": {
+          "description": "",
+          "id": "semantic-demo-v1",
+          "rules": [
+            [
+              "no_bad_topics",
+              "keyword_block",
+              {
+                "keywords": [
+                  "exploit",
+                  "doxxing",
+                  "weaponize"
+                ]
+              }
+            ],
+            [
+              "bounded_reply",
+              "length_bound",
+              {
+                "max": 64,
+                "min": 1
+              }
+            ],
+            [
+              "low_harm_probability",
+              "semantic_bound",
+              {
+                "direction": "le",
+                "threshold_bp": 5000
+              }
+            ]
+          ],
+          "semantic": "and",
+          "version": "0.1.0"
+        },
+        "policy_hash": "4e8cefa50b4321b0be60e966ac1e1313ee9d6f9ef19bd7fc0f261768ebf4c2d9"
+      }
+    }
+  },
+  "packs": [
+    "agent_content_v1.json",
+    "agent_tool_v1.json",
+    "eu_ai_act_v1.json",
+    "finance_redaction_v1.json",
+    "multiparty_demo_v1.json",
+    "pii_redaction_v1.json",
+    "semantic_demo_v1.json"
+  ]
+}
