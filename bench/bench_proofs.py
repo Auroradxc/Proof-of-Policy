@@ -110,6 +110,36 @@ def parse_points(spec: str) -> list[tuple[int, int]]:
     return out
 
 
+def parse_arms(spec: str | None) -> list[tuple[str, dict | None]]:
+    """``"default;SP1_WORKER_NUM_CORE_WORKERS=1,SP1_WORKER_CORE_BUFFER_SIZE=1"``
+    → ``[("default", None), ("NUM_CORE_WORKERS=1 …", {...})]``。
+
+    SP1 的 prover 选项**没有 CLI**，只有 ``SP1_WORKER_*`` 环境变量。而「换旋钮值不值」
+    这种问题**必须做 A/B**：同一个语料、同一个点、只有旋钮不同。所以这里把「臂」做成
+    一次运行里的一个维度 —— 两臂落在**同一份 JSON** 里，语料是当场加载的那一份，
+    谁也没法事后拿两份不同时间跑的结果来比。
+
+    ``default``（或空串）表示不注入任何变量。臂之间用 ``;`` 分隔，臂内用空格或逗号。
+    """
+    if spec is None:
+        return [("default", None)]
+    arms: list[tuple[str, dict | None]] = []
+    for token in spec.split(";"):
+        token = token.strip()
+        if not token or token == "default":
+            arms.append(("default", None))
+            continue
+        knobs: dict[str, str] = {}
+        for kv in token.replace(",", " ").split():
+            key, _, val = kv.partition("=")
+            if not val:
+                raise SystemExit(f"--arms 的每一项要写成 KEY=VAL，收到 {kv!r}")
+            knobs[key] = val
+        arms.append((" ".join(f"{k.removeprefix('SP1_WORKER_')}={v}" for k, v in knobs.items()),
+                     knobs))
+    return arms
+
+
 def host_info() -> dict:
     """记录量测所在机器的硬件。
 
@@ -141,8 +171,15 @@ def host_info() -> dict:
     }
 
 
-def run_point(length: int, rc: int, corpus_text: str, proof_mode: str = "core") -> dict:
+def run_point(length: int, rc: int, corpus_text: str, proof_mode: str = "core",
+              extra_env: dict | None = None) -> dict:
     """对单个采样点出一次真实证明，返回一行的量测结果（失败则带 ``error``）。
+
+    ``extra_env`` 是**叠加**在 ``SP1_PROVER=cpu`` 之上的环境变量，用于旋钮实验
+    （见 ``bench/bench_prover_knobs.py``：SP1 的 prover 选项没有 CLI，只能从
+    ``SP1_WORKER_*`` 环境变量进，所以这里必须能透传）。取 ``None`` 时行为与
+    加这个参数之前**完全相同**；给了就一并记进返回行的 ``knobs`` 字段，好让
+    结果文件自己说得出「这一行是在什么配置下量的」。
 
     **每个点一个独立子进程**，因为 SP1 的内存是进程内累积的：同一个进程里连出
     两份证明，第二份会踩在第一份的残留上，峰值 RSS 既不代表单份证明、也更容易
@@ -162,11 +199,15 @@ def run_point(length: int, rc: int, corpus_text: str, proof_mode: str = "core") 
 
     row: dict = {"length": length, "rules": rc, "proof_mode": proof_mode,
                  "trace_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest()}
+    if extra_env:   # 只在实际带了旋钮时才加这个键：老结果的 JSON 形状原样不动
+        row["knobs"] = dict(extra_env)
 
     # 计时区间只包住出证这一条命令
     t0 = time.perf_counter()
     prefix = [TIME_BIN, "-v"] if TIME_BIN else []
     env = {**os.environ, "SP1_PROVER": "cpu"}  # 本机无 GPU，固定 CPU 路径保证可比
+    if extra_env:
+        env.update(extra_env)
     try:
         res = subprocess.run(prefix + [str(POP_SCRIPT), "--vectors", str(vp), "--out", str(op),
                                        "--proof-out", str(proof),
@@ -192,8 +233,24 @@ def run_point(length: int, rc: int, corpus_text: str, proof_mode: str = "core") 
     passed = out_passed(op)
 
     row.update(ok=True, seconds=round(secs, 2), proof_bytes=proof.stat().st_size,
-               peak_rss_mb=peak_mb, verified=bool(verified), passed=passed)
+               peak_rss_mb=peak_mb, verified=bool(verified), passed=passed,
+               shards=count_shards(res.stderr))
     return row
+
+
+def count_shards(stderr: str) -> int | None:
+    """从 prover 日志里数这一份证明被切成几个 shard。**数不出来返回 None，不编。**
+
+    为什么值得记：本机「地板压不动」的**解释**是「没有第二份工作集可以省」——
+    而那句话成立与否，就看 shard 数是不是 1。日志格式是 SP1 的内部细节、会变，
+    所以这里两种写法都试，都不中就如实给 ``None``（读的人至少知道「没量到」，
+    而不是看到一个像模像样的 0）。
+    """
+    idx = set(re.findall(r"[Pp]roving shard[_ ](\d+)", stderr))
+    if idx:
+        return len(idx)
+    starts = len(re.findall(r"starting new shard", stderr))
+    return starts or None
 
 
 def out_passed(out_path: Path) -> bool | None:
@@ -214,6 +271,108 @@ def out_passed(out_path: Path) -> bool | None:
     return None
 
 
+def env_str(row: dict) -> str:
+    """这一行用的 prover 选项。默认臂写「（默认）」，不留空白 —— 空白会被读成「不知道」。"""
+    knobs = row.get("knobs")
+    if not knobs:
+        return "（默认）"
+    return " ".join(f"{k.removeprefix('SP1_WORKER_')}={v}" for k, v in knobs.items())
+
+
+def is_default_matrix(rows: list[dict]) -> bool:
+    """这份结果能不能拿来推那条**默认选项下**的边界。两个条件都要满足：
+
+    1. **点齐全** —— :data:`DEFAULT_POINTS` 一个不缺。判据用「点是否齐全」而不是
+       「攒够了几个」，因为前者是集合关系、后者是个魔数。
+    2. **臂是默认的** —— 每一行都没注入 `SP1_WORKER_*`。这条同样要紧：边界的结论句
+       写的是「**默认 prover 选项**下」，混进旋钮之后那句话就名不副实了，哪怕点一个
+       不缺 —— 成功的点未必是在默认选项下量到的。
+
+    **一处很实在的教训**：同一个采样点 `(200, 3)` 在换过 prover 选项之后是能出证的
+    （见 `bench/results/prover_knobs_cliff.md`），所以拿一份点集去套另一份的边界结论，
+    既推不出边界，还可能推出**反的**答案。
+    """
+    have = {(r["length"], r["rules"]) for r in rows}
+    return (all(p in have for p in DEFAULT_POINTS)
+            and all(not r.get("knobs") for r in rows))
+
+
+def arm_bullets(rows: list[dict]) -> list[str]:
+    """把已量到的行列成条目；**带旋钮的批次按采样点分组**。
+
+    单臂时就是一个点一行 —— 与边界段里那段逐行列表同形，`proofs.md` 走的正是这条。
+
+    多臂时不能平铺：这种文件的全部内容就是「**同一个点、两臂答案相反**」，平铺成
+    四行会让 `(200, 3)` 出现两次这件事看着像个巧合，读者得自己去配对；而配对之后
+    才看得出「换的是旋钮，不是语料」。所以按点分组、每臂一行缩进在下面。
+    """
+    if not any(r.get("knobs") for r in rows):
+        out = []
+        for r in rows:
+            mark = "✓" if r.get("ok") else "✗ OOM"
+            use = (f"{r['seconds']:.1f} s / {r['peak_rss_mb']:,.0f} MB"
+                   if r.get("ok") else f"死在第 {r['seconds']:.0f} s")
+            out.append(f"- `({r['length']}, {r['rules']})` "
+                       f"[{r.get('proof_mode', 'core')}] {mark} — {use}")
+        return out
+
+    groups: dict[tuple, list[dict]] = {}
+    for r in rows:                       # dict 保序：按首次出现的点排
+        groups.setdefault((r["length"], r["rules"], r.get("proof_mode", "core")), []).append(r)
+    out = []
+    for (length, rules, mode), rs in groups.items():
+        flip = {r.get("ok") for r in rs}
+        out.append(f"- `({length}, {rules})` [{mode}]"
+                   + ("　⚠️ **两臂结论相反**" if len(flip) > 1 else ""))
+        for r in rs:
+            use = (f"{r['seconds']:.1f} s / {r['peak_rss_mb']:,.0f} MB"
+                   if r.get("ok") else f"死在第 {r['seconds']:.0f} s")
+            out.append(f"    - `{env_str(r)}` —— "
+                       + ("✓ " + use if r.get("ok") else "✗ OOM，" + use))
+    return out
+
+
+def partial_envelope(rows: list[dict], host: dict | None, floor: float,
+                     top: float) -> list[str]:
+    """**只量了部分点**时的解读段：只对它自己这几行负责，不推边界。"""
+    ok = [r for r in rows if r.get("ok")]
+    bad = [r for r in rows if not r.get("ok")]
+    mem = (host or {}).get("mem_total_mb")
+    where = f"本机 {mem/1024:.0f} GB" if mem else "本机"
+    points = {(r["length"], r["rules"]) for r in rows}
+    n_arms = len({env_str(r) for r in rows})
+    # 多臂时 `ok`/`bad` 数的是**行**（同一个点会有两行），说「个点」会被读成
+    # 两个点里成了一个 —— 而实际是**同一个点**在两臂下一成一败。
+    unit = "行" if n_arms > 1 else "点"
+    if len(ok) == 1:                       # 一个时别写成「10,727–10,727 MB」这种区间
+        span = f"唯一成功的{'那一条' if n_arms > 1 else '点'}峰值常驻 {floor:,.0f} MB。"
+    elif ok:
+        span = f"{len(ok)} 个成功的{unit}峰值常驻 {floor:,.0f}–{top:,.0f} MB。"
+    else:
+        span = ""
+    head = (f"**{len(rows)} {unit}里 {len(ok)} {unit}成功、{len(bad)} {unit}被 OOM 杀**"
+            f"（{len(points)} 个采样点 × {n_arms} 个臂）。{span}"
+            if n_arms > 1 else
+            f"**{len(ok)} 个点量到了、{len(bad)} 个点被 OOM 杀。** {span}")
+    out = ["", "## 解读：这份结果自己这几行", "", head, ""]
+    out += arm_bullets(rows)
+    if n_arms > 1:
+        out += ["", "⚠️ **这里不写边界结论，而且本文件的价值恰恰在于不能写。** 两臂之间"
+                "**只有 prover 选项不同**（同一台机器、同一轮、同一份语料），所以同一"
+                "个点上的两种答案，差别只能归给旋钮。但它**仍然不是边界表**：点集是"
+                "**挑出来**的悬崖点、不是整张矩阵，成功的那几行还都是在**非默认**选项"
+                "下量到的。"]
+    else:
+        out += ["", f"⚠️ **这里不写边界结论。** 那句边界（「几条规则 × 多长还能证」）是拿"
+                f"**整张默认采样矩阵**（{len(DEFAULT_POINTS)} 个点）推出来的，本文件只有 "
+                f"{len(rows)} 个点、而且**换过 prover 选项**（{where}）—— "
+                "边的位置本来就随选项走：同一个 `(200, 3)` 在默认选项下表里是 ✗ OOM、"
+                "在这里是 ✓。所以部分点既推不出边界，还可能推出**反的**答案。"]
+    out += ["", "⇒ 要读边界本身，看 [`proofs.md`](proofs.md)；要读这条边界怎么随旋钮挪，"
+            "看 [`prover_knobs.md`](prover_knobs.md)；本文件只对上表这几行负责。"]
+    return out
+
+
 def envelope(rows: list[dict], host: dict | None = None) -> list[str]:
     """从已量到的行里总结可行域的**边界**，而不是只把表丢出去。
 
@@ -230,6 +389,8 @@ def envelope(rows: list[dict], host: dict | None = None) -> list[str]:
         return []
     floor = min(r["peak_rss_mb"] for r in ok)
     top = max(r["peak_rss_mb"] for r in ok)
+    if not is_default_matrix(rows):
+        return partial_envelope(rows, host, floor, top)
     modes = sorted({r.get("proof_mode", "core") for r in rows})
     mem = (host or {}).get("mem_total_mb")
     where = f"本机 {mem/1024:.0f} GB" if mem else "本机"
@@ -246,12 +407,7 @@ def envelope(rows: list[dict], host: dict | None = None) -> list[str]:
            "",
            "往上加只有很窄的一条缝，而且**加长度、加规则数踩到的是独立的两级台阶**，"
            "不是斜着涨的：", ""]
-    for r in rows:
-        mark = "✓" if r.get("ok") else "✗ OOM"
-        mode = r.get("proof_mode", "core")
-        use = (f"{r['seconds']:.1f} s / {r['peak_rss_mb']:,.0f} MB"
-               if r.get("ok") else f"死在第 {r['seconds']:.0f} s")
-        out.append(f"- `({r['length']}, {r['rules']})` [{mode}] {mark} — {use}")
+    out += arm_bullets(rows)
     out += ["",
             f"由此得到的边界（{where}，SP1 `core`，默认 prover 选项）：", "",
             "    1 条规则：≤10k 字符可证      2 条规则：约 200 字符可证      "
@@ -294,17 +450,53 @@ def render_md(rows: list[dict], corpus: dict, host: dict | None = None) -> str:
            "| length | rules | mode | time (s) | proof (KiB) | peak RSS (MiB) | "
            "verified | passed |",
            "|---:|---:|:--|---:|---:|---:|:--|:--|"]
+    # 「哪些行换了 prover 选项」必须看得见。同一张表里混着两种口径而表上不写，
+    # 是本仓最忌讳的那种读法 —— 加一列，且**只在真有行带旋钮时**才加
+    # （单臂的表仍是原样，`proofs.md` 就是单臂）。
+    show_env = any(r.get("knobs") for r in rows)
+    if show_env:
+        md[-2] = md[-2].replace("| mode |", "| mode | prover env |")
+        md[-1] = md[-1].replace("|:--|", "|:--|:--|", 1)
     for r in rows:
         mode = r.get("proof_mode", "core")
+        env = f"| {env_str(r)} " if show_env else ""   # 空串：整列不出现，不留一格空的
         if not r["ok"]:
-            md.append(f"| {r['length']} | {r['rules']} | {mode} | {r['seconds']} | — | — | — | "
+            md.append(f"| {r['length']} | {r['rules']} | {mode} {env}| {r['seconds']} | — | — | — | "
                       f"{r['error']} |")
             continue
-        md.append(f"| {r['length']} | {r['rules']} | {mode} | {r['seconds']} | "
+        md.append(f"| {r['length']} | {r['rules']} | {mode} {env}| {r['seconds']} | "
                   f"{r['proof_bytes']/1024:.1f} | {r['peak_rss_mb']} | "
                   f"{'yes' if r['verified'] else 'NO'} | "
                   f"{r['passed'] if r['passed'] is not None else '?'} |")
-    return "\n".join(md + envelope(rows, host)) + "\n"
+    md += envelope(rows, host)
+    # ⚠️ 这一段是**给默认表写的**。分段是有必要的：带旋钮的批次（`--arms`）本身
+    # 就是那张 A/B，套用这一段会把它指回它自己（「逐行记录见 prover_knobs_cliff.md」
+    # 出现在 prover_knobs_cliff.md 里），读者照着找会绕回原处。
+    if show_env:
+        md += ["", "## 另见：这张表自己是哪一档", "",
+               "本文件是**同一份语料上的 prover 选项 A/B**，两臂之间只有 `SP1_WORKER_*` "
+               "不同 —— 所以同一个点上的两种答案，差别只能归给旋钮，归不给语料，也归不给"
+               "机器。它回答的是「**那条固定地板压下去之后，哪些点能过**」，不是边界。", "",
+               "⇒ 地板本身压不压得动、压了多少、哪一半在起作用，见 "
+               "[`prover_knobs.md`](prover_knobs.md)；**默认选项**下的完整采样矩阵与"
+               "由它推出来的边界，见 [`proofs.md`](proofs.md)。三张表**口径各不相同"
+               "（默认矩阵 / 默认旋钮实验 / 旋钮 A/B），不要混读**，也不要把本文件的"
+               "行拿去改默认表。"]
+        return "\n".join(md) + "\n"
+    md += ["", "## 另见：这条地板本身压得动吗", "",
+           "上面整张表回答的是「**往里加多少**还能证」，量的是**默认 prover 选项**下的"
+           "边界；「**那条固定地板本身**能不能压低」是另一个问题，答案在 "
+           "[`prover_knobs.md`](prover_knobs.md)（同目录，一轮独立实验，含当轮基线与"
+           "判据）：把 `SP1_WORKER_NUM_CORE_WORKERS` 从 4 降到 1（+ `CORE_BUFFER_SIZE=1`）"
+           "能把这台机器上的地板压低一档，而只压 `*_BUFFER_SIZE` 一点没省。", "",
+           "⚠️ **边界会跟着地板一起挪。** 同一个点 `(200, 3)`：在**默认选项**下是 "
+           "✗ OOM，在推荐配置下**同一个语料、同一个点已经能出证并通过独立复验**；"
+           "两个臂是在**同一次调用、同一份装载好的语料**上跑的（`--arms`），所以那个"
+           "差别只能归给旋钮 —— 逐行记录见 [`prover_knobs_cliff.md`](prover_knobs_cliff.md)。"
+           "所以请把上面的默认表读成「**默认选项下**的边界」，而不是「这台机器能证的"
+           "极限」；三张表**口径各不相同（默认矩阵 / 默认旋钮实验 / 旋钮 A/B），不要"
+           "混读**，也不要拿推荐配置的行去改默认表。"]
+    return "\n".join(md) + "\n"
 
 
 def dump(out_path: Path, rows: list[dict], corpus: dict, host: dict | None = None,
@@ -325,6 +517,33 @@ def dump(out_path: Path, rows: list[dict], corpus: dict, host: dict | None = Non
     out_path.with_suffix(".md").write_text(render_md(rows, corpus, host), encoding="utf-8")
 
 
+def render_only(out_path: Path) -> int:
+    """把**已经量到**的 ``--out`` JSON 重新渲染成 ``.md``。一次证明都不跑。
+
+    ``.md`` 与 ``.json`` 的关系是「视图 / 数据」：表里的数字、结论段里由数字现推的
+    句子（:func:`envelope`）都只依赖 JSON。所以改排版、加一句外部指引、修一处措辞，
+    都该走这条路 —— 而不是再花十几分钟真出证，顺带撞一次那几个**故意留着的** OOM 点。
+
+    **它不会创建数据**：``--out`` 不存在就报错退出，免得有人以为跑一下就有了。
+    渲染前把 JSON 里的 ``host`` 一并打出来，是为了让操作者看清「渲染的是哪一批数字」——
+    这个文件里的每一行都只在那台机器上成立。
+    """
+    if not out_path.exists():
+        raise SystemExit(
+            f"{out_path} 不存在：--render-only 渲染的是**已经量到**的行，它不产生数据。"
+            "先不带该参数跑一遍（真出证，分钟级）。")
+    data = json.loads(out_path.read_text(encoding="utf-8"))
+    rows = data.get("rows") or []
+    md_path = out_path.with_suffix(".md")
+    md_path.write_text(render_md(rows, data["corpus"], data.get("host")), encoding="utf-8")
+    h = data.get("host") or {}
+    print(f"从 {out_path} 渲染 {len(rows)} 行 → {md_path}（未跑任何证明）")
+    print(f"  这批数字来自：host={h.get('hostname')}  "
+          f"{h.get('cpu_count')} 核  {(h.get('mem_total_mb') or 0)/1024:.1f} GiB  "
+          f"模式={data.get('proof_mode', 'core')}")
+    return 0
+
+
 def main() -> int:
     """逐点出证明、量耗时/体积/内存并验证，每点后落盘 JSON + Markdown。"""
     ap = argparse.ArgumentParser()
@@ -334,6 +553,18 @@ def main() -> int:
     ap.add_argument("--corpus", default="demo",
                     help="响应文本的出处，语义同 bench_cycles.py：demo（默认）/ "
                          "synthetic / <文件路径>")
+    ap.add_argument("--render-only", action="store_true",
+                    help="不跑任何证明，只把已有的 --out JSON 重新渲染成 .md。"
+                         "改的是**渲染**（排版、结论段的措辞、外部链接）而不是量测时，"
+                         "用它：重跑一次真出证要十几分钟，还可能撞上那几个**故意保留"
+                         "的 OOM 点**，为一句措辞付这个代价没有道理。")
+    ap.add_argument("--arms", default=None, type=parse_arms,
+                    help="要跑哪几「臂」prover 选项，`;` 分隔；`default` 表示不注入任何"
+                         "变量。例：--arms \"default;SP1_WORKER_NUM_CORE_WORKERS=1,"
+                         "SP1_WORKER_CORE_BUFFER_SIZE=1\"。SP1 的 prover 选项**没有 CLI**，"
+                         "只有 SP1_WORKER_* 环境变量。多臂落在**同一份 JSON** 里、"
+                         "共用当场加载的那一份语料 —— 这正是「同一个点、只有旋钮不同」"
+                         "这类 A/B 能成立的前提（分成两次跑则会撞上语料漂移）。")
     ap.add_argument("--proof-mode", default="core",
                     choices=["core", "compressed", "groth16", "plonk"],
                     help="SP1 证明模式（默认 core）。⚠️ **不同模式的耗时/内存/体积都不可"
@@ -341,6 +572,9 @@ def main() -> int:
                          "本机 12 GB 上必然 OOM —— 那不是 bug，是本文件的边界结论之一。"
                          "本机只在 core 下量的表不要混着 compressed 的行去读。")
     args = ap.parse_args()
+
+    if args.render_only:
+        return render_only(args.out)
 
     host = host_info()
     print(f"host={host['hostname']}  {host['cpu_count']} 核  "
@@ -368,21 +602,30 @@ def main() -> int:
                 f"L={length}：平铺后的语料命中规则 "
                 f"{[f'{r}: {ev}' for r, ev in hits]}，会比成本曲线偏低。换 --corpus")
 
+    arms = args.arms or [("default", None)]
+    if len(arms) > 1:
+        print(f"臂（{len(arms)} 个，同一份语料）：" +
+              "".join(f"\n  - {label}" for label, _ in arms))
+
     rows: list[dict] = []
-    for length, rc in args.points:
-        print(f"\n=== L={length} rules={rc} mode={args.proof_mode} "
-              f"（真实证明，分钟级）===", flush=True)
-        row = run_point(length, rc, corpus_text, args.proof_mode)
-        rows.append(row)
-        # 先落盘再打印：失败也不丢已量到的点
-        dump(args.out, rows, corpus, host, args.proof_mode)
-        if row["ok"]:
-            print(f"L={length:>6} rules={rc}  {row['seconds']:6.1f}s  "
-                  f"{row['proof_bytes']/1024:8.1f} KiB  peakRSS={row['peak_rss_mb']} MB  "
-                  f"verified={row['verified']}  passed={row['passed']}", flush=True)
-        else:
-            print(f"L={length:>6} rules={rc}  失败：{row['error']}（耗时 {row['seconds']}s）",
-                  flush=True)
+    # 臂在外层、采样点在内层：**同一臂的点连着跑**，两臂之间隔着的只有一整轮，
+    # 温度/页缓存这类漂移对两臂的影响因此是可比的。
+    for arm_label, knobs in arms:
+        for length, rc in args.points:
+            print(f"\n=== [{arm_label}] L={length} rules={rc} mode={args.proof_mode} "
+                  f"（真实证明，分钟级）===", flush=True)
+            row = run_point(length, rc, corpus_text, args.proof_mode,
+                            extra_env=knobs or None)
+            rows.append(row)
+            # 先落盘再打印：失败也不丢已量到的点
+            dump(args.out, rows, corpus, host, args.proof_mode)
+            if row["ok"]:
+                print(f"[{arm_label}] L={length:>6} rules={rc}  {row['seconds']:6.1f}s  "
+                      f"{row['proof_bytes']/1024:8.1f} KiB  peakRSS={row['peak_rss_mb']} MB  "
+                      f"verified={row['verified']}  passed={row['passed']}", flush=True)
+            else:
+                print(f"[{arm_label}] L={length:>6} rules={rc}  失败：{row['error']}"
+                      f"（耗时 {row['seconds']}s）", flush=True)
 
     print(f"\nwrote {args.out} and {args.out.with_suffix('.md')}")
     return 0

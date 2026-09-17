@@ -1,0 +1,134 @@
+{
+  "host": {
+    "hostname": "dxq",
+    "cpu_model": "Intel(R) Core(TM) i7-14650HX",
+    "cpu_count": 24,
+    "mem_total_mb": 11958,
+    "platform": "x86_64"
+  },
+  "point": {
+    "length": 200,
+    "rules": 1
+  },
+  "threshold": 0.05,
+  "rows": [
+    {
+      "length": 200,
+      "rules": 1,
+      "proof_mode": "core",
+      "trace_sha256": "7125dcb0372d2e937e80876878a5f1e39d360f0f7776320774fcf61933fd9783",
+      "ok": true,
+      "seconds": 100.23,
+      "proof_bytes": 2781619,
+      "peak_rss_mb": 10453.5,
+      "verified": true,
+      "passed": true,
+      "shards": null,
+      "config": "default",
+      "knobs": {}
+    },
+    {
+      "length": 200,
+      "rules": 1,
+      "proof_mode": "core",
+      "trace_sha256": "7125dcb0372d2e937e80876878a5f1e39d360f0f7776320774fcf61933fd9783",
+      "knobs": {
+        "SP1_WORKER_VERIFY_INTERMEDIATES": "false"
+      },
+      "ok": true,
+      "seconds": 99.12,
+      "proof_bytes": 2781619,
+      "peak_rss_mb": 10477.3,
+      "verified": true,
+      "passed": true,
+      "shards": null,
+      "config": "no-verify-intermediates"
+    },
+    {
+      "length": 200,
+      "rules": 1,
+      "proof_mode": "core",
+      "trace_sha256": "7125dcb0372d2e937e80876878a5f1e39d360f0f7776320774fcf61933fd9783",
+      "knobs": {
+        "SP1_WORKER_NUM_CORE_WORKERS": "1",
+        "SP1_WORKER_CORE_BUFFER_SIZE": "1"
+      },
+      "ok": true,
+      "seconds": 103.51,
+      "proof_bytes": 2781619,
+      "peak_rss_mb": 9301.7,
+      "verified": true,
+      "passed": true,
+      "shards": null,
+      "config": "few-core-workers"
+    },
+    {
+      "length": 200,
+      "rules": 1,
+      "proof_mode": "core",
+      "trace_sha256": "7125dcb0372d2e937e80876878a5f1e39d360f0f7776320774fcf61933fd9783",
+      "knobs": {
+        "SP1_WORKER_CORE_BUFFER_SIZE": "1",
+        "SP1_WORKER_SETUP_BUFFER_SIZE": "1",
+        "SP1_WORKER_SPLICING_BUFFER_SIZE": "1",
+        "SP1_WORKER_RECURSION_PROVER_BUFFER_SIZE": "1",
+        "SP1_WORKER_RECURSION_EXECUTOR_BUFFER_SIZE": "1",
+        "SP1_WORKER_PREPARE_REDUCE_BUFFER_SIZE": "1",
+        "SP1_WORKER_DEFERRED_BUFFER_SIZE": "1"
+      },
+      "ok": true,
+      "seconds": 97.54,
+      "proof_bytes": 2781619,
+      "peak_rss_mb": 10508.6,
+      "verified": true,
+      "passed": true,
+      "shards": null,
+      "config": "tiny-buffers"
+    },
+    {
+      "length": 200,
+      "rules": 1,
+      "proof_mode": "core",
+      "trace_sha256": "7125dcb0372d2e937e80876878a5f1e39d360f0f7776320774fcf61933fd9783",
+      "knobs": {
+        "SP1_WORKER_NUM_CORE_WORKERS": "1",
+        "SP1_WORKER_CORE_BUFFER_SIZE": "1",
+        "SP1_WORKER_NUM_SETUP_WORKERS": "1",
+        "SP1_WORKER_SETUP_BUFFER_SIZE": "1",
+        "SP1_WORKER_NUM_SPLICING_WORKERS": "1",
+        "SP1_WORKER_SPLICING_BUFFER_SIZE": "1",
+        "SP1_WORKER_NUM_RECURSION_PROVER_WORKERS": "1",
+        "SP1_WORKER_RECURSION_PROVER_BUFFER_SIZE": "1",
+        "SP1_WORKER_NUM_RECURSION_EXECUTOR_WORKERS": "1",
+        "SP1_WORKER_RECURSION_EXECUTOR_BUFFER_SIZE": "1",
+        "SP1_WORKER_NUM_PREPARE_REDUCE_WORKERS": "1",
+        "SP1_WORKER_PREPARE_REDUCE_BUFFER_SIZE": "1",
+        "SP1_WORKER_NUM_DEFERRED_WORKERS": "1",
+        "SP1_WORKER_DEFERRED_BUFFER_SIZE": "1"
+      },
+      "ok": true,
+      "seconds": 101.42,
+      "proof_bytes": 2781619,
+      "peak_rss_mb": 9350.3,
+      "verified": true,
+      "passed": true,
+      "shards": null,
+      "config": "low-concurrency"
+    },
+    {
+      "length": 200,
+      "rules": 1,
+      "proof_mode": "core",
+      "trace_sha256": "7125dcb0372d2e937e80876878a5f1e39d360f0f7776320774fcf61933fd9783",
+      "ok": true,
+      "seconds": 94.7,
+      "proof_bytes": 2781619,
+      "peak_rss_mb": 10426.1,
+      "verified": true,
+      "passed": true,
+      "shards": null,
+      "config": "default-again",
+      "knobs": {}
+    }
+  ]
+}

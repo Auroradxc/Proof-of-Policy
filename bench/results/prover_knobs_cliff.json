@@ -1,0 +1,98 @@
+{
+  "host": {
+    "hostname": "dxq",
+    "cpu_model": "Intel(R) Core(TM) i7-14650HX",
+    "cpu_count": 24,
+    "mem_total_mb": 11958,
+    "platform": "x86_64"
+  },
+  "proof_mode": "core",
+  "corpus": {
+    "name": "demo",
+    "sources": [
+      "scripts/examples/out/all/anchor/zk/vectors.json/vectors[0]/response",
+      "scripts/examples/out/all/compose/infer_vectors.json/vectors[0]/response",
+      "scripts/examples/eu_agent_reply.txt"
+    ],
+    "excluded": [
+      {
+        "source": "scripts/examples/out/all/anchor/zk_private/vectors.json/vectors[0]/response",
+        "hits": [
+          "kw: ['exploit']",
+          "pat2: sk-[A-Za-z0-9]{16,}"
+        ]
+      },
+      {
+        "source": "scripts/examples/out/cert_private/vectors.json/vectors[0]/response",
+        "hits": [
+          "pat2: sk-[A-Za-z0-9]{16,}"
+        ]
+      },
+      {
+        "source": "scripts/examples/out/private/vectors.json/vectors[0]/response",
+        "hits": [
+          "kw: ['doxxing']",
+          "pat: [\\w.+-]+@[\\w-]+\\.[\\w.]+"
+        ]
+      },
+      {
+        "source": "scripts/examples/finance_agent_reply.txt",
+        "hits": [
+          "pat2: sk-[A-Za-z0-9]{16,}"
+        ]
+      }
+    ],
+    "chars": 372,
+    "sha256": "6a1a3431efeafa1900a7077d2ac9f4a50dcf23014a1f2128c6f1069cae9806dd"
+  },
+  "rows": [
+    {
+      "length": 200,
+      "rules": 3,
+      "proof_mode": "core",
+      "trace_sha256": "7125dcb0372d2e937e80876878a5f1e39d360f0f7776320774fcf61933fd9783",
+      "ok": false,
+      "seconds": 57.2,
+      "error": "\u88ab SIGKILL \u6740\uff08\u672c\u673a\u5185\u5b58\u4e0d\u8db3\uff0cOOM\uff09"
+    },
+    {
+      "length": 20000,
+      "rules": 1,
+      "proof_mode": "core",
+      "trace_sha256": "d8b37923161435be0bc37415c9b00b8e48a34729c411671c6a332b0e441c5167",
+      "ok": false,
+      "seconds": 62.18,
+      "error": "\u88ab SIGKILL \u6740\uff08\u672c\u673a\u5185\u5b58\u4e0d\u8db3\uff0cOOM\uff09"
+    },
+    {
+      "length": 200,
+      "rules": 3,
+      "proof_mode": "core",
+      "trace_sha256": "7125dcb0372d2e937e80876878a5f1e39d360f0f7776320774fcf61933fd9783",
+      "knobs": {
+        "SP1_WORKER_NUM_CORE_WORKERS": "1",
+        "SP1_WORKER_CORE_BUFFER_SIZE": "1"
+      },
+      "ok": true,
+      "seconds": 160.06,
+      "proof_bytes": 2795579,
+      "peak_rss_mb": 10763.8,
+      "verified": true,
+      "passed": true,
+      "shards": null
+    },
+    {
+      "length": 20000,
+      "rules": 1,
+      "proof_mode": "core",
+      "trace_sha256": "d8b37923161435be0bc37415c9b00b8e48a34729c411671c6a332b0e441c5167",
+      "knobs": {
+        "SP1_WORKER_NUM_CORE_WORKERS": "1",
+        "SP1_WORKER_CORE_BUFFER_SIZE": "1"
+      },
+      "ok": false,
+      "seconds": 131.04,
+      "error": "\u88ab SIGKILL \u6740\uff08\u672c\u673a\u5185\u5b58\u4e0d\u8db3\uff0cOOM\uff09"
+    }
+  ]
+}
