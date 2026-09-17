@@ -16,11 +16,15 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(REPO / "bench"))     # bench_*.py 平铺在同一目录下
 
 from policydsl.core import nfa, pii  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.model import Policy, PolicyError, Rule  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
+
+import bench_ablation as ba  # noqa: E402
+import bench_cycles as bc  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
@@ -36,6 +40,40 @@ TEXTS = [
     "contact a@b.com now", "plain text", "sk-abcdefghijklmnopqrstuvwxyz",
     "colours", "a cat and 3 dogs", "123-45 xy", "aaab", "", "no match here at all",
 ]
+
+
+class TestBenchCorpusParsers(unittest.TestCase):
+    """基准脚本的命令行采样点解析：**只有一个定义，且是逗号分隔的**。
+
+    这一条守的是一个真发生过的 bug：``bench_ablation.py`` 曾自带一份
+    ``parse_ints`` 副本，把 ``replace(",", " ")`` 写成了 ``replace(";", " ")``
+    —— 它自己的 docstring 举的例子 ``--ns 100,200,400,800`` 因此跑不过。
+    两份副本放在两个文件里，谁也不会去对，而**没有测试**覆盖这两个函数，
+    所以漂移一直没被发现。
+
+    两条断言各管一半：
+
+    * ``test_comma_separated_works`` —— 行为对（docstring 里的写法真能跑）；
+    * ``test_single_definition`` —— 结构对（不可能再出现第二份）。只断言行为
+      的话，将来某人在任一侧抄回一份**恰好对**的副本仍会静默通过；而只断言
+      结构的话，「共用的那一个本身写错了」又没人管。
+    """
+
+    def test_comma_separated_works(self):
+        """逗号、空格、混合三种写法都要能跑（文档里用的是逗号）。"""
+        for spec, want in (("100,200,400,800", [100, 200, 400, 800]),
+                           ("100 200", [100, 200]),
+                           ("100, 200,300", [100, 200, 300]),
+                           ("7", [7])):
+            with self.subTest(spec=spec):
+                self.assertEqual(bc.parse_ints(spec), want)
+                self.assertEqual(bc.parse_ints(spec), ba.parse_ints(spec))
+
+    def test_single_definition(self):
+        """两个脚本引用的是**同一个**函数对象 —— 再抄一份出来就会红。"""
+        self.assertIs(ba.parse_ints, bc.parse_ints,
+                      "parse_ints 又出现第二份定义了；两处各写一遍就是漂移的温床"
+                      "（见 docs/refactor-proposal.md §2.4.2 ③）")
 
 
 class TestMatcherParity(unittest.TestCase):

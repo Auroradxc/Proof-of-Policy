@@ -34,6 +34,7 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "bench"))
 
 import bench_cycles as bc  # noqa: E402
+from bench_cycles import parse_ints  # noqa: E402  —— 只此一处定义，见下
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.model import Policy, Rule  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
@@ -45,9 +46,17 @@ DEFAULT_NS = [100, 200, 400]
 MODES = ["pike", "naive"]
 
 
-def parse_ints(spec: str) -> list[int]:
-    """``"100,200"`` → ``[100, 200]``。"""
-    return [int(tok) for tok in spec.replace(";", " ").split() if tok]
+# ``parse_ints`` 从 ``bench_cycles`` 复用，本文件**不再自带一份**。
+#
+# 这里曾经有一份私有副本，而它把 ``replace(",", " ")`` 写成了 ``replace(";", " ")``
+# —— 于是本文件 docstring 里举的例子 ``--ns 100,200,400,800`` **跑不过**
+# （``invalid parse_ints value: '100,200,400,800'``），只有分号能过，而分号在
+# shell 里还要转义。两份实现漂移的代价不是「多一点代码」，是**文档里的命令是错的**。
+#
+# 复用是零成本的：``bench_cycles`` 本来就在上面被 import 了，两者共用同一条
+# ``sys.path`` 引导。而"同一个函数对象"这件事本身由
+# ``tests/test_ablation.py::TestBenchCorpusParsers`` 钉死 —— 再抄一份出来的话，
+# 那条断言会当场红。
 
 
 def policy(mode: str) -> Policy:
