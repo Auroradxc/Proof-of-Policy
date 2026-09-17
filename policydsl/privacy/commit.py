@@ -111,15 +111,25 @@ def canonical_violations(spec: Dict, response: str,
     from policydsl.core.evaluate import _parse_format  # 复用规范子集解析器
     from policydsl.evidence.trace import chain_ok, token_count
 
-    lower = _ascii_lower(response)
     rs = [as_receipt(r) for r in (receipts or [])]
     ok, why = chain_ok(rs)
-    tokens = token_count(response)
+    # 两个长度 O(len(response)) 的派生量都**按需**算（R9(b)）：流式路径对
+    # ``1..L`` 的每个前缀各调一次本函数，在这里无条件算就等于把「每次都重扫
+    # 整条前缀」钉进热路径 —— 求和是 Θ(L²)。实测 ``agent_tool_v1`` @2000 字符
+    # 的 110.5 ms 里有 101.0 ms 在这两行上，而该包既没有 ``keyword_block``
+    # 也没有 token 预算，**两个值一次都没被读到**。
+    #
+    # 惰性化不改判定：二者都是 ``response`` 的纯函数、对 ``str`` 全域（不抛
+    # 异常），且各自只在一个 kind 分支里被读。所有调用点传的都是 ``str``。
+    lower: Optional[str] = None
+    tokens: Optional[int] = None
     out: List[Dict] = []
     for c in spec["constraints"]:
         kind, name = c["kind"], c["name"]
         if kind == "keyword_block":
             # 关键词：取第一个（spec 顺序）命中的关键词作为证据
+            if lower is None:
+                lower = _ascii_lower(response)
             hit = next((kw for kw in c["keywords"] if kw in lower), None)
             if hit is not None:
                 out.append({"rule": name, "kind": "keyword_block", "evidence": hit})
@@ -172,6 +182,8 @@ def canonical_violations(spec: Dict, response: str,
                     continue
                 total = len(rs)
             else:  # tokens：电路内自算，不再读任何声明值
+                if tokens is None:
+                    tokens = token_count(response)
                 total = tokens
             if total > c["budget"]:
                 out.append({"rule": name, "kind": "budget_bound",
