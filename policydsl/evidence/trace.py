@@ -218,16 +218,6 @@ def canonical_seal_bytes(s: ToolSeal) -> bytes:
     ])
 
 
-def seal_for(receipts: Sequence[ToolReceipt], gateway: "ToolGateway",
-             ts: Optional[str] = None) -> ToolSeal:
-    """用 ``gateway`` 给一条**已经签好的链**补一条 seal（便捷函数）。
-
-    正常路径是 :meth:`ToolGateway.seal`（网关自己知道自己的链）；这个函数是给
-    「链与网关分离」的调用方（测试、离线复算）用的。
-    """
-    return gateway.seal(receipts=receipts, ts=ts)
-
-
 def verify_seal(seal: Optional[ToolSeal], keyring: Any = None,
                 receipts: Optional[Sequence[ToolReceipt]] = None) -> Tuple[bool, str]:
     """seal 的三项核对：链长、链尾摘要、（给了钥匙时）签名。
