@@ -2580,3 +2580,148 @@ policydsl/adapters/langchain_adapter.py:468  def verify_chain(certs: List[Dict[s
 
 **保留 6 处不是「没做完」，是核查的结论。** 下一个人要再清，请先读上表第 5–10 行
 与各自的引用出处 —— 照着提案原话再删一次，删掉的会是公开 API 和兜底分支。
+
+---
+
+### 5.7.21 R14 —— `core → proofs` 分层倒置：**纯搬位置**
+
+**这一条是全轮风险最高的一项**（提案 P3 表里标「中高」），因为它的正确性判据
+恰恰是「**什么都没发生**」。任何行为变化都算失败，没有「大体上对」这个档。
+
+##### 倒置长什么样
+
+`policydsl/core/compile.py` 与 `core/evaluate.py` 需要**模型指纹**
+（`onnx_sha256` / `model_vkey`）来把 `semantic_bound` 编译进契约、并在参考判定
+里填 `DelegatedConstraint` 的字段。这些函数原先住在 `policydsl/proofs/semantic.py`
+里 —— 于是判定层为了取一个指纹，**反过来 import 出证编排层**：
+
+```
+core.compile ──(取指纹)──▶ proofs.semantic      ← 方向反了
+```
+
+`core` 是**判定层**（决定合规与否），`proofs` 是**出证编排层**（把判定包装成
+可核验的产物）。这条依赖的合法方向**只有一个**：`proofs` 可以依赖 `core`，
+`core` 依赖 `proofs` 永远不行 —— 否则「判定」就变成了「由出证方式决定」，
+而这正是整个 PoP 想排除的那类循环论证。
+
+##### 先量后改：为什么这一搬不会造出 import 环
+
+搬位置之前先做了两项**测量**（不是推断）：
+
+1. **`proofs/semantic.py` 是叶子** —— 它不 import 任何 `policydsl.core.*`；
+2. **目标依赖 `evidence/cert.py` 与 `paths.py` 都是干净的** —— 二者不 import
+   任何 `policydsl` 里的东西（`cert` 只用标准库 + `paths`，`paths` 只用标准库）。
+
+所以 `core/model_fp.py` 的依赖边**全部指向 core 之外且不回指 core**，环不可能形成。
+（顺带纠正了一条先前记岔的边界：「本层只用标准库」这条约束是**只在门面
+`policydsl/__init__.py` 上**强制执行的，**没有**加在 `core` 包上 —— 所以
+`input_width` 可以带着它那句**函数级**的 `from semantic import features as F`
+（torch 是懒加载的，`semantic/features.py` 的模块级 import 是纯标准库）一起搬过去。
+
+##### 搬了什么
+
+新建 `policydsl/core/model_fp.py`（**212 行**），从 `proofs/semantic.py`
+**整块搬入** 5 段纯契约代码，`proofs/semantic.py` 由 **602 行降到 455 行**：
+
+| 搬走的 | 内容 |
+|---|---|
+| `SemanticError` / `SEMANTIC_VERSION` | 版本标签与异常类型 |
+| `ARTIFACT_NAMES` / `model_dir` / `vk_path` | 产物路径口径 |
+| `onnx_sha256` / `cached_onnx_sha256` / `cached_file_sha256` / `_sha256_of_file` | 指纹与缓存入口 |
+| `model_manifest` | 模型清单 |
+| `input_width` | 图的字符上限（带函数级 `from semantic import features`）|
+
+`proofs/semantic.py` 里换成**原地 re-import**，并且 `__all__` **一个字未改** ——
+于是 `sem.S.<name>` 的所有调用方（测试、`scripts/prove/ezkl_prove.py`、`bench/`）
+**一行都不用动**。私有 `_sha256_of_file` **特意不 re-export**：`semantic.py` 自己
+已经不再用它，再挂一个用不上的私有壳只是把「谁在用」这件事弄糊。
+
+`core/compile.py` 3 处（`:92` / `:119` / `:145`）与 `core/evaluate.py` 1 处
+（`:272`）从 `sem.` 改指 `model_fp.`。
+
+##### 「纯搬位置」是**机械证明**的，不是读出来的
+
+| 证明 | 怎么做的 | 结果 |
+|---|---|---|
+| 搬走的字节没被改 | 五个代码块逐字节比对 `git show HEAD:policydsl/proofs/semantic.py` | 逐字节相同 |
+| 对象没被复制 | `is` 断言 10 个公开名字在 `S` 与 `M` 里是**同一个对象** | 10/10 相同 |
+| 契约字节没变 | 验收快照**第 1 面**（7 包的完整 `ConstraintSpec` + `policy_hash`） | **零差异** |
+| 空白没被抖乱 | 先测量：全文件 94 段空行、**没有一段 ≥3 行**；据此只删内容区间、再把 ≥3 空行压成 2 | 接缝之外是恒等变换 |
+
+第 1 面零差异这一条尤其要写清楚：`policy_hash` 是对 `STABLE_KEYS` 的规范 JSON
+字节求的 SHA-256。**它零差异 ⇒ 七个策略包的约束字节一个 bit 都没动**，
+而这正是「行为无变化」在契约层最硬的那张证据。
+
+##### 四条判据（提案 P3 表里预先写死的，事后不改口径）
+
+| # | 判据 | 结果 |
+|---|---|---|
+| ① | 无 import 环 | ✅ 37 个模块逐个**冷启动**导入通过 |
+| ② | 全量测试全绿 | ✅ **776 passed / 15 skipped / OK** |
+| ③ | demo fast 无新增 FAIL/SKIP | ✅ 8/8 PASS，**SKIP 集合 = ∅**，与基线逐条一致 |
+| ④ | semantic / ezkl 路径行为无变化 | ✅ `test_semantic` 30 例全绿、demo 语义支路 PASS、快照七面零差异 |
+
+##### 补的门槛：`tests/test_layering.py`
+
+R14 是「**修好一条规则**」，而本仓反复栽在「**修好了但没人守**」上 ——
+修完不复盘，下一次重构会原样搬回来（这个倒置本来就已经存在过一整个版本、
+没人发现）。所以这一项**必须配一条会变红的闸门**，否则等于没修。
+
+`tests/test_layering.py`（129 行，6 条用例）用 **AST** 而不是正则扫
+`policydsl/core/**.py`：正则会把 docstring 里的散文当成 import，也会漏掉函数体内的
+import。要点：
+
+- **`ast.walk` 全树**，所以**函数体内的 import 照样算** —— 原先那处倒置正是
+  函数级 `from policydsl.proofs import semantic`，只扫模块顶层是漏得掉的；
+- **两条防恒真下限**：`test_the_scan_actually_covers_the_core_package` 断言至少扫到
+  **5 个文件**、且 `compile.py` / `model_fp.py` **必须在名单里** ——
+  挡的是「扫描器什么都没扫到，于是全绿」这个本仓的招牌失败模式；
+- **扫描器自身被喂了已知样本**（`TestTheGateWouldNoticeAnInjection`）：模块级注入、
+  函数级注入、经 `core.model_fp` 中转不算违规、docstring 里的文字不算 import。
+
+**端到端证伪**：往 `core/compile.py` 注入一句函数级
+`from policydsl.proofs import semantic` → 用例**变红**并指出
+`('policydsl/core/compile.py', 114, 'policydsl.proofs')`；移除后工作区**零 diff**。
+红过又恢复，才算这条闸门真的会响。
+
+##### 连带改动
+
+- `core/model.py:159` 的文档引用 `policydsl.proofs.model_manifest` →
+  `policydsl.core.model_fp.model_manifest`（那条路径本来就少一段，搬完更错）；
+- `tests/test_artifact_digest.py` 的 `DECLARED_HELPER_EXCEPTIONS` 键从
+  `policydsl/proofs/semantic.py` 改到 `policydsl/core/model_fp.py`，
+  并把身份断言改钉在**公开**名字上（`semantic.model_manifest is
+  model_fp.model_manifest`）—— 私有 `_sha256_of_file` 不再 re-export，
+  原先那条 `semantic._sha256_of_file` 的断言会因为**名字不在那儿**而炸。
+
+##### 后续：测试计数「四处同步」
+
+R14 新增了一个测试文件，真实计数从 **776 变 782**（42 个模块）。按
+`docs/modules/08` §5 自己列的那份「四处同步」清单改了 `modules/08`、
+`modules/README`、`security-model`、`reproduce`、`development` 五处；
+`dev-plan.md` 与 `plan-p0p1p2.md` 里的**各阶段验收表是留痕**，按 §5.7.12 的
+口径**不随本轮改写**。
+
+##### 提交
+
+| 提交 | 内容 |
+|---|---|
+| `e25720e` | refactor(core): 模型契约下沉 `core/model_fp.py`（生产代码）|
+| `d4cfba5` | test(layering): 钉住 `core` 不许 import `proofs`（门槛）|
+| `5a21b84` | docs: 测试计数「四处同步」到 782 / 42 个模块 |
+
+##### 回退记录：R14 无回退项
+
+四条判据全过，且等效性由快照第 1 面（`policy_hash` 零差异）机械证明。
+
+##### 记录在案、本轮**未修**的两处
+
+1. **`core/compile.py:304` 的笔误**：docstring 里写
+   `:func:`policydsl.proofs.shard``，**少了一段模块名** —— `shard` 定义在
+   `proofs/multiparty.py:181`，而 `proofs/__init__.py` 明写「**本子包不
+   re-export 任何符号**」，所以这个 Sphinx 目标指不到任何东西；正确的写法是
+   `policydsl.proofs.multiparty.shard`。
+   **与 R14 顺手修掉的 `core/model.py:159` 是同一类错**（同样少一段模块名），
+   纯 docstring、零行为变化；按「**一项一提交**」不与 R14 混在一起，留给下一批。
+2. **`docs/plan-p0p1p2.md:6` 的「今天是 675 / 15」**：那是**计划启动时的快照**，
+   文档自身标了不动。按留痕口径**不改**。
