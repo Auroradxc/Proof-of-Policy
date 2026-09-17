@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（38 个模块，740 个用例）与 `bench/`（7 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（38 个模块，746 个用例）与 `bench/`（7 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,7 +8,7 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 期望 740 passed, 15 skipped
+python3 -m unittest discover -s tests -t . -v   # 期望 746 passed, 15 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
@@ -30,7 +30,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 740 passed, 15 skipped
 | `test_anchor` | 7 | 账本读写、`verify_ledger`、篡改检出；**c6**：`TestUnconfiguredTypeConsistency`（3 例）钉住「要上链但没配」这一个条件在 `backend_from_env(require=True)` 与 `anchor_on_chain` 两处给出**同一种**异常 —— `test_same_type` 用 `assertIs(type(a),type(b))` 而非「都继承 RuntimeError」这种弱断言，`test_same_message` 断言消息一字不差，`test_not_implemented_error_would_not_be_caught` 是**反例对照**（证明前两条不是恒真的：原写法确实接不住） |
 | `test_anchor_chain` | 28 | 合约 artifact、摘要编码、后端选择、RPC 后端离线（幂等/竞态）、cast 命令行、**账本尾部 O(1) 缓存**（`TestLedgerTail` 5 例：缺文件即 genesis / 追加后命中缓存 / **命中时一次 `read_ledger` 都不调**（数调用次数，这才是 O(1) 的真凭据）/ 外部追加使缓存失效 / 截短也失效）、anvil 端到端（含**服务层真的把摘要写进真链**：`ProofService(rpc_url=..., contract=...)` 走完一次作业，再由**独立只读客户端**读回核对 —— 假客户端测不出两层之间的接线错） |
 | `test_normalize` | 28 | **P2-9b**：同形异义折叠（`pop-fold-v1`）。折叠表构造与 13 种非法声明（未知版本/未知键/超长表/非 ASCII或多字符替换值/自映射/重复 `from`/`map∩drop` …）全部 fail-closed；算法单遍**不链式**、`ascii_lower` 只碰 ASCII；**验收判据**是「折叠前 `passed=True`、折叠后 `passed=False`」这一对（并另断言 ASCII 那条被两条规则同时拦住，免得用例退化成恒真）；折叠表**进契约** → 改表即改 `policy_hash`。 |
-| `test_rule_kinds` | 10 | **kind 分派的一致性**（`model._RULE_VALIDATORS` 是权威名单）：按 `kind` 分派的逻辑在项目里有**四份**（`model.Rule.validate` / `evaluate.check` / `compile.compile_constraints` / `commit.canonical_violations`）外加运行期枚举 `multiparty.KIND_OWNER`，漏改任一处**都是静默的**（没有异常、没有报错）。前两份用 `ast` 从裸 `if/elif` 链里抽字面量比对，`KIND_OWNER` 直接 import 不抄第二份；另有三条 fail-closed 用例，其中 **`test_unhashable_kind_is_policy_error_not_type_error`** 钉的是一条**真发生过的**回归 —— 校验从逐值比较改成查表后，不可哈希的 `kind`（JSON 里合法，如数组）会从可诊断的 `PolicyError` 退化成未捕获的 `TypeError` |
+| `test_rule_kinds` | 16 | **kind 分派的一致性**（`model._RULE_VALIDATORS` 是权威名单）：按 `kind` 分派的逻辑在项目里有**四份**（`model.Rule.validate` / `evaluate.check` / `compile.compile_constraints` / `commit.canonical_violations`）外加运行期枚举 `multiparty.KIND_OWNER`，漏改任一处**都是静默的**（没有异常、没有报错）。前两份用 `ast` 从裸 `if/elif` 链里抽字面量比对，`KIND_OWNER` 直接 import 不抄第二份；另有三条 fail-closed 用例，其中 **`test_unhashable_kind_is_policy_error_not_type_error`** 钉的是一条**真发生过的**回归 —— 校验从逐值比较改成查表后，不可哈希的 `kind`（JSON 里合法，如数组）会从可诊断的 `PolicyError` 退化成未捕获的 `TypeError`。**R6 加了第六件事**：`Violation.evidence_kind → rule.kind` 的翻译表（`evaluate.EVIDENCE_KIND_TO_RULE_KIND`，一度抄成**三份**，其中两份**各只有 7 项里的 3 项**）。两道闸门：① 表与 `check` 真正会产生的配对逐项相等 —— `ast` 只走 `if/elif rule.kind == …` 的**分支体**（`node.body`，不含 `orelse`；用 `ast.walk(if_node)` 会把整条 `elif` 链一起吞掉），取分支体内 `Violation(...)` 的第二个位置参数，剔除合成规则 `_TraceRule` 的 `trace_unbound`，并要求每个分支**恰好**一种；② 全仓不许再出现第二份（AST 找**含 ≥2 项本表配对**的字典字面量 —— 副本的实际形态，单个巧合配对不算），例外逐条申报、条数钉死。**防恒真**：扫描器与抽取器各喂一段已知样本；两条变异探针实测非恒真（把一份副本塞回 `prove_policy.py` → 报出该文件；从表里删掉一项 → 逐项比对报红）。**为什么不是「可读性问题」**：三份抄的**不一样长**，而今天不炸只是因为 7 个包用到的 `evidence_kind` 恰好落在那 3 项里；一旦有规则用上 `format`/`tool_arg`/`budget`/`normalized_keyword`，调用方的 `.get(k, k)` 会把 `"format"` 本身当 kind 交出去，而 guest 写的是 `format_check` —— 两边各自自洽，出证时才报「违规集合不同」 |
 | `test_acceptance_baseline` | 3 | **等效替代的机械判据**（`scripts/verify/acceptance.py`）：现算七个可观察面并断言等于入库的 `tests/acceptance_baseline.json`（**1.3 s**）。七面 = 跨层契约（完整 `ConstraintSpec` 规范字节 + `policy_hash`）/ 两条判定路径在 7 包 × 24 条语料上的完整结论（含空·干净·脏·坏四档回执链）/ 20 种畸形包走「加载→校验→编译」三段各自的**异常类型与文案** / 畸形文件喂 CLI 的退出码与 stderr / 流式证书序列 / 两个 CLI 子命令 / `__all__` 导入面。另有 `test_baseline_covers_every_face` 防「基线被削成只剩一面时照样全绿」这类假绿。**它不判断该不该变，只保证变了一定有人看见** —— 分界与重新采集的步骤见 `docs/dev-plan.md` §5.7.4 |
 | `test_rules_incircuit` | 13 | 七类规则在 `--check` 下与 Python golden 逐点对齐（**P1-5**：轨迹类规则判回执链，链坏两端都 fail-closed；**P2-9b**：`normalized_keyword_block` 7 组逐点对拍 + 私有模式下证据承诺与 Python 一致） |
 | `test_ablation` | 7 | pike ≡ naive（Python 与 Rust 两侧）；**`TestBenchCorpusParsers`**（2 例）钉住基准脚本的采样点解析 —— 行为对（`--ns 100,200,400,800` 真能跑）+ 结构对（`bench_ablation` 与 `bench_cycles` 引用的是**同一个**函数对象，再抄一份出来就红）。守的是 R18 那个真 bug：私有副本把 `replace(",", " ")` 写成 `replace(";", " ")`，于是脚本 docstring 举的例子跑不过，而**没有测试**覆盖这两个函数 |
@@ -51,7 +51,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 740 passed, 15 skipped
 | `test_loader_parity` | 10 | **十六份策略加载器其实是同一件事 —— 这话得查出来，不能读出来**（P1-①，R7 的闸门）。同一个「包 JSON → `Policy`」的动作在仓库里抄了 11 份，长得很像但**像不等于同**：规则名兜底一份写 `r{i}`、一份写 `rule-{i}`；有的把 `semantic` / `description` 带进 `Policy`，有的丢掉（`semantic` **进**哈希，`description` **不进**）；有的用 `data["rules"]`（缺键 `KeyError`），有的用 `.get(..., [])`（缺键**静默变成空策略**，fail-open）。后果不是报错，是**同一个包被两份加载器编译出两个哈希** —— 出证方算一个、验证方算另一个，两边都自洽，证书在第三方手里才验不过。**顺序不能倒**：R7 要删的就是那 11 份，删完就再也比不了了，所以先采快照（`tests/loader_parity_baseline.json`）再动 R7。判据是**逐包的去重哈希集合与去重签名集合**（取「集合」而非「逐份记录」，才能让「11 份旧加载器」与「1 份收敛后的」逐路径可比），另加两条更严的：**两边都有的标签逐份比完整记录**（集合级判据不记「谁持哪种」，某一份从「丢」翻成「带」时集合不变、一条都不会红 —— 这个缺口是变异探针 A 暴露出来的）与**覆盖守卫**（每个包必须读到 `expected` 份，不足即拒绝出结果，比的是两堆空集合时集合级判据**是绿的**）。**采集结果**：7 包 × 11 份覆盖 77/77，`policy_hash` **每包恰好 1 种**，签名每包 2 种且分歧**只在 `description`**（3 份带、8 份丢成 `''`，含全部验证侧）—— 它不进哈希、不进证书、CLI 也不打印，对当前所有可观察输出是**惰性**的，所以 P0 的七面基线与它全都对不上。四条变异探针实测非恒真，其中一条**自身失效**（`version` 兜底的改动在 7 个包上走不到）已如实记下。见 `docs/dev-plan.md` §5.7.7 |
 | `test_driver_paths` | 9 | **驱动路径只能有一个出处 —— 把它钉成结构，而不是钉成一次普查**（R4）。`pop-script` / `pop-verify` 的字面量一度抄在 **26 个文件 / 33 行**里。抄得一字不差，所以从任何一处看都没问题 —— 问题在于「一字不差」是靠人抄对维持的，而抄错的后果恰好落在 `policydsl/paths.py` docstring 记的那类事故上：路径指向一个**不存在**的位置，且 26 处各自决定怎么办（抛 `FileNotFoundError` / `skipUnless` 静默跳过 / `raise SystemExit`），同一个故障有 26 种表现。闸门用 **AST** 扫，只认**恰好等于**驱动器名的字符串常量，并**排除 docstring**（那是在**叙述**，不是在**定位**）；另单扫**模块级别名**（`POP_SCRIPT = 别处.POP_SCRIPT` 照样是第二处出处 —— `policydsl/proofs/session.py:65` 与 `tests/test_session.py:44` 历史上就是）。例外**逐条申报、且条数钉死**：多一处要改数字、少一处也要改，于是例外既不会悄悄长大、也不会腐烂成「反正这个文件豁免」（对照 §5.7.7 的做法）。另钉三条：出处必须是**叶子**（只许 `import pathlib` / `from __future__` —— 出处若依赖重型模块，「读路径」这件事就付不起代价，正是它当初被抄的原因之一）；`cross_validate.py` 的 `$POP_SCRIPT` 覆盖**行为级**复测（两个子进程：缺省 = 出处、设了环境变量 = 该值，这是 R4 **必须保留**的能力，定时回归与单测靠它注入替身驱动）；`paths.POP_SCRIPT/POP_VERIFY` 确实解析在 `circuits/target/release/` 下。**防恒真**：扫描范围（≥100 个 `.py`，实测 106）与「确有模块从出处取路径」（≥25，实测 29）都有下限 —— 把 import 全删光不会全绿；两条变异探针实测非恒真（在**已被豁免**的文件里加一处 → 条数不符报红；在**未被豁免**的文件里加一处 → 红）。见 `docs/dev-plan.md` §5.7.9 |
 | `test_artifact_digest` | 11 | **工件摘要只有一个口径，且这个口径没变过**（R5）。R5 之前，「对文件字节求 SHA-256」在仓库里写过 **7 份定义 + 1 段内联**（`proofs/compose.py`、`proofs/multiparty.py`、`runtime/service.py`、`scripts/prove/issue_cert.py`、`scripts/verify/verify_cert.py`、`scripts/verify/verify_session.py`、以及 `proofs/semantic.py` 那份带缓存的 `_sha256_of_file`，外加 `regression_prove.driver_fingerprint` 里一段**没有名字**的内联循环）。**为什么这不是「可读性问题」**：它们摘要的证明工件/公开值文件/驱动二进制会进证书的 `binding.proof_sha256` —— 出证方算一个值、验证方另算一个值，两处只要有一处口径变了（大写十六进制、按文本模式打开、少读一块），**两边各自自洽**，证书在第三方手里才验不过。这与 R4 的驱动路径是同一类事故：抄得一字不差，所以没有任何基线看得见。钉两件事：① **口径相同** —— 分块读（1 MiB）与 `read_bytes()` 在块的边界两侧（0 / 1 / 1 MiB−1 / 1 MiB / 1 MiB+1 / 2 MiB+12345 字节）给出**同一个**摘要，这是「收敛是等效替代」的全部内容；另钉小写十六进制（改大小写会让已入库证书集体对不上、且两边都「看起来对」）、`str`/`Path` 都收、失败模式（`FileNotFoundError`/`IsADirectoryError`）不变。② **口径只有一处** —— AST 扫全仓，除申报例外外谁都不许再定义摘要函数，**也不许再写那段流式读惯用法**（`driver_fingerprint` 当年就是没有名字的内联实现，只扫函数名的话整条漏掉）；例外逐条申报、条数钉死。两处**有意保留**：`semantic._sha256_of_file` 是**纯缓存壳**（mtime/size 是缓存键不参与计算，函数体只剩 `return sha256_file(path)`，另有「第二次真的命中缓存」的断言）与 `tests/test_regression_prove.py::_sha256` 是**独立参照**（它验的是生产代码算出来的值，复用同一实现就成了自证 —— 对照本仓「两处独立算」的用法）。**防恒真**：扫描范围（≥100 个 `.py`）与「真有模块从出处取摘要」（≥8）都有下限，另有一条**给扫描器本身喂已知样本**的探针（认不出东西的扫描器与没有扫描器在结论上无法区分）。四条变异探针实测非恒真：别处新增一份 `def _sha256` / 口径改大写 / 每块漏读一个字节 / 缓存壳长回自己那份分块实现 → 各自报红。见 `docs/dev-plan.md` §5.7.10 |
-| **合计** | **740** | |
+| **合计** | **746** | |
 
 ### 15 个 skip（都是设计内的）
 
@@ -452,7 +452,7 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **740 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后与验收基线加入后重测、2026-09-17 R3（NFA 编译缓存）后重测、2026-09-17 P1-①（加载器对拍）后重测、2026-09-17 R4（驱动路径收敛）后重测、2026-09-17 R5（工件摘要收敛）后重测；CI 上更多 skip，见 §1）、
+  当前验收判据是 **746 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后与验收基线加入后重测、2026-09-17 R3（NFA 编译缓存）后重测、2026-09-17 P1-①（加载器对拍）后重测、2026-09-17 R4（驱动路径收敛）后重测、2026-09-17 R5（工件摘要收敛）后重测、2026-09-17 R6（kind 翻译表收敛）后重测；CI 上更多 skip，见 §1）、
   `cross_validate` **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 整批重跑，见下）。
   这条判据现在**有自动留痕**：`scripts/prove/regression_prove.py` 每次运行把它追加进
   `bench/results/regression-prove.jsonl`（只追加），并附 git sha / 硬件 / 证明器二进制摘要
@@ -474,7 +474,7 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
 ### 1. 跑测试
 
 ```bash
-python3 -m unittest discover tests                # 全量：740 passed / 15 skipped，~42 s
+python3 -m unittest discover tests                # 全量：746 passed / 15 skipped，~42 s
 python3 -m unittest tests.test_dsl -v             # 单个模块（哪一板块 → 见 §1 的表）
 python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 ```
@@ -512,7 +512,7 @@ python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 
 **唯一有留痕的是 `cross_validate` 的判据**：`scripts/prove/regression_prove.py`
 每次运行把它追加进 `bench/results/regression-prove.jsonl`（**只追加**），并附
-git sha / 硬件 / 证明器二进制摘要，所以「740 passed」这类数字指得回具体的某一次运行（T3）。
+git sha / 硬件 / 证明器二进制摘要，所以「746 passed」这类数字指得回具体的某一次运行（T3）。
 
 ## 怎么改它
 
@@ -527,8 +527,8 @@ git sha / 硬件 / 证明器二进制摘要，所以「740 passed」这类数字
 **「四处同步」清单**（改测试计数时，这四处都写着同一批数字）：
 
 1. 本文件 §1 表的**那一行**与**合计行**；
-2. 本文件**顶部**那句「38 个模块，740 个用例」；
-3. 本文件 §5 扩展指引里的**验收判据**（`740 passed / 15 skip`）；
+2. 本文件**顶部**那句「38 个模块，746 个用例」；
+3. 本文件 §5 扩展指引里的**验收判据**（`746 passed / 15 skip`）；
 4. `docs/README.md` 的计数口径 + `README.md` / `docs/reproduce.md` 的验收判据。
 
 （`docs/README.md` §3 已把「测试计数 → 08」写成约定：**本文件是唯一权威源**，
@@ -552,7 +552,7 @@ git sha / 硬件 / 证明器二进制摘要，所以「740 passed」这类数字
 
 ```bash
 # 改完测试层的两条验证
-python3 -m unittest discover tests                # 740 passed / 15 skipped（数对不上先查 §1 表）
+python3 -m unittest discover tests                # 746 passed / 15 skipped（数对不上先查 §1 表）
 python3 -m unittest tests.test_scripts_layout     # 若动过 scripts/ 分组
 ```
 

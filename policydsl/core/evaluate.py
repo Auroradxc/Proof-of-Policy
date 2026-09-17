@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import List, Union
+from typing import Dict, List, Union
 
 from policydsl.core import nfa, normalize
 from policydsl.evidence import trace
@@ -95,6 +95,39 @@ def _to_transcript(target: Target) -> Transcript:
     if isinstance(target, str):
         return Transcript(response=target)
     raise TypeError(f"expected str or Transcript, got {type(target).__name__}")
+
+
+#: ``Violation.evidence_kind`` → **规则 kind**（也就是 guest 侧 spec 里那个 kind 字符串）。
+#:
+#: 两个词汇表是分开的，别把它们当成一回事：``evidence_kind`` 说的是「这条证据长什么样」
+#: （命中的关键词、越界后的长度…），``rule.kind`` 说的是「哪条规则」。``check()`` 里每个
+#: 分支各写各的，于是要**把参考层的结论翻译回 guest 的口径**（比对「违规集合」时两边用的
+#: 必须是同一套名字），就需要这张表。
+#:
+#: **全仓唯一出处。** 它一度被抄成三份：``scripts/prove/cross_validate.py``（7 项）、
+#: ``scripts/prove/prove_policy.py``（**只有 3 项**）、``tests/test_commit.py``（同样 3 项）。
+#: 那份 3 项的今天不炸，只是因为 7 个策略包用到的 ``evidence_kind`` **恰好**都落在那 3 项
+#: 里（见 ``docs/dev-plan.md`` §5.7.8）；一旦某条规则用上 ``format`` / ``tool_arg`` /
+#: ``budget`` / ``normalized_keyword``，调用方的 ``.get(k, k)`` 会**静默**把 ``"format"``
+#: 本身当 kind 交出去，而 guest 写的是 ``format_check`` —— 两边对不上，出证失败，且报错
+#: 只会说「集合不同」。
+#:
+#: ``trace_unbound``（合成规则 :class:`_TraceRule` 的 kind）**不在表里**：它不是任何策略
+#: 规则的 kind，由调用方的 ``.get(k, k)`` 兜住 —— guest 那侧同样用 ``trace_unbound``。
+#: ``semantic_bound`` 也不在：它登记为 ``DelegatedConstraint``、从不产生 ``Violation``。
+#:
+#: 这张表**不是靠人维护的**：``tests/test_rule_kinds.py`` 用 ``ast`` 从下面这串
+#: ``elif rule.kind == …`` 分支里把 ``Violation(...)`` 的第二个参数抽出来，与它逐项比对，
+#: 新增一种 kind 却忘了加表 → 红。
+EVIDENCE_KIND_TO_RULE_KIND: Dict[str, str] = {
+    "keyword": "keyword_block",
+    "normalized_keyword": "normalized_keyword_block",
+    "length": "length_bound",
+    "pattern": "pattern_block",
+    "format": "format_check",
+    "tool_arg": "tool_arg_guard",
+    "budget": "budget_bound",
+}
 
 
 def check(policy: Policy, target: Target) -> CheckResult:

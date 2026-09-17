@@ -16,7 +16,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from policydsl.privacy import commit  # noqa: E402
 from policydsl.core import nfa, pii  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
-from policydsl.core.evaluate import check  # noqa: E402
+from policydsl.core.evaluate import (  # noqa: E402
+    EVIDENCE_KIND_TO_RULE_KIND, check,
+)
 from policydsl.core.model import Policy, Rule  # noqa: E402
 
 
@@ -83,8 +85,11 @@ class TestCanonicalViolations(unittest.TestCase):
         spec = compile_policy(p)
         resp = "DOXXING someone at a@b.com"  # 共 26 字符，因此长度上限也会被触发
         golden = check(p, resp)
-        kind_map = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block"}
-        cset = sorted({(v.rule.name, kind_map[v.evidence_kind]) for v in golden.violations})
+        # 查表用**唯一出处**的那张（不再自带一份 3 项的副本），且**保持严格下标**：
+        # 出现表外的 evidence_kind 就 KeyError，而不是 `.get(k, k)` 悄悄放过去。
+        # 本用例的三条规则都不会产生 trace_unbound，所以严格是安全的。
+        cset = sorted({(v.rule.name, EVIDENCE_KIND_TO_RULE_KIND[v.evidence_kind])
+                       for v in golden.violations})
         canon = commit.canonical_violations(spec, resp)
         self.assertEqual(sorted({(v["rule"], v["kind"]) for v in canon}), cset)
         self.assertEqual(len(canon), 3)  # 关键词、长度、正则三类同时被触发

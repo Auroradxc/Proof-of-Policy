@@ -32,13 +32,10 @@ from _bootstrap import REPO, bootstrap  # noqa: E402
 bootstrap()
 
 from policydsl.core.compile import compile_policy
-from policydsl.core.evaluate import check
+from policydsl.core.evaluate import EVIDENCE_KIND_TO_RULE_KIND, check
 from policydsl.core.model import Policy, PolicyError, Rule
 from policydsl.core.serialize import spec_canonical_text
 from policydsl.paths import POP_SCRIPT
-
-# Python Violation.evidence_kind → guest 规则类型字符串
-KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block"}
 
 
 def load_policy(path: Path) -> Policy:
@@ -56,7 +53,8 @@ def load_policy(path: Path) -> Policy:
 def golden(policy: Policy, response: str) -> dict:
     """用参考评估器算出「golden」结果：passed + 违规规则集合（排序后）。"""
     res = check(policy, response)
-    rules = sorted({(v.rule.name, KIND_MAP.get(v.evidence_kind, v.evidence_kind))
+    rules = sorted({(v.rule.name,
+                     EVIDENCE_KIND_TO_RULE_KIND.get(v.evidence_kind, v.evidence_kind))
                     for v in res.violations})
     return {"passed": res.passed, "violations": rules}
 

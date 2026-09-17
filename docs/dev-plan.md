@@ -1694,3 +1694,94 @@ R4 修的是「同一件事有 26 份」，所以闸门也必须是**结构**而
 | 分钟 | `verify_session.py --session …` | **10 项 PASS** |
 
 真出证随 P1 阶段末统一跑（`--label P1-acceptance`）。
+
+#### 5.7.11 P1-④ R6：kind 翻译表 3 份 → 1 处（2026-09-17，✅ 已交付）
+
+##### 实际改了什么（`git grep` 核过）
+
+提案写的是「`KIND_MAP` 消掉第二份（`prove_policy.py:41` 的 3 项 → 取
+`cross_validate.py:72` 的 7 项）」，字面读是**两份**。实测是**三份**：
+
+| # | 位置 | 项数 | 取用方式 |
+|---|---|---:|---|
+| 1 | `scripts/prove/cross_validate.py:74` | **7** | `.get(k, k)` 兜底 |
+| 2 | `scripts/prove/prove_policy.py:41` | **3** | `.get(k, k)` 兜底 |
+| 3 | `tests/test_commit.py:86` | **3** | **严格下标** `[k]` |
+
+第三份不在提案的计数里。**三份不是一个模子刻出来的** —— 2 与 3 各只有 7 项里的
+3 项，今天不炸只是因为 7 个策略包用到的 `evidence_kind` 恰好全落在
+`keyword` / `length` / `pattern` 里（这正是 §5.7.8 那条元结论的第四次确认：
+**「恰好」不是契约**）。一旦有规则用上 `format` / `tool_arg` / `budget` /
+`normalized_keyword`，那份 3 项的副本会静默地把 `"format"` 本身当成 kind 交给
+调用方，而 guest 写的是 `format_check` —— 两边各自自洽，出证时才报「违规集合不同」。
+
+**唯一出处：`policydsl/core/evaluate.py` 的 `EVIDENCE_KIND_TO_RULE_KIND`**
+（`def check(` 之前）。放在这里是因为两个词汇表都在这个文件里产生：`check` 的
+`if/elif rule.kind == …` 分支是**唯一**写出 `(rule, evidence_kind)` 配对的地方。
+`scripts/prove/*` 是消费者，不配拥有这张表的一份。
+
+**两个方向别搞混**：表是 `evidence_kind → rule.kind`（给调用方翻译用）；
+分支链是 `rule.kind → evidence_kind`。闸门比对前先把表**反过来**，否则失败信息
+会读起来像「七个键两两不相干」而不是「方向错了」—— 这一点是实测踩出来的
+（第一版闸门就是这么红的）。
+
+**不在表里、且是有意不在的两个**：
+
+- `trace_unbound` —— 合成规则 `_TraceRule` 的 kind（坏回执链的落点，不是任何策略
+  规则的 kind）。它在 `tool_arg_guard` / `budget_bound` 两个分支里都会出现，也在
+  分支链之外出现一次。`.get(k, k)` 与 guest 那侧都用 `trace_unbound` 兜住。
+- `semantic_bound` —— 登记为 `DelegatedConstraint`、**从不产生 `Violation`**，
+  所以分支链里根本没有它的 `(rule, evidence_kind)` 配对。
+
+**一处有意的差异保留**：`tests/test_commit.py` 那份原用**严格下标**
+（表外就 `KeyError`），收敛后**照样严格**，没有顺手改成 `.get(k, k)` —— 改了会
+把「出现表外 kind 就当场炸」悄悄换成「放过去」。该用例的三条规则都不产生
+`trace_unbound`，严格是安全的。
+
+**一处发现但没修**（不在 R6 范围）：`evaluate.py:62` `_parse_format` 的 docstring
+含未转义的 `\d`，Python 3.12+ 下每次导入都会打一条
+`DeprecationWarning: invalid escape sequence '\d'`。它是**改动前就有**的，加个 `r`
+前缀即可修掉（纯 docstring、零行为变化），但按「一项一提交」留给 R13 那批。
+
+##### 等效替代性（机械证明，不是读一遍）
+
+1. **行为等价** —— 三处调用点收敛前后取的是同一批配对：`cross_validate --no-prove`
+   **host 19/19 PASS**，`prove_policy.py --no-prove` 的 `[PASS] check … rules
+   golden=[] sp1=[]` 逐字未变；`tests/test_commit.py` 的
+   `test_matches_evaluate_semantics` 断言的是 `canonical_violations` 与
+   `evaluate.check` 的**集合相等**，直接钉住翻译结果。
+2. **表本身对** —— `tests/test_rule_kinds.py` 用 `ast` 从分支体里抽出
+   `(rule.kind → evidence_kind)`，与表逐项相等，并要求每个分支**恰好**一种
+   evidence_kind。
+3. **不再有第二份** —— AST 扫全仓找「含 ≥2 项本表配对的字典字面量」。
+
+##### 闸门（扩展 `tests/test_rule_kinds.py`：10 例 → 16 例）
+
+新增 `TestEvidenceKindVocabularyIsSingleSourced` 六例：① 表与 `check` 实际产生的
+配对逐项相等（`ast` 只走 `if/elif` 的**分支体** `node.body`，不含 `orelse` ——
+用 `ast.walk(if_node)` 会把整条 `elif` 链一起吞掉）；② 表的值必须是
+`_RULE_VALIDATORS` 认得的 kind；③ 全仓不许出现第二份（副本的**实际形态**是字典
+字面量，阈值 ≥2 项以免单个巧合配对误伤）；④ 扫描范围下限（≥100 个 `.py`）；
+⑤ 给**扫描器**喂一段已知副本的探针；⑥ 给**抽取器**喂一段已知分派链的探针
+（含一个 `trace_unbound`，要求它被剔除）。
+
+##### 变异探针（实测，非恒真）
+
+| 变异 | 结果 |
+|---|---|
+| 把一份 4 项副本塞回 `scripts/prove/prove_policy.py` | 红（报出 `{'policydsl/core/evaluate.py': 1, 'scripts/prove/prove_policy.py': 1}`）|
+| 从表里删掉 `"format": "format_check"` | 红（逐项比对）|
+| 还原 | 绿（`grep -c KIND_MAP` == 0，两处探针改动已完全清除）|
+
+##### 验收（R6 风险标「极低」，无回退判据；实测全绿，不触发回退）
+
+| 档 | 命令 | 结果 |
+|---|---|---|
+| 秒级 | `unittest discover -s tests -t .` | **746 passed / 15 skipped**（740 + 新增 6，skip 集合不变）|
+| 秒级 | `unittest tests.test_rule_kinds` | **16 passed**（0.29 s）|
+| 秒级 | `cross_validate.py --no-prove` | **host 19/19** PASS |
+| 秒级 | `verify/acceptance.py --verify` | **七面逐路径零差异** |
+| 分钟 | `demo_all.sh`（fast） | **8 支路全 PASS，SKIP 集合 = ∅** |
+| 分钟 | `verify_session.py --session …` | **10 项 PASS** |
+
+真出证随 P1 阶段末统一跑（`--label P1-acceptance`）。

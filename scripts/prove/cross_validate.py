@@ -49,7 +49,7 @@ from _bootstrap import REPO, bootstrap  # noqa: E402
 bootstrap()
 
 from policydsl.core.compile import compile_policy
-from policydsl.core.evaluate import check
+from policydsl.core.evaluate import EVIDENCE_KIND_TO_RULE_KIND, check
 from policydsl.core.model import Policy, Rule, Transcript
 from policydsl.core.serialize import spec_canonical_text
 from policydsl.core import pii
@@ -69,11 +69,6 @@ POP_SCRIPT = Path(os.environ.get("POP_SCRIPT") or _AUTHORITY_POP_SCRIPT)
 #: 落在源码目录里，`ls scripts/` 分不清哪些是脚本、哪些是上次跑剩下的。`.work/`
 #: 是专门的草稿区，由一条 gitignore 规则覆盖（替掉原先散在 4 条里的同名文件规则）。
 DEFAULT_WORK_DIR = REPO / "scripts" / ".work"
-
-# Python Violation.evidence_kind -> guest 规则类型字符串
-KIND_MAP = {"keyword": "keyword_block", "length": "length_bound", "pattern": "pattern_block",
-            "format": "format_check", "tool_arg": "tool_arg_guard", "budget": "budget_bound",
-            "normalized_keyword": "normalized_keyword_block"}
 
 #: 真实证明时每个 pop-script 进程处理的向量数（见模块 docstring 的 OOM 说明）。
 DEFAULT_CHUNK = 4
@@ -206,7 +201,8 @@ def golden(policy: Policy, response: str, extras: dict | None = None) -> dict:
         receipts=trace.receipts_from_json(extras.get("receipts")),
     )
     res = check(policy, tx)
-    rules = sorted({(v.rule.name, KIND_MAP.get(v.evidence_kind, v.evidence_kind))
+    rules = sorted({(v.rule.name,
+                     EVIDENCE_KIND_TO_RULE_KIND.get(v.evidence_kind, v.evidence_kind))
                     for v in res.violations})
     return {"passed": res.passed, "violations": rules}
 

@@ -1,5 +1,12 @@
 """规则 kind 的**分派一致性**保障：四份实现不许悄悄漂移。
 
+外加第五件东西：``Violation.evidence_kind`` → ``rule.kind`` 的**翻译表**
+（``evaluate.EVIDENCE_KIND_TO_RULE_KIND``，R6 收敛）。它一度被抄成三份，其中
+``prove_policy.py`` 与 ``test_commit.py`` 那两份**各只有 7 项里的 3 项** —— 之所以
+今天不炸，只是因为现有 7 个策略包用到的 ``evidence_kind`` 恰好都落在那 3 项里。
+本文件末尾两道闸门把它钉住：① 表与 ``check`` 真正会产生的配对逐项相等（``ast``
+从分支体里抽，不靠人维护）；② 全仓不许再出现第二份。
+
 为什么需要这套用例：按 ``kind`` 分派的逻辑在项目里有**四份**，各自独立维护——
 
 1. ``policydsl/core/model.py``            —— ``Rule.validate``（参数校验）
@@ -32,10 +39,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from policydsl.core.evaluate import EVIDENCE_KIND_TO_RULE_KIND  # noqa: E402
 from policydsl.core.model import _RULE_VALIDATORS  # noqa: E402
 from policydsl.proofs.multiparty import KIND_OWNER  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
+EVALUATE_PY = REPO / "policydsl" / "core" / "evaluate.py"
 
 #: kind 名单的出处：逻辑路径 → 源码文件。文案里要用，顺手放一处。
 SOURCES = {
@@ -172,6 +181,183 @@ class TestDispatchSitesAgree(unittest.TestCase):
             f"KIND_OWNER 与 _RULE_VALIDATORS 不一致："
             f"少了 {sorted(self.kinds - set(KIND_OWNER))}，"
             f"多了 {sorted(set(KIND_OWNER) - self.kinds)}")
+
+
+#: 合成规则 ``_TraceRule`` 的 kind：坏回执链的落点，不属于任何策略规则。
+SYNTHETIC_EVIDENCE_KIND = "trace_unbound"
+
+#: 扫描全仓时跳过的目录（与 tests/test_driver_paths.py、test_artifact_digest.py 同）。
+SKIP_DIRS = {".git", "target", "__pycache__", "node_modules", ".venv", "out", ".work"}
+
+#: 「一次抄了至少两项」才算副本 —— 单个巧合配对（如某处只映射一个词）不算。
+COPY_MIN_PAIRS = 2
+
+#: ── 申报的例外（逐条给理由，条数钉死）──────────────────────────────────────
+#:
+#: 定义了翻译表的文件 → 该文件里「表形态的字典字面量」个数（不是配对条数）。
+DECLARED_TABLE_SITES = {
+    # 唯一出处本身 —— 全仓就这一个字典字面量。
+    "policydsl/core/evaluate.py": 1,
+}
+
+MIN_SCANNED = 100
+
+
+def _branch_kind(test: ast.AST):
+    """若 ``test`` 形如 ``rule.kind == "X"`` 则返回 ``"X"``，否则 ``None``。"""
+    if not (isinstance(test, ast.Compare) and len(test.ops) == 1
+            and isinstance(test.ops[0], ast.Eq)):
+        return None
+    if not _is_kind_expr(test.left) or not _str_const(test.comparators[0]):
+        return None
+    return test.comparators[0].value
+
+
+def _violation_evidence_kinds(stmts) -> set:
+    """在一段语句里数 ``Violation(<rule>, "<evidence_kind>", …)`` 的第二个位置参数。"""
+    found = set()
+    for stmt in stmts:
+        for node in ast.walk(stmt):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id == "Violation" and len(node.args) >= 2
+                    and _str_const(node.args[1])):
+                found.add(node.args[1].value)
+    return found
+
+
+def emit_table(path: Path) -> dict:
+    """从 ``check`` 的分派链里抽出 ``{规则 kind: {evidence_kind, …}}``。
+
+    走的是 ``if/elif rule.kind == "X":`` 的**分支体**（``node.body``，不含
+    ``orelse``）—— 用 ``ast.walk(node)`` 会把 ``elif`` 链一起吞掉，所以这里只
+    对分支体逐条 walk。
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    out = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        kind = _branch_kind(node.test)
+        if kind is None:
+            continue
+        ev = _violation_evidence_kinds(node.body) - {SYNTHETIC_EVIDENCE_KIND}
+        if ev:
+            out[kind] = ev
+    return out
+
+
+def _py_files() -> list:
+    return [p for p in sorted(REPO.rglob("*.py"))
+            if not (SKIP_DIRS & set(p.relative_to(REPO).parts))]
+
+
+def _table_copies() -> dict:
+    """→ ``{相对路径: 该文件里「含 ≥COPY_MIN_PAIRS 项本表配对」的字典字面量个数}``。
+
+    字典字面量是这份表被抄写时的实际形态（三份副本都是）。改名、拆成两句赋值
+    这类变体扫不到 —— 闸门按**已观察到的形态**写，并留申报口子。
+    """
+    pairs = set(EVIDENCE_KIND_TO_RULE_KIND.items())
+    out = {}
+    for p in _py_files():
+        rel = str(p.relative_to(REPO))
+        try:
+            tree = ast.parse(p.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        n = 0
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Dict):
+                continue
+            hit = 0
+            for k, v in zip(node.keys, node.values):
+                if _str_const(k) and _str_const(v) and (k.value, v.value) in pairs:
+                    hit += 1
+            if hit >= COPY_MIN_PAIRS:
+                n += 1
+        if n:
+            out[rel] = n
+    return out
+
+
+class TestEvidenceKindVocabularyIsSingleSourced(unittest.TestCase):
+    """``EVIDENCE_KIND_TO_RULE_KIND``：既**对**（与 ``check`` 逐项相符），又**独**。"""
+
+    def test_the_table_matches_what_check_actually_emits(self):
+        """表不是靠人维护的：与 ``check`` 里每个分支真正产生的配对逐项相等。
+
+        人维护的那一半会烂在「新增一种 kind 却没加表」上 —— 而症状是**静默**的：
+        调用方的 ``.get(k, k)`` 会把 ``"format"`` 本身当成 kind 交出去，guest 那侧
+        写的是 ``format_check``，两边对不上，出证时才报「违规集合不同」。
+        """
+        emitted = emit_table(EVALUATE_PY)
+        actual = {k: sorted(v) for k, v in emitted.items()}
+        # 表的方向是 evidence_kind → 规则 kind（给调用方翻译用）；分支链的方向
+        # 相反。这里把表**反过来**再比，方向别搞混 —— 搞混了失败信息会读起来像
+        # 「七个键两两不相干」，而不是「方向错了」。
+        declared = {}
+        for ev, kind in EVIDENCE_KIND_TO_RULE_KIND.items():
+            declared.setdefault(kind, []).append(ev)
+        self.assertEqual(
+            actual, {k: sorted(v) for k, v in declared.items()},
+            "evaluate.check 的 (规则 kind → evidence_kind) 与 "
+            "EVIDENCE_KIND_TO_RULE_KIND 不一致。实测：\n" + repr(actual))
+        # 每个分支**恰好**一个 evidence_kind：多一个就说明该分支有两条互不相干的
+        # 违规来源，而表只有一列 —— 那种情况必须先把表的结构想清楚，不能默认通过。
+        for kind, ev in emitted.items():
+            with self.subTest(kind=kind):
+                self.assertEqual(len(ev), 1,
+                                 f"{kind} 分支产生了 {sorted(ev)} 种 evidence_kind")
+
+    def test_the_table_speaks_the_registrys_language(self):
+        """表的值必须是 ``_RULE_VALIDATORS`` 认得的 kind，键必须非空。"""
+        for ev, kind in EVIDENCE_KIND_TO_RULE_KIND.items():
+            with self.subTest(evidence_kind=ev):
+                self.assertIn(kind, _RULE_VALIDATORS,
+                              f"evidence_kind {ev!r} 映射到了不存在的规则 kind {kind!r}")
+
+    def test_no_second_copy_of_the_table(self):
+        copies = _table_copies()
+        self.assertEqual(
+            copies, DECLARED_TABLE_SITES,
+            "出现未申报的翻译表副本（或申报的例外已失效）。一律改用 "
+            "`from policydsl.core.evaluate import EVIDENCE_KIND_TO_RULE_KIND`；"
+            "确有正当理由就把条目加进 DECLARED_TABLE_SITES 并写明理由。实测：\n"
+            f"{copies!r}")
+
+    def test_the_scan_is_not_vacuous(self):
+        files = _py_files()
+        self.assertGreaterEqual(len(files), MIN_SCANNED, f"只扫到 {len(files)} 个 .py")
+        self.assertIn(str(EVALUATE_PY.relative_to(REPO)),
+                      {str(p.relative_to(REPO)) for p in files})
+
+    def test_the_scanner_can_actually_see_a_copy(self):
+        """扫描器自身的探针：喂一段**已知**的副本，它必须报出来。"""
+        sample = ast.parse('KIND_MAP = {"keyword": "keyword_block",\n'
+                           '            "length": "length_bound"}\n')
+        pairs = set(EVIDENCE_KIND_TO_RULE_KIND.items())
+        d = next(n for n in ast.walk(sample) if isinstance(n, ast.Dict))
+        hit = sum(1 for k, v in zip(d.keys, d.values)
+                  if _str_const(k) and _str_const(v) and (k.value, v.value) in pairs)
+        self.assertGreaterEqual(hit, COPY_MIN_PAIRS)
+
+    def test_the_extractor_can_actually_see_a_branch(self):
+        """抽取器自身的探针：一段**已知**的分派链，必须抽出那个配对。"""
+        sample = ast.parse(
+            'if rule.kind == "length_bound":\n'
+            '    violations.append(Violation(rule, "length", {}))\n'
+            'elif rule.kind == "budget_bound":\n'
+            '    if not chain_ok:\n'
+            '        violations.append(Violation(rule, "trace_unbound", why))\n'
+            '    violations.append(Violation(rule, "budget", {}))\n')
+        out = {}
+        for node in ast.walk(sample):
+            if isinstance(node, ast.If):
+                k = _branch_kind(node.test)
+                if k is not None:
+                    out[k] = _violation_evidence_kinds(
+                        node.body) - {SYNTHETIC_EVIDENCE_KIND}
+        self.assertEqual(out, {"length_bound": {"length"}, "budget_bound": {"budget"}})
 
 
 class TestUnknownKindFailsClosed(unittest.TestCase):
