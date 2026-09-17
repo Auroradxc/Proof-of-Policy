@@ -319,7 +319,7 @@ def ascii_lower(s: str) -> str:
 def canonical_keywords(params: Dict[str, Any]) -> Tuple[Fold, List[str]]:
     """从规则的 ``params`` 得出（折叠表, **规范化后的关键词表**）。
 
-    规范化 = 逐个「折叠 + ASCII 小写化」后排序去重 —— 与 :func:`policydsl.compile`
+    规范化 = 逐个「折叠 + ASCII 小写化」后排序去重 —— 与 :func:`policydsl.core.compile`
     对关键词做的处理是**同一个函数**，这样「链下证据取哪个关键词」与「链上取哪个」
     不会因为顺序不同而分叉。调用方（``evaluate`` / ``commit``）拿到的列表顺序
     就是电路里 ``keywords.iter().find(...)`` 的顺序。

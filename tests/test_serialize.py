@@ -17,9 +17,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl.compile import canonical_spec_bytes, compile_policy  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
-from policydsl.serialize import build_vectors, spec_canonical_text, vector_entry  # noqa: E402
+from policydsl.core.compile import canonical_spec_bytes, compile_policy  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
+from policydsl.core.serialize import build_vectors, spec_canonical_text, vector_entry  # noqa: E402
 
 
 def _all_six() -> Policy:

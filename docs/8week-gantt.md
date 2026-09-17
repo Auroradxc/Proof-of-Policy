@@ -84,11 +84,11 @@ gantt
 | 周 | 计划落点 | 实际落点 | 验收 |
 |---|---|---|---|
 | W1 | `docs/w1_notes.md`、SP1 例程 | `docs/architecture.md`（**独立笔记文件从未产出**） | 口述三性质 |
-| W2 | `policydsl/model.py`、`tests/test_dsl.py` | 同左 | 单测全绿 + 基准表 |
-| W3 | `policy_packs/finance_redaction_v1.json`、`docs/policy-dsl.md` | 同左 + `policydsl/nfa.py`、`policydsl/pii.py` | ≥2 类 PII 通过 |
+| W2 | `policydsl/core/model.py`、`tests/test_dsl.py` | 同左 | 单测全绿 + 基准表 |
+| W3 | `policy_packs/finance_redaction_v1.json`、`docs/policy-dsl.md` | 同左 + `policydsl/core/nfa.py`、`policydsl/core/pii.py` | ≥2 类 PII 通过 |
 | W4 | `circuits/program`、`circuits/script` | 同左 | PoP v0 证明→验证 |
-| W5 | 私有模式模块、`docs/security-model.md` 第一节 | `policydsl/commit.py` + `pop-types::evaluate_private` | 验证者看不到全文 |
-| W6 | `demo/`、cert 脚本 | **`policydsl/agent.py` + 三个框架适配器 + `policydsl/cert.py` + `scripts/demo_e2e.py`**（`demo/` 空目录已删） | 真实会话证书可验证 |
+| W5 | 私有模式模块、`docs/security-model.md` 第一节 | `policydsl/privacy/commit.py` + `pop-types::evaluate_private` | 验证者看不到全文 |
+| W6 | `demo/`、cert 脚本 | **`policydsl/adapters/agent.py` + 三个框架适配器 + `policydsl/evidence/cert.py` + `scripts/demo_e2e.py`**（`demo/` 空目录已删） | 真实会话证书可验证 |
 | W7 | `bench/`、`docs/security-model.md` | 同左（+ `docs/quadrant.md`、`docs/plan-p0p1p2.md`） | 成本曲线 + 对比表 |
 | W8 | 论文 + README 复现 | `paper/proof-of-policy.tex`（权威源）+ `docs/reproduce.md` + `docs/demo/` 截图 | 导师按 README 复现通过 |
 

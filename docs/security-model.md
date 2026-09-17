@@ -30,7 +30,7 @@
 |---|---|
 | `π` | 策略 = `ConstraintSpec`（含 `policy_hash = H(canonical(π))`） |
 | `T` | 响应（或「响应 + 工具轨迹」整体） |
-| `J(π,T)` | 判定函数 `∈ {passed, violations}`；实现见 `policydsl/evaluate.py`（golden）与 `pop-types::evaluate`（电路内，二者交叉验证） |
+| `J(π,T)` | 判定函数 `∈ {passed, violations}`；实现见 `policydsl/core/evaluate.py`（golden）与 `pop-types::evaluate`（电路内，二者交叉验证） |
 | `p, pub` | 证明与其**公开值**（`passed / policy_hash / response_binding / trace_root`） |
 | `c = H(T)` | 响应承诺（私有模式） |
 | `n, b` | 一次性挑战 `nonce`，与响应绑定 `b = H("pop-bind-v1" ‖ u32be(len(n)) ‖ n ‖ T)` |
@@ -133,7 +133,7 @@ G_Ledger(A):                                ; 事后篡改审计记录
 验证方侧另做**三方比对**（证书顶层 / 证书 `outcome` / 现场重编译 / 证明公开值），
 且**少于两个来源一律判失败** —— 这一条防的是「比对退化成恒真」。
 
-**代码落点**：`circuits/program`（guest 内算 hash）、`policydsl/verifier.py::check_policy_binding`、
+**代码落点**：`circuits/program`（guest 内算 hash）、`policydsl/evidence/verifier.py::check_policy_binding`、
 `scripts/verify_cert.py` 检查 3。
 **不保证**：策略本身写得对不对（那是策略作者的事）；`vkey_hash` 之外的 ELF 一致性由证明工件哈希承担。
 
@@ -146,10 +146,10 @@ G_Ledger(A):                                ; 事后篡改审计记录
 长度前缀（`u32be(len(n))`）与域前缀 `"pop-bind-v1"` 共同保证编码单射（A6），
 防止 `n‖T` 的拼接歧义与跨用途复用。
 
-**代码落点**：`policydsl/commit.py::response_binding`、`circuits` 内同构实现、
+**代码落点**：`policydsl/privacy/commit.py::response_binding`、`circuits` 内同构实现、
 `verify_cert.py` 检查 3b、`tests/test_binding.py`（Python↔Rust 逐字节对齐）。
 **不保证**：`n` 的一次性 —— 若验证者复用 `n`，一条旧证书可以重放（危害是**会话计数**，
-不是伪造 `T′`）。一次性由协议使用方保证（`policydsl.challenge.NonceStore` 是最小参考实现）。
+不是伪造 `T′`）。一次性由协议使用方保证（`policydsl.privacy.challenge.NonceStore` 是最小参考实现）。
 
 ### L3 轨迹绑定（P1-5）—— **三层分解，不可合并陈述**
 
@@ -165,8 +165,8 @@ Pr[G_Bind_trace(A) = 1]
 | 层 | 保证 | 落点 | **不保证** |
 |---|---|---|---|
 | **电路内** `verify_receipt_chain` | 链**结构**自洽：`seq` 从 0 连续、`prev` 逐条咬合、摘要由内容重算；不自洽 → `trace_unbound` **fail-closed** | `circuits/types`（guest 与宿主共用） | **不验签**；改动**链尾**那条的内容，结构上仍自洽 |
-| **链下** `trace.verify_chain` | 每条回执确由 keyring 里 `keyid` 对应的 Ed25519 钥签过；非白名单方案前缀**结构性拒绝** | `policydsl/trace.py`、`verify_cert.py --gateway-key` | 不防**网关自身**作恶（A4）；**完整性**由下一行的 seal 层提供（见 §5.3） |
-| **链下 + 证书** `trace.verify_seal` | 链**没有被截尾**：网关会话末端承诺的 `count`/`trace_root` 与交付链一致、签名有效（P1-5b） | `policydsl/trace.py::verify_seal`、`verify_cert.py` 3d | 须持网关公钥；seal 仍是**网关的**陈述（A4） |
+| **链下** `trace.verify_chain` | 每条回执确由 keyring 里 `keyid` 对应的 Ed25519 钥签过；非白名单方案前缀**结构性拒绝** | `policydsl/evidence/trace.py`、`verify_cert.py --gateway-key` | 不防**网关自身**作恶（A4）；**完整性**由下一行的 seal 层提供（见 §5.3） |
+| **链下 + 证书** `trace.verify_seal` | 链**没有被截尾**：网关会话末端承诺的 `count`/`trace_root` 与交付链一致、签名有效（P1-5b） | `policydsl/evidence/trace.py::verify_seal`、`verify_cert.py` 3d | 须持网关公钥；seal 仍是**网关的**陈述（A4） |
 | **公开值** `trace_root` | 链尾摘要随证明承诺；验证方拿**自己手上**的链重算即可核对「证明绑的是哪条链」 | `pub.trace_root`、`verify_cert.py --receipts` | 公开的只是摘要，不是链本身 |
 
 **为什么结构层会落到 A2**：删/换/重排任一条回执，都会让它**后继**那条的 `prev` 对不上
@@ -191,7 +191,7 @@ Pr[G_Bind_trace(A) = 1]
 （`anchored_full_match` 逐 span 校验）。二者合取后，掩码不可能落在非命中处 ——
 否则要么 `redaction_ok` 失败，要么该位不在任何已证 span 内。
 
-**代码落点**：`policydsl/commit.py`、`circuits` 内 `mask_covered` 见证。
+**代码落点**：`policydsl/privacy/commit.py`、`circuits` 内 `mask_covered` 见证。
 **不保证**：`T` 中未命中部分仍可能因**其它**通道泄露（见 L5 的隐私界）。
 
 ### L5 账本完整性 + 承诺隐私 —— 归约到 A2 / A5
@@ -199,7 +199,7 @@ Pr[G_Bind_trace(A) = 1]
 **账本完整性**：`cert_digest` 进**哈希链账本**，任一条目增/删/改使链校验失败；
 更弱的下界由链上锚定强化为「公开可验证的某时刻已存在」。
 `Pr[G_Ledger(A) = 1] ≤ Adv^{CR}_{SHA256}(B)`。
-**代码落点**：`policydsl/anchor.py::verify_ledger`、`contracts/Anchor.sol`（`anchor(bytes32)` **首次即最终**，
+**代码落点**：`policydsl/evidence/anchor.py::verify_ledger`、`contracts/Anchor.sol`（`anchor(bytes32)` **首次即最终**，
 重复登记 revert ⇒ 后来的时间戳无法覆盖先到的）。
 **不保证**：锚定只证「该摘要某时刻已存在」，**不证「证书内容为真」** —— 后者由签名 + L1 + L2 承担。
 
@@ -249,7 +249,7 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 逐字段比对、vkey 逐字节比对（换证明即失败）；第 6 步要求四方 `response_binding`
 一致，其中一方是**现场重算**（两半绑不同 `T`、或送达 `T′` 与证明不符，都失败）。
 
-**代码落点**：`policydsl/compose.py::verify_composite`（8 步）、
+**代码落点**：`policydsl/proofs/compose.py::verify_composite`（8 步）、
 `circuits/types::job_domain`、`circuits/program` 与 `circuits/infer-program` 的入口断言、
 `scripts/compose_proof.py`、`tests/test_compose.py`。
 
@@ -307,7 +307,7 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 而 `outcome.passed` **只覆盖电路判得了的部分**，`π_sem` 不在其中。少了 `合规` 行，
 一张 `passed=true` 而语义规则没过的证书会被读成合规，那正是 P0-1 的形态。
 
-**代码落点**：`policydsl/semantic.py::verify_companion`、
+**代码落点**：`policydsl/proofs/semantic.py::verify_companion`、
 `circuits/types/src/lib.rs::DelegatedConstraint`、`scripts/verify_cert.py` 检查 3e、
 `tests/test_semantic.py`（30）。
 
@@ -344,7 +344,7 @@ T′ ⊨ π        且        M_infer(T′) = 证书承诺的输出
 两类攻击由两个不同的机制拦下，不能合并陈述。
 
 **代码落点**：`circuits/session-program/`（guest③，vkey 与另两域不同）、
-`circuits/types/src/lib.rs::run_session`、`policydsl/session.py::verify_session_proof`、
+`circuits/types/src/lib.rs::run_session`、`policydsl/proofs/session.py::verify_session_proof`、
 `scripts/prove_session.py`、`tests/test_session.py`（38）。
 
 **不保证 / 诚实边界**：
@@ -404,8 +404,8 @@ P0-1「空策略证明 + 真策略哈希」攻击的同一条防线。∎
 因为「谁拥有哪几把键」这件事本身就在证书之外。`test_colluding_roles_rewritten_plan_needs_the_pack`
 把这条钉成「不带策略包时**会通过**」，免得日后有人把它读成「签名能挡住合谋」。
 
-**代码落点**：`policydsl/multiparty.py::verify_multiparty`（七步）、
-`policydsl/compile.py::compile_slice_policy`、
+**代码落点**：`policydsl/proofs/multiparty.py::verify_multiparty`（七步）、
+`policydsl/core/compile.py::compile_slice_policy`、
 `scripts/prove_multiparty.py`、`tests/test_multiparty.py`（44）。
 
 **不保证 / 诚实边界**：
@@ -497,7 +497,7 @@ P0-1「空策略证明 + 真策略哈希」攻击的同一条防线。∎
 **这不是"再比一次"能补的**：任何只基于**交付链本身**的检查都无法知道「后面还有没有」。
 
 **对策（已实现）**：网关在**会话末端**签一条 `ToolSeal{count, trace_root, ts, keyid, sig}`
-（`policydsl/trace.py::ToolGateway.seal`，域分隔 `pop-trace-seal-v1`），随证书载荷顶层
+（`policydsl/evidence/trace.py::ToolGateway.seal`，域分隔 `pop-trace-seal-v1`），随证书载荷顶层
 `trace_seal` 字段一起走。验证方（`verify_cert.py` 卡 **3d**）核对三件事：
 
 1. `seal.sig` 由网关钥签出（链下 Ed25519，与回执验签同一道关）；
@@ -513,7 +513,7 @@ P0-1「空策略证明 + 真策略哈希」攻击的同一条防线。∎
 
 - **不改电路**：`trace_root` 本来就在电路内计算并进公开值，「这条证明绑的是哪条链」
   已有电路保证；seal 补的是「网关说这条链到此为止」，那是一个**签名**问题。按本项目
-  「结构入电路、签名在链下」的既有分工放在链下（`policydsl/trace.py` 的"三层"表因此
+  「结构入电路、签名在链下」的既有分工放在链下（`policydsl/evidence/trace.py` 的"三层"表因此
   多出第四行"链下 + 证书"）。这偏离了计划稿 `plan-p0p1p2.md` 待办 T4 里
   「+ 电路内对 seal 的结构校验」的设想。
 - **seal 在载荷顶层，不在 `outcome` 里**：`outcome` 是**证明公开值的镜像**（验证方逐字段
@@ -553,18 +553,18 @@ L3 的命题把 `Pr[截尾攻击]` 单列一项 —— 该概率现在由 `Adv^{
 
 | 引理 / 性质 | 实现 | 测试 |
 |---|---|---|
-| 判定函数（golden ⇄ 电路） | `policydsl/evaluate.py` ⇄ `circuits/types/src/lib.rs::evaluate` | `tests/test_rules_incircuit.py`（13）、`cross_validate` **host 19/19 · prove 19/19**（2026-09-12 整批重跑） |
-| **L1** 策略绑定 | `circuits/program`（guest 内算）、`policydsl/verifier.py::check_policy_binding` | `tests/test_policy_binding.py`（28） |
-| **L2** 响应绑定 | `policydsl/commit.py::response_binding`、`policydsl/challenge.py` | `tests/test_binding.py`（19） |
-| **L3** 轨迹绑定 | `policydsl/trace.py`、`circuits/types::verify_receipt_chain`、`verify_cert.py` 3c | `tests/test_trace.py`（41） |
-| **L4** 脱敏健全性 | `policydsl/commit.py`、`circuits` 内 `mask_covered` | `tests/test_commit.py`（12） |
-| **L5** 账本 + 锚定 | `policydsl/anchor.py`、`contracts/Anchor.sol` | `tests/test_anchor.py`（4）、`test_anchor_chain.py`（28） |
-| 证书签名（A3/A7） | `policydsl/cert.py::Ed25519Signer`、`policydsl/keys.py` | `tests/test_cert.py`（19） |
+| 判定函数（golden ⇄ 电路） | `policydsl/core/evaluate.py` ⇄ `circuits/types/src/lib.rs::evaluate` | `tests/test_rules_incircuit.py`（13）、`cross_validate` **host 19/19 · prove 19/19**（2026-09-12 整批重跑） |
+| **L1** 策略绑定 | `circuits/program`（guest 内算）、`policydsl/evidence/verifier.py::check_policy_binding` | `tests/test_policy_binding.py`（28） |
+| **L2** 响应绑定 | `policydsl/privacy/commit.py::response_binding`、`policydsl/privacy/challenge.py` | `tests/test_binding.py`（19） |
+| **L3** 轨迹绑定 | `policydsl/evidence/trace.py`、`circuits/types::verify_receipt_chain`、`verify_cert.py` 3c | `tests/test_trace.py`（41） |
+| **L4** 脱敏健全性 | `policydsl/privacy/commit.py`、`circuits` 内 `mask_covered` | `tests/test_commit.py`（12） |
+| **L5** 账本 + 锚定 | `policydsl/evidence/anchor.py`、`contracts/Anchor.sol` | `tests/test_anchor.py`（4）、`test_anchor_chain.py`（28） |
+| 证书签名（A3/A7） | `policydsl/evidence/cert.py::Ed25519Signer`、`policydsl/evidence/keys.py` | `tests/test_cert.py`（19） |
 | 证明模式诚实标注 | `cert.PROOF_MODE_HIDING`、`verifier.artifact_proof_modes` | `tests/test_verifier_only.py`（8） |
-| **L7** 语义委托（P2-9） | `policydsl/semantic.py`、`scripts/ezkl_prove.py`、`circuits/types::DelegatedConstraint`、`verify_cert.py` 3e | `tests/test_semantic.py`（30，含 6 条反例；真·端到端由 `POP_TEST_EZKL=1` 打开） |
-| **L6** 组合义务（P1-6） | `policydsl/compose.py`、`circuits/infer-program`（guest②）、`circuits/types::job_domain`、`scripts/compose_proof.py` | `tests/test_compose.py`（48，含 5 组反例 + 4 条驱动接线回归；真·端到端由 `POP_TEST_COMPOSE=1` 打开） |
-| **L8** 跨证书一致性（P2-10） | `circuits/session-program`（guest③）、`circuits/types::run_session`、`policydsl/session.py::verify_session_proof`、`scripts/prove_session.py` | `tests/test_session.py`（38，含两种挖法的反例；真·端到端由 `POP_TEST_SESSION=1` 打开） |
-| **L9** 多证明者责任划分（P2-11） | `policydsl/multiparty.py::verify_multiparty`、`policydsl/compile.py::compile_slice_policy`、`scripts/prove_multiparty.py` | `tests/test_multiparty.py`（44，含两条验收判据与「三方合谋」边界；真·端到端由 `POP_TEST_MULTIPARTY=1` 打开） |
+| **L7** 语义委托（P2-9） | `policydsl/proofs/semantic.py`、`scripts/ezkl_prove.py`、`circuits/types::DelegatedConstraint`、`verify_cert.py` 3e | `tests/test_semantic.py`（30，含 6 条反例；真·端到端由 `POP_TEST_EZKL=1` 打开） |
+| **L6** 组合义务（P1-6） | `policydsl/proofs/compose.py`、`circuits/infer-program`（guest②）、`circuits/types::job_domain`、`scripts/compose_proof.py` | `tests/test_compose.py`（48，含 5 组反例 + 4 条驱动接线回归；真·端到端由 `POP_TEST_COMPOSE=1` 打开） |
+| **L8** 跨证书一致性（P2-10） | `circuits/session-program`（guest③）、`circuits/types::run_session`、`policydsl/proofs/session.py::verify_session_proof`、`scripts/prove_session.py` | `tests/test_session.py`（38，含两种挖法的反例；真·端到端由 `POP_TEST_SESSION=1` 打开） |
+| **L9** 多证明者责任划分（P2-11） | `policydsl/proofs/multiparty.py::verify_multiparty`、`policydsl/core/compile.py::compile_slice_policy`、`scripts/prove_multiparty.py` | `tests/test_multiparty.py`（44，含两条验收判据与「三方合谋」边界；真·端到端由 `POP_TEST_MULTIPARTY=1` 打开） |
 
 **回归总盘**：`python3 -m unittest discover -s tests -t .` → **667 passed / 15 skipped**（2026-09-13 复跑、2026-09-16 c4 后重测；
 skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— 由 `POP_TEST_EZKL=1` 打开；P1-6 那 5 例
@@ -574,7 +574,7 @@ skip 均为设计内，含 P2-9 那例要真出 ezkl 证明的端到端 —— �
 11.7 GiB 上是**勉强过**：与别的进程并跑时被 OOM killer 杀在 9.7 GiB 常驻，腾空后重跑
 通过（171.1 s，`MemAvailable` 一度只剩 0.15 GiB）—— SP1 core 证明的固定地板是
 ~10.15 GiB（见 `bench/results/proofs.md`）。服务侧已把这种失败翻成一句
-「多半是内存不足 + 怎么核实」（`policydsl/service.py::failure_reason`）。
+「多半是内存不足 + 怎么核实」（`policydsl/runtime/service.py::failure_reason`）。
 
 ---
 

@@ -48,10 +48,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from . import anchor, cert, challenge, commit, evaluate, keys, trace, verifier
-from .compile import compile_policy
-from .model import Policy, PolicyError, Rule, Transcript
-from .serialize import build_vectors, vector_entry
+from policydsl.evidence import anchor, cert, keys, trace, verifier
+from policydsl.privacy import challenge, commit
+from policydsl.core import evaluate
+from policydsl.core.compile import compile_policy
+from policydsl.core.model import Policy, PolicyError, Rule, Transcript
+from policydsl.core.serialize import build_vectors, vector_entry
 
 #: 链上连通性自检的缓存时长（秒）。自检要起一个 ``cast`` 子进程，而
 #: ``/v1/health`` 是运维会反复打的接口 —— 30 秒的陈旧度换来它一直是廉价的。
@@ -124,8 +126,8 @@ class VerdictMismatch(ServiceError):
     """参考评估器与规范违规列表对同一条响应给出了不同结论。
 
     这不是「服务坏了」，而是**两套推导打架** —— 两者都是链下 Python
-    （:func:`policydsl.evaluate.check` 走 ``Rule.params``，
-    :func:`policydsl.commit.canonical_violations` 走**编译后的约束**）。证书的
+    （:func:`policydsl.core.check` 走 ``Rule.params``，
+    :func:`policydsl.privacy.canonical_violations` 走**编译后的约束**）。证书的
     ``outcome`` 只能是其中一种形状（必须是**电路的那种**），而 ``passed`` 是
     拿给调用方读的那个布尔值。两者不一致时无论出哪一张证书，都会有一半的读者
     被误导 —— 所以这里**停证**并把两份结论原样报出来。
@@ -270,7 +272,7 @@ def _require_serviceable(packed: PackedPolicy) -> None:
 def _in_circuit_spec(spec: Dict[str, Any]) -> Dict[str, Any]:
     """把 ``semantic_bound`` 约束摘掉后的规范 JSON（其余字段原样）。
 
-    只影响 :func:`policydsl.commit.canonical_violations` 的入参。**不改**
+    只影响 :func:`policydsl.privacy.canonical_violations` 的入参。**不改**
     ``spec["sha256"]``：那个哈希是整份规范 JSON（含语义约束）的承诺，摘掉的
     只是「哪些约束要拿去问违规列表」这个局部问题。
     """
@@ -291,19 +293,19 @@ def host_outcome(packed: PackedPolicy, response: str,
 
     两个字段的来源值得点名：
 
-    - ``violations`` 用 :func:`policydsl.commit.canonical_violations` —— 它是
+    - ``violations`` 用 :func:`policydsl.privacy.canonical_violations` —— 它是
       ``pop-types::evaluate`` 的**精确镜像**（编号/证据字符串逐字符一致），也正是
       电路写进公开值的那一份。调用前把 ``semantic_bound`` 约束摘掉：那种约束
       电路**只登记、不判定**（它进的是 ``delegated``），而
       ``canonical_violations`` 只镜像「判得出违规」的那部分，遇到它直接
       ``NotImplementedError``。摘掉是**对的**而不是绕过 —— 电路也不会为它产出
       任何 violation；
-    - ``passed`` 用 :func:`policydsl.evaluate.check`（参考评估器，dev-plan §5.2.2
+    - ``passed`` 用 :func:`policydsl.core.check`（参考评估器，dev-plan §5.2.2
       点名的那一个）。它是**另一套推导**（走 ``Rule.params`` 而不是编译后的约束），
       所以两套结论**必须一致**：不一致就停证（:class:`VerdictMismatch`）。
       这道交叉校验本来就是「链下 golden 实现」存在的理由，白拿。
 
-    ``response_binding`` 用 :func:`policydsl.commit.response_binding` 现算 ——
+    ``response_binding`` 用 :func:`policydsl.privacy.response_binding` 现算 ——
     与电路同一个函数、同一段域分隔，因此 ``/v1/check`` 绑的 T 与 ``/v1/attest``
     绑的 T 在同一个 nonce 下算出同一个值（升段时这一点是可核对的）。
     """
@@ -401,7 +403,7 @@ def _write_vectors(out_dir: Path, packed: PackedPolicy, response: str, nonce: by
                    mode: str, receipts: Optional[Sequence[Any]] = None) -> Path:
     """写 ``vectors.json``。
 
-    用 :func:`policydsl.serialize.vector_entry` / ``build_vectors`` 拼装，**不
+    用 :func:`policydsl.core.vector_entry` / ``build_vectors`` 拼装，**不
     手抄字段名** —— 这里第一版就是手抄的，抄漏了 ``receipts``，电路于是按**空
     回执链**判定：证书的 ``trace_root`` 写着 ``genesis``，而验证方拿调用方给的
     回执一重算就 MISMATCH。这正是 ``vector_entry`` 想防的那种错（它的 docstring
@@ -985,7 +987,7 @@ class ProofService:
         这两样是服务的知识，不是作业的。
 
         ``viewer`` 非空时判归属（``viewer.owns(job.owner)``，duck-typed 成
-        :class:`policydsl.auth.Principal`）。**不是你的作业报的是
+        :class:`policydsl.runtime.Principal`）。**不是你的作业报的是
         :class:`JobNotFound`，不是「无权限」** —— 报 403 等于确认「这个 job_id
         存在」，那它就成了一个探测别家 job_id 的预言机。两种情况必须从外部
         完全看不出区别，所以连措辞都用同一个。

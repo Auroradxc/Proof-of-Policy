@@ -19,7 +19,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-REPO = Path(__file__).resolve().parent.parent
+from policydsl.paths import REPO  # 仓库根的唯一出处（见该模块 docstring 的事故记录）
+
 #: 出证/宿主校验驱动。
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 #: 免证明器快路径验证二进制。
@@ -202,7 +203,7 @@ def check_trace_binding(sources: Sequence[Tuple[str, Optional[str]]]) -> Tuple[b
     **验证方自己手上那条链**，而不是出证方转述的另一条。
 
     **本函数只比对摘要，不验签**：链尾摘要能对上，说明链的内容一致；「这条链
-    是不是网关真的签过」是另一件事，由 :func:`policydsl.trace.verify_chain`
+    是不是网关真的签过」是另一件事，由 :func:`policydsl.evidence.verify_chain`
     独立完成（`verify_cert.py --gateway-key` 会把两步都跑）。
     """
     return check_agreement(sources, what="trace_root")
@@ -269,7 +270,7 @@ def outcome_without_meta(proof_result: Dict[str, Any]) -> Optional[Dict[str, Any
     ⚠️ 这里剥掉的 ``mode`` 是**运行模式**（``public``/``private``/``infer``），
     在证书载荷里它与顶层的 ``payload["mode"]`` 冗余，所以剥了不会有损失。
     但**别的用途**下 ``mode`` 可能正是要判的东西（组合层就用它做域绑定检查）——
-    那种场合别用本函数，见 ``policydsl/compose.py::_outcome_of``。
+    那种场合别用本函数，见 ``policydsl/proofs/compose.py::_outcome_of``。
     """
     outcome = proof_result.get("outcome")
     if not isinstance(outcome, dict):

@@ -34,9 +34,9 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "bench"))
 
 import bench_cycles as bc  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
-from policydsl.serialize import spec_canonical_text  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
+from policydsl.core.serialize import spec_canonical_text  # noqa: E402
 
 #: 病理模式与输入。``a+b`` 需要 ``a+`` 后跟 ``b``，而输入全是 ``a`` ⇒ 必然不匹配 ⇒ 扫到底。
 PATTERN = "a+b"

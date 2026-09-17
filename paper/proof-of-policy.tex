@@ -331,7 +331,7 @@ $\{$\code{cert_version}, \code{policy}$\{$\code{id}, \code{version}$\}$, \code{p
 HMAC demo signer 已被结构性拒绝），\code{cert_digest} 写入\textbf{哈希链锚定账本}；
 流式证书额外构成\textbf{流式链}（\code{streaming.chain} = $\{$\code{index}, \code{prev}$\}$）并支持\textbf{早停}。
 
-锚定支持两种后端（\code{policydsl/anchor.py}，上层接口一致）：\textbf{文件账本}（默认，
+锚定支持两种后端（\code{policydsl/evidence/anchor.py}，上层接口一致）：\textbf{文件账本}（默认，
 离线可验，条目哈希链 $\{$\code{seq}, \code{prev}, \code{digest}, \code{ts}, \code{meta}, \code{hash}$\}$）与\textbf{链上登记}
 （\code{RpcAnchorBackend} 调用 \code{contracts/Anchor.sol} 的 \code{anchor(bytes32)}——
 首次即最终、事件 \code{Anchored(digest, ts, by, seq)}、链上只存 32 字节摘要）。

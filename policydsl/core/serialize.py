@@ -11,20 +11,20 @@ serde「外部标签枚举」（``{"KeywordBlock": {...}}``）的 JSON。该设�
 serde 内部标签（``"kind"``）直接吃这份形状，因此不存在「两套序列化」的映射，
 也就不存在映射带来的可分离性。
 
-唯一真相源由 :func:`policydsl.compile.canonical_spec_bytes` 定义。
+唯一真相源由 :func:`policydsl.core.canonical_spec_bytes` 定义。
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, List
 
-from .compile import canonical_spec_text
+from policydsl.core.compile import canonical_spec_text
 
 
 def spec_canonical_text(spec: Dict[str, Any]) -> str:
     """返回策略的规范 JSON 文本（写进 vectors 条目的 ``spec_canonical`` 字段）。
 
-    这是 :func:`policydsl.compile.canonical_spec_text` 的再导出，保留在此模块
+    这是 :func:`policydsl.core.canonical_spec_text` 的再导出，保留在此模块
     是为了让所有 vectors 构造点从同一个地方取契约文本。
     """
     return canonical_spec_text(spec)
@@ -35,11 +35,11 @@ def vector_entry(spec: Dict[str, Any], response: str, **extra: Any) -> Dict[str,
 
     把「契约文本从哪来」收敛到一处，避免调用点各自拼装而写错字段名。
 
-    ``receipts``（P1-5）可以是 :class:`policydsl.trace.ToolReceipt` 列表，
+    ``receipts``（P1-5）可以是 :class:`policydsl.evidence.ToolReceipt` 列表，
     会自动转成 JSON 形状 —— 直接传对象的话 ``json.dumps`` 会炸。
     """
     if extra.get("receipts") is not None:
-        from .trace import ToolReceipt, receipts_to_json
+        from policydsl.evidence.trace import ToolReceipt, receipts_to_json
 
         items = extra["receipts"]
         extra["receipts"] = (receipts_to_json(items)

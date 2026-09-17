@@ -1,4 +1,4 @@
-"""policydsl.agent 插桩钩子的测试。
+"""policydsl.adapters.agent 插桩钩子的测试。
 
 AgentMonitor 是「生成路径」与「工具调用路径」的统一入口：它把一次模型输出或
 一次工具调用送进策略引擎，并签发出可独立验证的证书。这里覆盖公开/私有两种
@@ -12,9 +12,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl import agent, cert, trace  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
+from policydsl.adapters import agent  # noqa: E402
+from policydsl.evidence import cert, trace  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -132,8 +133,8 @@ class TestLangGraphAdapter(unittest.TestCase):
     # attach 返回的必须就是 LangChain 的 handler（两者共享回调系统）；
     # 未安装 langgraph 时 require_langgraph 应抛出 RuntimeError 而非静默失败
     def test_attach_returns_handler_and_require_raises(self):
-        from policydsl import langgraph_adapter as lg
-        from policydsl.langchain_adapter import PoPCallbackHandler
+        from policydsl.adapters import langgraph_adapter as lg
+        from policydsl.adapters.langchain_adapter import PoPCallbackHandler
         monitor = agent.AgentMonitor(load_pack("agent_content_v1.json"))
         self.assertIsInstance(lg.attach(monitor), PoPCallbackHandler)
         if not lg.langgraph_available():  # pragma: no branch

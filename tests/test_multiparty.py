@@ -35,12 +35,12 @@ REPO = Path(__file__).resolve().parents[1]
 import sys  # noqa: E402
 sys.path.insert(0, str(REPO))
 
-from policydsl import cert as C  # noqa: E402
-from policydsl import keys  # noqa: E402
-from policydsl import multiparty as M  # noqa: E402
-from policydsl.commit import response_binding  # noqa: E402
-from policydsl.compile import compile_policy, compile_slice_policy  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
+from policydsl.evidence import cert as C  # noqa: E402
+from policydsl.evidence import keys  # noqa: E402
+from policydsl.proofs import multiparty as M  # noqa: E402
+from policydsl.privacy.commit import response_binding  # noqa: E402
+from policydsl.core.compile import compile_policy, compile_slice_policy  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
 
 #: 真·端到端要真出证（两份切片证明，各约 2 分钟、峰值 ~10 GB），默认关闭。
 RUN_E2E = os.environ.get("POP_TEST_MULTIPARTY") == "1"
@@ -100,7 +100,7 @@ class _Fixture:
         self.specs = M.slice_specs(policy)
         # 部署方那段的公开值里带着「被委托出去」的约束（形状与
         # pop_types::DelegatedConstraint 相同）。绑定层不核这些字段的内容 ——
-        # 那是 ezkl 陪伴证明的事（见 policydsl/semantic.py 的 verify_companion），
+        # 那是 ezkl 陪伴证明的事（见 policydsl/proofs/semantic.py 的 verify_companion），
         # 这里只核「非空 ⇒ 不替它下合规结论」这条口径。
         self._delegated = [
             {"name": r.name, "system": "ezkl-halo2", "model_vkey": "v" * 64,

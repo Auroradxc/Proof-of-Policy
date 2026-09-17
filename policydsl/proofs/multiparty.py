@@ -104,15 +104,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from policydsl import cert as C
-from policydsl import commit as CMT
-from policydsl import verifier as V
-from policydsl.compile import (compile_policy, compile_slice_policy,
+from policydsl.evidence import cert as C
+from policydsl.privacy import commit as CMT
+from policydsl.evidence import verifier as V
+from policydsl.core.compile import (compile_policy, compile_slice_policy,
                                require_covering_length_bound)
-from policydsl.model import Policy
-from policydsl.serialize import build_vectors, vector_entry
+from policydsl.core.model import Policy
+from policydsl.core.serialize import build_vectors, vector_entry
 
-REPO = Path(__file__).resolve().parent.parent
+from policydsl.paths import REPO  # 仓库根的唯一出处（见该模块 docstring 的事故记录）
+
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
 
@@ -173,7 +174,7 @@ def role_of_kind(kind: str) -> str:
     except KeyError:
         raise MultipartyError(
             f"未知规则类 {kind!r}：分片不猜归属 —— 新加一类规则必须在 "
-            f"policydsl/multiparty.py 的 KIND_OWNER 里显式指定哪个角色为它的判定"
+            f"policydsl/proofs/multiparty.py 的 KIND_OWNER 里显式指定哪个角色为它的判定"
             f"依据负责，否则它会静默地落到一个「没人证」的位置上。"
             f"已知：{sorted(KIND_OWNER)}") from None
 
@@ -186,7 +187,7 @@ def shard(policy: Policy) -> Dict[str, Policy]:
     **定长前提在整条策略上检查一次**：``require_covering_length_bound`` 陈述的是
     「任意合法输入都能被完整判定」，而 ``length_bound`` 归模型方那段切片 ——
     在部署方那段上再查一次会把每个含语义规则的策略结构性地变成无法分片
-    （见 :func:`policydsl.compile.compile_slice_policy`）。
+    （见 :func:`policydsl.core.compile_slice_policy`）。
     """
     policy.validate()
     require_covering_length_bound(policy)      # 整条策略层面的不变式
@@ -270,7 +271,7 @@ def _meta_vkey(proof: Path) -> Optional[str]:
 
 def _load_policy(path: Path) -> Policy:
     """从 JSON 载入策略包（与 ``compose._load_policy`` 同口径，避免循环导入）。"""
-    from policydsl.model import Rule
+    from policydsl.core.model import Rule
     d = json.loads(Path(path).read_text(encoding="utf-8"))
     rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
              for i, r in enumerate(d["rules"])]

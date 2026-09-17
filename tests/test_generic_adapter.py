@@ -1,4 +1,4 @@
-"""框架无关参考适配器（``policydsl/generic_adapter.py``）的测试。
+"""框架无关参考适配器（``policydsl/adapters/generic_adapter.py``）的测试。
 
 这里**不装任何框架**：这正是该模块存在的理由之一。分四组：
 
@@ -18,9 +18,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl import cert, keys, trace  # noqa: E402
-from policydsl import generic_adapter as ga  # noqa: E402
-from policydsl.model import Policy, PolicyError, Rule  # noqa: E402
+from policydsl.evidence import cert, keys, trace  # noqa: E402
+from policydsl.adapters import generic_adapter as ga  # noqa: E402
+from policydsl.core.model import Policy, PolicyError, Rule  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 

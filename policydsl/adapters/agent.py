@@ -9,7 +9,7 @@
     ``binding.vkey_hash``（``"unproven"`` 表示未附）单独体现。
 
 **P1-5 轨迹绑定**：工具调用的凭证不再是 agent 自报的 ``{name, args}``，而是
-:class:`policydsl.trace.ToolGateway` 签发的 :class:`~policydsl.trace.ToolReceipt`。
+:class:`policydsl.evidence.ToolGateway` 签发的 :class:`~policydsl.evidence.ToolReceipt`。
 ``on_tool_call`` 因此改成收一条**已签名的回执**（由网关在调用执行后签发）；
 生成路径则把整条回执链（``receipts``）一并交给判定，使
 ``tool_arg_guard``/``budget_bound`` 判的是回执、且链尾摘要进证书
@@ -17,11 +17,11 @@
 
 签名（P0-3）：``AgentMonitor`` 持有一个 :class:`cert.Signer`，默认是**进程内
 临时 Ed25519 密钥**（不落盘）。要跨进程/跨方验证，请显式传入由
-``policydsl.keys.load_or_create()`` 得到的签名器，并把公钥交给验证方；
+``policydsl.evidence.load_or_create()`` 得到的签名器，并把公钥交给验证方；
 否则请把 ``monitor.signer.public_hex`` 随证书一起交出去。
 
 真实框架（LangGraph / MCP）接入这两个钩子；见
-``policydsl.langgraph_adapter``。``mock_agent()`` 产出确定性的会话，
+``policydsl.adapters.langgraph_adapter``。``mock_agent()`` 产出确定性的会话，
 供 demo/测试使用，无需任何 LLM 依赖。
 """
 
@@ -29,10 +29,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
-from . import cert, commit, keys, trace
-from .compile import compile_policy
-from .evaluate import check
-from .model import Policy, PolicyError, Transcript
+from policydsl.evidence import cert, keys, trace
+from policydsl.privacy import commit
+from policydsl.core.compile import compile_policy
+from policydsl.core.evaluate import check
+from policydsl.core.model import Policy, PolicyError, Transcript
 
 
 class AgentMonitor:
@@ -71,7 +72,7 @@ class AgentMonitor:
         P1-5b 的会话末端承诺。seal 由 :meth:`on_generate` / :meth:`on_tool_call`
         从调用方传进 ``build_payload``，落在证书载荷的**顶层**
         （``payload["trace_seal"]``），与 ``challenge`` 块同级。见
-        ``policydsl/trace.py`` 的「截尾与 ToolSeal」一节。
+        ``policydsl/evidence/trace.py`` 的「截尾与 ToolSeal」一节。
         """
         rs = [commit.as_receipt(r) for r in (receipts or [])]
         if self.mode == "public":
@@ -158,7 +159,7 @@ class AgentMonitor:
                      extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """工具调用路径钩子：判定并签发工具调用证书（mode 固定 "tool-call"）。
 
-        ``receipt`` 由 :class:`policydsl.trace.ToolGateway` 在**本次调用执行后**
+        ``receipt`` 由 :class:`policydsl.evidence.ToolGateway` 在**本次调用执行后**
         签发。签名本层不再校验（它是网关的职责，验证方会独立验一遍）：这里
         重算的 ``trace_root`` 会写进证书，供验证方与网关侧回执比对。
         ``chain`` 见 :meth:`tool_call_outcome`（适配器应传 ``gateway.receipts``），

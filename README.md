@@ -23,9 +23,9 @@
 
 ```
 ┌───────────────────────── Python（链下，作者/编译/参考评估）─────────────────────────┐         ← 8 条支路共同的编译/参考层
-│  policy_packs/*.json  ──►  policydsl.compile()  ──►  ConstraintSpec (JSON, 链上契约)   │
+│  policy_packs/*.json  ──►  policydsl.compile_policy()  ──►  ConstraintSpec（JSON）    │
 │                                    │                     │                            │
-│  response ──►  policydsl.evaluate()──► 参考判定（golden） ◄── 用于单测与交叉验证        │
+│  response ──►  policydsl.check()  ──► 参考判定（golden） ◄── 用于单测与交叉验证       │
 └─────────────────────────────────────┼─────────────────────────────────────────────────┘
                                       ▼
 ┌───────────────────────── Rust + SP1（链上/链下证明）──────────────────────────────────┐       ← 支路①「公开模式主干」 `demo_e2e.py` ✅
@@ -51,7 +51,7 @@
 └───────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**ConstraintSpec**（`policydsl/compile.py` 产出）是两层之间的唯一契约，结构见 `docs/architecture.md`。
+**ConstraintSpec**（`policydsl/core/compile.py` 产出）是两层之间的唯一契约，结构见 `docs/architecture.md`。
 
 ### 8 条端到端支路（上图哪一格 = 哪个驱动 = 在哪跑）
 
@@ -199,17 +199,17 @@ curl -s -X POST localhost:8787/v1/check -H 'Content-Type: application/json' \
 - 📄 端到端复现指南（环境 → 一次合规证明 → 验证）：**`docs/reproduce.md`**
 - 🖼 演示报告（截图）：`docs/demo/session_report.html`、`docs/demo/session_summary.png`、`docs/demo/verify_result.png`
 - 📘 分阶段代码计划：`docs/dev-plan.md` · P7 收尾计划：`docs/plan-p7.md` · 安全模型：`docs/security-model.md` · 信任-成本四象限：`docs/quadrant.md`
-- 🔗 **轨迹绑定（P1-5）**：工具轨迹不再是 agent 自报的 `tool_calls`，而是**工具网关**签发的**回执链**（`policydsl/trace.py` + `pop-types::verify_receipt_chain`）。链**结构**由电路保证（删/换/重排 → `trace_unbound` fail-closed），**签发者身份**由链下 Ed25519 验签 + 公开值 `trace_root` 承担；`budget_bound(tokens)` 改为电路内自算。**截尾**（整条删掉链尾那条违规回执）由网关的**会话末端承诺** `trace_seal{count, trace_root, ts, keyid, sig}` 拦（P1-5b，载荷**顶层**，不在 `outcome` 里——`outcome` 是证明公开值的镜像）；验证方**须给 `--gateway-key`** 才核得了签名。验收见 `tests/test_trace.py`（41 例：四条验收 + `verify_cert.py --receipts` 的第三方核对 + seal 本身 + 截尾三路）；边界如实标注于 `docs/security-model.md` §5
-- 🧠 **语义规则（P2-9）**：第七类规则 `semantic_bound`（“回复的有害概率不得高于阈值”这类**学不出来形式证明**的规则）**不在 SP1 里判定** —— 电路只把「这条被委托了」登记进公开值 `delegated[]`，出证方附一条 **ezkl/halo2 陪伴证明**（`policydsl/semantic.py` + `semantic/` + `scripts/ezkl_prove.py`）。验证方必须**合取**二者，并核 `{system, model_vkey, onnx_sha256, threshold_bp, direction}` 逐字段相等 + 公开实例的输入 == 由送达的 `T′` 现场重算的 `encode(T′)`。⚠️ 三条硬边界：**`passed=true` 而 `delegated` 非空的证明不等于策略被满足**（`verify_cert.py` 因此打印**两行**：`RESULT:` 说证书真不真，`合规:` 说策略满足没满足）；**语义规则只支持公开模式**（`encode` 在词表上单射，公开实例可反查原文，私有模式直接 panic）；**随包模型是演示用小模型**，不构成语义安全保证。见 [`docs/design-semantic-rules.md`](docs/design-semantic-rules.md)（引理 L7）
-- 🔗 **组合证明（P1-6）**：`Compose = (推理完整性 ∧ 策略合规)` —— 两份证明合成一张组合证书，回答「**这条 `T` 是被那个模型算出来的吗**」这个策略合规本身不覆盖的问题（`policydsl/compose.py` + `scripts/compose_proof.py`）。**键分离**是前提：两半必须来自**不同程序**（`pop-program` 判策略、`pop-infer` 证推理，两个 guest 入口各断言一次自己的域），否则「这份证明属于哪一半」无从判断。⚠️ 推理半当前是**代理**（确定性定点 MLP，权重由编译期种子生成 ⇒ 被 vkey 承诺），**不是 zkAgent**（其源码不可得，D1）；`bench/results/compose.md` 如实报告「组合成本 ≈ 两者之和**成立**、由推理证明主导**在代理规模下不成立**」。见 `docs/security-model.md` 引理 L6
-- 🧾 **跨证书一致性（P2-10）**：`session` 域（第三个 guest `pop-session`，vkey 与另两域不同）把**一个 run 的流式证书**用 Merkle 根聚合成**一次**证明，证三件事：①所有证书 `policy_hash` 全同 ②流式链无缝拼接无缺口 ③覆盖完整轨迹（链尾带网关的会话末端承诺）。驱动 `scripts/prove_session.py`（`policydsl/session.py` 是纯 Python 参考实现，两端逐字段对拍）。⚠️ 三条硬边界：**电路不验网关签名**（zkVM 里没有网关公钥，「这条链网关真的签过」由链下 `trace.verify_seal` 判，不给 keyring 时会如实注明「签名未验」）；**尾截断只有 Merkle 根拦得住** （`[0..k]` 前缀的 `index`/`prev` 依然连续，电路本身接受一个被砍了尾巴的证书集 —— 拦下它的是「承诺的根 vs 由交付证书重算的根」这一步）；`ok`（聚合是真的）与 `satisfied`（覆盖的证书都 `passed`）必须**分开读**。见 `docs/security-model.md` 引理 L8
+- 🔗 **轨迹绑定（P1-5）**：工具轨迹不再是 agent 自报的 `tool_calls`，而是**工具网关**签发的**回执链**（`policydsl/evidence/trace.py` + `pop-types::verify_receipt_chain`）。链**结构**由电路保证（删/换/重排 → `trace_unbound` fail-closed），**签发者身份**由链下 Ed25519 验签 + 公开值 `trace_root` 承担；`budget_bound(tokens)` 改为电路内自算。**截尾**（整条删掉链尾那条违规回执）由网关的**会话末端承诺** `trace_seal{count, trace_root, ts, keyid, sig}` 拦（P1-5b，载荷**顶层**，不在 `outcome` 里——`outcome` 是证明公开值的镜像）；验证方**须给 `--gateway-key`** 才核得了签名。验收见 `tests/test_trace.py`（41 例：四条验收 + `verify_cert.py --receipts` 的第三方核对 + seal 本身 + 截尾三路）；边界如实标注于 `docs/security-model.md` §5
+- 🧠 **语义规则（P2-9）**：第七类规则 `semantic_bound`（“回复的有害概率不得高于阈值”这类**学不出来形式证明**的规则）**不在 SP1 里判定** —— 电路只把「这条被委托了」登记进公开值 `delegated[]`，出证方附一条 **ezkl/halo2 陪伴证明**（`policydsl/proofs/semantic.py` + `semantic/` + `scripts/ezkl_prove.py`）。验证方必须**合取**二者，并核 `{system, model_vkey, onnx_sha256, threshold_bp, direction}` 逐字段相等 + 公开实例的输入 == 由送达的 `T′` 现场重算的 `encode(T′)`。⚠️ 三条硬边界：**`passed=true` 而 `delegated` 非空的证明不等于策略被满足**（`verify_cert.py` 因此打印**两行**：`RESULT:` 说证书真不真，`合规:` 说策略满足没满足）；**语义规则只支持公开模式**（`encode` 在词表上单射，公开实例可反查原文，私有模式直接 panic）；**随包模型是演示用小模型**，不构成语义安全保证。见 [`docs/design-semantic-rules.md`](docs/design-semantic-rules.md)（引理 L7）
+- 🔗 **组合证明（P1-6）**：`Compose = (推理完整性 ∧ 策略合规)` —— 两份证明合成一张组合证书，回答「**这条 `T` 是被那个模型算出来的吗**」这个策略合规本身不覆盖的问题（`policydsl/proofs/compose.py` + `scripts/compose_proof.py`）。**键分离**是前提：两半必须来自**不同程序**（`pop-program` 判策略、`pop-infer` 证推理，两个 guest 入口各断言一次自己的域），否则「这份证明属于哪一半」无从判断。⚠️ 推理半当前是**代理**（确定性定点 MLP，权重由编译期种子生成 ⇒ 被 vkey 承诺），**不是 zkAgent**（其源码不可得，D1）；`bench/results/compose.md` 如实报告「组合成本 ≈ 两者之和**成立**、由推理证明主导**在代理规模下不成立**」。见 `docs/security-model.md` 引理 L6
+- 🧾 **跨证书一致性（P2-10）**：`session` 域（第三个 guest `pop-session`，vkey 与另两域不同）把**一个 run 的流式证书**用 Merkle 根聚合成**一次**证明，证三件事：①所有证书 `policy_hash` 全同 ②流式链无缝拼接无缺口 ③覆盖完整轨迹（链尾带网关的会话末端承诺）。驱动 `scripts/prove_session.py`（`policydsl/proofs/session.py` 是纯 Python 参考实现，两端逐字段对拍）。⚠️ 三条硬边界：**电路不验网关签名**（zkVM 里没有网关公钥，「这条链网关真的签过」由链下 `trace.verify_seal` 判，不给 keyring 时会如实注明「签名未验」）；**尾截断只有 Merkle 根拦得住** （`[0..k]` 前缀的 `index`/`prev` 依然连续，电路本身接受一个被砍了尾巴的证书集 —— 拦下它的是「承诺的根 vs 由交付证书重算的根」这一步）；`ok`（聚合是真的）与 `satisfied`（覆盖的证书都 `passed`）必须**分开读**。见 `docs/security-model.md` 引理 L8
 - 🔐 **SP1 健全性与零知识性核查（P0-4）**：`docs/sp1-zk-audit.md` —— 健全性成立；**`core`/`compressed` 证明非零知识**（Succinct 官方安全模型明文 + 本机源码审计，两类独立证据）。私有模式因此只能宣称「公开值不泄露明文」，不能宣称「`T` 不可恢复」
 - 🔎 审计路径（verifier-only，免构造证明器）：`circuits/verifier`（bin `pop-verify`）+ `pop-script --proof-mode compressed`；见 `docs/reproduce.md` §11
 - ⛓ 链上锚定（真跑本地 Anvil）：`contracts/Anchor.sol` + `bash scripts/anchor_e2e.sh`（部署 → 每张证书摘要上链 → 第三方 `verify_session --rpc` 核对 + 反例对照）；见 `docs/reproduce.md` §12
 - 📝 论文初稿：**`paper/proof-of-policy.tex`（权威源，`xelatex` 编译）**；`paper/proof-of-policy.md` 是**便于阅读的镜像**，两者不一致时以 `.tex` 为准 · 评测脚本与结果：`bench/`（`bench/results/*.md`）· EU AI Act 映射：`docs/eu-ai-act-mapping.md`
 
 🔌 **接入你自己的 agent**：契约是 `AgentMonitor.on_generate` / `on_tool_call` +
-一会话一把 `ToolGateway`。框架无关的参考实现是 `policydsl/generic_adapter.py`
+一会话一把 `ToolGateway`。框架无关的参考实现是 `policydsl/adapters/generic_adapter.py`
 （**不装任何框架就能跑**），接入清单、分步流程与「换框架必须重做」的红线见
 [`docs/modules/06-frameworks.md` §8](docs/modules/06-frameworks.md)。
 
@@ -240,11 +240,11 @@ zk-policy/
 
 本仓库按周打标（落点按**实际交付**订正，2026-09-12）：
 
-- **W2**：`policydsl/model.py` 的 KeywordBlock / LengthBound 规则 → `tests/`
+- **W2**：`policydsl/core/model.py` 的 KeywordBlock / LengthBound 规则 → `tests/`
 - **W3**：PatternBlock（PII 正则）+ NFA 路径设计 → `docs/policy-dsl.md`
 - **W4**：`compile.py` 产出 ConstraintSpec → 填充 `circuits/program`（PoP v0 真出证）
-- **W5**：私有模式（承诺 + 违规定位）→ `policydsl/commit.py` + `pop-types::evaluate_private`
-- **W6**：agent 插桩 + 合规证书 → `policydsl/agent.py` + 三个框架适配器 + `cert.py` + `scripts/demo_e2e.py`
+- **W5**：私有模式（承诺 + 违规定位）→ `policydsl/privacy/commit.py` + `pop-types::evaluate_private`
+- **W6**：agent 插桩 + 合规证书 → `policydsl/adapters/agent.py` + 三个框架适配器 + `cert.py` + `scripts/demo_e2e.py`
 - **W7**：评测脚本（`bench/`）+ 安全模型（`docs/security-model.md`）
 
 ## 安装 Rust + SP1（W4 前执行）

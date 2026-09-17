@@ -33,7 +33,7 @@
 > 仅为兼容引用与负例测试，**不要在新代码里使用**。
 
 由于载荷是确定性的（规范 JSON），证书能哈希出一个稳定的 ``cert_digest``，
-用于锚定（见 ``policydsl.anchor``）。``keyid`` 只出现在信封（不参与
+用于锚定（见 ``policydsl.evidence.anchor``）。``keyid`` 只出现在信封（不参与
 ``cert_digest``），所以更换密钥**不会**让已有锚定失效。
 """
 
@@ -186,7 +186,7 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
     ``proof_sha256`` 推断 —— 没有证明工件就记 ``"unproven"``，有工件却没说
     模式则记 ``None``（验证方会显示 ``unknown``，**不会**替出证方假设成安全的那档）。
     隐藏程度由 :func:`proof_hiding` 给出（见 ``PROOF_MODE_HIDING``）。
-    ``challenge`` 是 P0-2 的挑战块（见 ``policydsl.challenge.challenge_block``）：
+    ``challenge`` 是 P0-2 的挑战块（见 ``policydsl.privacy.challenge_block``）：
     它公开 nonce 与证明承诺的 ``response_binding``，让持 T′ 的一方能离线确认
     「被证明的 T」就是「送达的 T′」。**nonce 是公开的**（它必须公开，否则没人
     能核对）；它的一次性由协议使用方保证，不是秘密。
@@ -197,7 +197,7 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
     比对，见 ``scripts/verify_cert.py`` 的 ``proof_outcome`` 卡），而电路里没有
     seal 这个东西：它是链下网关签的，与 ``challenge`` 块同属「主机层随证书附上
     的旁证」。放进 ``outcome`` 的后果是**每一张带真实证明的证书都对不上**
-    （公开值里没有这个字段）。见 ``policydsl/trace.py`` 的「截尾与 ToolSeal」。
+    （公开值里没有这个字段）。见 ``policydsl/evidence/trace.py`` 的「截尾与 ToolSeal」。
 
     ``semantic`` 是 P2-9 的**语义规则陪伴证明**块（同样在载荷**顶层**，理由与
     ``trace_seal`` 完全相同）：
@@ -209,7 +209,7 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
     它**不是**可有可无的装饰。SP1 公开值里的 ``outcome.delegated`` 非空时，语义
     规则**没有被那份证明判定**；这一块携带的 ezkl 陪伴证明才是判定它的东西。
     验证方必须对 ``delegated`` 里每一条都找到匹配的 companion 并逐字段核验
-    （``policydsl.semantic.verify_companion``），**一条都不能少** —— 少了就是
+    （``policydsl.proofs.verify_companion``），**一条都不能少** —— 少了就是
     「看起来验过了」而实际没验。``delegated`` 非空而本块缺失/不全时，
     ``verify_cert.py`` 一律判 FAIL（fail closed）。
     """

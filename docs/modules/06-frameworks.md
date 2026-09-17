@@ -1,7 +1,7 @@
 # 06 · 框架集成
 
-> 覆盖 `policydsl/langchain_adapter.py`、`langgraph_adapter.py`、`mcp_adapter.py`、
-> `llm.py`，以及被它们共同驱动的 `policydsl/agent.py`
+> 覆盖 `policydsl/adapters/langchain_adapter.py`、`langgraph_adapter.py`、`mcp_adapter.py`、
+> `llm.py`，以及被它们共同驱动的 `policydsl/adapters/agent.py`
 > （钩子定义见 [`03-certificate.md`](03-certificate.md) §6）。
 > 这一板块回答：**怎么把「判定 → 出证」挂到真实的 agent 框架上，且不要求改写框架。**
 >
@@ -471,7 +471,7 @@ for chunk in model.stream(prompt, config={"callbacks": [handler]}):
 | **① 提取** | 「本框架的事件」→（宽松解析）→ 文本 / (工具名, 参数, 结果) | **框架特定**：每个适配器都不一样，也不该一样 |
 | **② 出证** | 那些东西 →（两个钩子 + 一把网关）→ 证书 | **契约**：三者完全相同，**你不用重写** |
 
-**② 已经有一份可运行的实现**：`policydsl/generic_adapter.py` 的 `GenericGuard`。
+**② 已经有一份可运行的实现**：`policydsl/adapters/generic_adapter.py` 的 `GenericGuard`。
 它不含任何框架依赖，因此既是「② 到底要做什么」的说明书，也是接新框架时**照抄的
 骨架** —— 你要写的只有 ①。它也**不是**第四个框架适配器，不是任何适配器的基类。
 
@@ -479,7 +479,7 @@ for chunk in model.stream(prompt, config={"callbacks": [handler]}):
 
 ```python
 from policydsl import generic_adapter as ga, keys
-from policydsl.service import load_policy
+from policydsl.runtime.service import load_policy
 
 pack  = "policy_packs/agent_tool_v1.json"
 guard = ga.GenericGuard(load_policy(pack), pack, signer=keys.ephemeral_signer())
@@ -575,4 +575,4 @@ FAIL**（第三方重算不了链尾），不是「默认通过」。这就是�
 
 **相关**：证书与信封结构 → [`03-certificate.md`](03-certificate.md)；
 端到端 demo 怎么跑 → [`07-cli-scripts.md`](07-cli-scripts.md)；
-参考适配器源码 → [`../../policydsl/generic_adapter.py`](../../policydsl/generic_adapter.py)。
+参考适配器源码 → [`../../policydsl/adapters/generic_adapter.py`](../../policydsl/adapters/generic_adapter.py)。

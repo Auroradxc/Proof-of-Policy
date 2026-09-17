@@ -4,7 +4,7 @@
 > 怎么确认它是好的、满载时它怎么表现、出事怎么办。
 >
 > 接口定义与设计理由见 [`dev-plan.md` §5.2](dev-plan.md)；实现见
-> [`policydsl/service.py`](../policydsl/service.py)（库）与
+> [`policydsl/runtime/service.py`](../policydsl/runtime/service.py)（库）与
 > [`scripts/proof_service.py`](../scripts/proof_service.py)（HTTP 驱动）。
 
 ---
@@ -68,7 +68,7 @@ SP1_PROVER=cpu python3 scripts/proof_service.py \
 并发上限的口径是 `concurrency + max_queue`（缺省 9）。`GET /v1/health` 里
 `capacity` 就是这个数，`outstanding` 是当前占用的。
 
-### 1.3 鉴权（`policydsl/auth.py`）
+### 1.3 鉴权（`policydsl/runtime/auth.py`）
 
 ```bash
 export POP_SERVICE_TOKEN="app:$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
@@ -251,7 +251,7 @@ watch -n5 "curl -s localhost:8787/v1/attest/$JOB -H '$AUTH' | python3 -c 'import
 
 在线段不占证明队列，但它**每调用一次就签一张证书并锚定一条账本记录**。文件账本的
 `append` 原本是「读全表 → 算前驱哈希 → 追加」，所以账本越长单次 `check` 越慢
-（O(n)）。**已修**（2026-09-13）：`policydsl/anchor.py` 现在按
+（O(n)）。**已修**（2026-09-13）：`policydsl/evidence/anchor.py` 现在按
 `(文件大小, mtime_ns)` 给账本尾部加缓存，追加是 O(1) —— 记账长度只与文件系统的
 stat 有关。
 

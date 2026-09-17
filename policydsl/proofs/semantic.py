@@ -56,6 +56,8 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
+from policydsl.paths import REPO  # 仓库根的唯一出处（解析 semantic/ 目录用）
+
 __all__ = [
     "SemanticError", "SEMANTIC_VERSION", "SETTINGS_VERSION", "REQUIRED_INPUT_SCALE",
     "DEFAULT_LOGROWS", "required_logrows", "patch_settings", "check_settings",
@@ -162,7 +164,7 @@ def check_settings(cfg: Dict[str, Any]) -> None:
         raise SemanticError(
             f"settings.run_args.input_scale = {scale!r}，必须为 {REQUIRED_INPUT_SCALE}"
             f"（=2^0=1）。索引算子吃的是缩放后的整数，别的取值会让全文退化成同一个"
-            f"输入（静默失效），或直接越界 panic。见 policydsl/semantic.py 模块 docstring。")
+            f"输入（静默失效），或直接越界 panic。见 policydsl/proofs/semantic.py 模块 docstring。")
     num_rows = int(cfg.get("num_rows", 0) or 0)
     logrows = int(run_args.get("logrows", 0) or 0)
     if num_rows and (1 << logrows) < num_rows:
@@ -183,7 +185,7 @@ def settings_fingerprint(cfg: Dict[str, Any]) -> str:
 
 def model_dir() -> Path:
     """``semantic/`` 目录（模型与产物的家）。"""
-    return Path(__file__).resolve().parents[1] / "semantic"
+    return REPO / "semantic"
 
 
 def onnx_sha256(path: Path | str | None = None) -> str:

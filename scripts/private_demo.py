@@ -3,7 +3,7 @@
 
 端到端检查私有流水线：
   - 宿主校验（HOST CHECK）：pop-script --check（pop-types::evaluate_private）
-    对比 Python golden（policydsl.commit.private_output）—— 逐字段，包括响应承诺、
+    对比 Python golden（policydsl.privacy.private_output）—— 逐字段，包括响应承诺、
     证据承诺、脱敏证明，以及边界性质 ``mask_covered``（掩码 ⊆ 真实匹配，电路内强制）。
   - 负例（NEGATIVE）：伪造的见证区间（掩码落在任何真实匹配之外）应得 mask_covered=false。
   - 泄露（LEAK）：验证器可见输出里没有响应/证据明文。
@@ -26,10 +26,11 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import challenge, commit, pii
-from policydsl.compile import compile_policy
-from policydsl.model import Policy, Rule
-from policydsl.serialize import spec_canonical_text
+from policydsl.privacy import challenge, commit
+from policydsl.core import pii
+from policydsl.core.compile import compile_policy
+from policydsl.core.model import Policy, Rule
+from policydsl.core.serialize import spec_canonical_text
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 

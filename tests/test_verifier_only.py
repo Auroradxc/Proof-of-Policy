@@ -145,7 +145,7 @@ class TestArtifactProofModes(unittest.TestCase):
         return proof
 
     def test_collects_every_available_source(self):
-        from policydsl import verifier
+        from policydsl.evidence import verifier
 
         with tempfile.TemporaryDirectory() as tmp:
             proof = self._mk(Path(tmp), sidecar_mode="core", meta_mode="core")
@@ -154,7 +154,7 @@ class TestArtifactProofModes(unittest.TestCase):
 
     def test_missing_sources_are_simply_absent(self):
         # 没有边车/元信息时不报错、也不编一个默认值（编默认值 = 把未知说成已知）。
-        from policydsl import verifier
+        from policydsl.evidence import verifier
 
         with tempfile.TemporaryDirectory() as tmp:
             proof = self._mk(Path(tmp))
@@ -166,7 +166,7 @@ class TestArtifactProofModes(unittest.TestCase):
     def test_disagreement_is_surfaced_not_resolved(self):
         # 边车说 core、元信息说 compressed：函数不做取舍，两个都留着，
         # 由调用方（verify_cert）判定 MISMATCH。
-        from policydsl import verifier
+        from policydsl.evidence import verifier
 
         with tempfile.TemporaryDirectory() as tmp:
             proof = self._mk(Path(tmp), sidecar_mode="compressed", meta_mode="core")

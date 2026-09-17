@@ -40,10 +40,11 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, challenge, commit, keys  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
-from policydsl.serialize import spec_canonical_text  # noqa: E402
+from policydsl.evidence import anchor, cert, keys  # noqa: E402
+from policydsl.privacy import challenge, commit  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
+from policydsl.core.serialize import spec_canonical_text  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 

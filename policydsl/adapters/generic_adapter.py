@@ -72,12 +72,12 @@ import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from . import anchor as _anchor
-from . import cert as _cert
-from . import keys as _keys
-from . import trace as _trace
-from .agent import AgentMonitor
-from .model import Policy
+from policydsl.evidence import anchor as _anchor
+from policydsl.evidence import cert as _cert
+from policydsl.evidence import keys as _keys
+from policydsl.evidence import trace as _trace
+from policydsl.adapters.agent import AgentMonitor
+from policydsl.core.model import Policy
 
 __all__ = ["GenericGuard", "write_session"]
 

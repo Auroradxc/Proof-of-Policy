@@ -19,11 +19,11 @@
 |---|---|---|---|---|
 | 周0 | 环境 + 概念 | Rust 1.98 / SP1 6.7.0 / Go 1.25 / foundry 1.8.1；`circuits/README.md` | `cargo prove build` 跑通官方 fibonacci | ✅ |
 | W1 | 概念 + zkVM 实操 | `docs/architecture.md` | 口述 R1CS/公开-私密 | ✅（**概念笔记 `docs/w1_notes.md` 从未落盘**，如实记） |
-| W2 | 首批规则 | `policydsl/model.py` 的 KeywordBlock/LengthBound + `tests/test_dsl.py` | 单测全绿；基准表 | ✅ |
-| W3 | PII 正则 | `policydsl/nfa.py` + `policydsl/pii.py` + `docs/policy-dsl.md` | ≥2 类 PII 规则通过 | ✅ |
+| W2 | 首批规则 | `policydsl/core/model.py` 的 KeywordBlock/LengthBound + `tests/test_dsl.py` | 单测全绿；基准表 | ✅ |
+| W3 | PII 正则 | `policydsl/core/nfa.py` + `policydsl/core/pii.py` + `docs/policy-dsl.md` | ≥2 类 PII 规则通过 | ✅ |
 | W4 | 透明模式 MVP | `circuits/program` + `circuits/script` | PoP v0：公开响应→证明→验证 | ✅ |
-| W5 | 私有模式 | `policydsl/commit.py` + `pop-types::evaluate_private` | 验证者看不到全文 | ✅ |
-| W6 | Agent 集成 | `policydsl/agent.py` + 三个框架适配器 + `policydsl/cert.py` + `policydsl/anchor.py` + `scripts/demo_e2e.py`；链上见 `contracts/Anchor.sol` | 真实会话产出证书 | ✅（**原计划的 `demo/` 目录未使用** —— 功能落在上述模块，该空目录已删除） |
+| W5 | 私有模式 | `policydsl/privacy/commit.py` + `pop-types::evaluate_private` | 验证者看不到全文 | ✅ |
+| W6 | Agent 集成 | `policydsl/adapters/agent.py` + 三个框架适配器 + `policydsl/evidence/cert.py` + `policydsl/evidence/anchor.py` + `scripts/demo_e2e.py`；链上见 `contracts/Anchor.sol` | 真实会话产出证书 | ✅（**原计划的 `demo/` 目录未使用** —— 功能落在上述模块，该空目录已删除） |
 | W7 | 评测 + 安全模型 | `bench/`（6 个脚本）+ `docs/security-model.md` v2（L1–L9）+ `docs/quadrant.md` | 成本曲线 + 四象限表 | ✅ |
 | W8 | 论文 + 发布 | `paper/proof-of-policy.tex`（权威源）+ `docs/reproduce.md` + `scripts/make_shots.py` → `docs/demo/` 截图 | 导师按 README 复现通过 | ✅（**demo 视频未产出**，改由一键 demo + 截图替代） |
 
@@ -35,7 +35,7 @@
 - [x] 周0 环境（Rust/SP1 已装并验证；`SP1_PROVER=cpu` 出证跑通）
 - [x] W1 概念笔记（`docs/architecture.md`；**独立笔记文件未产出**）
 - [x] W2 骨架：KeywordBlock / LengthBound / PatternBlock（Python 参考层）+ 单测
-- [x] W3 NFA 路径设计（`policydsl/nfa.py`，与 `re.search` 在 264 项语料上全一致）
+- [x] W3 NFA 路径设计（`policydsl/core/nfa.py`，与 `re.search` 在 264 项语料上全一致）
 - [x] W4 SP1 透明模式（`circuits/program` + `script`，PoP v0 出证+验证 PASS）
 - [x] W5 私有模式（承诺 + 违规定位 + 脱敏 + 证据开示）
 - [x] W6 agent 集成 + 证书（含链上锚定：真跑本地 Anvil 端到端 PASS）

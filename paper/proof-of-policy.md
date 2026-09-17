@@ -180,7 +180,7 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 以 **DSSE 信封**签名（Ed25519：私钥留在出证方，验证方只持公钥因而无法伪造；旧的共享密钥 HMAC demo signer 已被结构性拒绝），`cert_digest` 写入**哈希链锚定账本**；
 流式证书额外构成**流式链**（`streaming.chain={index,prev}`）并支持**早停**。
 
-锚定支持两种后端（`policydsl/anchor.py`，上层接口一致）：**文件账本**（默认，离线可验，
+锚定支持两种后端（`policydsl/evidence/anchor.py`，上层接口一致）：**文件账本**（默认，离线可验，
 条目哈希链 `{seq,prev,digest,ts,meta,hash}`）与**链上登记**（`RpcAnchorBackend` 调用
 `contracts/Anchor.sol` 的 `anchor(bytes32)`——首次即最终、事件 `Anchored(digest,ts,by,seq)`、
 链上只存 32 字节摘要）。链上成功后把 `tx_hash`/区块/链上时间戳回写本地条目 `meta.on_chain`，
@@ -213,7 +213,7 @@ LogUp 后端 **3.1 MiB** / 验证 **38 ms**（证明慢 5.5×）；逐步基线 
 - **回执链的「截尾」：已堵（P1-5b，残留边界如实记录）**：删除链尾那条**违规**回执后，剩下的仍是一条
   结构自洽、逐条签名有效的**真链**——它比真实轨迹短，而 `trace_binding`（证书绑的链 == 送检的链）与
   `receipt_chain`（逐条验签）**双双 PASS**，两关都对它无能为力（它们核的都是"收到的链"）。
-  对策是**网关的会话末端承诺** `ToolSeal{count, trace_root, ts, keyid, sig}`（`policydsl/trace.py`，
+  对策是**网关的会话末端承诺** `ToolSeal{count, trace_root, ts, keyid, sig}`（`policydsl/evidence/trace.py`，
   域分隔 `pop-trace-seal-v1`）：验证方核对签名、seal 的 `trace_root` 与证书公开值一致、以及（有回执时）
   `len(chain) == seal.count` 与链尾摘要。截尾者要么交出**原** seal（`count` 立刻对不上），要么伪造一条
   （须破 Ed25519）——该概率即形式化定位中单列的 `Adv^{forge}_{Ed25519}(B)` 项

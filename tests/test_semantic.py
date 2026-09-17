@@ -48,11 +48,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import cert, challenge, commit, keys, semantic as S  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.evaluate import check as check_policy  # noqa: E402
-from policydsl.model import Policy, PolicyError, Rule, Transcript  # noqa: E402
-from policydsl.serialize import spec_canonical_text  # noqa: E402
+from policydsl.evidence import cert, keys  # noqa: E402
+from policydsl.privacy import challenge, commit  # noqa: E402
+from policydsl.proofs import semantic as S  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.evaluate import check as check_policy  # noqa: E402
+from policydsl.core.model import Policy, PolicyError, Rule, Transcript  # noqa: E402
+from policydsl.core.serialize import spec_canonical_text  # noqa: E402
 from semantic import features as F  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
@@ -637,7 +639,7 @@ class TestVerifyCertFailClosed(unittest.TestCase):
                       for r in policy.rules]}))
         (tmp / "T.txt").write_text(response)
         (tmp / "receipts.json").write_text("[]")
-        from policydsl import anchor as A
+        from policydsl.evidence import anchor as A
         A.append_anchor(tmp / "ledger.jsonl", cert.cert_digest(payload))
         return tmp / "cert.json"
 

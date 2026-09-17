@@ -1,4 +1,4 @@
-"""PII 模式与校验位校验器（policydsl.pii）的测试。
+"""PII 模式与校验位校验器（policydsl.core.pii）的测试。
 
 这些模式会被 PII 策略包直接复用，因此分两层验证：底层是正则/校验位本身的
 检出准确度（含误报控制），上层是接入策略后的端到端违规判定。
@@ -10,9 +10,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl.evaluate import check  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
-from policydsl import pii  # noqa: E402
+from policydsl.core.evaluate import check  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
+from policydsl.core import pii  # noqa: E402
 
 
 class TestPatternDetection(unittest.TestCase):

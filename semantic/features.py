@@ -78,7 +78,7 @@ ezkl 把图编译成定点电路，每个张量带一个 ``scale``（真值 = �
 - 见证里直接喂**原始 id 的浮点表示**（``input_data: [[float(i) for i in ids]]``）；
 - 于是 ``Gather`` 拿到的索引恰好是 id，与 :func:`encode` 的输出逐位相等。
 
-这条配置由 ``policydsl/semantic.py`` 的 :func:`patch_settings` 施加，并在
+这条配置由 ``policydsl/proofs/semantic.py`` 的 :func:`patch_settings` 施加，并在
 ``scripts/ezkl_prove.py`` 里对「生成设置」的步骤强制执行 —— **不允许出现「忘了打补丁
 的设置文件」**：设置文件一旦不带这个补丁，出的证明要么崩、要么恒真，后者尤其危险
 （它会静默地让语义规则形同虚设）。``tests/test_semantic.py`` 用一条正例一条反例把它钉住。
@@ -87,7 +87,7 @@ ezkl 把图编译成定点电路，每个张量带一个 ``scale``（真值 = �
 
 图是定长的（``MAX_CHARS``），超长文本**不能**被静默截断 —— 截断等于让
 「第 97 个字符之后的有害内容」逃过判定，而证明仍然有效。因此
-:func:`policydsl.semantic.require_covering_length_bound` 强制：**含语义规则的策略
+:func:`policydsl.proofs.require_covering_length_bound` 强制：**含语义规则的策略
 必须同时含一条 ``length_bound``，其 ``max <= MAX_CHARS``**，编译期即失败。
 """
 
@@ -177,7 +177,7 @@ def encode(text: str, max_chars: int = MAX_CHARS) -> List[int]:
 
     这是全仓库唯一的编码真相源：训练、见证生成、单测、以及验证方
     「拿 T 重算 ids」都调它。图内**没有**这一步 —— 图吃的是已经编码好的 id
-    向量（这正是「输入与响应绑定」要核对的对象，见 ``policydsl/semantic.py``）。
+    向量（这正是「输入与响应绑定」要核对的对象，见 ``policydsl/proofs/semantic.py``）。
 
     规则：逐码点取 id（未收录 → 0），右补 PAD 到 ``max_chars``，**超出则报错**
     而不是截断 —— 静默截断会让超长文本的尾部逃过判定（见模块 docstring）。

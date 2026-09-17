@@ -29,7 +29,7 @@ PoP 证明的是「响应 ``T`` 满足策略 ``π``」，但**谁来证明这条
 6. **同一条 T**：composite 声明、两份证明各自的 ``response_binding``、以及由
    **送达的 T′ 与 nonce 现场重算**的值，四者全部相等；
 7. **模型与输入**：推理 part 的 ``model_hash`` 与 ``input_binding`` 与
-   :mod:`policydsl.infer` 现场重算的值相等 —— 即「被证明的模型就是**这份代码里
+   :mod:`policydsl.proofs.infer` 现场重算的值相等 —— 即「被证明的模型就是**这份代码里
    那个**模型、被证明的输入就是**由 T′ 导出**的那个输入」；
 8. **合规结论**：策略 part 的 ``passed`` **且** ``delegated`` 为空。
 
@@ -40,7 +40,7 @@ PoP 证明的是「响应 ``T`` 满足策略 ``π``」，但**谁来证明这条
 
 ## 边界（如实标注）
 
-* 推理那一半在当前仓库里是**代理**（deterministic MLP，见 :mod:`policydsl.infer`），
+* 推理那一半在当前仓库里是**代理**（deterministic MLP，见 :mod:`policydsl.proofs.infer`），
   不是 zkAgent。组合逻辑本身与「谁出这一半证明」无关：换上真实 prover 只需改
   ``pop-infer`` guest 与 ``expected_vkeys``，本模块不动。见计划 D1、§P1-6。
 * 本模块**不判**「模型好不好」、也**不判**策略写得对不对 —— 与 L7 的第 ② 条
@@ -59,10 +59,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from policydsl import infer
-from policydsl import verifier as V
+from policydsl.proofs import infer
+from policydsl.evidence import verifier as V
 
-REPO = Path(__file__).resolve().parent.parent
+from policydsl.paths import REPO  # 仓库根的唯一出处（见该模块 docstring 的事故记录）
+
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"
 
@@ -194,7 +195,7 @@ class CompositeCertificate:
 # --------------------------------------------------------------------------- #
 
 def _run(cmd: Sequence[str], env_extra: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
-    """跑一条外部命令。实现已挪到 :func:`policydsl.verifier.run_cmd`（会话层共用）。"""
+    """跑一条外部命令。实现已挪到 :func:`policydsl.evidence.run_cmd`（会话层共用）。"""
     return V.run_cmd(cmd, env_extra)
 
 
@@ -207,7 +208,7 @@ def _verify_one(proof: Path, job_kind: str,
     否则退回 ``pop-script --verify``。**注意 core 证明必须走后者** —— core 没有
     可供第三方核验的递归工件。
 
-    实现已挪到 :func:`policydsl.verifier.verify_proof_file`（P2-10 的会话层要用
+    实现已挪到 :func:`policydsl.evidence.verify_proof_file`（P2-10 的会话层要用
     同一条路，而 ``--out`` 那个坑不该有第二份拷贝）；这里保留函数名与签名，
     供本模块内外的既有调用方继续使用。
     """
@@ -394,7 +395,7 @@ def verify_composite(composite: CompositeCertificate, *, response: str,
     # ---- 6. 同一条 T ----
     recomputed = None
     try:
-        from policydsl.commit import response_binding
+        from policydsl.privacy.commit import response_binding
         recomputed = response_binding(composite.nonce, response)
     except Exception as e:  # pragma: no cover - 只可能是调用方给的 nonce 类型不对
         return False, f"无法由送达响应重算 response_binding：{e}", False
@@ -428,8 +429,8 @@ def verify_composite(composite: CompositeCertificate, *, response: str,
                        f"与证书顶层声明的 {V.short_hash(composite.policy_hash)} 不一致"), False
     if policy_pack is not None:
         try:
-            from policydsl.compile import compile_policy
-            from policydsl.serialize import spec_canonical_text
+            from policydsl.core.compile import compile_policy
+            from policydsl.core.serialize import spec_canonical_text
             spec = compile_policy(_load_policy(policy_pack))
             recompiled = hashlib.sha256(
                 spec_canonical_text(spec).encode("utf-8")).hexdigest()
@@ -468,7 +469,7 @@ def _meta_vkey(proof: Path) -> Optional[str]:
 
 def _load_policy(path: Path):
     """从 JSON 载入策略包（与 ``issue_cert.load_policy`` 同口径，避免循环导入）。"""
-    from policydsl.model import Policy, Rule
+    from policydsl.core.model import Policy, Rule
     d = json.loads(Path(path).read_text(encoding="utf-8"))
     rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
              for i, r in enumerate(d["rules"])]

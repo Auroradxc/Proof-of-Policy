@@ -4,7 +4,7 @@
 语义规则（P2-9 的 D3 决策：完整 ezkl 集成）证明的是「响应 ``T`` 经**确定性特征图**
 算出的 ``P(有害)`` 越过/低于某阈值」。与 SP1 侧的 ``semantic_bound`` 是**委托**关系：
 SP1 电路证明不了语义规则（logit 不在它的公开值里），于是由这条 ezkl 陪伴证明承担，
-验证方把两者**合取**（见 ``policydsl/cert.py`` 与 ``docs/design-semantic-rules.md``）。
+验证方把两者**合取**（见 ``policydsl/evidence/cert.py`` 与 ``docs/design-semantic-rules.md``）。
 
 流水线（每一步的产物都落 ``semantic/artifacts/``）：
 
@@ -29,7 +29,7 @@ python3 scripts/ezkl_prove.py info                        # 只看产物清单�
 **9.17 GB**（12 GB 机器），而 ``setup`` 自身峰值 5.24 GB。同一进程里连着跑，两次
 峰值叠加就把机器打爆了。脚本因此把每个子命令设计成「跑完即退出」的独立进程。
 
-**为什么 ``input_scale = 0`` 是强制而非调优**：见 ``policydsl/semantic.py`` 与
+**为什么 ``input_scale = 0`` 是强制而非调优**：见 ``policydsl/proofs/semantic.py`` 与
 ``semantic/features.py`` 的模块 docstring —— 索引算子吃的是缩放后的整数，别的取值
 要么越界 panic、要么让整段文本退化成同一个输入（**静默失效**）。本脚本只从
 ``patch_settings`` 产出的设置文件出发，并在出证前用 ``check_settings`` 复核。
@@ -50,7 +50,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
-from policydsl import semantic as S            # noqa: E402
+from policydsl.proofs import semantic as S            # noqa: E402
 
 ART = REPO / "semantic" / "artifacts"
 
@@ -86,8 +86,8 @@ def _instances_from_witness(witness: Path) -> List[int]:
     """见证里的输入+输出，拼成与证明 ``instances`` **同序**的列表。
 
     自检用它就够（不必为四条文本各出一份完整证明）。口径与
-    :func:`policydsl.semantic.read_instances` 一致 —— 两者不一致会是一类很难发现
-    的 bug，所以共用同一个 :func:`policydsl.semantic.hex_int`。
+    :func:`policydsl.proofs.read_instances` 一致 —— 两者不一致会是一类很难发现
+    的 bug，所以共用同一个 :func:`policydsl.proofs.hex_int`。
     """
     d = json.loads(Path(witness).read_text(encoding="utf-8"))
     return ([S.hex_int(v) for v in d["inputs"][0]]

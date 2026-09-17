@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl import anchor  # noqa: E402
+from policydsl.evidence import anchor  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 # anvil 优先从 PATH 找，其次退回 foundry 默认安装目录
@@ -476,7 +476,8 @@ class TestAnvilEndToEnd(unittest.TestCase):
     # 「先锚定再落证书文件」的顺序，以及账本锁。任何一处接错，锚定都不会发生，
     # 而在假客户端下**看不出来**（假客户端本来就不碰链）。
     def test_the_service_anchors_through_a_real_chain(self):
-        from policydsl import cert, service                # noqa: PLC0415
+        from policydsl.evidence import cert                # noqa: PLC0415
+        from policydsl.runtime import service                # noqa: PLC0415
 
         info = anchor.deploy_anchor_contract(self.RPC)
         svc_dir = Path(self.tmp.name) / "svc"

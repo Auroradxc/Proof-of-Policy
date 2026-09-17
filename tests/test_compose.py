@@ -2,10 +2,10 @@
 
 ## 三层，与前两块（P2-9 的 ``test_semantic``）同构
 
-1. **参考实现层**（不需要证明）：``policydsl/infer.py`` 与电路内
+1. **参考实现层**（不需要证明）：``policydsl/proofs/infer.py`` 与电路内
    ``pop-types::infer_*`` 逐位一致 —— 走 ``pop-script --check --job infer``
    （宿主执行，秒级、不出证明、不碰 ELF）。这一层守住「两端算的是同一个模型」。
-2. **组合绑定层**（不需要证明）：:func:`policydsl.compose.verify_composite` 的
+2. **组合绑定层**（不需要证明）：:func:`policydsl.proofs.verify_composite` 的
    绑定检查。用**手工构造**的 part/证明文件跑全部反例 —— 换证明、换 vkey、
    键不分离、换模型、换响应 …… 这些**都不需要真证明**就能测，因为被拦下的
    那一刻发生在密码学验证**之前或之后**的任何一处绑定上。
@@ -32,10 +32,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import compose as C      # noqa: E402
-from policydsl import infer as I        # noqa: E402
-from policydsl import verifier as V     # noqa: E402
-from policydsl.commit import response_binding  # noqa: E402
+from policydsl.proofs import compose as C      # noqa: E402
+from policydsl.proofs import infer as I        # noqa: E402
+from policydsl.evidence import verifier as V     # noqa: E402
+from policydsl.privacy.commit import response_binding  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
@@ -65,7 +65,7 @@ def run_infer_check(response: str, nonce: bytes = NONCE) -> dict:
 
 @unittest.skipUnless(POP_SCRIPT.exists(), "pop-script not built")
 class TestInferParity(unittest.TestCase):
-    """``policydsl.infer`` 与电路内实现逐位一致。"""
+    """``policydsl.proofs.infer`` 与电路内实现逐位一致。"""
 
     def _parity(self, response: str, nonce: bytes = NONCE):
         got = run_infer_check(response, nonce)

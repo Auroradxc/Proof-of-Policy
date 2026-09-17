@@ -23,7 +23,7 @@
 | 公开值 | **仅 `Outcome{passed, violations}`——不含策略、不含响应绑定、不含轨迹绑定** |
 | 本机 | 24 核 / **12 GB**（groth16/plonk 需 ≥32 GB → P1-7 的硬约束） |
 | 可用库 | `cryptography` 3.4.8 ✅（Ed25519 可用）；`ezkl`/`nacl`/`eth_account` ❌ |
-| 签名 | ~~HMAC + **公开常量密钥** `DEMO_KEY` → 任何人可伪造~~ → **P0-3 ✅**：Ed25519，私钥留在出证方（`policydsl/keys.py`），旧信封被结构性拒绝 |
+| 签名 | ~~HMAC + **公开常量密钥** `DEMO_KEY` → 任何人可伪造~~ → **P0-3 ✅**：Ed25519，私钥留在出证方（`policydsl/evidence/keys.py`），旧信封被结构性拒绝 |
 
 ### 已确认的健全性破坏（P0-1 要修的）
 
@@ -186,7 +186,7 @@ pub struct PrivateOutput  { pub policy_hash: String, pub response_binding: Strin
 Python 侧：
 
 ```python
-# policydsl/compile.py
+# policydsl/core/compile.py
 def canonical_spec_bytes(spec: Dict) -> bytes:
     """规范 JSON 字节（与 _canonical_hash 完全一致）。"""
     stable = {k: spec[k] for k in ("spec_version","policy_id","policy_version",
@@ -203,13 +203,13 @@ def _canonical_hash(obj): return hashlib.sha256(canonical_spec_bytes(obj)).hexdi
 | `circuits/types/src/lib.rs` | 新增 `ConstraintSpec`/`SpecConstraint`/`NfaBlock`；`ProofRequest`/`PrivateRequest` 用 `spec_canonical`；`ProofOutput`/`PrivateOutput` 加 `policy_hash`；`evaluate` 改吃 `&[SpecConstraint]` |
 | `circuits/program/src/main.rs` | 解析 + 哈希 + 提交 |
 | `circuits/script/src/main.rs` | `VectorIn` 改字段；`outcome_json` 带上 `policy_hash` |
-| `policydsl/compile.py` | `canonical_spec_bytes` |
-| `policydsl/serialize.py` | ✅ `spec_to_rust_constraints` **已删除**，改导出 `spec_canonical_text(spec)` + `vector_entry(...)`（20 个调用点已机械替换） |
+| `policydsl/core/compile.py` | `canonical_spec_bytes` |
+| `policydsl/core/serialize.py` | ✅ `spec_to_rust_constraints` **已删除**，改导出 `spec_canonical_text(spec)` + `vector_entry(...)`（20 个调用点已机械替换） |
 | 20 个调用点 | `scripts/{prove_policy,cross_validate,private_demo,issue_cert,demo_e2e}.py`、`tests/{test_rules_incircuit,test_ablation,test_serialize}.py`、`bench/*.py` |
 | `scripts/verify_cert.py` | 策略绑定改**四方比对**（证书声明 / 证书 outcome 内嵌 / 重编译 / 证明公开值），并把证明校验**提到绑定之前**（绑定要用到证明公开值） |
 | `scripts/verify_session.py` | 同上；`zk` 循环补上「证明公开值」这一路 |
 | `circuits/verifier/src/main.rs` | 解码公开值为 `Outcome` 并输出（新增 `pop-types` 依赖）；解码失败即判 `verified=false`（fail-closed） |
-| `policydsl/verifier.py` | 新增 `check_policy_binding` / `committed_policy_hash` / `outcome_without_meta` |
+| `policydsl/evidence/verifier.py` | 新增 `check_policy_binding` / `committed_policy_hash` / `outcome_without_meta` |
 
 **验收测试** `tests/test_policy_binding.py`（新，分三层 + 一层 opt-in）：
 
@@ -295,7 +295,7 @@ def test_empty_policy_commits_empty_hash_not_real(self):
 公开值携带该绑定。持 T 与 nonce 的一方可**离线**核对。
 
 ```python
-# policydsl/commit.py
+# policydsl/privacy/commit.py
 BIND_DOMAIN = b"pop-bind-v1"
 def response_binding(nonce: bytes, response: str) -> str:
     return hashlib.sha256(BIND_DOMAIN + nonce + response.encode("utf-8")).hexdigest()
@@ -304,7 +304,7 @@ def verify_binding(nonce: bytes, response: str, binding: str) -> bool:
 ```
 
 ```python
-# policydsl/challenge.py（新）
+# policydsl/privacy/challenge.py（新）
 def new_nonce() -> bytes:   # 32 字节 CSPRNG，一次性
     return secrets.token_bytes(32)
 ```
@@ -330,7 +330,7 @@ def new_nonce() -> bytes:   # 32 字节 CSPRNG，一次性
 ### P0-3 Ed25519 替换 demo HMAC ✅（2026-09-11 完成）
 
 ```python
-# policydsl/cert.py  签名器协议
+# policydsl/evidence/cert.py  签名器协议
 class Signer(Protocol):
     keyid: str
     def sign(self, data: bytes) -> bytes: ...
@@ -344,7 +344,7 @@ class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 - `verify_envelope(env, keyring)` 按 `keyid` 前缀**分发**（白名单只有 `ed25519` 与 `test-hmac-sha256`）。
   `demo-hmac-sha256` 在**查表之前**就被否掉 —— 所以「把配对密钥放进 keyring」也没用，
   拒绝是**结构性**的，不是配置疏漏。
-- `policydsl/keys.py`（新）：`load_or_create(path)` / `signer_from_env` / `ephemeral_signer`、
+- `policydsl/evidence/keys.py`（新）：`load_or_create(path)` / `signer_from_env` / `ephemeral_signer`、
   `POP_SIGNING_KEY`（+ `_PASSPHRASE`）环境变量、PKCS#8 PEM（`0600`、不覆盖）、
   公钥导出（hex/PEM/keyid）与验证方入口 `load_keyring` / `public_record`。
 - `scripts/gen_key.py`（新）：生成密钥对 + 指纹；`--show` / `--pubkey` 只碰公钥。
@@ -387,7 +387,7 @@ class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 ### P1-5 轨迹绑定 ✅（2026-09-11 完成）—— 把「证明者的声明」变成「可验证的事实」
 
 > **落地结果**（下面的设计稿保留作对照，实现与原稿的差异见文末「与设计稿的差异」）：
-> `policydsl/trace.py`（回执/网关/链校验）+ `pop-types` 镜像 + 三个适配器接线 + `tests/test_trace.py`
+> `policydsl/evidence/trace.py`（回执/网关/链校验）+ `pop-types` 镜像 + 三个适配器接线 + `tests/test_trace.py`
 > （四条验收 + 六例第三方核对，29 例全绿；**P1-5b 落地后同文件增至 39 例**，见 T4 行）
 > + `cross_validate.py` 全部向量改为回执驱动（host 14/14、prove 14/14）。
 
@@ -397,7 +397,7 @@ class HmacSigner:      # 仅测试；keyid 前缀 "test-hmac-sha256"
 **设计**：引入**工具回执链**。回执由**工具网关**（不是 agent）签发；agent 只能转发。
 
 ```python
-# policydsl/trace.py（新）
+# policydsl/evidence/trace.py（新）
 @dataclass
 class ToolReceipt:
     seq: int; tool: str
@@ -420,7 +420,7 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
    「按策略声明的确定性分词规则（UTF-8 空白分隔 run 数）在电路内计数」——
    **语义变了但变得可证**；论文必须在 §4.2 显式写明这一定义。
 
-**接线**：`MCPGuard.call_tool`（`policydsl/mcp_adapter.py`）在**执行后**产出回执（
+**接线**：`MCPGuard.call_tool`（`policydsl/adapters/mcp_adapter.py`）在**执行后**产出回执（
 结果摘要 + 参数摘要 + 网关签名），使 demo 里的回执**真的由网关产生**而非 agent 自填。
 
 **验收** `tests/test_trace.py`：① 完整链通过；② 删/换/重排一条 → 失败；③ **负例**——伪造一条
@@ -472,8 +472,8 @@ def verify_chain(receipts, keyring) -> bool:  # 序号连续 + prev 链接 + 每
 | 步 | 落点 |
 |---|---|
 | 1 形式化 | **引理 L6** 写进 [`security-model.md`](security-model.md) §3（组合义务、键分离、四方 `response_binding`），含「不保证」三条与成本结论的如实标注 |
-| 2 代理实验 | 新增 guest `circuits/infer-program`（包 `pop-infer`）；`pop-types` 加 `Job::Infer` / `InferRequest` / `run_infer` 与 `job_domain`；**两个 guest 入口各断言一次域**，把键分离钉进电路。模型是 16→32→4 定点（Q16）MLP，权重由编译期常量种子生成 ⇒ **模型就是程序**，被 vkey 承诺（比 P2-9 的 ezkl 委托更强）。Python 参考实现 `policydsl/infer.py` 与 Rust 逐位一致 |
-| 3 组合驱动 | `policydsl/compose.py`（8 步验证）+ `scripts/compose_proof.py`（两次独立进程出证 → 合成 → 独立验证）。**必须分进程**：同进程连出两份证明会在第二份 setup 被 OOM |
+| 2 代理实验 | 新增 guest `circuits/infer-program`（包 `pop-infer`）；`pop-types` 加 `Job::Infer` / `InferRequest` / `run_infer` 与 `job_domain`；**两个 guest 入口各断言一次域**，把键分离钉进电路。模型是 16→32→4 定点（Q16）MLP，权重由编译期常量种子生成 ⇒ **模型就是程序**，被 vkey 承诺（比 P2-9 的 ezkl 委托更强）。Python 参考实现 `policydsl/proofs/infer.py` 与 Rust 逐位一致 |
+| 3 组合驱动 | `policydsl/proofs/compose.py`（8 步验证）+ `scripts/compose_proof.py`（两次独立进程出证 → 合成 → 独立验证）。**必须分进程**：同进程连出两份证明会在第二份 setup 被 OOM |
 | 4 成本表 | `bench/bench_compose.py` → **已跑出** `bench/results/compose.{json,md}`：策略半 127.3 s / 64.4 万周期 / 峰值 10.2 GiB，推理半 110.8 s / 8.3 万周期 / 峰值 10.0 GiB；组合层合成 5.0 ms、联合验证 53.8 s（主导是两次 vkey setup）。两半**分进程** ⇒ 峰值取 max 而非相加 |
 | 反例 | `tests/test_compose.py`（48）：换证明文件/缺失、同 vkey/非期望 vkey、换模型/换输入、两半绑不同 T/送达 T′ 不符、形状/模式/域/policy_hash 重编译 —— 全部被拒 |
 | 驱动接线 | 真出证明才暴露的 4 处（`kind`≠`--job` 旗标、`outcome_without_meta` 连 `mode` 一起剥、`--reuse-proofs` 必须还原同一个 nonce、`_verify_one` 漏给 `--out` 会在仓库根落 `results.json`）已修并各自补了回归用例（`TestDriverWiring`）—— 绑定层全绿但驱动一跑就炸，这个教训写进了测试注释 |
@@ -611,12 +611,12 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 
 | # | 子任务 | 交付 | 验收 |
 |---|---|---|---|
-| **9.0** | **EVM 验证器接口**（原 T2 阻塞）—— ✅ **已完成（2026-09-11）** | `policydsl/ezkl_evm.py` + `tests/test_ezkl_evm.py` | 裸调用抛错已定位并绕开；一次性/可复用验证器与 VK artifact 均产出，10 例全绿 |
+| **9.0** | **EVM 验证器接口**（原 T2 阻塞）—— ✅ **已完成（2026-09-11）** | `policydsl/proofs/ezkl_evm.py` + `tests/test_ezkl_evm.py` | 裸调用抛错已定位并绕开；一次性/可复用验证器与 VK artifact 均产出，10 例全绿 |
 | **9.1** | **依赖栈打通**：恢复 pip（§8.0）→ `torch`/`onnx`/`ezkl`（halo2 后端）；锁定版本写进 `requirements-ezkl.txt`；**离线 wheel 缓存入库** | 可复现的 `scripts/install_ezkl.sh` | `import ezkl` + 一次自带示例的 prove/verify 通过 |
 | **9.2** | **模型与特征**：`semantic/train.py`（数据 + 训练 + 导出 ONNX）；权重与 ONNX 入库，`semantic/MODEL.sha256` | `semantic/model.onnx` + 训练脚本 | ONNX 导出**逐位确定**（同权重两次导出 sha256 相同） |
 | **9.3** | **ezkl 编译与出证**：`scripts/ezkl_prove.py` —— `gen_settings → compile → setup → prove → verify`；产出 `vk` + `proof` | `semantic/artifacts/{vk.json,proof.json}` | `ezkl verify` 通过；记录**出证时间/大小/内存**（进 `bench/`） |
 | **9.4** | **策略规则**：新增 `semantic_bound` kind，贯通 `model.py → compile.py → serialize.py → pop-types` | `Constraint::SemanticBound { name, model_vkey, onnx_sha256, threshold_bp, direction }` | `tests/test_semantic.py::test_compile_semantic`；契约哈希稳定 |
-| **9.5** | **组合与绑定** —— ✅ **已完成（2026-09-12）** | `policydsl/semantic.py::verify_companion/companion_entry`、`cert.build_payload(semantic=)`、`scripts/{issue_cert,verify_cert}.py` | 见 9.7 反例；**两处与原文不同，理由见 9.5 记要** |
+| **9.5** | **组合与绑定** —— ✅ **已完成（2026-09-12）** | `policydsl/proofs/semantic.py::verify_companion/companion_entry`、`cert.build_payload(semantic=)`、`scripts/{issue_cert,verify_cert}.py` | 见 9.7 反例；**两处与原文不同，理由见 9.5 记要** |
 | **9.6** | **信任边界论证** —— ✅ **已完成（2026-09-12）** | [`design-semantic-rules.md`](design-semantic-rules.md) | 与 §P1-8 的形式化模型对接：新增**引理 L7**（**不是 L6 —— 那号已被 P1-6 占用**，见记要） |
 | **9.7** | **验收 + 反例** —— ✅ **已完成（2026-09-12）** | `tests/test_semantic.py`（**30 例** / 6 条反例；P2-9 收尾时为 29 例，P2-9b 的折叠用例 +1） | 见下；全套 **348 passed / 11 skipped**（P2-9 收尾时复跑；**P2 收尾的全量为 469/13**，见 §4 P2-10 / P2-11） |
 
@@ -644,7 +644,7 @@ T ──▶ [确定性特征：字符 n-gram 哈希桶计数 + 归一化]  ─�
 > 该报错把人引向"缺组件"是**必然**的 —— 那个字符串来自 CPython 的 asyncio，
 > **不在** `ezkl.abi3.so` 里（`strings | grep` 零命中）；二进制里能查到的真调用点是
 > `pyo3_async_runtimes::get_running_loop`。解法只有一种：**在事件循环内调用并 await 那个
-> Future**，`policydsl/ezkl_evm.py::run` 把它包成同步调用。
+> Future**，`policydsl/proofs/ezkl_evm.py::run` 把它包成同步调用。
 >
 > 顺带纠正两处：① **这条路径不需要 solc** —— docstring 那么写，实测（含把 `PATH` 剥空）
 > 都不调用它，只是把 Halo2 模板常量填好写文件，~0.1 s；② **`reusable=True` 对电路规模敏感**
@@ -714,7 +714,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 全电路内可证，且能覆盖 ezkl 模型可能漏掉的确定性绕过。
 
 - 新增 `SpecConstraint::NormalizedKeywordBlock { name, keywords, fold: FoldingSpec }`
-- `policydsl/normalize.py`：西里尔/希腊同形字映射、全角→半角、去零宽字符（`U+200B/200C/200D/FEFF`）
+- `policydsl/core/normalize.py`：西里尔/希腊同形字映射、全角→半角、去零宽字符（`U+200B/200C/200D/FEFF`）
 - 电路内先折叠再匹配
 
 **验收**：折叠前 `passed=True`、折叠后 `passed=False`（证明修复非恒真）。
@@ -745,7 +745,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 ### P2-10 跨证书策略一致性 —— ✅ **已完成（2026-09-12）**
 
-`policydsl/session.py` + 新 guest 模式 `Job::Session`：证「一组证书 ①`policy_hash` 全同；
+`policydsl/proofs/session.py` + 新 guest 模式 `Job::Session`：证「一组证书 ①`policy_hash` 全同；
 ②流式链无缝拼接无缺口；③覆盖完整轨迹」。用 Merkle 根把 N 张证书摘要聚合进一次证明。
 
 **验收**：`tests/test_session.py` —— 混入一张异策略证书 → 失败；挖掉一张 → 失败。
@@ -754,7 +754,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 **交付物**：第三个域 `session`（第三个 guest ⇒ 第三个 vkey）—— `circuits/session-program/`
 （crate 名 `pop-session`）+ `circuits/types` 的 P2-10 段（`merkle_root`、`SessionRequest` /
 `CertView` / `SessionOutput`、`run_session`）+ 驱动接线（`build.rs` 三个 ELF、`--job session`）+
-`policydsl/session.py`（参考实现 + Merkle 包含证明 + `prove_session` / `verify_session_proof`）+
+`policydsl/proofs/session.py`（参考实现 + Merkle 包含证明 + `prove_session` / `verify_session_proof`）+
 `scripts/prove_session.py`（CLI）+ `tests/test_session.py`（38 例，其中 1 例 gated）。
 
 **三个设计要点（每一个都是「换个做法就出漏洞」的那种）**：
@@ -801,7 +801,7 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 
 ### P2-11 多证明者 —— ✅ **已完成（2026-09-12）**
 
-`policydsl/multiparty.py`：模型方 / 工具网关 / 部署方各自持钥、各证一段策略切片；
+`policydsl/proofs/multiparty.py`：模型方 / 工具网关 / 部署方各自持钥、各证一段策略切片；
 输出 `CompositeCertificate`（N 签名 + 聚合证明）。基于 P1-5 的回执设施 + P1-6 的组合驱动。
 
 **验收**：缺任一角色签名 → 拒绝；单角色策略切片被换 → 拒绝。
@@ -824,8 +824,8 @@ test_declared_features_rejected      # 反例：图外预计算的特征 → 图
 恰好铺满三个角色。切片**两两不交、并集是全策略**；空切片（比如示例里的部署方）**仍然要签名** ——
 「这一段我不负责」必须是**显式**的，不能靠「没出现」暗示。
 
-**交付物**：`policydsl/multiparty.py`（切分 + 编译 + 签名 + 装配 + 七步验证）+
-`policydsl/compile.py` 的 `compile_constraints` / `compile_slice_policy` 接缝 +
+**交付物**：`policydsl/proofs/multiparty.py`（切分 + 编译 + 签名 + 装配 + 七步验证）+
+`policydsl/core/compile.py` 的 `compile_constraints` / `compile_slice_policy` 接缝 +
 `policy_packs/multiparty_demo_v1.json`（模型方与网关**都有**非空切片的示例包）+
 `scripts/prove_multiparty.py`（CLI，含两条验收判据的现场造假演示）+ `tests/test_multiparty.py`（44 例，其中 1 例 gated）。
 
@@ -1142,9 +1142,9 @@ verify() -> True     proof 21.3 KB     RESULT: SMOKE PASS
 | # | 待办 | 阻塞谁 | 前置/成本 | 状态 |
 |---|---|---|---|---|
 | **T1** | **租一台一次性 ≥64 GB 云机**（**外部资源，人工动作**），**① 产出 groth16 证明 + 测通验证合约（D2 已拍板）**；**②（顺带）**把 P2-12 证明侧的**全矩阵**补完（见下「T1 的第二个用途」） | ① `P1-7` 链上证明验证的**硬前置**：**本机 12 GB 必 OOM**（compressed 与 groth16 实测都在峰值 ~11.0 GB 被 OOM killer 终止 —— 递归包装的固定开销就超了本机内存，`SHARD_SIZE`/`MEMORY_LIMIT` 无效），groth16/plonk 出不来；② 只是**同一台机器上的顺带**，**不阻塞任何东西** | 需要人工租机（约数小时窗口）+ 一次环境搭建（Rust/SP1 工具链或直接搬 `circuits/` 目标目录）；产出入库后本机可离线复核 | ⬜ **未开始（阻塞中）** —— P1-5 完成后，本项是 **P1 段内唯一剩余任务**，也是唯一的外部阻塞；**不解决它，P1 段无法收尾**。建议立即排期租机 |
-| **T2** | 解开 ezkl `create_evm_verifier()` 的 `RuntimeError: no running event loop` | `P2-9`（D3 选定的全量 ezkl 集成）的最后一个阻塞 | 先试 ezkl 12.x；或绕开该 API，直接由编译产物手写 Solidity verifier | ✅ **已完成（2026-09-11）** —— 两条预设备选都不需要：真因是**调用方式**（API 内部走 `pyo3-async-runtimes`，须在事件循环内调用并 await 其返回的 Future），非版本、非依赖。解见 `policydsl/ezkl_evm.py` + `tests/test_ezkl_evm.py`（10 例）、记要见 §P2-9 子任务表 9.0 |
+| **T2** | 解开 ezkl `create_evm_verifier()` 的 `RuntimeError: no running event loop` | `P2-9`（D3 选定的全量 ezkl 集成）的最后一个阻塞 | 先试 ezkl 12.x；或绕开该 API，直接由编译产物手写 Solidity verifier | ✅ **已完成（2026-09-11）** —— 两条预设备选都不需要：真因是**调用方式**（API 内部走 `pyo3-async-runtimes`，须在事件循环内调用并 await 其返回的 Future），非版本、非依赖。解见 `policydsl/proofs/ezkl_evm.py` + `tests/test_ezkl_evm.py`（10 例）、记要见 §P2-9 子任务表 9.0 |
 | **T3** | 真实 SP1 证明的**全量**回归改为「出证 + 验证」两条腿都在 CI 之外定期跑 | 论文 §7 的证明时间/内存数字 | 单次 `cross_validate --prove` ≈ **45 分钟**（19 向量、`--chunk 2`；14 向量时约 24 分钟）；本机跑即可 | ✅ **已完成（2026-09-16，代码 + 本机真跑）** —— 见 `dev-plan.md` §5.5.1/§5.5.3。**缺的从来不是某一条腿**（出证腿 `cross_validate` 早已有、量测 `bench_proofs` 有、验证腿 `bench_verify` 有），缺的是**把两条腿串起来、按次留痕、能挂定时器**的那层 ⇒ 新增 `scripts/regression_prove.py`（只编排，不重写任何一条腿的逻辑）。留痕**只追加**到 `bench/results/regression-prove.jsonl`（`cross_validate` 每次覆盖 `results_prove.json`，历史无从谈起）；验证腿走**新进程**（出证进程已退出，验证方只剩产物 + ELF）；`--pop-script` 可注入替身驱动，16 例单测**不需要 Rust**。**两点如实登记**：① 验证腿**只覆盖 1 个向量**（记录里写在 `note`，不装作全量）—— 它证的是「这份产物换个人也能验」这条**路径**没坏；② cron/systemd 配方已写进脚本 docstring 与 `08-tests-bench.md` §3.8，**但没有任何机器真的挂着它** —— 「能定期跑」已交付，「正在定期跑」要有人去配。**首条真实记录已入库**（2026-09-16 `first-real-run`：19/19 PASS，43.6 min，峰值 10,975 MB，`git.dirty=false`）——「脚本跑过」与「挂着定时器」也是两件事，都如实写在这里 |
-| **T4** | **P1-5b：堵住回执链的「截尾」缺口**（做 P1-8 时发现，见 [`security-model.md`](security-model.md) §5.3） | `P1-5` 的**健全性缺口**：把链尾那条违规回执**整条删掉**后，剩下的仍是一条结构自洽、逐条签名有效的**真链**，`trace_binding`（证书绑的链 == 送检的链）与 `receipt_chain`（逐条验签）**双双 PASS**；**当链与证书由出证方一起转交时，违规尾巴可被静默截掉**。**这不是「再比一次」能补的** —— 任何只看交付链的检查都无从知道「后面还有没有」 | **网关对会话末端做一次承诺**：`ToolSeal{count, trace_root, ts, keyid, sig}`（域分隔 `pop-trace-seal-v1`），验证方核对 `len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root` + 验签。截尾者只剩两条路：拿原 seal 配截断链（`count` 对不上）或为截断链新签一条（无网关私钥） | ✅ **已完成（2026-09-11，纯代码）** —— 见 `tests/test_trace.py::TestSeal`（9 例）与 `::TestVerifyCertTraceBinding::test_tail_truncation_is_rejected`（原 seal / 伪造 seal / 不带 seal 三路 + 正对照）。改动面：`policydsl/trace.py`（`ToolSeal`/`verify_seal`/`ToolGateway.seal`）+ `cert.build_payload`（载荷**顶层** `trace_seal`）+ `verify_cert.py` **3d** + 各适配器出证点。**两点与原设想的偏离，如实登记**：① **没有做「电路内对 seal 的结构校验」** —— 链尾摘要本就在电路内算并进公开值，「证明绑的是哪条链」已有电路保证；seal 要补的是「网关说这条链到此为止」，那是一个**签名**问题，按本项目「结构入电路、签名在链下」的既有分工放在链下；② **seal 放载荷顶层而不是 `outcome`** —— `outcome` 是证明公开值的镜像（验证方逐字段比对），放进去会让每一张带真实证明的证书都对不上。**残留边界**：验证方须持网关公钥（`--gateway-key`）才拿得到这个保证；只给 `--receipts` 而没给公钥时，3d 记 `PASS + 「截尾不可排除」(skipped)`；且 seal 仍是**网关的**陈述（A4），它把信任挪向网关而非消除信任 |
+| **T4** | **P1-5b：堵住回执链的「截尾」缺口**（做 P1-8 时发现，见 [`security-model.md`](security-model.md) §5.3） | `P1-5` 的**健全性缺口**：把链尾那条违规回执**整条删掉**后，剩下的仍是一条结构自洽、逐条签名有效的**真链**，`trace_binding`（证书绑的链 == 送检的链）与 `receipt_chain`（逐条验签）**双双 PASS**；**当链与证书由出证方一起转交时，违规尾巴可被静默截掉**。**这不是「再比一次」能补的** —— 任何只看交付链的检查都无从知道「后面还有没有」 | **网关对会话末端做一次承诺**：`ToolSeal{count, trace_root, ts, keyid, sig}`（域分隔 `pop-trace-seal-v1`），验证方核对 `len(chain) == seal.count ∧ trace_root(chain) == seal.trace_root` + 验签。截尾者只剩两条路：拿原 seal 配截断链（`count` 对不上）或为截断链新签一条（无网关私钥） | ✅ **已完成（2026-09-11，纯代码）** —— 见 `tests/test_trace.py::TestSeal`（9 例）与 `::TestVerifyCertTraceBinding::test_tail_truncation_is_rejected`（原 seal / 伪造 seal / 不带 seal 三路 + 正对照）。改动面：`policydsl/evidence/trace.py`（`ToolSeal`/`verify_seal`/`ToolGateway.seal`）+ `cert.build_payload`（载荷**顶层** `trace_seal`）+ `verify_cert.py` **3d** + 各适配器出证点。**两点与原设想的偏离，如实登记**：① **没有做「电路内对 seal 的结构校验」** —— 链尾摘要本就在电路内算并进公开值，「证明绑的是哪条链」已有电路保证；seal 要补的是「网关说这条链到此为止」，那是一个**签名**问题，按本项目「结构入电路、签名在链下」的既有分工放在链下；② **seal 放载荷顶层而不是 `outcome`** —— `outcome` 是证明公开值的镜像（验证方逐字段比对），放进去会让每一张带真实证明的证书都对不上。**残留边界**：验证方须持网关公钥（`--gateway-key`）才拿得到这个保证；只给 `--receipts` 而没给公钥时，3d 记 `PASS + 「截尾不可排除」(skipped)`；且 seal 仍是**网关的**陈述（A4），它把信任挪向网关而非消除信任 |
 
 > **T2 已于 2026-09-11 关闭**（理由见上表与 §P2-9 的 9.0 记要）。
 > **T1 仍开着，且现在没有别的并行项了** —— 它是 P1 段收尾的唯一障碍，也是**外部队列**

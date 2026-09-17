@@ -6,7 +6,7 @@ Compose = (推理完整性 ∧ 策略合规)
 ```
 
 本脚本把两半各出一次 SP1 证明（``--job policy`` 与 ``--job infer``，**两个不同的
-ELF ⇒ 两个不同的 vkey**），再交给 :mod:`policydsl.compose` 合成一张组合证书并
+ELF ⇒ 两个不同的 vkey**），再交给 :mod:`policydsl.proofs.compose` 合成一张组合证书并
 当场独立验证一遍。
 
 用法：
@@ -19,7 +19,7 @@ SP1_PROVER=cpu python3 scripts/compose_proof.py \\
 ```
 
 ``--reuse-proofs`` 沿用 ``out-dir`` 里已有的两份证明，只重跑「合成 + 独立验证」
-（出证各约 2 分钟，改 ``policydsl/compose.py`` 后不必重出）。它**不重新校验**证明
+（出证各约 2 分钟，改 ``policydsl/proofs/compose.py`` 后不必重出）。它**不重新校验**证明
 是否对应本次的 ``--response`` —— 但尾部验证会现场重算 ``response_binding``，
 对不上即 FAIL，不会静默产出一张错证书。
 
@@ -44,12 +44,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import infer as I                      # noqa: E402
-from policydsl import compose as C                    # noqa: E402
-from policydsl import challenge                       # noqa: E402
-from policydsl.compile import compile_policy          # noqa: E402
-from policydsl.model import Policy, Rule, PolicyError # noqa: E402
-from policydsl.serialize import spec_canonical_text   # noqa: E402
+from policydsl.proofs import infer as I                      # noqa: E402
+from policydsl.proofs import compose as C                    # noqa: E402
+from policydsl.privacy import challenge                       # noqa: E402
+from policydsl.core.compile import compile_policy          # noqa: E402
+from policydsl.core.model import Policy, Rule, PolicyError # noqa: E402
+from policydsl.core.serialize import spec_canonical_text   # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 POP_VERIFY = REPO / "circuits" / "target" / "release" / "pop-verify"

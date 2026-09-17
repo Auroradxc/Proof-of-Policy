@@ -1,6 +1,6 @@
 # 语义规则（学习型规则）的信任边界论证
 
-> 对应计划 §9.6；代码落在 `policydsl/semantic.py`、`semantic/`、`scripts/ezkl_prove.py`、
+> 对应计划 §9.6；代码落在 `policydsl/proofs/semantic.py`、`semantic/`、`scripts/ezkl_prove.py`、
 > `circuits/types/src/lib.rs`；验收在 `tests/test_semantic.py`（**30 例**，含 6 条反例）；
 > 成本在 [`bench/results/semantic.md`](../bench/results/semantic.md)。
 >
@@ -442,9 +442,9 @@ RESULT: PASS
 
 | 项 | 状态 |
 |---|---|
-| P2-9b 同形异义折叠（`NormalizedKeywordBlock`，全电路内、零依赖） | **已完成**（2026-09-12）。折叠表随约束走（进 `policy_hash`），链下 `policydsl/normalize.py` ↔ 链上 `pop_types::folded_text` 逐字符对齐，与本节的学习型规则**互补**（一个管"字面变体"、一个管"改写"） |
+| P2-9b 同形异义折叠（`NormalizedKeywordBlock`，全电路内、零依赖） | **已完成**（2026-09-12）。折叠表随约束走（进 `policy_hash`），链下 `policydsl/core/normalize.py` ↔ 链上 `pop_types::folded_text` 逐字符对齐，与本节的学习型规则**互补**（一个管"字面变体"、一个管"改写"） |
 | 上面那条的**边界**（写清它不做什么） | 只做单码点映射（不做 NFKC / 一对多 / 音译）；只对白名单字符生效 —— 折叠表每一行都必须出自 `features.VOCAB` ∪ `HOMOGLYPH_PAIRS`（软检查钉住）。**实测 6 个同形字只在这两张表的后者里**（大写西里尔 `Ѕ А Е О Т`、小写 `п`），即模型没见过它们 —— 所以 `WЕAPONIZE` 这类大写变体很可能是**折叠规则独家覆盖**的，两个层的覆盖面不是包含关系 |
 | 多模型 | 未做（§6.4 的单槽限制） |
 | 语义规则的私有模式 | 未做，且与 §5.2 的 ZK 现状叠加后短期不做（§6.1） |
 | 特征在 SP1 内算 + ezkl 只证 head（计划 §9.1 的回退） | 未采用（§4.1），但方案本身仍成立；若将来需要"公开值不含 `encode(T)`"，这条路是唯一的出路 |
-| EVM 上验证 ezkl 证明 | `policydsl/ezkl_evm.py` 已能产出 verifier（P2-9 §9.0，`tests/test_ezkl_evm.py` 全绿），但**部署到链上尚未做** |
+| EVM 上验证 ezkl 证明 | `policydsl/proofs/ezkl_evm.py` 已能产出 verifier（P2-9 §9.0，`tests/test_ezkl_evm.py` 全绿），但**部署到链上尚未做** |

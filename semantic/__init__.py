@@ -14,6 +14,6 @@ T ──▶ encode(T)  ──▶ [ONNX 图：固定投影 n-gram 特征 + 训练
 **本包不 import ezkl**（也不 import torch 于导入期）—— 「需要 torch/ezkl 才做得了的事」
 都收在训练与出证两个入口里，这样 ``import semantic`` 在纯标准库环境里不会炸。
 
-证明与验证在 :mod:`policydsl.semantic`（Python 侧契约）与
+证明与验证在 :mod:`policydsl.proofs.semantic`（Python 侧契约）与
 ``scripts/ezkl_prove.py``（出证入口）。
 """

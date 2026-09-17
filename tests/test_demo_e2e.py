@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import openai_sse_stub as stub  # noqa: E402
 
-from policydsl import cert  # noqa: E402
+from policydsl.evidence import cert  # noqa: E402
 
 
 def deps_available() -> bool:

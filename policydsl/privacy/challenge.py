@@ -34,7 +34,7 @@ import secrets
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from .commit import BIND_SCHEME, response_binding, verify_binding
+from policydsl.privacy.commit import BIND_SCHEME, response_binding, verify_binding
 
 #: nonce 的字节长度（256 bit CSPRNG 输出）。
 NONCE_BYTES = 32

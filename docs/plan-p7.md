@@ -69,7 +69,7 @@ Core 证明路径不受影响（~10 GB，回归 PASS）。
    → `anchoredAt/anchoredBy/isAnchored/count` + `Anchored(digest, ts, by, seq)` 事件；
    链上**只存 32 字节摘要**。`contracts/Anchor.json`（abi+bytecode）**入库**，
    运行期部署/锚定**不需要 solc/forge**（只需 `cast` + RPC）；`contracts/README.md` 记录重新生成方式。
-2. **后端抽象** `policydsl/anchor.py`：`AnchorBackend` 接口 + `FileLedgerBackend`（默认，离线可验）
+2. **后端抽象** `policydsl/evidence/anchor.py`：`AnchorBackend` 接口 + `FileLedgerBackend`（默认，离线可验）
    / `RpcAnchorBackend(rpc_url, contract, key, ledger_path)`；`backend_from_env()` 统一选择；
    `anchor_on_chain()` 由桩变可用（只读工具 `verify_digest_on_chain()` 供验证方使用）。
    - 底层 RPC 客户端 = **foundry `cast`**（`CastRpc`，可注入以便离线单测），**不引入 web3.py/eth-account 依赖**
@@ -83,7 +83,7 @@ Core 证明路径不受影响（~10 GB，回归 PASS）。
 
 **顺带修掉的真 bug**：`pop-script --proof-out` 会给**所有**模式（含 core）写 `<proof>.verify.json` 边车，
 而「走 verifier-only 快路径」的判定原先只看边车是否存在 → **core 证明被误判为快路径**，`pop-verify` 以 exit 3 拒绝
-（真跑带证明的链上 e2e 才暴露）。已抽出 `policydsl/verifier.py::prefer_verifier_only`（二进制 + 边车 + 模式 ∈
+（真跑带证明的链上 e2e 才暴露）。已抽出 `policydsl/evidence/verifier.py::prefer_verifier_only`（二进制 + 边车 + 模式 ∈
 {compressed,groth16,plonk}），`verify_session`/`verify_cert` 共用，并补单测（core 边车必须回落 `pop-script --verify`）。
 
 **实测（2026-09-10，本机 WSL 12 GB，foundry 1.8.1）**

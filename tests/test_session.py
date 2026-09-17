@@ -2,7 +2,7 @@
 
 ## 三层，与前两块（P1-6 的 ``test_compose``）同构
 
-1. **参考实现层**（不出证明）：``policydsl/session.py::run_session``（Python）
+1. **参考实现层**（不出证明）：``policydsl/proofs/session.py::run_session``（Python）
    与电路内 ``pop-types::run_session``（Rust）在 ``pop-script --check --job session``
    下**逐字段一致**。链长取 1/2/3/5/8 是有意的：Merkle 的**奇数末位提升**只在
    n 不是 2 的幂时才被走到。
@@ -36,9 +36,10 @@ REPO = Path(__file__).resolve().parents[1]
 import sys  # noqa: E402
 sys.path.insert(0, str(REPO))
 
-from policydsl import cert, keys, session as S, trace  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
+from policydsl.evidence import cert, keys, trace  # noqa: E402
+from policydsl.proofs import session as S  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
 
 POP_SCRIPT = S.POP_SCRIPT
 

@@ -23,11 +23,11 @@ sealed_count, seal_keyid)``。验证方拿**交付的证书集**重算 Merkle �
 
 **边界（如实说明，不要读过头）**：
   - 电路**不验**网关对 `trace_seal` 的 Ed25519 签名（zkVM 里没有网关公钥）。
-    「这条链网关真的签过」由 ``policydsl.trace.verify_seal`` 链下完成 ——
+    「这条链网关真的签过」由 ``policydsl.evidence.verify_seal`` 链下完成 ——
     本脚本给了 ``--keyring`` 才会走到那一步，否则输出里会注明**未验签名**。
   - 聚合只覆盖**一个 run**，且只覆盖**链上（流式）证书**。一个 run 的权威
     `on_llm_end` 证书没有 `streaming.chain`，是按内容被判出 run 之外的（见
-    ``policydsl.session.runs_of``），不在本证明的覆盖范围内。
+    ``policydsl.proofs.runs_of``），不在本证明的覆盖范围内。
 
 以退出码 0 结束当且仅当：每条选中的 run 都出了证、且验证方用交付证书集核对通过。
 """
@@ -44,8 +44,8 @@ from typing import Any, Dict
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import cert as C  # noqa: E402
-from policydsl import session as S  # noqa: E402
+from policydsl.evidence import cert as C  # noqa: E402
+from policydsl.proofs import session as S  # noqa: E402
 
 
 def _payload(envelope: Dict[str, Any]) -> Dict[str, Any]:
@@ -58,7 +58,7 @@ def load_bundle(path: Path) -> "list[dict]":
     """从 `session.json` 取出全部证书信封（`certificates[*].envelope`）。
 
     **不做 kind 过滤**：哪张证书属于哪个 run、哪张不在链上，全交给
-    :func:`policydsl.session.runs_of` 按内容判定 —— 那份判定是出证方与验证方
+    :func:`policydsl.proofs.runs_of` 按内容判定 —— 那份判定是出证方与验证方
     共用的同一份，在这里再抄一遍就等于把口径分叉了。
     """
     bundle = json.loads(Path(path).read_text(encoding="utf-8"))

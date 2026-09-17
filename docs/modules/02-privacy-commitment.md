@@ -1,6 +1,6 @@
 # 02 · 隐私与承诺（私有模式）
 
-> 覆盖 `policydsl/commit.py`，依赖 `nfa.py` 的区间计算。
+> 覆盖 `policydsl/privacy/commit.py`，依赖 `nfa.py` 的区间计算。
 > 这一板块回答：**如何在不说出响应内容的前提下，证明「我判定过了，结论是这个」，
 > 并且「我遮蔽掉的确实是我声称命中的内容」。**
 
@@ -25,7 +25,7 @@
 （`scripts/private_demo.py` 逐字段比对 golden 与电路输出，含 `response_binding`）。
 
 **不负责**：证书封装（`03`）、证明本身（`05`）。这里只定义「什么值该被提交」。
-挑战值的**生成与生命周期**（一次性、重放记录）在 `policydsl/challenge.py`（本节 §5b）。
+挑战值的**生成与生命周期**（一次性、重放记录）在 `policydsl/privacy/challenge.py`（本节 §5b）。
 
 ---
 

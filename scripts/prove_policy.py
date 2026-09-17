@@ -5,7 +5,7 @@
 流水线：
   策略包.json --compile--> ConstraintSpec --serialize--> ProofRequest
   响应.txt ------------------------------> pop-script（SP1 证明+验证）
-并把承诺的 ProofOutput 与 Python golden（policydsl.evaluate）交叉比对。
+并把承诺的 ProofOutput 与 Python golden（policydsl.core.evaluate）交叉比对。
 当响应被证明且 golden 一致时以退出码 0 结束。
 
 用法：
@@ -30,10 +30,10 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
-from policydsl.compile import compile_policy
-from policydsl.evaluate import check
-from policydsl.model import Policy, PolicyError, Rule
-from policydsl.serialize import spec_canonical_text
+from policydsl.core.compile import compile_policy
+from policydsl.core.evaluate import check
+from policydsl.core.model import Policy, PolicyError, Rule
+from policydsl.core.serialize import spec_canonical_text
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 # Python Violation.evidence_kind → guest 规则类型字符串

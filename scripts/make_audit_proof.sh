@@ -13,21 +13,21 @@ OUT="circuits/testdata/audit_proof"
 mkdir -p "$OUT"
 
 # 用内联 Python 生成极小输入：2 条规则 + 一句无命中的短响应（保证 passed=true）
+# 注意 vectors 条目的字段是 spec_canonical（规范 JSON 文本），不是 P0-1 之前的
+# constraints（serde 外部标签枚举）—— 后者与 policy_hash 无共同来源，已删除。
 echo "building tiny vectors ..."
 python3 - "$WORK" <<'EOF'
 import json, sys, pathlib
 sys.path.insert(0, '.')
-from policydsl.compile import compile_policy
-from policydsl.model import Policy, Rule
-from policydsl.serialize import spec_to_rust_constraints
+from policydsl.core.compile import compile_policy
+from policydsl.core.model import Policy, Rule
+from policydsl.core.serialize import build_vectors, vector_entry
 p = Policy("audit-fixture", "1", rules=[
     Rule("keyword_block", "kb", {"keywords": ["bad"]}),
     Rule("length_bound", "lb", {"min": 1, "max": 100}),
 ])
-spec = compile_policy(p)
-pathlib.Path(sys.argv[1], "vectors.json").write_text(json.dumps({"vectors": [{
-    "name": "audit-fixture", "response": "hello world",
-    "constraints": spec_to_rust_constraints(spec)}]}))
+pathlib.Path(sys.argv[1], "vectors.json").write_text(json.dumps(build_vectors([
+    vector_entry(compile_policy(p), "hello world", name="audit-fixture")])))
 EOF
 
 # --proof-mode compressed：产物小、且验证端不需要 prover（fixture 的关键前提）

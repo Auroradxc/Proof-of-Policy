@@ -19,7 +19,7 @@
 //!
 //! 这些类型是 `no_std` + `alloc`，因此既能编译进 RISC-V guest，也能编译进
 //! 宿主驱动。`SpecConstraint` 用 serde **内部标签**（`"kind"`）直接吃
-//! `policydsl/compile.py` 产出的形状 —— 这样「被哈希的文本」与「被解析的文本」
+//! `policydsl/core/compile.py` 产出的形状 —— 这样「被哈希的文本」与「被解析的文本」
 //! 是同一份，无需在两套序列化之间做映射（映射本身就是漏洞温床）。
 
 #![no_std]
@@ -71,9 +71,9 @@ fn trace_genesis() -> String {
     String::from(TRACE_GENESIS)
 }
 
-/// 回执摘要与签名的域分隔前缀（对应 `policydsl.trace.TRACE_DOMAIN`）。
+/// 回执摘要与签名的域分隔前缀（对应 `policydsl.evidence.trace.TRACE_DOMAIN`）。
 pub const TRACE_DOMAIN: &[u8] = b"pop-trace-v1";
-/// 空链的链尾（对应 `policydsl.trace.GENESIS`）。
+/// 空链的链尾（对应 `policydsl.evidence.trace.GENESIS`）。
 pub const TRACE_GENESIS: &str = "genesis";
 
 /// 长度前缀：`u32_be(len) ‖ data`。没有它，「拼起来」就有歧义。
@@ -89,7 +89,7 @@ fn push_lp(out: &mut Vec<u8>, data: &[u8]) {
 ///
 /// 刻意**不用 JSON**：JSON 规范化（键序、数字格式、转义、空白）是个聊不完的
 /// 话题，而这里只需要一串**唯一**的字节。字段齐全、顺序写死、长度前缀防歧义 ——
-/// 必须与 `policydsl.trace.canonical_receipt_bytes` 逐字节一致
+/// 必须与 `policydsl.evidence.trace.canonical_receipt_bytes` 逐字节一致
 /// （`tests/test_trace.py` 逐长度核对）。
 pub fn canonical_receipt_bytes(r: &ToolReceipt) -> Vec<u8> {
     let mut out: Vec<u8> = Vec::new();
@@ -132,7 +132,7 @@ pub fn trace_root(receipts: &[ToolReceipt]) -> String {
 /// 签名，由验证方在链下核对（见 `ToolReceipt` 的说明）。空链是**合法**的
 /// （一次工具都没调用）。
 ///
-/// 错误串与 `policydsl.trace.chain_ok` 逐字符一致：它会作为违规证据进证书，
+/// 错误串与 `policydsl.evidence.trace.chain_ok` 逐字符一致：它会作为违规证据进证书，
 /// 两边不一致就等于证书里写着一条链上算不出来的证据。
 pub fn verify_receipt_chain(receipts: &[ToolReceipt]) -> Result<(), String> {
     for (i, r) in receipts.iter().enumerate() {
@@ -152,7 +152,7 @@ pub fn verify_receipt_chain(receipts: &[ToolReceipt]) -> Result<(), String> {
 }
 
 /// 该字节是否算分词空白 —— **取死**的六个字节，与
-/// `policydsl.trace.TOKEN_SPACE` 一致。刻意不用 Unicode White_Space：
+/// `policydsl.evidence.trace.TOKEN_SPACE` 一致。刻意不用 Unicode White_Space：
 /// 那份定义会随 Unicode 版本漂移，而电路与参考实现必须永远给出同一个数。
 pub fn is_token_space(b: u8) -> bool {
     matches!(b, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
@@ -196,7 +196,7 @@ pub enum BudgetUnit {
     Tokens,
 }
 
-/// 编译后的 NFA（Thompson 构造），由 `policydsl.nfa` 产出并序列化进
+/// 编译后的 NFA（Thompson 构造），由 `policydsl.core.nfa` 产出并序列化进
 /// ConstraintSpec。这是 pattern_block 的跨层契约。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct NfaSpec {
@@ -214,7 +214,7 @@ pub struct NfaState {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct NfaEdge {
     pub to: u32,
-    /// 闭区间 [lo, hi] 码点范围；已合并 + 排序（见 policydsl.nfa）。
+    /// 闭区间 [lo, hi] 码点范围；已合并 + 排序（见 policydsl.core.nfa）。
     pub ranges: Vec<(u32, u32)>,
 }
 
@@ -229,12 +229,12 @@ pub enum PatternMode {
     Naive,
 }
 
-/// 折叠表的语义版本白名单（P2-9b）—— 与 `policydsl/normalize.py::FOLD_VERSIONS`
+/// 折叠表的语义版本白名单（P2-9b）—— 与 `policydsl/core/normalize.py::FOLD_VERSIONS`
 /// 必须逐字一致。不在白名单里的版本**拒绝执行**（fail-closed）：不能拿旧代码去
 /// 解释一套没见过的折叠语义。
 pub const FOLD_VERSIONS: &[&str] = &["pop-fold-v1"];
 
-/// 表大小上限 —— 与 `policydsl/normalize.py::MAX_MAP / MAX_DROP` 一致。
+/// 表大小上限 —— 与 `policydsl/core/normalize.py::MAX_MAP / MAX_DROP` 一致。
 /// 电路内是逐字符查表，必须有界，否则一条手工构造的巨型表就能把 cycle 数拉爆。
 pub const MAX_FOLD_MAP: usize = 512;
 pub const MAX_FOLD_DROP: usize = 64;
@@ -242,7 +242,7 @@ pub const MAX_FOLD_DROP: usize = 64;
 /// 同形异义折叠表（P2-9b）—— **随约束走**，见
 /// `SpecConstraint::NormalizedKeywordBlock`。
 ///
-/// 形状直接对应 `policydsl/normalize.py::build_v1_spec()` 的 JSON::
+/// 形状直接对应 `policydsl/core/normalize.py::build_v1_spec()` 的 JSON::
 ///
 /// ```json
 /// {"version": "pop-fold-v1", "map": [[1077, "e"], ...], "drop": [8203, ...]}
@@ -265,7 +265,7 @@ pub struct FoldingSpec {
     pub drop: Vec<u32>,
 }
 
-/// 来自 ConstraintSpec 的一条约束 —— **直接映射 `policydsl/compile.py` 产出的
+/// 来自 ConstraintSpec 的一条约束 —— **直接映射 `policydsl/core/compile.py` 产出的
 /// 规范 JSON 形状**（内部标签 `"kind"`，值取 snake_case 变体名）。
 ///
 /// 之所以用内部标签而不是外部标签：电路消费的约束与「被哈希的规范字节」必须
@@ -281,7 +281,7 @@ pub enum SpecConstraint {
     /// 折叠表随约束走，**不是**电路里的常量：表是 `policy_hash` 的一部分，
     /// 因而可审计（策略字节里就写着「西里尔 е 折成 e」），跨层漂移也在结构上
     /// 不可能 —— 电路不解释版本号的含义，只执行带进来的表。`keywords` 已在
-    /// 编译期折叠过（`policydsl/compile.py`），这里**只折叠响应**。
+    /// 编译期折叠过（`policydsl/core/compile.py`），这里**只折叠响应**。
     NormalizedKeywordBlock {
         name: String,
         keywords: Vec<String>,
@@ -390,13 +390,13 @@ pub struct ConstraintSpec {
     pub constraints: Vec<SpecConstraint>,
 }
 
-/// 本程序实现的契约版本（对应 `policydsl.compile.SPEC_VERSION`）。
+/// 本程序实现的契约版本（对应 `policydsl.core.compile.SPEC_VERSION`）。
 pub const SPEC_VERSION: &str = "v1";
 
 /// 本程序实现的规则组合语义：全部规则都要通过（对应 `Policy` 的默认值）。
 pub const SEMANTIC_AND: &str = "and";
 
-/// 挑战-响应绑定的域分隔前缀（对应 `policydsl.commit.BIND_DOMAIN`）。
+/// 挑战-响应绑定的域分隔前缀（对应 `policydsl.privacy.commit.BIND_DOMAIN`）。
 /// 换个用途（如将来绑定工具轨迹）就用另一段前缀，两个域的哈希永不碰撞。
 pub const BIND_DOMAIN: &[u8] = b"pop-bind-v1";
 
@@ -411,7 +411,7 @@ pub const BIND_DOMAIN: &[u8] = b"pop-bind-v1";
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProofRequest {
-    /// 策略的规范 JSON 文本（`policydsl.compile.canonical_spec_bytes` 产出）。
+    /// 策略的规范 JSON 文本（`policydsl.core.compile.canonical_spec_bytes` 产出）。
     /// 唯一真相源：既用于派生 `policy_hash`，也用于解析要判定的约束。
     pub spec_canonical: String,
     pub response: String,
@@ -474,7 +474,7 @@ pub struct ProofOutput {
 }
 
 // --------------------------------------------------------------------------- //
-// NFA 匹配（镜像 policydsl.nfa.match_search：Pike VM，基于码点的无锚点
+// NFA 匹配（镜像 policydsl.core.nfa.match_search：Pike VM，基于码点的无锚点
 // 存在性搜索）。放在这里使 guest 与未来任何宿主工具共享同一实现；
 // spec 区间已合并 + 排序。
 // --------------------------------------------------------------------------- //
@@ -590,7 +590,7 @@ pub fn nfa_match(spec: &NfaSpec, text: &str) -> bool {
 
 // --------------------------------------------------------------------------- //
 // 约束评估（SP1 guest 与宿主侧检查共用）。
-// 对电路内规则类型镜像 policydsl.evaluate.check。
+// 对电路内规则类型镜像 policydsl.core.evaluate.check。
 // --------------------------------------------------------------------------- //
 
 /// 仅对 ASCII 做小写化（与链下 `normalize.ascii_lower` 保持字节级一致）。
@@ -647,7 +647,7 @@ fn validate_folding_spec(spec: &FoldingSpec) {
     }
 }
 
-/// 按表折叠文本（P2-9b）—— 与 `policydsl/normalize.py::Fold.apply` 逐字符对应。
+/// 按表折叠文本（P2-9b）—— 与 `policydsl/core/normalize.py::Fold.apply` 逐字符对应。
 ///
 /// 规则是**单遍、从左到右、逐码点**的：命中 `map` 即替换成那个 ASCII 字符，
 /// 命中 `drop` 即删除，其余原样保留。**不做不动点迭代** —— 于是折叠不会链式
@@ -926,7 +926,7 @@ pub fn evaluate(
 
 // --------------------------------------------------------------------------- //
 // 私有模式：响应承诺 + 选择性披露 + 脱敏证明。
-// 镜像 policydsl.commit。
+// 镜像 policydsl.privacy.commit。
 // --------------------------------------------------------------------------- //
 
 /// 十六进制字母表。
@@ -962,7 +962,7 @@ pub fn sha256_hex(text: &str) -> String {
 /// `nonce="abcd", T=""` 会哈希出同一个值（拼接的经典歧义）。挑战值通常是定长
 /// 的，但把无歧义性建立在调用方的自觉上不是个好买卖 —— 加 4 字节长度前缀后，
 /// 无论 nonce 多长，(nonce, T) 到字节串的映射都是单射。这与 Python 侧
-/// `policydsl.commit.response_binding` 必须逐字节一致。
+/// `policydsl.privacy.commit.response_binding` 必须逐字节一致。
 ///
 /// nonce 为空是合法的（= 没走挑战流程）：那时绑定退化为「对一个空挑战的承诺」，
 /// **不提供任何重放防护**，但格式与其他情况一致，验证方无需分支处理。
@@ -1138,7 +1138,7 @@ pub fn outcome_value(out: &Outcome) -> serde_json::Value {
 }
 
 /// VDR 风格脱敏检查：码点等长、掩码位置为 `*`、其余位置不变。
-/// 镜像 `policydsl.commit.redaction_ok`。
+/// 镜像 `policydsl.privacy.commit.redaction_ok`。
 pub fn redaction_ok(response: &str, redacted: &str, mask: &[u32]) -> bool {
     let r: Vec<char> = response.chars().collect();
     let d: Vec<char> = redacted.chars().collect();
@@ -1235,7 +1235,7 @@ pub fn evaluate_private(req: &PrivateRequest, policy_hash: &str,
     // 悄悄把语义约束略过 —— 后者会产出一份 `passed=true` 却没有判定语义规则的
     // 私密证书，看上去完全正常。
     //
-    // 编译期还有一道同样的检查（`policydsl/compile.py`，报错更友好）；这里是
+    // 编译期还有一道同样的检查（`policydsl/core/compile.py`，报错更友好）；这里是
     // 电路内的兜底：手写的 ProofRequest 绕不过编译期检查。
     if let Some(SpecConstraint::SemanticBound { name, .. }) = constraints
         .iter()
@@ -1337,11 +1337,11 @@ pub const INFER_MODEL_SEED: u64 = 0x0050_6F50_5F69_6E66;
 
 /// 模型的**规范描述串**：`model_hash = SHA256(domain ‖ "model" ‖ spec)`。
 /// 改架构、改维度、改种子都会改哈希 —— 与策略的 `spec_canonical` 同一个思路。
-/// **Python 侧 `policydsl/infer.py::MODEL_SPEC` 必须逐字符相同。**
+/// **Python 侧 `policydsl/proofs/infer.py::MODEL_SPEC` 必须逐字符相同。**
 pub const INFER_MODEL_SPEC: &str =
     "pop-proxy-mlp-v1:in=16:hid=32:out=4:q=16:act=relu:prng=splitmix64:seed=0x506f505f696e66";
 
-/// splitmix64：确定性 PRNG（与 Python 侧逐位一致，见 `policydsl/infer.py`）。
+/// splitmix64：确定性 PRNG（与 Python 侧逐位一致，见 `policydsl/proofs/infer.py`）。
 fn splitmix64(z: u64) -> u64 {
     let mut z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
     z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -1500,7 +1500,7 @@ fn hex32(s: &str) -> [u8; 32] {
 
 /// 对一组 32 字节叶子求 Merkle 根。
 ///
-/// 规则（`policydsl.session.merkle_root` 必须**逐字节**一致）：
+/// 规则（`policydsl.proofs.session.merkle_root` 必须**逐字节**一致）：
 ///
 /// * 叶子 = 各证书的 `cert_digest`，**原样**（不加前缀、不再哈希一次）；
 /// * 内部节点 = `SHA256(NODE_DOMAIN ‖ left ‖ right)`；
@@ -1581,7 +1581,7 @@ pub struct StreamingView {
 }
 
 /// 流式哈希链的一环：`index` 是位置，`prev` 是上一张证书的载荷摘要（首张为
-/// `"genesis"`）。镜像 `policydsl.langchain_adapter.verify_chain` 的判据。
+/// `"genesis"`）。镜像 `policydsl.adapters.langchain_adapter.verify_chain` 的判据。
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ChainView {
     #[serde(default)]
@@ -1593,7 +1593,7 @@ pub struct ChainView {
 /// 会话末端承诺（`ToolSeal`）中**进电路**的那部分。
 ///
 /// `sig` 刻意不在这个视图里：网关签名的 Ed25519 验签在**链下**用网关公钥做
-/// （与 [`ToolReceipt`] 的 `sig` 同样的分工，见 `policydsl.trace.verify_seal`）。
+/// （与 [`ToolReceipt`] 的 `sig` 同样的分工，见 `policydsl.evidence.trace.verify_seal`）。
 /// 电路能证明的是「这组证书里**链尾那张**携带的 `(count, trace_root)` 是这些值」，
 /// 它把这几个值送进公开值，验证方再拿它们去核网关签名与手上的回执链。
 /// **电路不证明 `count` 就是真实回执条数** —— 那是 seal 签名与回执链的事，

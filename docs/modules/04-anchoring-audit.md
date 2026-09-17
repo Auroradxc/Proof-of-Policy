@@ -1,6 +1,6 @@
 # 04 · 锚定与审计
 
-> 覆盖 `policydsl/anchor.py`、`contracts/`、`policydsl/verifier.py`。
+> 覆盖 `policydsl/evidence/anchor.py`、`contracts/`、`policydsl/evidence/verifier.py`。
 > 这一板块回答：**怎么让「某张证书在某时刻已存在」这件事变得不可否认、可被任何第三方核对。**
 
 ---

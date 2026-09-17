@@ -1,4 +1,4 @@
-"""极简正则 → NFA 引擎（policydsl.nfa）的测试。
+"""极简正则 → NFA 引擎（policydsl.core.nfa）的测试。
 
 策略：对受支持的 ASCII 子集，用一份固定的模式 × 文本语料，把模拟器的判定
 结果与 Python ``re`` 做属性比对——两侧语义必须逐例一致，否则 Python 参考
@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl import nfa  # noqa: E402
+from policydsl.core import nfa  # noqa: E402
 
 
 # 模式与文本的笛卡尔积构成属性测试的输入空间：既覆盖真实 PII 形状，也覆盖

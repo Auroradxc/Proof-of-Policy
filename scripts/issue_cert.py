@@ -41,11 +41,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, challenge, commit, keys
-from policydsl import semantic as S
-from policydsl.compile import compile_policy
-from policydsl.model import Policy, Rule
-from policydsl.serialize import spec_canonical_text
+from policydsl.evidence import anchor, cert, keys
+from policydsl.privacy import challenge, commit
+from policydsl.proofs import semantic as S
+from policydsl.core.compile import compile_policy
+from policydsl.core.model import Policy, Rule
+from policydsl.core.serialize import spec_canonical_text
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 

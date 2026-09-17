@@ -1,4 +1,4 @@
-"""合规证书（policydsl.cert）的单元测试。
+"""合规证书（policydsl.evidence.cert）的单元测试。
 
 证书是「合规判定可被第三方审计」的载体：载荷（payload）声明策略哈希与
 AI Act 条款，信封（envelope）用 **Ed25519** 签名（P0-3）保证不可伪造 ——
@@ -19,9 +19,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl import cert  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
+from policydsl.evidence import cert  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
 
 #: 仅测试用的对称 HMAC 密钥（方案前缀 ``test-hmac-sha256``，非历史的 demo 方案）。
 HMAC_KEY = b"test-key"
@@ -215,7 +215,7 @@ class TestKeyringLoading(unittest.TestCase):
     """
 
     def test_missing_path_reports_the_real_reason(self):
-        from policydsl import keys
+        from policydsl.evidence import keys
 
         with tempfile.TemporaryDirectory() as tmp:
             missing = Path(tmp) / "key.json"
@@ -228,14 +228,14 @@ class TestKeyringLoading(unittest.TestCase):
 
     def test_probe_style_path_still_returns_empty(self):
         # 探测式回退保持不变：verify_*.py 会直接丢一个「可能存在」的 Path 进来
-        from policydsl import keys
+        from policydsl.evidence import keys
 
         with tempfile.TemporaryDirectory() as tmp:
             self.assertEqual(keys.load_keyring(Path(tmp) / "key.json"), {})
 
     def test_hex_text_and_key_json_both_load(self):
         # 公钥文本（十六进制）与 key.json 记录两条路都要能用，且 keyid 一致
-        from policydsl import keys
+        from policydsl.evidence import keys
 
         signer = keys.ephemeral_signer()
         with tempfile.TemporaryDirectory() as tmp:
@@ -251,7 +251,7 @@ class TestKeyringLoading(unittest.TestCase):
 
     def test_record_claiming_a_wrong_keyid_is_rejected(self):
         # 记录里自称的 keyid 与公钥不符时，按 keyid 选密钥就失效了 → 必须拒绝
-        from policydsl import keys
+        from policydsl.evidence import keys
 
         signer = keys.ephemeral_signer()
         bad = dict(keys.public_record(signer.public_key))

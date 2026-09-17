@@ -22,11 +22,11 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional
 
-from .agent import AgentMonitor
-from .langchain_adapter import (  # noqa: F401
+from policydsl.adapters.agent import AgentMonitor
+from policydsl.adapters.langchain_adapter import (  # noqa: F401
     PoPCallbackHandler, _extract_text, error_block, langgraph_available,
 )
-from .trace import ToolGateway, extract_result_text
+from policydsl.evidence.trace import ToolGateway, extract_result_text
 
 
 def _content_text(obj: Any) -> str:

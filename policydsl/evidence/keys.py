@@ -36,9 +36,9 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey, Ed25519PublicKey)
 
-from . import cert
+from policydsl.evidence import cert
 
-REPO = Path(__file__).resolve().parent.parent
+from policydsl.paths import REPO  # 仓库根的唯一出处（见该模块 docstring 的事故记录）
 
 #: 私钥路径的环境变量名。
 ENV_KEY_PATH = "POP_SIGNING_KEY"

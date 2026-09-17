@@ -14,7 +14,7 @@
 
 1. **同一策略** —— 整组证书的 `policy_hash` 全同；
 2. **无缝拼接** —— `streaming.chain = {index, prev}` 逐张连续（`prev` = 上一张的
-   载荷摘要，首张为 `"genesis"`），与 :func:`policydsl.langchain_adapter.verify_chain`
+   载荷摘要，首张为 `"genesis"`），与 :func:`policydsl.adapters.verify_chain`
    同一判据；
 3. **覆盖完整轨迹** —— 链尾那张证书携带网关签的会话末端承诺（`trace_seal`，
    P1-5b），其 `(count, trace_root)` 进公开值。
@@ -35,7 +35,7 @@
 
 * 电路**不验网关签名**（zkVM 内没有网关公钥）。它证明的是「这组证书里链尾那张
   携带的 `(count, trace_root)` 是这些值」，验证方再用
-  :func:`policydsl.trace.verify_seal` 拿网关公钥核签名、拿真回执链核
+  :func:`policydsl.evidence.verify_seal` 拿网关公钥核签名、拿真回执链核
   `count`/`trace_root`。`verify_session_proof` 给了 ``keyring`` 与 ``receipts``
   时会把这一步跑掉，**没给时会如实说明「签名未验」**，不会让调用方以为跑全了。
 * **只覆盖一个 run，且只覆盖链上的证书**。一个 session 里可能有多条互不相干的
@@ -56,11 +56,12 @@ import tempfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from policydsl import cert
-from policydsl import verifier as V
-from policydsl.commit import response_binding
+from policydsl.evidence import cert
+from policydsl.evidence import verifier as V
+from policydsl.privacy.commit import response_binding
 
-REPO = Path(__file__).resolve().parent.parent
+from policydsl.paths import REPO  # 仓库根的唯一出处（见该模块 docstring 的事故记录）
+
 POP_SCRIPT = V.POP_SCRIPT
 POP_VERIFY = V.POP_VERIFY
 
@@ -172,7 +173,7 @@ def cert_text(envelope: Dict[str, Any]) -> str:
     """一张证书信封 → 其载荷的**规范 JSON 文本**。
 
     这就是交给电路的那份文本：电路对它求 SHA-256 得到的正是
-    :func:`policydsl.cert.cert_digest`，因此「电路里被聚合的那组证书」与
+    :func:`policydsl.evidence.cert_digest`，因此「电路里被聚合的那组证书」与
     「验证方手上这组证书文件」是同一个东西的两种表示。
     """
     payload = cert.envelope_payload(envelope)
@@ -222,7 +223,7 @@ def runs_of(envelopes: Sequence[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
 def run_session(certs: Sequence[str], nonce: bytes = b"") -> Dict[str, Any]:
     """三条义务的**参考实现**（纯 Python），返回与电路同形的 outcome 字典。
 
-    与 ``pop-types::run_session`` 的关系，和 ``policydsl/evaluate.py`` 与
+    与 ``pop-types::run_session`` 的关系，和 ``policydsl/core/evaluate.py`` 与
     ``pop-types::evaluate`` 的关系一样：两端独立算，``pop-script --check``
     逐字段对拍。任何一条义务不满足即抛 :class:`SessionError`（对应电路里的
     ``assert!`` —— 那边是出不了证明）。
@@ -364,7 +365,7 @@ def verify_session_proof(outcome: Dict[str, Any], *,
     与这批证书逐字段相符。``satisfied`` = 「这批证书覆盖的轨迹确实合规」——
     与 ``verify_composite`` 一样分开：一张如实记录了违规的聚合证明**同样是真**的。
 
-    ``keyring``/``receipts`` 给定时，额外用 :func:`policydsl.trace.verify_seal`
+    ``keyring``/``receipts`` 给定时，额外用 :func:`policydsl.evidence.verify_seal`
     核会话末端承诺（那是 ③ 的另一半，链下做）；**没给时会如实注明未验签名**。
     """
     notes: List[str] = []
@@ -421,7 +422,7 @@ def verify_session_proof(outcome: Dict[str, Any], *,
 
     # ---- ③ 的另一半：会话末端承诺（链下） ----
     if policy_pack is not None or policy is not None:
-        from policydsl.compile import compile_policy
+        from policydsl.core.compile import compile_policy
         pol = policy if policy is not None else _load_policy(policy_pack)
         want = compile_policy(pol)["sha256"]
         if outcome.get("policy_hash") != want:
@@ -432,7 +433,7 @@ def verify_session_proof(outcome: Dict[str, Any], *,
     seal = _last_seal(envelopes)
     if seal is None:
         return False, "链尾证书没有 trace_seal", False
-    from policydsl import trace as T
+    from policydsl.evidence import trace as T
     ok_seal, why = T.verify_seal(seal, keyring=keyring, receipts=receipts)
     if not ok_seal:
         return False, f"会话末端承诺核对失败：{why}", False
@@ -460,7 +461,7 @@ def verify_session_proof(outcome: Dict[str, Any], *,
 
 def _last_seal(envelopes: Sequence[Dict[str, Any]]):
     """交付证书集里**链尾那张**（`chain.index` 最大）的 `ToolSeal`。"""
-    from policydsl.trace import ToolSeal
+    from policydsl.evidence.trace import ToolSeal
     best, best_index = None, -1
     for e in envelopes:
         payload = _payload(e)
@@ -475,7 +476,7 @@ def _last_seal(envelopes: Sequence[Dict[str, Any]]):
 
 def _load_policy(path: Path):
     """从 JSON 载入策略包（与 ``compose._load_policy`` 同口径，避免循环导入）。"""
-    from policydsl.model import Policy, Rule
+    from policydsl.core.model import Policy, Rule
     d = json.loads(Path(path).read_text(encoding="utf-8"))
     rules = [Rule(kind=r["kind"], name=r.get("name", f"r{i}"), params=r.get("params", {}))
              for i, r in enumerate(d["rules"])]

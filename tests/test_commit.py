@@ -1,4 +1,4 @@
-"""私有模式原语（policydsl.commit）的单元测试。
+"""私有模式原语（policydsl.privacy.commit）的单元测试。
 
 这里验证的是 SP1 私有模式程序（``pop-types::evaluate_private``）参考实现的
 对外契约：承诺、选择性披露、带见证的脱敏、以及证据开示。这些语义必须与电路
@@ -13,10 +13,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl import commit, nfa, pii  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.evaluate import check  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
+from policydsl.privacy import commit  # noqa: E402
+from policydsl.core import nfa, pii  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.evaluate import check  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
 
 
 def _spec(rules):

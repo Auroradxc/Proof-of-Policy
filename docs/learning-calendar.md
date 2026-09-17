@@ -61,13 +61,13 @@
 - 产出：笔记「lookup 查表命中直觉」。
 
 **Day 2（Tue）—— 读代码 + 写测试**
-- 阅读：`policydsl/model.py`、`policydsl/evaluate.py`、`tests/test_dsl.py` 全文。
+- 阅读：`policydsl/core/model.py`、`policydsl/core/evaluate.py`、`tests/test_dsl.py` 全文。
 - 练习：`python -m unittest discover tests -v` 跑通；新增 2 个测试（中文关键词、大小写混合关键词）。
 - 产出：新测试入库。
 - 检查点：能解释 `assertFalse(r.passed)` 在测什么。
 
 **Day 3（Wed）—— 确定性编译**
-- 阅读：`docs/architecture.md` 的 ConstraintSpec 结构；`policydsl/compile.py` 的 `_canonical_hash`。
+- 阅读：`docs/architecture.md` 的 ConstraintSpec 结构；`policydsl/core/compile.py` 的 `_canonical_hash`。
 - 练习：读懂 KeywordBlock 的「小写化 + 排序」规范化，写测试覆盖（两个不同顺序的关键词列表 → 相同 spec）。
 - 产出：笔记「为什么约束编译要确定性」。
 
@@ -112,7 +112,7 @@
 - 产出：笔记「校验位在电路里如何表达（模运算 → 约束）」。
 
 **Day 4（Thu）—— 实现 PII 规则**
-- 阅读：`policydsl/evaluate.py` 的 `pattern_block` 分支（`re.search` 语义）。
+- 阅读：`policydsl/core/evaluate.py` 的 `pattern_block` 分支（`re.search` 语义）。
 - 练习：给 `finance_redaction_v1.json` 加 phone、IBAN 两条新 pattern 规则；用 `python -m policydsl check` 验证。
 - 产出：PII 规则 ≥3 类；黄金测试扩展。
 - **风险**：正则电路最可能超时。**退路**：只保留 email + phone，IBAN 留到 Day5。
@@ -159,7 +159,7 @@
 - 检查点：记录一次真实证明时间。
 
 **Day 5（Fri）—— 交叉验证**
-- 阅读：交叉验证思路（SP1 判定 vs `policydsl.evaluate`）。
+- 阅读：交叉验证思路（SP1 判定 vs `policydsl.core.evaluate`）。
 - 练习：写 `tools/check_cross.py`：同一响应比较两层判定。
 - 产出：交叉验证脚本，3 个样例（1 pass / 2 fail）两层一致。
 - 检查点：两层判定全一致。
@@ -221,7 +221,7 @@
 **Day 1（Mon）—— 最小 agent**
 - 阅读：Hugging Face Agents Course Unit 1-2；LangGraph 官方快速开始。
 - 练习：搭最小 LangGraph agent（调用 1 个工具）。
-- 产出：`policydsl/agent.py`（`AgentMonitor`，含 `ScriptedModel` 的可复现最小 agent）+ 三个框架适配器跑通。
+- 产出：`policydsl/adapters/agent.py`（`AgentMonitor`，含 `ScriptedModel` 的可复现最小 agent）+ 三个框架适配器跑通。
 
 **Day 2（Tue）—— MCP 风格工具**
 - 阅读：MCP 规范 "Tools" 一节。
@@ -229,7 +229,7 @@
 - 产出：agent + 1 工具。
 
 **Day 3（Wed）—— 证书格式**
-- 阅读：`policydsl/cert.py` 的证书载荷形状；DSSE/JSON 概念。（计划里写的是 `demo/README.md`，
+- 阅读：`policydsl/evidence/cert.py` 的证书载荷形状；DSSE/JSON 概念。（计划里写的是 `demo/README.md`，
   该目录是**从未使用的占位空壳**，已于 2026-09-12 删除；证书格式的权威定义在 `cert.py` + `docs/modules/03-*.md`。）
 - 练习：实现证书生成 `{policy, policy_hash, response_commitment, passed, proof, ts}`。
 - 产出：cert 脚本 + 示例证书。

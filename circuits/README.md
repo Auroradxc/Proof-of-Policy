@@ -68,7 +68,7 @@ python3 bench/bench_cycles.py
 > 日常入口不用手敲 `pop-script`：`scripts/prove_policy.py` / `cross_validate.py` /
 > `bench/bench_proofs.py` 都已封装好，并处理了分块（`--chunk`）与硬件记录（`host` / `proof_mode`）。
 > **`--proof-out` 的 sidecar 现在对 core 也会写**，`pop-verify` 据此选择是否走 verifier-only 快路径
-> （`policydsl/verifier.py::prefer_verifier_only`）。
+> （`policydsl/evidence/verifier.py::prefer_verifier_only`）。
 
 > `SP1_PROVER=cpu`（v6 合法值 cpu/cuda/mock/light/network）。Windows/WSL 的对策见
 > [`docs/dev-plan.md`](../docs/dev-plan.md) §4。
@@ -77,15 +77,15 @@ python3 bench/bench_cycles.py
 
 1. ✅ **Phase 1 已完成**：program 读 `ProofRequest`(serde) 并对 keyword_block/length_bound 判定、commit `ProofOutput`；
    共享类型在 `circuits/types`；与 Python golden 交叉验证 `scripts/cross_validate.py`（**当时 5/5**）。
-2. ✅ **Phase 2 已完成**：`PatternBlock` 入电路——`policydsl.nfa` 编译 pattern→NFA spec，`pop-types::nfa_match`
-   (no_std Pike VM) 判定；PII 规则(`policydsl/pii.py`)+`pii_redaction_v1` 包；**当时 host 7/7 + 真实证明 7/7**。
-3. ✅ **Phase 3 已完成（透明模式 MVP）**：`policydsl.serialize` 映射 ConstraintSpec→ProofRequest；`scripts/prove_policy.py`
+2. ✅ **Phase 2 已完成**：`PatternBlock` 入电路——`policydsl.core.nfa` 编译 pattern→NFA spec，`pop-types::nfa_match`
+   (no_std Pike VM) 判定；PII 规则(`policydsl/core/pii.py`)+`pii_redaction_v1` 包；**当时 host 7/7 + 真实证明 7/7**。
+3. ✅ **Phase 3 已完成（透明模式 MVP）**：`policydsl.core.serialize` 映射 ConstraintSpec→ProofRequest；`scripts/prove_policy.py`
    对 `eu-ai-act-v1`(pass) / `finance-redaction-v1`(violate) 真实出证并验证，与 golden 一致（MVP 验收见 docs/dev-plan.md）。
 4. ✅ **Phase 4 已完成（私有模式 + 边界增强）**：`Job/Outcome` 双模式；`PrivateOutput` 只公开响应承诺 + 证据承诺 +
    脱敏证明（`redaction_ok` 且 **`mask_covered`：掩码 ⊆ 电路内验证的真实命中**）；`scripts/private_demo.py` 通过
    host 比对 + 真实证明 + 泄露/绑定/**证据开示**实验。
 5. ✅ **Phase 5 已完成（合规证书 + 独立验证）**：`pop-script --proof-out` 保存证明、`--verify` 独立验证；
-   `policydsl/cert.py`（DSSE 证书）、`anchor.py`（防篡改账本）、`agent.py`（Agent 钩子）；
+   `policydsl/evidence/cert.py`（DSSE 证书）、`anchor.py`（防篡改账本）、`agent.py`（Agent 钩子）；
    `scripts/issue_cert.py` / `verify_cert.py` 端到端（第三方验证全 PASS，含 SP1 证明密码学验证）。
 
 > **Phase 5 之后的工作不在本文件**：P0 绑定收紧、P1 轨迹/组合/链上/形式化、P2 语义/会话/多证明者/规模评测

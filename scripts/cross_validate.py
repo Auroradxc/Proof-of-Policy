@@ -2,7 +2,7 @@
 """阶段一至二交叉验证：Python golden（policydsl）vs SP1。
 
 对每条测试向量我们：
-  1. 构造一个 Policy，用 policydsl.evaluate 算出参考判定（即 golden；
+  1. 构造一个 Policy，用 policydsl.core.evaluate 算出参考判定（即 golden；
      pattern_block 由编译后的 NFA == 契约来判定）；
   2. 把策略编译成 ConstraintSpec，并产出一个 Rust 侧 vectors.json
      （serde 外部标签枚举 Constraint：KeywordBlock / LengthBound / PatternBlock）
@@ -46,12 +46,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl.compile import compile_policy
-from policydsl.evaluate import check
-from policydsl.model import Policy, Rule, Transcript
-from policydsl.serialize import spec_canonical_text
-from policydsl import pii
-from policydsl import trace
+from policydsl.core.compile import compile_policy
+from policydsl.core.evaluate import check
+from policydsl.core.model import Policy, Rule, Transcript
+from policydsl.core.serialize import spec_canonical_text
+from policydsl.core import pii
+from policydsl.evidence import trace
 
 #: 证明器驱动。可用环境变量 ``POP_SCRIPT`` 覆盖 —— 定时回归（``regression_prove.py``）
 #: 与单测都靠它**注入替身驱动**，从而不必有 Rust 工具链也能走完整流程。

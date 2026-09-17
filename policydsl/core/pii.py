@@ -1,6 +1,6 @@
 """PII（个人隐私信息）模式与校验位验证器（参考层）。
 
-模式采用 Proof-of-Policy 的 NFA 子集表达（ASCII 语义，见 ``policydsl.nfa``）。
+模式采用 Proof-of-Policy 的 NFA 子集表达（ASCII 语义，见 ``policydsl.core.nfa``）。
 这里的值是「规范来源」（canonical source）；可以从它们生成策略包
 （见 ``scripts/`` 或 ``pii_redaction_v1`` 包），保证字符串永不漂移。
 
@@ -11,7 +11,7 @@
 
 from __future__ import annotations
 
-from . import nfa
+from policydsl.core import nfa
 
 # 规范 PII 模式（全部落在受支持的 NFA 子集内）。
 PII_PATTERNS = {

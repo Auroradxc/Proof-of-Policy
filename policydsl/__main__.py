@@ -12,9 +12,9 @@ import json
 import sys
 from pathlib import Path
 
-from .compile import compile_policy
-from .evaluate import check
-from .model import Policy, PolicyError, Rule
+from policydsl.core.compile import compile_policy
+from policydsl.core.evaluate import check
+from policydsl.core.model import Policy, PolicyError, Rule
 
 
 def _load_policy(path: Path) -> Policy:

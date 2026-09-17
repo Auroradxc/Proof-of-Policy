@@ -8,13 +8,13 @@
 - ``str`` —— 一段自由文本 agent 响应（只用于内容类规则）；
 - ``Transcript`` —— 结构化轨迹，含 ``response``（内容类规则）与 ``receipts``
   （``tool_arg_guard`` / ``budget_bound``/calls）。``budget_bound``/tokens 不再
-  读任何声明值，而是按 :func:`policydsl.trace.token_count` **现算**（P1-5）。
+  读任何声明值，而是按 :func:`policydsl.evidence.token_count` **现算**（P1-5）。
 
 回执链是**网关签发**的（P1-5）：链结构不自洽时，工具类规则一律 fail-closed
 （记 ``trace_unbound`` 违规），绝不退化成「读不出来就当作没有调用」。
 
 关于确定性（determinism）的说明：证明要求判定必须是确定性的。此处内容类规则
-对固定输入是确定的；``pattern_block`` 使用编译后的 NFA（``policydsl.nfa``），
+对固定输入是确定的；``pattern_block`` 使用编译后的 NFA（``policydsl.core.nfa``），
 与 SP1 程序消费的是同一份契约。
 """
 
@@ -25,8 +25,9 @@ import re
 from dataclasses import dataclass
 from typing import List, Union
 
-from . import nfa, normalize, trace
-from .model import (
+from policydsl.core import nfa, normalize
+from policydsl.evidence import trace
+from policydsl.core.model import (
     CheckResult, DelegatedConstraint, Policy, PolicyError, Transcript, Violation,
 )
 
@@ -230,8 +231,8 @@ def check(policy: Policy, target: Target) -> CheckResult:
                     f"{rule.params['direction']!r}")
             # 指纹在这里现解析（与 compile 同一口径）：参考层不信任策略里写的值，
             # 只把它当作「作者声明的目标」，实际比对交给 verify_cert。
-            from .compile import _model_vkey
-            from . import semantic as sem
+            from policydsl.core.compile import _model_vkey
+            from policydsl.proofs import semantic as sem
 
             delegated.append(DelegatedConstraint(
                 name=rule.name,

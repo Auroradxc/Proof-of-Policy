@@ -85,7 +85,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from . import cert
+from policydsl.evidence import cert
 
 #: 回执摘要与签名的域分隔前缀（对应 ``pop_types::TRACE_DOMAIN``）。
 TRACE_DOMAIN = b"pop-trace-v1"
@@ -518,7 +518,7 @@ class ToolGateway:
     def __init__(self, signer: Optional["cert.Signer"] = None,
                  ts: Optional[str] = None):
         """``ts`` 给定一个固定值时，所有回执用它 —— 便于测试可复现。"""
-        from . import keys  # 局部导入：避免模块级循环依赖
+        from policydsl.evidence import keys  # 局部导入：避免模块级循环依赖
 
         self.signer = signer if signer is not None else keys.ephemeral_signer()
         self._fixed_ts = ts

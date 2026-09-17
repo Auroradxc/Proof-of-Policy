@@ -18,7 +18,7 @@ verifier」的硬阻塞。**两条备选都不需要** —— 真因是调用方
 
 其中 ``test_raw_call_outside_loop_still_raises`` 是**故意**断言上游的坏行为：
 上游哪天把它改成真同步（或改成标准 ``async def``），这条会失败 —— 那不是回归，
-是提醒我们删掉 :mod:`policydsl.ezkl_evm` 里的绕行说明。
+是提醒我们删掉 :mod:`policydsl.proofs.ezkl_evm` 里的绕行说明。
 """
 
 import asyncio
@@ -34,7 +34,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import ezkl_evm  # noqa: E402
+from policydsl.proofs import ezkl_evm  # noqa: E402
 
 
 def _importable(name: str) -> bool:
@@ -48,7 +48,7 @@ _SKIP = f"缺可选依赖 {', '.join(_NEED)}（P2-9 用；pip install ezkl torch
 
 
 class TestRunHelper(unittest.TestCase):
-    """:func:`policydsl.ezkl_evm.run` 本身的行为 —— 纯标准库，无 ezkl 依赖。"""
+    """:func:`policydsl.proofs.run` 本身的行为 —— 纯标准库，无 ezkl 依赖。"""
 
     def test_sync_callable(self):
         """普通同步函数：原样返回其返回值。"""
@@ -151,7 +151,7 @@ class TestEzklEvmVerifier(unittest.TestCase):
         """上游的坏行为：没有事件循环时抛 ``no running event loop``。
 
         **这条用例故意断言上游的缺陷。** 它若失败，说明 ezkl 改了这组 API 的形态
-        （改成真同步或标准 ``async def``），届时 :mod:`policydsl.ezkl_evm` 里的
+        （改成真同步或标准 ``async def``），届时 :mod:`policydsl.proofs.ezkl_evm` 里的
         绕行说明就该删掉 —— 不是回归，是提醒。
         """
         import ezkl
@@ -224,7 +224,7 @@ class TestEzklEvmVerifier(unittest.TestCase):
         env = dict(os.environ, PATH="")
         code = (
             "import sys; sys.path.insert(0, {repo!r});"
-            "from policydsl import ezkl_evm;"
+            "from policydsl.proofs import ezkl_evm;"
             "ok = ezkl_evm.create_verifier({vk!r}, {st!r}, {sol!r}, {abi!r}, {srs!r});"
             "print('WROTE', ok)"
         ).format(repo=str(REPO), vk=str(self.dir / "vk.key"),

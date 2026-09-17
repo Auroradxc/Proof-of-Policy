@@ -8,7 +8,7 @@
      并核对证书自称的 `binding.proof_mode` 与工件自报的模式（边车/元信息）一致
      —— core/compressed 的 STARK 并非零知识，这一档必须如实标注（P0-4）；
   3. 策略绑定**三方比对**：证书声明的 policy_hash == 由策略包现场重编译的 sha256
-     == 证明公开值承诺的 policy_hash（三者必须同时成立，见 policydsl.verifier）；
+     == 证明公开值承诺的 policy_hash（三者必须同时成立，见 policydsl.evidence.verifier）；
   3b. 响应绑定（P0-2）：证书 challenge 块声明的 response_binding == outcome 内嵌的
      == 证明公开值承诺的 == 由**送达的响应 T′** 与 nonce 现场重算的。带 --response
      时这一路才齐全 —— 那也正是「持 T′ 的一方」要做的核对；
@@ -59,10 +59,11 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, challenge, commit, keys, trace, verifier
-from policydsl import semantic as S
-from policydsl.compile import compile_policy
-from policydsl.model import Policy, Rule
+from policydsl.evidence import anchor, cert, keys, trace, verifier
+from policydsl.privacy import challenge, commit
+from policydsl.proofs import semantic as S
+from policydsl.core.compile import compile_policy
+from policydsl.core.model import Policy, Rule
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
@@ -438,7 +439,7 @@ def main() -> int:
                     why_c += "（--semantic-skip-ezkl：**未**跑 ezkl 验证器，证明有效性未核）"
                 # 这一栏是**证书真伪**：证明是真的、绑在这条响应上。
                 # 「规则是否满足」是证书内容，另记在下面的合规行里 —— 见
-                # `policydsl.semantic.verify_companion` 的返回值说明。
+                # `policydsl.proofs.verify_companion` 的返回值说明。
                 results.append((f"semantic[{rule}]", ok_c, why_c))
                 if ok_c:
                     semantic_satisfied.append((rule, hits))

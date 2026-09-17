@@ -40,16 +40,16 @@
 - [x] A：`format_check`/`tool_arg_guard`/`budget_bound` 的 Python 校验+参考判定已实现（新增 `Transcript`/`ToolCall` 结构化输入，23 单测全绿）；**入电路留待 Phase 2/3**
 
 ### Phase 2 · 字符串/PII + NFA（W3）✅
-- [x] A：`policydsl/nfa.py` 最小正则→NFA 引擎（子集+ASCII；Thompson→可序列化 spec；Pike VM unanchored search）；不支持语法 fail-fast；NFA vs `re.search` **264 项语料全一致**
+- [x] A：`policydsl/core/nfa.py` 最小正则→NFA 引擎（子集+ASCII；Thompson→可序列化 spec；Pike VM unanchored search）；不支持语法 fail-fast；NFA vs `re.search` **264 项语料全一致**
 - [x] A：`compile.py` pattern→NFA 写入 ConstraintSpec；`evaluate.py` pattern_block 改用 NFA 判定
-- [x] B：PII 规则（email/phone/secret_key/bearer_token）+ IBAN MOD-97 参考校验 → `policydsl/pii.py`，策略包 `pii_redaction_v1.json`（由 canonical 生成）
+- [x] B：PII 规则（email/phone/secret_key/bearer_token）+ IBAN MOD-97 参考校验 → `policydsl/core/pii.py`，策略包 `pii_redaction_v1.json`（由 canonical 生成）
 - [x] C：Rust no_std NFA 匹配器（`types::nfa_match`）+ `PatternBlock` 入 `types::evaluate`；guest 只 read→evaluate→commit
 - [x] 交叉验证：host-check **7/7** + 真实证明 **7/7**（含 email/secret 命中/洁净）
 - 注：MVP 走「zkVM 内跑自实现最小 NFA」保证健全性（计划允许该路线）；zk-regex 式「离线 witness 路径」留作 E4 性能优化。
 - 单测：38 全绿（新增 NFA/PII 用例）
 
 ### Phase 3 · 策略编译器 + 透明模式 MVP ★ 必达（W4）✅
-- [x] A：DSL→ConstraintSpec→ProofRequest 编译框架（新增 `policydsl/serialize.py`，keyword/length/pattern 单一来源映射，其余 kind fail-fast）
+- [x] A：DSL→ConstraintSpec→ProofRequest 编译框架（新增 `policydsl/core/serialize.py`，keyword/length/pattern 单一来源映射，其余 kind fail-fast）
 - [x] C：ProofRequest serde；`types::evaluate` 全约束判定（keyword/length/**pattern(NFA)**）+ commit；script 出证 + 宿主 verify；`--check` 宿主快速路径
 - [x] 端到端 demo：`scripts/prove_policy.py`（pack+response → golden → host check → 真实 SP1 证明 → verify → 比对）
 - [x] `eu-ai-act-v1`(合规 pass) 与 `finance-redaction-v1`(含凭证 violate) 各出证 **PASS**（0 与 1 违规，均与 golden 一致）
@@ -66,7 +66,7 @@
 | 交付 PoP v0（透明模式） | ✅（链上/证书属 Phase 5，私有模式属 Phase 4） |
 
 ### Phase 4 · 私有模式 + 选择性披露（W5）✅
-- [x] A：`policydsl/commit.py`——SHA-256 承诺、canonical 证据串、mask 生成（NFA 命中片段）、redact、`private_output` golden（与 Rust 严格对齐）
+- [x] A：`policydsl/privacy/commit.py`——SHA-256 承诺、canonical 证据串、mask 生成（NFA 命中片段）、redact、`private_output` golden（与 Rust 严格对齐）
 - [x] B：`pop-types` 加 `Job/Outcome`、`PrivateRequest/PrivateOutput`、`sha256_hex`、`redaction_ok`、`evaluate_private`、`run_job`；program 读 Job 分发；script 支持 `private`/`mask`/`redacted` 向量
 - [x] 违规定位与证据披露：只公开 `rule + kind + evidence_commitment`，**不泄露证据片段**
 - [x] redaction-with-proof（VDR 式）：证明脱敏版与原版**仅在掩码位不同**（掩码位为 `*`）
@@ -90,17 +90,17 @@
 **边界**：掩码「⊇ 命中」未强制（允许只遮蔽部分命中）；证据片段的链上开示流程 → Phase 5。
 
 ### Phase 5 · Agent 集成 + 合规证书（W6）✅
-- [x] 证书规范：`policydsl/cert.py` —— payload `{cert_version, policy(id,version), policy_hash, mode, outcome, binding{vkey_hash, proof_sha256, proof_mode}, ai_act, ts}` + **DSSE 信封**（Ed25519 签名，P0-3；按 `keyid` 前缀分发）+ 稳定 `cert_digest`（`proof_mode` 为 P0-4 的证据档位诚实标注）
+- [x] 证书规范：`policydsl/evidence/cert.py` —— payload `{cert_version, policy(id,version), policy_hash, mode, outcome, binding{vkey_hash, proof_sha256, proof_mode}, ai_act, ts}` + **DSSE 信封**（Ed25519 签名，P0-3；按 `keyid` 前缀分发）+ 稳定 `cert_digest`（`proof_mode` 为 P0-4 的证据档位诚实标注）
 - [x] 证明持久化 + 独立验证：`pop-script --proof-out`（证明+vkey meta）、`pop-script --verify --proof`（**重新从 ELF 派生 vkey 并密码学验证**）
-- [x] 锚定：`policydsl/anchor.py` —— 追加式、哈希链式防篡改账本（file backend，可离线验证）；`anchor_on_chain` RPC 钩子显式未配置即报错（不假装已上链）
-- [x] Agent 插桩：`policydsl/agent.py` `AgentMonitor.on_generate/on_tool_call`（框架无关钩子）+ `mock_agent()` 会话
+- [x] 锚定：`policydsl/evidence/anchor.py` —— 追加式、哈希链式防篡改账本（file backend，可离线验证）；`anchor_on_chain` RPC 钩子显式未配置即报错（不假装已上链）
+- [x] Agent 插桩：`policydsl/adapters/agent.py` `AgentMonitor.on_generate/on_tool_call`（框架无关钩子）+ `mock_agent()` 会话
 - [x] 端到端：`scripts/issue_cert.py`（pack+response → 证明 → 证书 → 锚定）与 `scripts/verify_cert.py`（第三方：签名/policy_hash/锚定链/证明）
 - [x] 测试：**81 全绿（1 skip=设计内「依赖缺失」用例）**（+test_cert/test_anchor/test_agent/test_frameworks）
 - [x] **框架适配（LangChain + LangGraph）**：`langchain_adapter.py` `PoPCallbackHandler`（`on_llm_end`/`on_tool_start`/`on_tool_end`，二者共用 LangChain 回调）+ `langgraph_adapter.py` `attach`/`guard_node`/`LangGraphGuard`；`requirements-frameworks.txt` + `scripts/install_frameworks.sh` / `retry_install_frameworks.sh`（带锁、自愈）
 - [x] **依赖已安装并验证（2026-09-10）**：langchain **1.4.0** / langchain-core **1.6.2** / langgraph **1.2.11** / mcp **2.2.0**，经清华 PyPI 镜像 + wheel 引导 pip 装入用户目录；真实框架测试通过：假模型回调出证（合规/违规）、**真实 Tool 回调**、真实 LangGraph `StateGraph` 节点包装
 - [x] **框架侧扩展（P5G）**
   - **流式增量出证**：`PoPCallbackHandler.on_llm_new_token` 累积响应前缀，**判定变化即发部分证书**（`streaming.partial`），`on_llm_end` 发权威证书并清理流状态；离线假 token + **真实流式模型**（`GenericFakeChatModel`）双验证
-  - **真实 MCP 工具**：`policydsl/mcp_adapter.py` `MCPGuard`（调用前判定参数出证；`block_on_violation=True` 时**预检拦截违规格调用**，不触达工具）；`tests/mcp_echo_server.py` 真实 stdio MCP 服务器端到端测试（会话初始化→列工具→经护栏调用→证书标注违规）
+  - **真实 MCP 工具**：`policydsl/adapters/mcp_adapter.py` `MCPGuard`（调用前判定参数出证；`block_on_violation=True` 时**预检拦截违规格调用**，不触达工具）；`tests/mcp_echo_server.py` 真实 stdio MCP 服务器端到端测试（会话初始化→列工具→经护栏调用→证书标注违规）
   - 测试：**100 全绿（1 skip=设计内「依赖缺失」用例）**（含 P5G/P5H 新增用例）
 - [x] **框架侧再扩展（P5H）**
   - **MCP 响应侧出证**：`MCPGuard(result_monitor=…)` 对工具返回文本按内容规则判定，产出 `tool-result` 证书（`tool.phase=result`）；`block_on_result_violation=True` 时在调用后拒绝违规结果（`MCPBlocked(phase="result")`）；真实 MCP 服务器 `dump_config` 返回 `sk-…` 被标记 `no_secret`
@@ -127,7 +127,7 @@
   - 合约：`contracts/Anchor.sol`（`anchor(bytes32)` 首次即最终 + `anchoredAt/anchoredBy/isAnchored/count` + `Anchored` 事件，链上只存 32 字节摘要）；`contracts/Anchor.json`（abi+bytecode）**入库** → 运行期部署**不需要 solc/forge**
   - 后端抽象：`AnchorBackend` / `FileLedgerBackend`（默认，离线可验）/ `RpcAnchorBackend`（幂等；链上成功后回写 `meta.on_chain={tx_hash,block,chain_ts}` 到本地哈希链账本）；`backend_from_env()`；`CastRpc`（foundry `cast`，**不引入 web3.py 依赖**，可注入以便离线单测）
   - 工具：`scripts/deploy_anchor.py`、`scripts/anchor_e2e.sh`（起 anvil → 部署 → 13 张证书全部上链 → 第三方 `verify_session --rpc` → 反例对照）；`issue_cert.py`/`demo_e2e.py`/`verify_cert.py` 均支持 `--rpc/--contract`
-  - 真跑修复：`pop-script --proof-out` 对 **core 也会写边车**，导致「verifier-only 快路径」误判 core（`pop-verify` exit 3）→ 抽出 `policydsl/verifier.py::prefer_verifier_only`（二进制+边车+模式∈{compressed,groth16,plonk}）并补单测
+  - 真跑修复：`pop-script --proof-out` 对 **core 也会写边车**，导致「verifier-only 快路径」误判 core（`pop-verify` exit 3）→ 抽出 `policydsl/evidence/verifier.py::prefer_verifier_only`（二进制+边车+模式∈{compressed,groth16,plonk}）并补单测
   - 验证：`scripts/anchor_e2e.sh` **ALL PASS**（`chain_anchored 14/14` + 反例 0）；`--prove` 变体真实 Core 证明上链且第三方验证 PASS（**2026-09-12 复跑确认**：3:10 / 峰值 10.18 GiB）；`tests/test_anchor_chain.py` 22 例全绿（无 anvil 自动 skip）
   - 边界（保留）：本地 Anvil/自备 RPC，未接公共测试网；上链用明文私钥参数（demo 用 Anvil 公开测试键），生产需 keystore/HSM
 
@@ -243,7 +243,7 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
    > 每张证书都参与轨迹）。要消除它得把回执链喂进 zk 向量（改电路与 cycle），
    > 另开一条。
 2. ~~**装真模型依赖**：加 `--model` 参数，形如 `--model openai:gpt-4o-mini`。~~
-   **已做（#98）**：新增 `policydsl/llm.py`（规格解析 + 构造，**刻意不认**
+   **已做（#98）**：新增 `policydsl/adapters/llm.py`（规格解析 + 构造，**刻意不认**
    `ANTHROPIC_AUTH_TOKEN` —— 那是 Claude Code 自己的凭据），`demo_e2e.py --model`。
    **缺省仍是 fake**（CI 与 `demo_all.sh` 不依赖网络，这条没破）；**规格写错一律
    报错，绝不静默退回桩** —— 静默退回会让一份「真模型演示」的产物其实来自写死的
@@ -384,7 +384,7 @@ GET  /v1/policies                                                 → 已注册�
 
 | 组件 | 位置 |
 |---|---|
-| 库：策略注册表 + 作业队列 + 两段出证 | `policydsl/service.py` |
+| 库：策略注册表 + 作业队列 + 两段出证 | `policydsl/runtime/service.py` |
 | HTTP 驱动（纯标准库） | `scripts/proof_service.py` |
 | 测试（**§5.2 交付时 87 例**；真 vkey 出证那条进 `POP_TEST_PROOF` 门控。加固①②③ 之后为 **105 例**，见 §5.2.5） | `tests/test_proof_service.py` |
 | 运维文档 | [`runbook-proof-service.md`](runbook-proof-service.md) |
@@ -422,7 +422,7 @@ died with <Signals.SIGKILL: 9>` —— 一屏临时路径，唯独没说「内�
 **① 鉴权层 —— 已做（#101）。** runbook §5 的边界 1 原文是「服务不区分调用方，
 也没有速率限制」。关掉它做了四件事：
 
-- `policydsl/auth.py`（新模块）：token 解析/匹配/令牌桶。**单独成模块而不是塞进
+- `policydsl/runtime/auth.py`（新模块）：token 解析/匹配/令牌桶。**单独成模块而不是塞进
   handler** —— 错的鉴权不是「少一个功能」而是「看起来有」，所以它必须能在**不起
   socket** 的情况下被穷举测（新增 27 例，其中 **18 例不碰 HTTP**）。
 - **401 / 404 / 429 三条口径**：401 带 `WWW-Authenticate` 且**区分「格式错」与
@@ -453,7 +453,7 @@ systemd/docker 起服务的人看不到这段横幅，而「鉴权开没开」�
 后端」，**这是错的**：`RpcAnchorBackend.anchor()` 在给了 `ledger_path` 时照样调
 `append_anchor`，换后端并不改变那一步。真正的修法在账本自身：
 
-- **`ledger_tail()` + `(st_size, st_mtime_ns)` 戳的缓存**（`policydsl/anchor.py`）：
+- **`ledger_tail()` + `(st_size, st_mtime_ns)` 戳的缓存**（`policydsl/evidence/anchor.py`）：
   追加快为 O(1)。**写侧的坑**：只缓存读是不够的 —— `append_anchor` 一写，戳就变了，
   下一次追加又退回全表重读，「写 → 失效 → 重读」，缓存等于白做；所以写完之后顺手把
   缓存推进到新尾部。**O(1) 的证据不是计时**（计时在 CI 上会飘），是一条 monkeypatch
@@ -581,7 +581,7 @@ systemd/docker 起服务的人看不到这段横幅，而「鉴权开没开」�
 
 **已落地的修法**（三个文件 + 一组用例）：
 
-- `policydsl/cert.py`：新增 `VKEY_HASH_UNPROVEN`（**故意**等于 `PROOF_MODE_UNPROVEN`
+- `policydsl/evidence/cert.py`：新增 `VKEY_HASH_UNPROVEN`（**故意**等于 `PROOF_MODE_UNPROVEN`
   同一个字符串 —— 二者说的是同一件事），把「vkey 没有真值可指」这件事从一条
   注释升级为一个**具名常量**；
 - `scripts/demo_e2e.py`：`vkey = "demo"` → `cert.VKEY_HASH_UNPROVEN`；
@@ -686,7 +686,7 @@ walk(unittest.TestLoader().discover('tests'))
 
 **做法分两半（两个语义提交）**：
 
-**P3-a · `policydsl/generic_adapter.py`：框架无关的参考适配器。**
+**P3-a · `policydsl/adapters/generic_adapter.py`：框架无关的参考适配器。**
 一个**不依赖任何框架**的 `GenericGuard`，把契约**写成代码**：
 `generate(text)` → 生成路径证书、`tool_call(name, args, result)` → 网关签发回执
 + 工具路径证书、`seal()` → 会话末端承诺；内部持有**一把** `ToolGateway`
@@ -732,7 +732,7 @@ walk(unittest.TestLoader().discover('tests'))
   这正是 §5.0 说的「说了但没接上」。留待与 c1 一并处理。
 - **c4 T3**（真实 SP1 证明的全量回归定期跑，单次 ≈ 45 分钟，本机可跑）：
   是**排期问题**不是能力问题，等 P1/P3 收尾后单独起。
-- **c6 `policydsl/anchor.py:580`** 用 `NotImplementedError` 表达「配置缺失」：
+- **c6 `policydsl/evidence/anchor.py:580`** 用 `NotImplementedError` 表达「配置缺失」：
   语义不对（该是 `ValueError` —— 它不是「还没实现」，是「你没配」），
   但纯属措辞，随 P1 顺手看一眼成本更低。
 - **T1 真实 groth16 + 链上验证合约**：**唯一的外部阻塞**，需要一台 ≥64 GB
@@ -792,7 +792,7 @@ walk(unittest.TestLoader().discover('tests'))
 
 #### 5.5.2 c6 · `anchor_on_chain` 的异常类型：从「措辞」改成「真 bug」
 
-复核后**改判**：不只是措辞。`policydsl/anchor.py:580` 在 rpc/contract 缺失时抛
+复核后**改判**：不只是措辞。`policydsl/evidence/anchor.py:580` 在 rpc/contract 缺失时抛
 `NotImplementedError`，而**同一个条件**在它正上方的 `backend_from_env(require=True)`
 （`:560`）抛的是 `AnchorError`。**同一个仓库、同一个条件、两种类型。**
 
@@ -895,11 +895,17 @@ stdout 末行）总是同时成立，要证伪得让 `cross_validate` **自报 P
 | `evidence/` | `cert` `keys` `anchor` `trace` `verifier` | 产物与可核验性：证书、回执链、锚定、核验 |
 | `proofs/` | `compose` `infer` `session` `multiparty` `semantic` `ezkl_evm` | 组合 / 会话聚合 / 多证明者 / 语义委托 |
 | `adapters/` | `agent` `generic_adapter` `langchain_adapter` `langgraph_adapter` `mcp_adapter` `llm` | 接到 agent 框架上 |
-| `service/` | `service` `auth` | 常驻出证服务 |
+| `runtime/` | `service` `auth` | 常驻出证服务 |
 
-根上只留 `__init__.py`（门面）与 `__main__.py`（CLI）。**6 个**是刻意的：再多就
+根上只留 `__init__.py`（门面）、`__main__.py`（CLI）与 `paths.py`（仓库根的唯一出处，见 §5.6.7）。**6 个**是刻意的：再多就
 是「每个文件一个目录」；再少则 `evidence/` 与 `proofs/` 会各自胀到 8+ 个模块，
 又回到平铺。
+
+> **落地时的两处订正**（方案写完后动手才发现的）：
+> 1. 第 6 个子包叫 **`runtime/` 而不是 `service/`** —— 否则会得到 `policydsl.service.service`
+>    这种「service 的 service」，读起来像笔误。子包名与其中的模块名**必须不同名**。
+> 2. 根上多了个 **`paths.py`**，方案里没有。它是第 1 步撞出来的（§5.6.7 第 1 条）：
+>    「仓库根在哪」原本被六个模块各算了一遍，拆包把那个巧合戳破了。
 
 **② `scripts/` 分 5 组**（按用途，正好对上 demo 的支路）：
 
@@ -942,16 +948,41 @@ docs/
 
 每步**独立提交**，闸门不过就迭代到过，绝不带病提交（长期规则）。
 
-| 步 | 做什么 | 闸门 |
-|---|---|---|
-| 0 | 方案（本提交） | — |
-| 1 | `policydsl/` 拆包 + 全仓 import 改写 + 文档里的模块路径 | **667 passed / 15 skipped** |
-| 2 | `scripts/` 分组 + `_bootstrap.py` + 全仓路径引用 + 产物目录 | 667 + `demo_all.sh --list` + **fast 模式真跑一次** |
-| 3 | 文档结构与索引：`docs/README.md` + 根 README 目录结构订正 | 交叉链接逐条可点开 |
-| 4 | demo 文档 `docs/demo/README.md` | 对照 `demo_all.sh` 的 8 条支路逐条核对 |
-| 5 | `modules/01–08` 各补「怎么用 / 怎么改」两节 | 08 的测试计数与实际一致 |
-| 6 | 总手册 `docs/development.md` | 手册里的每条命令**实际敲一遍** |
-| 7 | 收尾：测试计数、交叉链接、推送 | 667 + 工作树干净 + origin 同步 |
+| 步 | 做什么 | 闸门 | 状态 |
+|---|---|---|---|
+| 0 | 方案（本提交） | — | ✅ |
+| 1 | `policydsl/` 拆包 + 全仓 import 改写 + 文档里的模块路径 | **667 passed / 15 skipped** | ✅ 2026-09-17，**667 passed / 15 skipped**，另修掉两条隐藏依赖（见 §5.6.7） |
+| 2 | `scripts/` 分组 + `_bootstrap.py` + 全仓路径引用 + 产物目录 | 667 + `demo_all.sh --list` + **fast 模式真跑一次** | |
+| 3 | 文档结构与索引：`docs/README.md` + 根 README 目录结构订正 | 交叉链接逐条可点开 | |
+| 4 | demo 文档 `docs/demo/README.md` | 对照 `demo_all.sh` 的 8 条支路逐条核对 | |
+| 5 | `modules/01–08` 各补「怎么用 / 怎么改」两节 | 08 的测试计数与实际一致 | |
+| 6 | 总手册 `docs/development.md` | 手册里的每条命令**实际敲一遍** | |
+| 7 | 收尾：测试计数、交叉链接、推送 | 667 + 工作树干净 + origin 同步 | |
+
+#### 5.6.7 第 1 步实测：两条被绿测试掩盖的隐藏依赖
+
+§5.6.6 预判「某个闸门变红 = 原来藏着隐式依赖」。第 1 步**确实**变红了两处，都不是
+「搬家搬错了」，而是**原本就错、只是从没被跑到**：
+
+1. **六处重复的仓库根计算。** 六个模块各自写 `REPO = Path(__file__).resolve().parent.parent`。
+   平铺时这**恰好**等于仓库根 —— 是**巧合，不是契约**。下沉一层后 `parent.parent` 变成
+   `policydsl/`，于是 66 errors / 8 failures，首条是
+   `FileNotFoundError: …/policydsl/circuits/target/release/pop-script`。
+   修法**不是**给六个调用点各补一个 `.parent`（那只会把同一个 bug 推到下一次移动），
+   而是新增 `policydsl/paths.py`：按**标记目录**（同时含 `policydsl/` 与 `circuits/`）
+   向上找仓库根，唯一出处。
+2. **`scripts/make_audit_proof.sh` 里那段内联 Python 一直是坏的**，且带着**两个**独立的
+   陈旧项：`from policydsl.serialize import spec_to_rust_constraints`（**P0-1 已删除该函数** ——
+   `plan-p0p1p2.md` 记着「20 个调用点已机械替换」，这是漏网的 1 个）+ 搬家后的模块路径。
+   没被发现的原因很具体：它生成的 compressed fixture 只在 ≥16 GB 机器上有用，
+   `tests/test_verifier_only.py` 在别处**直接 skip** —— **绿测试从没执行过这段代码**。
+   已改为 `build_vectors([vector_entry(...)])`，并用 `pop-script --check` 验证产出的
+   vectors 形状能被真驱动吃下（`passed=True`，秒级，不进证明）。
+
+**第 2 条的方法论含义**（值得单独记）：`unittest` 的 skip 是**静默的绿**。凡是
+「只在更强的机器/更大的内存上才跑」的代码路径，测试套件对它**零覆盖**，而它照样全绿。
+所以本轮给这一步加的验收不只是 667，而是**凡是本机能跑的路径都真跑一遍**（
+第 2 步的 `demo_all.sh` fast 模式闸门就是这条原则的延伸）。
 
 #### 5.6.5 爆炸半径（实测普查，2026-09-17）
 

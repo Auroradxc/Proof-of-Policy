@@ -5,7 +5,7 @@
 //! 系统、源码不可得（计划 D1），所以用一个结构同构的小模型（MLP，定点整数）
 //! 替代，用来实测「组合成本 ≈ 两者之和」这一假设是否成立。真实替换时只需把
 //! 本 guest 的 `run_job` 换成 zkAgent 的 prover —— 上下（`pop-types` 的公开值
-//! 形状、`policydsl/compose.py` 的组合驱动）都不动。
+//! 形状、`policydsl/proofs/compose.py` 的组合驱动）都不动。
 //!
 //! 本 guest **拒绝**策略合规任务（`Job::Public`/`Job::Private`）：两个域各有各的
 //! vkey，组合引理 L6 的键分离就落在这一行断言上。

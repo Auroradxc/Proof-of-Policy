@@ -44,10 +44,10 @@ from typing import Any, NamedTuple
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import evaluate, pii  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
-from policydsl.serialize import spec_canonical_text  # noqa: E402
+from policydsl.core import evaluate, pii  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
+from policydsl.core.serialize import spec_canonical_text  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 WORK = REPO / "bench" / "work"
@@ -119,7 +119,7 @@ MAX_RC = len(EXTRA_KINDS) + 1
 def trips(text: str) -> list[tuple[str, str]]:
     """``text`` 会不会命中基准规则；命中的话返回 ``[(规则名, 证据), …]``。
 
-    用**宿主**判定（`policydsl.evaluate`，与电路侧由 `cross_validate` 保证一致），
+    用**宿主**判定（`policydsl.core.evaluate`，与电路侧由 `cross_validate` 保证一致），
     不跑 zkVM —— 这只是选语料前的体检，秒级。
     """
     res = evaluate.check(make_policy(MAX_RC), text)

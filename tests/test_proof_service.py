@@ -1,4 +1,4 @@
-"""证明服务（``policydsl/service.py`` + ``scripts/proof_service.py``）的测试。
+"""证明服务（``policydsl/runtime/service.py`` + ``scripts/proof_service.py``）的测试。
 
 分三层，**默认全跑**（除了最后一层）：
 
@@ -34,10 +34,13 @@ from unittest import mock
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, auth, cert, challenge, commit, evaluate, keys, service  # noqa: E402
-from policydsl import trace  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
-from policydsl.service import ProofService  # noqa: E402
+from policydsl.evidence import anchor, cert, keys  # noqa: E402
+from policydsl.runtime import auth, service  # noqa: E402
+from policydsl.privacy import challenge, commit  # noqa: E402
+from policydsl.core import evaluate  # noqa: E402
+from policydsl.evidence import trace  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
+from policydsl.runtime.service import ProofService  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 CONTENT_PACK = REPO / "policy_packs" / "agent_content_v1.json"
@@ -1398,7 +1401,7 @@ class TestChainDownOverHttp(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------- #
-# 鉴权层（policydsl/auth.py + HTTP 驱动里的接线）
+# 鉴权层（policydsl/runtime/auth.py + HTTP 驱动里的接线）
 # --------------------------------------------------------------------------- #
 
 #: 测试用 token：够长（≥ MIN_SECRET_LEN）而且是**读得出来源**的字符串 ——

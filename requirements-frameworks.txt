@@ -8,7 +8,7 @@
 #   pip install -r requirements-frameworks.txt \
 #       -i https://pypi.tuna.tsinghua.edu.cn/simple
 #
-# The adapters (policydsl/langchain_adapter.py, policydsl/langgraph_adapter.py)
+# The adapters (policydsl/adapters/langchain_adapter.py, policydsl/adapters/langgraph_adapter.py)
 # are import-guarded: without these packages the offline fake-object tests still
 # run; the real-framework tests enable automatically once installed.
 

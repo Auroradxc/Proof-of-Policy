@@ -81,7 +81,7 @@ def _size(p: Path) -> Optional[int]:
 
 
 def _sizes() -> Dict[str, Optional[int]]:
-    from policydsl import semantic as S
+    from policydsl.proofs import semantic as S
     d = {name: _size(ART / name) for name in S.ARTIFACT_NAMES.values()}
     d["model.onnx"] = _size(REPO / "semantic" / "model.onnx")
     return d
@@ -94,7 +94,7 @@ def main() -> int:
     ap.add_argument("--out", type=Path, default=REPO / "bench" / "results" / "semantic.json")
     args = ap.parse_args()
 
-    from policydsl import semantic as S
+    from policydsl.proofs import semantic as S
 
     res: Dict[str, Any] = {
         "bench": "semantic",

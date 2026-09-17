@@ -1,7 +1,7 @@
 {
   "id": "semantic-demo-v1",
   "version": "0.1.0",
-  "description": "P2-9 demo: a learned semantic rule (weaponize/harmful-intent) alongside in-circuit rules. The length_bound is not optional — the feature graph is fixed-width, so the policy must itself bound the response to the graph's capacity (see policydsl/compile.py::require_covering_length_bound).",
+  "description": "P2-9 demo: a learned semantic rule (weaponize/harmful-intent) alongside in-circuit rules. The length_bound is not optional — the feature graph is fixed-width, so the policy must itself bound the response to the graph's capacity (see policydsl/core/compile.py::require_covering_length_bound).",
   "semantic": "and",
   "rules": [
     {

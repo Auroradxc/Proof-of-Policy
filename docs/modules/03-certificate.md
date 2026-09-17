@@ -1,6 +1,6 @@
 # 03 · 合规证书
 
-> 覆盖 `policydsl/cert.py`、`policydsl/agent.py`。
+> 覆盖 `policydsl/evidence/cert.py`、`policydsl/adapters/agent.py`。
 > 这一板块回答：**一次判定结果怎么变成一张第三方可独立核验的证书。**
 
 ---
@@ -105,7 +105,7 @@
 `outcome.trace_root` 说「证明绑的是哪条链」，但它拦不住**截尾**：把链尾那条违规回执
 **整条删掉**，剩下的仍是一条结构自洽、逐条签名有效的**真链**，证书与送检链两边同时
 是截断的那条，`trace_binding` 照样 PASS。能发现「后面还有没有」的只有**网关对会话末端
-的承诺**：`ToolSeal{count, trace_root, ts, keyid, sig}`（`policydsl/trace.py`，域分隔
+的承诺**：`ToolSeal{count, trace_root, ts, keyid, sig}`（`policydsl/evidence/trace.py`，域分隔
 `pop-trace-seal-v1`），由 `ToolGateway.seal()` 签发，落在载荷**顶层**。
 
 > **为什么在顶层、不在 `outcome` 里**：`outcome` 是**证明公开值的镜像** ——
@@ -220,7 +220,7 @@ ezkl 的公开实例含 `encode(T)`，而 `encode` 对收录字符是**单射**�
 > **旧证书不可能再通过**（`tests/test_cert.py::TestSchemeDispatch` 锁住这一点）。
 > `DEMO_KEY`/`DEFAULT_KEYID` 仅为兼容引用与负例测试保留，**不要在新代码里使用**。
 
-**密钥从哪来**（`policydsl/keys.py`）：
+**密钥从哪来**（`policydsl/evidence/keys.py`）：
 
 - 出证方：`keys.load_or_create()` 读 `$POP_SIGNING_KEY`（缺省 `.pop-keys/signing.key`，
   已 gitignore，`0600`、不覆盖已有文件），没有就生成一把；`scripts/gen_key.py` 是它的 CLI。
@@ -252,7 +252,7 @@ ezkl 的公开实例含 `encode(T)`，而 `encode` 对收录字符是**单射**�
 | `ED25519_SCHEME` / `HMAC_TEST_SCHEME` / `PAYLOAD_TYPE` / `CERT_VERSION` | 常量 | |
 | `DEFAULT_KEYID` / `DEMO_KEY` | 常量 | **历史遗留**，仅为兼容引用与负例测试保留 |
 
-`cert.py` 里**没有**密钥生成或落盘逻辑 —— 那在 `policydsl/keys.py`（见 §2 末）：
+`cert.py` 里**没有**密钥生成或落盘逻辑 —— 那在 `policydsl/evidence/keys.py`（见 §2 末）：
 `key_path` / `load_or_create` / `signer_from_env` / `ephemeral_signer` /
 `public_hex` / `load_public` / `load_keyring` / `public_record`。
 

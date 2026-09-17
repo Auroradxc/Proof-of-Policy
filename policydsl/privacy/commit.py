@@ -23,18 +23,18 @@ import hashlib
 import hmac
 from typing import Dict, List, Optional, Tuple
 
-from . import nfa, normalize
+from policydsl.core import nfa, normalize
 
 MASK_CHAR = "*"
 
 
 def as_receipt(obj: Any) -> Any:
-    """把「回执对象或它的字典形式」统一成 :class:`policydsl.trace.ToolReceipt`。
+    """把「回执对象或它的字典形式」统一成 :class:`policydsl.evidence.ToolReceipt`。
 
     证书/向量里流转的是字典（JSON），判定逻辑要的是对象方法。集中在这里转换，
     免得每个调用点各自 ``isinstance`` 一遍。
     """
-    from .trace import ToolReceipt
+    from policydsl.evidence.trace import ToolReceipt
 
     return obj if isinstance(obj, ToolReceipt) else ToolReceipt.from_dict(obj)
 
@@ -46,7 +46,7 @@ BIND_SCHEME = "pop-bind-v1"
 
 #: 仅对 ASCII 大写字母做小写化（与电路内匹配器保持字节级一致）。
 #:
-#: 实现在 :mod:`policydsl.normalize`，这里只是别名 —— 全仓**只有一处**定义。
+#: 实现在 :mod:`policydsl.core.normalize`，这里只是别名 —— 全仓**只有一处**定义。
 #: 曾经这里有一份私有副本，P2-9b 加折叠规则时收敛到一处：大小写口径是
 #: 「链下/链上必须逐字节一致」的少数几个原语之一，留两份就等于留一个坑。
 _ascii_lower = normalize.ascii_lower
@@ -100,7 +100,7 @@ def canonical_violations(spec: Dict, response: str,
                          receipts: Optional[List[Any]] = None) -> List[Dict]:
     """精确镜像 ``pop-types::evaluate``，返回 (rule, kind, evidence) 列表。
 
-    ``receipts`` 是工具网关的回执链（``policydsl.trace.ToolReceipt`` 或同形的
+    ``receipts`` 是工具网关的回执链（``policydsl.evidence.ToolReceipt`` 或同形的
     字典）；证据字符串与 Rust 侧**逐字符**一致（私有模式要对证据求承诺，
     两边不一致就等于证书里写着一条链上算不出来的证据）。
 
@@ -108,8 +108,8 @@ def canonical_violations(spec: Dict, response: str,
     工具规则「接住」它，末尾补一条 ``rule="<trace>"`` 的同类违规 —— 与 Rust 侧
     的兜底逻辑一一对应。
     """
-    from .evaluate import _parse_format  # 复用规范子集解析器
-    from .trace import chain_ok, token_count
+    from policydsl.core.evaluate import _parse_format  # 复用规范子集解析器
+    from policydsl.evidence.trace import chain_ok, token_count
 
     lower = _ascii_lower(response)
     rs = [as_receipt(r) for r in (receipts or [])]
@@ -266,7 +266,7 @@ def private_output(spec: Dict, response: str,
     本字典是 ``pop-types::PrivateOutput`` 的**镜像**，所以**不含** P1-5b 的
     ``trace_seal``：会话末端承诺是链下网关签的旁证，电路里没有这个东西。
     它随证书走的是载荷**顶层**的 ``trace_seal`` 字段（见
-    ``policydsl.cert.build_payload``）。
+    ``policydsl.evidence.build_payload``）。
 
     ⚠️ **隐藏性的上界（P0-4 查证后收紧，见 ``docs/sp1-zk-audit.md``）**：
     这里的「承诺」只保证**公开值不出现明文**，**不保证 T 不可恢复**。
@@ -276,7 +276,7 @@ def private_output(spec: Dict, response: str,
     更一般地：在「验证者独立重算绑定」这一前提下，
     **响应绑定与响应内容隐藏对低熵 T 互斥**。
     """
-    from .trace import trace_root
+    from policydsl.evidence.trace import trace_root
 
     vs = canonical_violations(spec, response, receipts)
     # 违规只暴露证据承诺（不泄露明文证据），实现选择性披露

@@ -20,7 +20,7 @@
   - 三个角色各持一把键只是**责任划分**：三段共享同一个 ``pop-program``（同一个
     vkey）。「不同角色用不同电路」得各出 vkey，本仓库没有做，也不主张做到了。
   - 「聚合证明」是 N 份切片证明 + 一份把它们拴在一起的证书，**不是**递归聚合
-    （验证成本 O(N)）。见 ``policydsl/multiparty.py`` 模块头。
+    （验证成本 O(N)）。见 ``policydsl/proofs/multiparty.py`` 模块头。
   - 语义规则（若策略里有）归部署方那段，而那段**不判定**它、只把它记进
     ``delegated``：合规结论要另外合取 ezkl 陪伴证明（L7）。此脚本会如实打印。
 
@@ -40,13 +40,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import keys  # noqa: E402
-from policydsl import multiparty as M  # noqa: E402
+from policydsl.evidence import keys  # noqa: E402
+from policydsl.proofs import multiparty as M  # noqa: E402
 
 
 def load_policy(path: Path):
     """从 JSON 载入策略包（与 ``prove_policy.load_policy`` 同口径）。"""
-    from policydsl.model import Policy, Rule
+    from policydsl.core.model import Policy, Rule
     d = json.loads(path.read_text(encoding="utf-8"))
     return Policy(id=d["id"], version=d.get("version", "0.1.0"),
                   description=d.get("description", ""),

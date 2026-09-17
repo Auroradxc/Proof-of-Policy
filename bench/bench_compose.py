@@ -41,11 +41,11 @@ from typing import Any, Dict, List, Optional
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import compose as C          # noqa: E402
-from policydsl import infer as I            # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.model import Policy, Rule     # noqa: E402
-from policydsl.serialize import spec_canonical_text  # noqa: E402
+from policydsl.proofs import compose as C          # noqa: E402
+from policydsl.proofs import infer as I            # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.model import Policy, Rule     # noqa: E402
+from policydsl.core.serialize import spec_canonical_text  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 WORK = REPO / "bench" / "work"
@@ -56,7 +56,7 @@ TIME_BIN = "/usr/bin/time" if Path("/usr/bin/time").exists() else None
 #: 基准用的策略：与 ``policy_packs/eu_ai_act_v1.json`` 同量级（3 条内容规则），
 #: 但**在这里自建**，好让这份 benchmark 不依赖某个策略包的措辞。
 #: ⚠️ 正则必须是 NFA 子集支持的写法：`\b` 这类**零宽断言**不在子集里
-#: （`policydsl/nfa.py` 会明确报 `unsupported escape '\b'`，而 `compile_policy`
+#: （`policydsl/core/nfa.py` 会明确报 `unsupported escape '\b'`，而 `compile_policy`
 #: 是 fail-closed 的 —— 规则编不出来就抛错，不会静默跳过）。这里用与
 #: `policy_packs/eu_ai_act_v1.json` 同款的邮箱模式。
 BENCH_RULES = [
@@ -263,7 +263,7 @@ def _write_md(res: Dict[str, Any], path: Path) -> None:
     L.append("> **所以这份实验验证的是组合机制，不是成本结构。** 代理推理证明与真实 "
              "zkAgent 推理证明的规模差着若干个数量级（见 "
              "`bench/comparison_zkagent.md`）：换上真 prover 后「推理主导」才可能成立，"
-             "而那时的组合代价仍由**同一个** `policydsl/compose.py` 承担 —— "
+             "而那时的组合代价仍由**同一个** `policydsl/proofs/compose.py` 承担 —— "
              "本脚本测到的组合层开销（毫秒级）不随子证明规模变化。")
     L.append("")
     path.write_text("\n".join(L), encoding="utf-8")

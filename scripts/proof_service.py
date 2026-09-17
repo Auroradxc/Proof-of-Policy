@@ -11,7 +11,7 @@
     GET  /v1/health         → 并发上限 / 队列深度 / 策略数（运维看的）
     GET  /v1/policies       → 已注册的策略（含 serviceable 标注）
 
-库在 ``policydsl/service.py``，本文件只做 HTTP。**依赖只用标准库
+库在 ``policydsl/runtime/service.py``，本文件只做 HTTP。**依赖只用标准库
 ``http.server``（零新依赖）** —— 这是刻意的：这一步要演示的是**证据链**，不是
 web 框架；引入 FastAPI/uvicorn 会把注意力从证据挪到框架上。
 
@@ -19,7 +19,7 @@ web 框架；引入 FastAPI/uvicorn 会把注意力从证据挪到框架上。
     SP1_PROVER=cpu python3 scripts/proof_service.py        # 真实证明（~2.5 分钟/次，需 ~10.2 GiB）
 
 **鉴权**：``--auth-token label:secret``（可重复）/ ``--auth-file`` / ``$POP_SERVICE_TOKEN``
-三处合起来生效，判断逻辑在 ``policydsl/auth.py``。没配 token 时服务照常能起（本机
+三处合起来生效，判断逻辑在 ``policydsl/runtime/auth.py``。没配 token 时服务照常能起（本机
 演示不该被逼着先造密钥），但 ``/v1/health`` 里如实写 ``auth: "none"``、启动横幅打
 ``⚠`` —— 想强制要求就用 ``--require-auth``，它在没配 token 时**拒绝启动**。
 
@@ -44,8 +44,10 @@ from typing import Any, Dict, Optional, Tuple
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, auth, challenge, keys, service
-from policydsl.service import ProofService, ServiceError
+from policydsl.evidence import anchor, keys
+from policydsl.runtime import auth, service
+from policydsl.privacy import challenge
+from policydsl.runtime.service import ProofService, ServiceError
 
 #: 请求体上限。这是**防御**而不是配额：``http.server`` 会把 ``Content-Length``
 #: 说明的字节全读进内存，没有上限时一个坏掉的（或恶意的）客户端就能把服务打爆。

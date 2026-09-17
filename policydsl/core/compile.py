@@ -29,9 +29,9 @@ import hashlib
 import json
 from typing import Any, Dict
 
-from . import nfa
-from . import normalize
-from .model import Policy, PolicyError, Rule
+from policydsl.core import nfa
+from policydsl.core import normalize
+from policydsl.core.model import Policy, PolicyError, Rule
 
 SPEC_VERSION = "v1"
 
@@ -89,7 +89,7 @@ def _semantic_constraint(rule: "Rule") -> Dict[str, Any]:
       策略包本身不自足（换机器要先有同一份模型才能重编译），这一点如实记在
       ``docs/design-semantic-rules.md``。
     """
-    from . import semantic as sem
+    from policydsl.proofs import semantic as sem
 
     manifest = sem.model_manifest()
     for key, actual in (("onnx_sha256", manifest["onnx_sha256"]),
@@ -116,7 +116,7 @@ def _model_vkey() -> str:
     少了它，约束只能承诺「模型是这一张」，承诺不了「证明是由这个电路出的」——
     而恰好是后者把整张图（含特征投影表）唯一确定了。
     """
-    from . import semantic as sem
+    from policydsl.proofs import semantic as sem
 
     p = sem.model_dir() / "artifacts" / sem.ARTIFACT_NAMES["vk"]
     if not p.exists():
@@ -140,7 +140,7 @@ def require_covering_length_bound(policy: Policy) -> None:
     缺了它，语义规则在**任何**超长响应上都判不了（encode 会报错），策略实际上
     是残缺的 —— 与其等到出证时才炸，不如编译期就说清楚。
     """
-    from . import semantic as sem
+    from policydsl.proofs import semantic as sem
 
     if not any(r.kind == "semantic_bound" for r in policy.rules):
         return
@@ -162,7 +162,7 @@ def compile_constraints(policy: Policy) -> list:
     """逐条规则 → 规范化的约束表示（**不含**策略级检查与哈希，见 `_assemble`）。
 
     单独抽出来的理由只有一个：切片编译（P2-11）必须走**同一份**规则映射。
-    让 ``policydsl/multiparty.py`` 自己再写一遍「kind → 约束」就等于把「跨层
+    让 ``policydsl/proofs/multiparty.py`` 自己再写一遍「kind → 约束」就等于把「跨层
     唯一真相源」变成两份，而两份迟早会漂移。
     """
     constraints: list[Dict[str, Any]] = []
@@ -299,7 +299,7 @@ def compile_slice_policy(policy: Policy) -> Dict[str, Any]:
       切片。要求部署方那段（只含 ``semantic_bound``）自己也带一条
       ``length_bound``，会把**每个**含语义规则的策略结构性地变成无法分片。
 
-    所以这条不变式在切片层由 :func:`policydsl.multiparty.shard` 在**整条策略**上
+    所以这条不变式在切片层由 :func:`policydsl.proofs.shard` 在**整条策略**上
     检查一次（并集满足即可），切片编译本身不重复检查。除这一条外，校验与
     规则映射走的是与 :func:`compile_policy` 完全相同的两段代码
     （``policy.validate`` + :func:`compile_constraints`）—— 不存在第二份编译器。

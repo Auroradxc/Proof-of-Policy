@@ -22,8 +22,8 @@ import asyncio
 import json
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from .agent import AgentMonitor
-from .trace import ToolGateway, ToolReceipt
+from policydsl.adapters.agent import AgentMonitor
+from policydsl.evidence.trace import ToolGateway, ToolReceipt
 
 
 class MCPBlocked(Exception):
@@ -56,9 +56,9 @@ class MCPUnknownTool(MCPBlocked):
 
 
 #: 从 MCP CallToolResult / content 列表 / 普通值里尽力提取文本。
-#: 实体在 :mod:`policydsl.trace`（LangChain/LangGraph 适配器也要用它给回执
+#: 实体在 :mod:`policydsl.evidence.trace`（LangChain/LangGraph 适配器也要用它给回执
 #: 算结果摘要），这里保留同名再导出，免得既有调用点改路径。
-from .trace import extract_result_text  # noqa: E402,F401
+from policydsl.evidence.trace import extract_result_text  # noqa: E402,F401
 
 
 class MCPGuard:
@@ -172,7 +172,7 @@ class MCPGuard:
     @staticmethod
     def _violations(env: Dict[str, Any]) -> List[Dict[str, Any]]:
         """从证书信封里取出违规列表。"""
-        from .cert import envelope_payload
+        from policydsl.evidence.cert import envelope_payload
 
         return envelope_payload(env)["outcome"]["violations"]
 

@@ -37,12 +37,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, keys, verifier  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.langchain_adapter import verify_chain  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
-# 快路径判定（二进制 + 边车 + 非 core 模式）在 policydsl.verifier；此处再导出以兼容旧导入
-from policydsl.verifier import prefer_verifier_only  # noqa: E402,F401
+from policydsl.evidence import anchor, cert, keys, verifier  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.adapters.langchain_adapter import verify_chain  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
+# 快路径判定（二进制 + 边车 + 非 core 模式）在 policydsl.evidence.verifier；此处再导出以兼容旧导入
+from policydsl.evidence.verifier import prefer_verifier_only  # noqa: E402,F401
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 

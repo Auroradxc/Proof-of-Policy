@@ -20,9 +20,9 @@ import ast
 import hashlib
 from typing import Any, Dict, List, Optional
 
-from .agent import AgentMonitor
-from . import cert as _cert
-from .trace import ToolGateway, extract_result_text
+from policydsl.adapters.agent import AgentMonitor
+from policydsl.evidence import cert as _cert
+from policydsl.evidence.trace import ToolGateway, extract_result_text
 
 try:  # 有 LangChain 时用真实基类
     from langchain_core.callbacks import BaseCallbackHandler  # type: ignore
@@ -358,7 +358,7 @@ class PoPCallbackHandler(BaseCallbackHandler):
         if text:
             # 权威证书：绑本会话的整条回执链 + 网关的会话末端承诺（P1-5b）——
             # 一张不带 seal 的证书在 ``verify_cert.py`` 的 ``trace_seal`` 卡上
-            # 无法排除链尾被删（见 policydsl/trace.py 的「截尾与 ToolSeal」）。
+            # 无法排除链尾被删（见 policydsl/evidence/trace.py 的「截尾与 ToolSeal」）。
             self._emit(self.monitor.on_generate(text, vkey_hash=self.vkey_hash,
                                                 proof_sha256=self.proof_sha256,
                                                 proof_mode=self.proof_mode,
@@ -441,7 +441,7 @@ def verify_certificates(handler: "PoPCallbackHandler", keyring: Any = None) -> b
 
     ``keyring`` 可以是 ``Signer`` / 公钥 / ``{keyid: 验签器}`` / 裸 ``bytes``
     （旧式 HMAC，仅测试）。**缺省用 handler 自己的签名器**——那是「自验签」，
-    对 demo/测试够用；第三方验证必须传入**公钥**，见 ``policydsl.keys``。
+    对 demo/测试够用；第三方验证必须传入**公钥**，见 ``policydsl.evidence.keys``。
     """
     kr = keyring if keyring is not None else handler.monitor.signer
     return all(_cert.verify_envelope(env, kr)[0] for env in handler.certificates)

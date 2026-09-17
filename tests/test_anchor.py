@@ -1,4 +1,4 @@
-"""锚定账本（policydsl.anchor）的单元测试。
+"""锚定账本（policydsl.evidence.anchor）的单元测试。
 
 聚焦默认的**文件账本**后端：每条记录链接上一条记录的哈希（``prev``），
 ``verify_ledger`` 重算整条链。这里验证链接正确、可按下标查找、以及「改动
@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl import anchor  # noqa: E402
+from policydsl.evidence import anchor  # noqa: E402
 
 
 class TestAnchorLedger(unittest.TestCase):

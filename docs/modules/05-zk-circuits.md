@@ -58,7 +58,7 @@ pub fn main() {
 | `ToolReceipt { seq, tool, args: BTreeMap<String,String>, result_digest, ts, prev, keyid }` | **网关签发的工具回执**（P1-5；链的元素）。`sig` **不在**结构体里 —— 电路内不验签，字段被 serde 忽略 |
 | `FormatKind { Json, Int, Float }` | `format_check` 的格式（snake_case 序列化） |
 | `BudgetUnit { Calls, Tokens }` | `budget_bound` 的计量单位 |
-| `NfaSpec { start, accept, states }` / `NfaState { eps, edges }` / `NfaEdge { to, ranges }` | **可序列化 NFA 契约**（由 `policydsl.nfa` 产出） |
+| `NfaSpec { start, accept, states }` / `NfaState { eps, edges }` / `NfaEdge { to, ranges }` | **可序列化 NFA 契约**（由 `policydsl.core.nfa` 产出） |
 | `PatternMode { Pike, Naive }` | 匹配模式（默认 `Pike`） |
 | `Constraint` | 七种变体的枚举（见下表） |
 | `BoundDirection { Le, Ge }` | `semantic_bound` 的判定方向（P2-9）。两值枚举而非布尔/带符号阈值 |
@@ -92,7 +92,7 @@ SemanticBound { name, model_vkey, onnx_sha256, threshold_bp, direction }   // P2
 只登记进公开值 —— 见 §2.3b。
 
 序列化为 serde 的**内部标签**枚举（`#[serde(tag = "kind", rename_all = "snake_case")]`，
-即 `{"kind": "keyword_block", ...}`）—— 直接吃 `policydsl/compile.py` 产出的形状，
+即 `{"kind": "keyword_block", ...}`）—— 直接吃 `policydsl/core/compile.py` 产出的形状，
 **没有中间映射层**。
 
 ### 2.1a 策略怎么进来：规范字节，而不是结构化字段
@@ -118,13 +118,13 @@ guest 读到的 `spec_canonical` 是一段**规范 JSON 字节**（`compile.cano
 | `nfa_match_naive` | **O(n²·states)** | 消融对照：每个起点重新锚定跑一遍 |
 
 - `eps_closure(spec, seeds) -> Vec<bool>` 计算 ε-闭包（布尔向量，比集合更快）。
-- `in_ranges(cp, ranges)` 依赖区间**按 lo 升序**做线性扫描（`policydsl.nfa` 保证了这一点）。
+- `in_ranges(cp, ranges)` 依赖区间**按 lo 升序**做线性扫描（`policydsl.core.nfa` 保证了这一点）。
 - 二者的等价性是消融实验有意义的前提，由 `tests/test_ablation.py` 与
   `tests/test_ablation.py::TestRustNaivePath` 保证。
 
 ### 2.3 判定 `evaluate(req) -> ProofOutput`
 
-逐约束执行，**镜像 `policydsl.evaluate.check`**：
+逐约束执行，**镜像 `policydsl.core.evaluate.check`**：
 
 | 变体 | 判定 | 证据字符串 |
 |---|---|---|
@@ -152,7 +152,7 @@ verify_receipt_chain(rs) -> Result<(), String>
 `receipt_digest = SHA256(canonical_receipt_bytes(r))`，编码为
 `TRACE_DOMAIN(b"pop-trace-v1") ‖ u32_be(seq) ‖ lp(tool) ‖ u32_be(len(args)) ‖ [lp(k)‖lp(v)]_按键升序 ‖
 lp(result_digest) ‖ lp(ts) ‖ lp(prev) ‖ lp(keyid)`（`lp` = `u32_be(len)‖data`，长度前缀消除拼接歧义）。
-与 `policydsl.trace.canonical_receipt_bytes` **逐字节一致**，由 `tests/test_trace.py::test_full_chain_parity`
+与 `policydsl.evidence.trace.canonical_receipt_bytes` **逐字节一致**，由 `tests/test_trace.py::test_full_chain_parity`
 实测核对（`trace_root` 是这串字节的哈希，任何编码差异都会让它对不上）。
 
 `token_count(text)`：把 UTF-8 字节按固定空白集 `{0x20, 0x09, 0x0a, 0x0b, 0x0c, 0x0d}` 切分，数非空白
@@ -231,14 +231,14 @@ if let Some(SpecConstraint::SemanticBound { name, .. }) =
 > 折叠不了）。语义规则因此**只有公开模式**这一种形态。详见
 > [`../design-semantic-rules.md`](../design-semantic-rules.md) §3。
 
-编译期还有一道同样的检查（`policydsl/compile.py`，报错更友好）；电路内这道是兜底 ——
+编译期还有一道同样的检查（`policydsl/core/compile.py`，报错更友好）；电路内这道是兜底 ——
 手写的 `PrivateRequest` 绕不过编译期检查。回归见 `tests/test_semantic.py`。
 
 ~~解决路径（未做）~~：`P2-9b 同形异义折叠`**已交付**（2026-09-11）——
 `normalized_keyword_block` 把同形异义字/零宽字符/全角折叠成 ASCII 后再做子串判定，
 **折叠表随约束走**（`fold` 字段进规范字节、进 `policy_hash`），且全电路内、零依赖。
 设计见 [`../design-semantic-rules.md`](../design-semantic-rules.md) §1–§3 与 §10，代码见
-`policydsl/normalize.py`（表构造）+ `pop-types::folded_text` / `SpecConstraint::NormalizedKeywordBlock`
+`policydsl/core/normalize.py`（表构造）+ `pop-types::folded_text` / `SpecConstraint::NormalizedKeywordBlock`
 （`circuits/types/src/lib.rs`，执行）；验收在 `tests/test_semantic.py` 与
 `cross_validate` 的 `norm_*` 向量（host 19/19 · prove 19/19）。
 
@@ -354,7 +354,7 @@ pub fn response_binding(nonce: &[u8], response: &str) -> String {
 **边界（如实标注）**：这是一个 16→32→4 的小 MLP，是**stand-in**，不是 zkAgent（D1）。
 它证明的是「**这张**图在**这条**响应上确实算出**这个**输出」，**不保证模型质量**
 （没有数据训练过它）。成本结论的限度见 `bench/results/compose.md`。
-Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_compose.py::TestInferParity`
+Python 参考实现是 `policydsl/proofs/infer.py`，逐位一致性由 `tests/test_compose.py::TestInferParity`
 真跑 `pop-script --check --job infer` 钉死。
 
 ### 2.5 `sha256_hex`
@@ -395,7 +395,7 @@ Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_com
 
 **⚠️ 电路不验网关签名**：`SealView` 里**没有** `sig` 字段 —— zkVM 里没有网关公钥。
 电路内只做「带了 seal」+「`keyid` 全同」，把 `(sealed_count, trace_root)` 公开出去；
-**「这条链网关真的签过」由链下的 `policydsl.trace.verify_seal` 判**（`verify_session_proof`
+**「这条链网关真的签过」由链下的 `policydsl.evidence.trace.verify_seal` 判**（`verify_session_proof`
 只在给了 `keyring`/`receipts` 时才走那一步，没给会如实注明未验签名）。
 
 ---
@@ -406,7 +406,7 @@ Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_com
 
 组合义务要求「推理完整性 ∧ 策略合规」两个子义务各自成立。若两半由**同一个**程序产生，
 验证方就没有判据回答「这份证明属于哪一半」—— 攻击者可以拿一份策略证明充当推理半
-（或反之）而通过全部逐 half 的检查。所以组合证书的验证（`policydsl/compose.py` 第 4 步）
+（或反之）而通过全部逐 half 的检查。所以组合证书的验证（`policydsl/proofs/compose.py` 第 4 步）
 **显式要求两个 vkey 不同**。
 
 但只在验证方加这条检查是不够的：vkey 是**程序**的指纹，只有把这条要求钉进**电路**
@@ -449,7 +449,7 @@ Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_com
 
 | 参数 | 说明 |
 |---|---|
-| `--job policy\|infer\|session` | 选哪一域：`policy` → `pop-program`（策略向量，含 `spec_canonical`），`infer` → `pop-infer`（推理向量，含 `response`/`nonce`），`session` → `pop-session`（会话向量，含 `certs` 文本数组 + `nonce`）。**默认 `policy`**；别的值一律 panic（不静默退回默认域）。⚠️ 旗标是 `infer`，而 part 的 kind 是 `inference` —— 两个名字不同，见 `policydsl/compose.py::JOB_FOR_KIND` |
+| `--job policy\|infer\|session` | 选哪一域：`policy` → `pop-program`（策略向量，含 `spec_canonical`），`infer` → `pop-infer`（推理向量，含 `response`/`nonce`），`session` → `pop-session`（会话向量，含 `certs` 文本数组 + `nonce`）。**默认 `policy`**；别的值一律 panic（不静默退回默认域）。⚠️ 旗标是 `infer`，而 part 的 kind 是 `inference` —— 两个名字不同，见 `policydsl/proofs/compose.py::JOB_FOR_KIND` |
 | `--vectors <f>` | 输入向量文件（`{"vectors":[...]}` 或裸数组），默认 `vectors.json` |
 | `--out <f>` | 结果 JSON，默认 `results.json` |
 | `--proof-out <f>` | 保存证明（**只支持单向量**）+ 边车 + `.meta.json` |
@@ -481,7 +481,7 @@ Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_com
 > 是唯一可能隐藏见证的模式 —— 但属包装器层面声明、未被审计评估、非后量子，且需 ≥16 GB 内存（本机出不了）。
 > **对本项目的影响**：**健全性不受影响**（§8 不变量全部成立）；受影响的只是
 > **私有模式能宣称什么** —— 见 [`02-privacy-commitment.md`](02-privacy-commitment.md) 与
-> `policydsl/commit.py` 的 `private_output` 文档串。
+> `policydsl/privacy/commit.py` 的 `private_output` 文档串。
 
 ### `write_verifier_sidecar`：verifier-only 的物料
 
@@ -495,7 +495,7 @@ Python 参考实现是 `policydsl/infer.py`，逐位一致性由 `tests/test_com
 | `<proof>.verify.json` | 边车：`{proof_mode, proof_bytes_file, public_values_file, vkey_hash_file, vkey_hash_str}` |
 
 > ⚠️ **边车对所有模式都会写**（含 `core`）。因此走快路径前必须检查 `proof_mode` ——
-> 见 [`04-anchoring-audit.md`](04-anchoring-audit.md) §5 与 `policydsl/verifier.py`。
+> 见 [`04-anchoring-audit.md`](04-anchoring-audit.md) §5 与 `policydsl/evidence/verifier.py`。
 
 ### `build.rs`
 
@@ -580,7 +580,7 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
 ## 8. 不变量与边界
 
 1. **`types` 必须 `no_std`**（仅 `alloc`）—— 任何引入 `std` 的改动都会让 guest 编译失败。
-2. **`evaluate` 必须与 `policydsl.evaluate.check` 逐字段一致**（全局不变量 I1）——
+2. **`evaluate` 必须与 `policydsl.core.evaluate.check` 逐字段一致**（全局不变量 I1）——
    违反它不会立刻报错，只会让 `cross_validate` 变红，所以改任何一侧都要跑交叉验证。
 3. **`sha256_hex` 的输出格式（小写、无 `0x`）必须与 Python 一致**，否则证据承诺对不上。
 4. **`nfa_match` 与 `nfa_match_naive` 语义必须等价**（只有复杂度不同）。
@@ -629,10 +629,10 @@ cd circuits/infer-program && cargo prove build   # → pop-infer（P1-6）
 - **加规则类型**：先按 `01` §7 的六步改 Python 侧，再在这里加 `Constraint` 变体 + `evaluate` 分支，
   且**证据字符串必须逐字节一致**。跑 `cross_validate` 验证。
 - **加证明模式**：在 `pop-script` 的 `match proof_mode` 分支与 `write_verifier_sidecar` 里各加一处，
-  同时更新 `policydsl.verifier.VERIFIER_ONLY_MODES`（如果新模式支持 verifier-only）。
+  同时更新 `policydsl.evidence.verifier.VERIFIER_ONLY_MODES`（如果新模式支持 verifier-only）。
 - **加一个可组合的证明域**（如日后换掉代理推理、接真 zkAgent）：**新开一个 guest 程序**，
   在 `pop-types` 里加对应的 `Job`/`Outcome` 变体与 `job_domain` 分支，入口断言自己的域，
-  然后扩 `policydsl/compose.py::KIND_*` 与 `verify_composite`。**不要**往现有 guest 里塞 ——
+  然后扩 `policydsl/proofs/compose.py::KIND_*` 与 `verify_composite`。**不要**往现有 guest 里塞 ——
   见 §8 不变量 12。
 - **优化证明开销**：当前瓶颈是证明器固定开销与 O(n·states) 的 NFA 扫描。
   `bench/results/` 里有基线数字，改动后用同一脚本复测再对比。

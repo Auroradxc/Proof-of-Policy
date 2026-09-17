@@ -5,7 +5,7 @@
 （ToolReceipt / Transcript）。整个 Python 参考层都围绕这些数据结构展开。
 
 工具轨迹以**网关签发的回执链**表示（P1-5）：``Transcript.receipts`` 的元素类型
-是 :class:`policydsl.trace.ToolReceipt` —— 这里不重复定义，只在需要时做
+是 :class:`policydsl.evidence.ToolReceipt` —— 这里不重复定义，只在需要时做
 ``TYPE_CHECKING`` 导入，免得两个模块互相 import。
 
 规则类型（Rule kinds，阶段一范围）：
@@ -21,7 +21,7 @@
   normalized_keyword_block : keyword_block 的规范化版本（P2-9b）—— 先按约束里
                   **自带**的折叠表把响应折叠（同形异义字 → ASCII、删零宽字符、
                   全角 → 半角），再做同样的子串判定。折叠在电路内完成，见
-                  ``policydsl/normalize.py``
+                  ``policydsl/core/normalize.py``
 
 Python 层是「参考语义」（reference semantics）：单测与 SP1 程序都以它为目标。
 ``compile()`` 把 Policy 编译成 ConstraintSpec（JSON），后者是与电路内 prover
@@ -38,10 +38,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from . import normalize  # 只用标准库，无循环导入风险（见 normalize 模块 docstring）
+from policydsl.core import normalize  # 只用标准库，无循环导入风险（见 normalize 模块 docstring）
 
 if TYPE_CHECKING:  # 只用于类型标注：避免 model ↔ trace 的循环导入
-    from .trace import ToolReceipt
+    from policydsl.evidence.trace import ToolReceipt
 
 
 class PolicyError(ValueError):
@@ -145,7 +145,7 @@ class Rule:
             #
             # 指纹**可选**是刻意的：多数策略作者只想说「有害概率不得超过 5%」，
             # 而不想手抄一串 sha256。缺省时由 compile 从仓库里的模型现场解析
-            # （`policydsl.semantic.model_manifest`）并**固化进约束** —— 一旦固化，
+            # （`policydsl.proofs.model_manifest`）并**固化进约束** —— 一旦固化，
             # 模型再变就会导致 policy_hash 变、证明对不上。显式给出时则要求它与
             # 实际模型一致，否则编译期直接失败（「用另一个模型去证」必须报错）。
             thr = self.params.get("threshold_bp")
@@ -286,11 +286,11 @@ class Transcript:
     内容类规则（keyword/pattern/length/format）判定 ``response``；
     ``tool_arg_guard`` 判定 ``receipts`` 里各条回执的参数；``budget_bound``
     按 ``unit`` 判定回执条数（``calls``）或**按固定空白规则自算**的 token 数
-    （``tokens``，见 :func:`policydsl.trace.token_count`）。
+    （``tokens``，见 :func:`policydsl.evidence.token_count`）。
 
     **P1-5**：原来的 ``tool_calls``/``token_count`` 两个字段已被移除 —— 它们是
     「证明者自填」的，判出来的结论没有任何东西拴着。回执必须由工具网关签发
-    （:class:`policydsl.trace.ToolGateway`）。
+    （:class:`policydsl.evidence.ToolGateway`）。
     """
 
     response: Optional[str] = None

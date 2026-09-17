@@ -8,7 +8,7 @@ prover，而 zkAgent 是 SJTU 的 C++ 系统、**源码不可得**（计划 D1�
 一个**确定性小模型前向**当 stand-in：结构（输入 → 前向 → 被承诺的输出）与真实
 推理证明同构，只是成本量级完全不同（如实记在 ``bench/results/compose.md``）。
 
-本模块是那份电路的 **Python 参考实现**，用途与 ``policydsl/evaluate.py`` 之于
+本模块是那份电路的 **Python 参考实现**，用途与 ``policydsl/core/evaluate.py`` 之于
 ``pop-types::evaluate`` 完全一样：给单测与交叉验证一个**独立于 Rust 的**对照。
 两边必须逐位相同 —— 定点整数运算，任何一处顺序、位移、取模不同都会立刻
 体现在输出上。
@@ -147,7 +147,7 @@ def input_binding(nonce: bytes, input_values: Sequence[int]) -> str:
 
 def run(response: str, nonce: bytes = b"") -> Dict[str, object]:
     """跑一次推理任务，返回与电路公开值**同形**的字典（对应 ``run_infer``）。"""
-    from policydsl.commit import response_binding   # 与策略证明共用同一绑定公式
+    from policydsl.privacy.commit import response_binding   # 与策略证明共用同一绑定公式
 
     x = input_from_response(response)
     return {

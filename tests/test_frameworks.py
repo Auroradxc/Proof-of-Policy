@@ -13,13 +13,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl import cert  # noqa: E402
-from policydsl.agent import AgentMonitor  # noqa: E402
-from policydsl.langchain_adapter import (  # noqa: E402
+from policydsl.evidence import cert  # noqa: E402
+from policydsl.adapters.agent import AgentMonitor  # noqa: E402
+from policydsl.adapters.langchain_adapter import (  # noqa: E402
     EarlyStop, PoPCallbackHandler, langchain_available, verify_certificates, verify_chain,
 )
-from policydsl import langgraph_adapter as lg  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
+from policydsl.adapters import langgraph_adapter as lg  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -438,7 +438,7 @@ class TestLangGraphHelpersOffline(unittest.TestCase):
 
     def test_guard_class_accepts_an_outer_gateway(self):
         # 要接进外层已有的会话（例如 MCPGuard 那把），必须能注入而不是被迫新建
-        from policydsl.trace import ToolGateway
+        from policydsl.evidence.trace import ToolGateway
         outer = ToolGateway()
         guard = lg.LangGraphGuard(self.content, gateway=outer)
         self.assertIs(guard.gateway, outer)

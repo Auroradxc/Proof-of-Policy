@@ -188,20 +188,20 @@ const TASKS = [
   {id:"w1-2", week:"w1", txt:"SP1 最小证明（改私密输入只承诺输出）", repo:"circuits/program"},
   {id:"w1-3", week:"w1", txt:"口述「证明者知道 witness，验证者只看到公开输入」", repo:"—"},
 
-  {id:"w2-1", week:"w2", txt:"实现 KeywordBlock / LengthBound + 单测", repo:"policydsl/model.py"},
+  {id:"w2-1", week:"w2", txt:"实现 KeywordBlock / LengthBound + 单测", repo:"policydsl/core/model.py"},
   {id:"w2-2", week:"w2", txt:"基准表 v0（规则数 × spec 大小）", repo:"docs/"},
   {id:"w2-3", week:"w2", txt:"口述「黑名单为什么用 lookup」", repo:"—"},
 
-  {id:"w3-1", week:"w3", txt:"实现 PatternBlock（NFA 路径验证）", repo:"policydsl/evaluate.py"},
+  {id:"w3-1", week:"w3", txt:"实现 PatternBlock（NFA 路径验证）", repo:"policydsl/core/evaluate.py"},
   {id:"w3-2", week:"w3", txt:"≥2 类 PII 规则（email / phone / IBAN）", repo:"policy_packs/"},
   {id:"w3-3", week:"w3", txt:"口述「正则→NFA→电路路径验证」", repo:"docs/policy-dsl.md"},
 
-  {id:"w4-1", week:"w4", txt:"策略编译器：DSL → ConstraintSpec", repo:"policydsl/compile.py"},
+  {id:"w4-1", week:"w4", txt:"策略编译器：DSL → ConstraintSpec", repo:"policydsl/core/compile.py"},
   {id:"w4-2", week:"w4", txt:"SP1 透明模式端到端：证明 → 验证", repo:"circuits/program + script"},
   {id:"w4-3", week:"w4", txt:"链上 verify + 示例策略包", repo:"eu_ai_act_v1.json"},
   {id:"w4-4", week:"w4", txt:"★ 给导师演示 PoP v0 MVP", repo:"demo/"},
 
-  {id:"w5-1", week:"w5", txt:"响应承诺（sha256(response||nonce)）", repo:"policydsl/commit.py"},
+  {id:"w5-1", week:"w5", txt:"响应承诺（sha256(response||nonce)）", repo:"policydsl/privacy/commit.py"},
   {id:"w5-2", week:"w5", txt:"违规理由选择性披露（不读全文）", repo:"docs/security-model.md"},
   {id:"w5-3", week:"w5", txt:"（尽力）redaction-with-proof", repo:"延伸 E1"},
 

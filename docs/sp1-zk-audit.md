@@ -144,7 +144,7 @@ response_commitment = SHA256(T)
 - [x] **文档口径**：§2「内容隐私 Content privacy」已正名为「**承诺隐私 Committed-value privacy**」，
       并显式写明它**不**防御对低熵 `T` 的离线枚举（§4 的互斥结论）。
       *已同步*：`security-model.md` §2/§5、`architecture.md`、`quadrant.md`、`bench/comparison_zkagent.md` §4.4、
-      `modules/05-zk-circuits.md`、`plan-p0p1p2.md`（P0-4 行 + 风险登记册 + §9 进度）、`policydsl/commit.py` 文档串。
+      `modules/05-zk-circuits.md`、`plan-p0p1p2.md`（P0-4 行 + 风险登记册 + §9 进度）、`policydsl/privacy/commit.py` 文档串。
 - [x] **证书诚实标注**：`binding.proof_mode` 字段（`core`/`compressed`/`groth16`/`plonk`/`unproven`）
       已写进载荷并进 `cert_digest`，`cert.proof_hiding()` 给出该档的隐藏程度（**未知模式返回
       `"unknown"`，不猜**）。验证侧：`verify_cert.py` 逐证书与**工件自报的模式**（边车

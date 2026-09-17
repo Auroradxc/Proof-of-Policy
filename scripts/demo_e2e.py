@@ -53,12 +53,14 @@ REPO = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 
-from policydsl import anchor, cert, challenge, commit, keys, llm, trace  # noqa: E402
-from policydsl.agent import AgentMonitor  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.langchain_adapter import EarlyStop, PoPCallbackHandler  # noqa: E402
-from policydsl.mcp_adapter import MCPBlocked, MCPGuard  # noqa: E402
-from policydsl.serialize import spec_canonical_text  # noqa: E402
+from policydsl.evidence import anchor, cert, keys, trace  # noqa: E402
+from policydsl.privacy import challenge, commit  # noqa: E402
+from policydsl.adapters import llm  # noqa: E402
+from policydsl.adapters.agent import AgentMonitor  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.adapters.langchain_adapter import EarlyStop, PoPCallbackHandler  # noqa: E402
+from policydsl.adapters.mcp_adapter import MCPBlocked, MCPGuard  # noqa: E402
+from policydsl.core.serialize import spec_canonical_text  # noqa: E402
 import issue_cert as ic  # noqa: E402  （复用 load_policy/run_pop/POP_SCRIPT）
 
 # 内容策略包 / 工具策略包 / MCP 服务器脚本

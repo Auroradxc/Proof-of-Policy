@@ -67,8 +67,8 @@ sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "bench"))
 
 import bench_cycles as bc  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.serialize import spec_canonical_text  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.serialize import spec_canonical_text  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 WORK = REPO / "bench" / "work"

@@ -29,12 +29,12 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .cert import canonical, sha256_hex, utc_now
+from policydsl.evidence.cert import canonical, sha256_hex, utc_now
 
 GENESIS = "genesis"
 
-# 仓库根（本文件在 <repo>/policydsl/anchor.py）
-REPO = Path(__file__).resolve().parent.parent
+from policydsl.paths import REPO  # 仓库根的唯一出处（见该模块 docstring 的事故记录）
+
 ARTIFACT = REPO / "contracts" / "Anchor.json"
 
 # Anvil 的公开测试私钥（`anvil` 默认账户 #0）。仅用于本地 demo；生产用 keystore/HSM。

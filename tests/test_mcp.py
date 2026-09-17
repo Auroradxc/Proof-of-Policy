@@ -1,4 +1,4 @@
-"""MCP 工具守护（policydsl.mcp_adapter）的测试。
+"""MCP 工具守护（policydsl.adapters.mcp_adapter）的测试。
 
 离线用例用假的 session（鸭子类型）跑，不依赖 mcp SDK；真实用例会通过 stdio
 拉起一个货真价实的 MCP 服务器（tests/mcp_echo_server.py），未安装 `mcp` SDK
@@ -14,10 +14,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl import cert  # noqa: E402
-from policydsl.agent import AgentMonitor  # noqa: E402
-from policydsl.mcp_adapter import MCPBlocked, MCPGuard  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
+from policydsl.evidence import cert  # noqa: E402
+from policydsl.adapters.agent import AgentMonitor  # noqa: E402
+from policydsl.adapters.mcp_adapter import MCPBlocked, MCPGuard  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 SERVER = Path(__file__).resolve().parent / "mcp_echo_server.py"

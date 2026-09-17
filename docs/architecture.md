@@ -6,7 +6,7 @@
 
 ## 双层架构
 
-- **Python 层（链下）**：策略作者写 JSON 策略包 → `policydsl.compile()` 产出 **ConstraintSpec**（唯一的链上/链下契约）；`policydsl.evaluate()` 提供**参考判定**（golden），供单测与交叉验证使用。
+- **Python 层（链下）**：策略作者写 JSON 策略包 → `policydsl.core.compile()` 产出 **ConstraintSpec**（唯一的链上/链下契约）；`policydsl.core.evaluate()` 提供**参考判定**（golden），供单测与交叉验证使用。
 - **Rust + SP1 层（证明）**：`circuits/program` 在 zkVM 内消费 ProofRequest（`response + ConstraintSpec`），重放约束判定并 `commit(passed, evidence)`；`circuits/script` 负责证明生成与验证（宿主机，可选链上）。
 
 ## ConstraintSpec 契约（v1）
@@ -34,7 +34,7 @@
 
 ```
 策略作者                链下作者/编译                证明方(SP1)              验证方
-policy_packs/a.json ──► policydsl.compile ──► ConstraintSpec ──► ProofRequest
+policy_packs/a.json ──► policydsl.core.compile ──► ConstraintSpec ──► ProofRequest
                                                                     │
 response.txt ──────────────────────────────────────────────────────┤
 nonce ─────────── challenge.new_nonce() ────────────────────────────┘
@@ -64,7 +64,7 @@ Compose = (推理完整性 ∧ 策略合规)
   推理半：circuits/infer-program（pop-infer）—— 代理模型前向，vkey_infer
   策略半：circuits/program      （pop-program）—— 全部策略判定，vkey_policy
   两半共用同一个 (nonce, T) ⇒ response_binding 相同 ⇒ 验证方现场重算即知「说的是同一条 T」
-  policydsl/compose.py 合成 CompositeCertificate 并跑 8 步验证（含**键分离**）
+  policydsl/proofs/compose.py 合成 CompositeCertificate 并跑 8 步验证（含**键分离**）
 ```
 
 **键分离**是组合成立的前提：两半必须来自**不同程序**（不同 vkey），否则「这份证明属于哪一半」

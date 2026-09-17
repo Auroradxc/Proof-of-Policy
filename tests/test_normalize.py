@@ -24,10 +24,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import normalize as N  # noqa: E402
-from policydsl.compile import compile_policy, canonical_spec_text  # noqa: E402
-from policydsl.evaluate import check  # noqa: E402
-from policydsl.model import Policy, PolicyError, Rule, Transcript  # noqa: E402
+from policydsl.core import normalize as N  # noqa: E402
+from policydsl.core.compile import compile_policy, canonical_spec_text  # noqa: E402
+from policydsl.core.evaluate import check  # noqa: E402
+from policydsl.core.model import Policy, PolicyError, Rule, Transcript  # noqa: E402
 
 #: 三种绕过手段各一条 —— 都能被人眼看成 "weaponize"。
 CYRILLIC = "wеaponize"    # 第二个字符是西里尔 е U+0435

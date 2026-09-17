@@ -1,6 +1,6 @@
 # 01 · 策略 DSL 与编译
 
-> 覆盖 `policydsl/model.py`、`compile.py`、`evaluate.py`、`serialize.py`、`normalize.py`、
+> 覆盖 `policydsl/core/model.py`、`compile.py`、`evaluate.py`、`serialize.py`、`normalize.py`、
 > `nfa.py`、`pii.py`、`__init__.py`、`__main__.py`。
 > 这一板块回答：**策略长什么样 → 编译成什么 → 谁怎么判定它**。
 
@@ -50,7 +50,7 @@
 > 前者是**符号**判定（命中即违规，可复现、可解释、不依赖模型），后者是**统计**判定（换模型/换阈值
 > 就可能漏）。而且两层覆盖并不是包含关系 —— 实测有 6 个同形字（大写西里尔 `Ѕ А Е О Т`、小写 `п`）
 > 只出现在数据生成器的清单里、**没进模型词表**，即模型从没见过它们：`WЕAPONIZE` 那种大写变体
-> 统计层很可能是漏的，折叠规则照样折得回来。见 `policydsl/normalize.py` 与
+> 统计层很可能是漏的，折叠规则照样折得回来。见 `policydsl/core/normalize.py` 与
 > `tests/test_normalize.py::TestVocabConsistency`。
 >
 > 折叠表（`fold`）**随约束走**，是 `policy_hash` 的一部分：改表 = 换策略，验证方能在策略字节里
@@ -96,7 +96,7 @@ class Transcript:  response: str|None; receipts: list[ToolReceipt]   # P1-5：�
 
 > **旧字段已删除**：`Transcript.tool_calls` / `token_count` 与 `model.ToolCall` 在 P1-5 中被移除，
 > 传它们会直接 `TypeError`（而不是"传了但被忽略"——后者会让人误以为还生效）。`ToolReceipt`
-> 定义在 `policydsl/trace.py`（`model` 里只有 `TYPE_CHECKING` 下的类型标注，避免循环导入）。
+> 定义在 `policydsl/evidence/trace.py`（`model` 里只有 `TYPE_CHECKING` 下的类型标注，避免循环导入）。
 
 `Violation.evidence_kind` 与 `evidence` 的对应（**跨层证据字符串的参考定义**）：
 

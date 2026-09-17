@@ -11,10 +11,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from policydsl import trace  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.evaluate import check  # noqa: E402
-from policydsl.model import Policy, PolicyError, Rule, Transcript  # noqa: E402
+from policydsl.evidence import trace  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.evaluate import check  # noqa: E402
+from policydsl.core.model import Policy, PolicyError, Rule, Transcript  # noqa: E402
 
 #: 固定时间戳的一次性网关 —— 让测试里的回执链可复现。
 GW_TS = "2026-01-01T00:00:00+00:00"

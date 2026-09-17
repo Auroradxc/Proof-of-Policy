@@ -264,7 +264,7 @@ python3 scripts/ezkl_prove.py info       # 产物尺寸与口径
    `patch_settings` 强制这个值，`check_settings` 在验证方侧再核一遍。
 2. **响应超过 `MAX_CHARS` 时 `prove` 报错退出**，而不是截断 —— 静默截断会让尾部
    内容逃过判定。策略必须自带一条 `max <= MAX_CHARS` 的 `length_bound`
-   （编译期强制，见 `policydsl/compile.py::require_covering_length_bound`）。
+   （编译期强制，见 `policydsl/core/compile.py::require_covering_length_bound`）。
 
 ### 2.7 `compose_proof.py` —— 组合证明（P1-6）
 
@@ -292,7 +292,7 @@ RESULT: PASS | FAIL           ← 这张**组合证书**是不是真的
    OOM killer 终止（各 ~10.2–10.5 GiB 峰值，12 GB 机器；实测见
    `bench/results/compose.md`）。脚本本身就是两次 `pop-script`。
 2. **`--reuse-proofs` 沿用已有的两份证明，只重跑合成 + 验证** —— 改
-   `policydsl/compose.py` 后不必再花 4 分钟出证。它不重新校验证明是否对应本次
+   `policydsl/proofs/compose.py` 后不必再花 4 分钟出证。它不重新校验证明是否对应本次
    `--response`，但尾部验证会现场重算 `response_binding`，对不上即 FAIL。
 3. **`nonce` 出证时落在 `out-dir/nonce.hex`**。绑定里含 nonce，所以
    `--reuse-proofs` 必须沿用同一个 —— 脚本会自动读回；读不到就报错退出，
@@ -301,7 +301,7 @@ RESULT: PASS | FAIL           ← 这张**组合证书**是不是真的
    参考实现逐位一致），并**如实打印**「未产出组合证书」—— 组合证书的输入是两份
    **证明**，宿主校验替代不了。
 
-**推理半是代理**（`policydsl/infer.py`，16→32→4 定点 MLP），不是 zkAgent ——
+**推理半是代理**（`policydsl/proofs/infer.py`，16→32→4 定点 MLP），不是 zkAgent ——
 见 [`../../bench/results/compose.md`](../../bench/results/compose.md) 与 L6.2。
 
 ### 2.8 `prove_session.py` —— 会话聚合证明（P2-10）
@@ -330,7 +330,7 @@ python3 scripts/prove_session.py \
 2. **只出证，不验签**。不给 `--keyring` 时验证环节会如实注明「seal 签名未验」；
    「这条链网关真的签过」要另外给 `--keyring`（或跑 `verify_session.py --gateway-key`）。
 3. **一次证明只覆盖一个 run，且只覆盖链上证书**。一个 run 的权威 `on_llm_end`
-   证书没有 `streaming.chain`，按内容被判在 run 之外（`policydsl/session.py::runs_of`）——
+   证书没有 `streaming.chain`，按内容被判在 run 之外（`policydsl/proofs/session.py::runs_of`）——
    这是**设计如此**，不是漏了：它在链外的另一套核对里（`verify_session.py`）。
 4. **`--nonce-hex` 是重放新鲜度的旋钮**。缺省随机取 16 字节并打印；`session_binding`
    含 nonce，所以验证必须用同一个 —— 脚本内部自己传，跑一次就够了。
@@ -350,7 +350,7 @@ python3 scripts/prove_multiparty.py \
 ```
 
 按**规则类**把一条策略切成三段（模型方 / 工具网关 / 部署方，切割依据见
-`policydsl/multiparty.py::KIND_OWNER`），各角色用**自己的键**对**自己那段**出证并签名，
+`policydsl/proofs/multiparty.py::KIND_OWNER`），各角色用**自己的键**对**自己那段**出证并签名，
 合成 `multiparty.json` + `multiparty.keyring.json`（只有公钥）。脚本末尾会拿真工件
 **现场造两个假**，把计划 §P2-11 的两条验收判据跑一遍：
 
@@ -386,7 +386,7 @@ python3 scripts/demo_e2e.py --model anthropic:claude-sonnet-5 # 需 ANTHROPIC_AP
 ```
 
 **缺省不传真模型**，因为 CI 与 `demo_all.sh` 不该依赖网络与 key。规格由
-`policydsl/llm.py` 解析：未知 provider、空模型名、缺 key 都在**构造时**报错并
+`policydsl/adapters/llm.py` 解析：未知 provider、空模型名、缺 key 都在**构造时**报错并
 说清是哪一个环境变量（`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`），**绝不静默退回
 桩** —— 静默退回会让一份「真模型演示」的产物其实来自写死的字符串，而且没人看
 得出来。终端那行 `llm model : …` 就是这件事的如实交代，它**永远**打印。
@@ -574,7 +574,7 @@ python3 scripts/proof_service.py --rpc http://127.0.0.1:8545 --contract 0x… \
 `/v1/check` 与 `/v1/attest` 都返 `503`，且在**收下作业之前**就拒（免得用 ~2.5 分钟
 + ~10.2 GiB 去回答一个启动时就有答案的问题）。
 
-库在 `policydsl/service.py`（+ `policydsl/auth.py`），本脚本只做 HTTP（**纯标准库
+库在 `policydsl/runtime/service.py`（+ `policydsl/runtime/auth.py`），本脚本只做 HTTP（**纯标准库
 `http.server`**，零新依赖）。**默认只绑 `127.0.0.1:8787`**；没配 token 时**默认无
 鉴权**（`/v1/health` 的 `auth.mode` 会如实写 `none`），配上 `--auth-token` /
 `--auth-file` / `$POP_SERVICE_TOKEN` 之后**作业只对提交它的那把 token 可见**。

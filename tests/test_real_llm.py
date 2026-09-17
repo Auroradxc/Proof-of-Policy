@@ -1,4 +1,4 @@
-"""``--model``：真模型客户端接进回调层（``policydsl.llm`` + 早停）。
+"""``--model``：真模型客户端接进回调层（``policydsl.adapters.llm`` + 早停）。
 
 分三层，各自的门槛不同：
 
@@ -28,10 +28,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import openai_sse_stub as stub  # noqa: E402
 
-from policydsl import llm  # noqa: E402
-from policydsl.agent import AgentMonitor  # noqa: E402
-from policydsl.langchain_adapter import EarlyStop, PoPCallbackHandler  # noqa: E402
-from policydsl.model import Policy, Rule  # noqa: E402
+from policydsl.adapters import llm  # noqa: E402
+from policydsl.adapters.agent import AgentMonitor  # noqa: E402
+from policydsl.adapters.langchain_adapter import EarlyStop, PoPCallbackHandler  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -184,7 +184,7 @@ class TestRealClientHardStop(unittest.TestCase):
             with self.assertLogs("langchain_core.callbacks.manager", level="WARNING"):
                 self._run(handler, server)
 
-        from policydsl import cert
+        from policydsl.evidence import cert
 
         stop = cert.envelope_payload(handler.stream_certificates[-1])
         self.assertEqual(stop["streaming"]["stop"]["reason"], "violation")
@@ -213,7 +213,7 @@ class TestRealClientHardStop(unittest.TestCase):
         # 注意干净那条**也有**流式证书：适配器在首个判定沿上出一张部分证书
         # （`partial=true`），这是链的起点，不是停止信号。要检的是**没有**
         # `streaming.stop`，以及流完整跑完。
-        from policydsl import cert
+        from policydsl.evidence import cert
 
         clean = ["A safe reply ", "about the refund policy."]
         handler = PoPCallbackHandler(self.monitor, vkey_hash="unproven",
@@ -243,7 +243,7 @@ class TestRealProvider(unittest.TestCase):
     SPEC = os.environ.get("POP_TEST_MODEL", "openai:gpt-4o-mini")
 
     def test_clean_generation_is_certified(self):
-        from policydsl import cert
+        from policydsl.evidence import cert
 
         model = llm.build_chat_model(self.SPEC)
         monitor = AgentMonitor(load_pack("agent_content_v1.json"))

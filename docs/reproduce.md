@@ -223,7 +223,7 @@ SP1_PROVER=cpu python3 scripts/compose_proof.py \
 
 **两次出证各 ~2 分钟、峰值 ~10.5 GiB，且必须分进程**（同进程连出两份会在第二份 setup 被 OOM；
 两半的分项数字见 [`../bench/results/compose.md`](../bench/results/compose.md)）。
-改过 `policydsl/compose.py` 后想重跑合成与验证时，加 `--reuse-proofs` 沿用已有证明（秒级），
+改过 `policydsl/proofs/compose.py` 后想重跑合成与验证时，加 `--reuse-proofs` 沿用已有证明（秒级），
 不必再花几分钟出证。`--no-prove` 只跑宿主校验（两端判定逻辑对齐 + Rust↔Python 逐位一致），
 **不产组合证书**。
 
@@ -454,7 +454,7 @@ python3 scripts/verify_session.py --session .../session.json \
 | `protoc` 找不到 | 缺 protobuf-compiler | `sudo apt-get install -y protobuf-compiler` |
 | 缺少 `libsp1gnark.a` 构建失败 | 无 Go | 安装 Go ≥1.24 且设置 `GOPROXY` |
 
-> 安全/边界说明：证书签名为 **Ed25519**（`policydsl/cert.py` + `policydsl/keys.py`，P0-3）——验证方只持公钥、无法伪造；
+> 安全/边界说明：证书签名为 **Ed25519**（`policydsl/evidence/cert.py` + `policydsl/evidence/keys.py`，P0-3）——验证方只持公钥、无法伪造；
 > 第三方验签用 `verify_cert.py --keyring <公钥>`（或证书同目录的 `key.json`）。**HSM/KMS 托管仍待补**；
 > 锚定默认走**文件账本**（离线可验），也可 `--rpc/--contract` 真上链（见 §12，本地 Anvil 端到端 PASS）；
 > 上链交易用明文私钥参数（demo 用 Anvil 公开测试键），生产应换 keystore/HSM。

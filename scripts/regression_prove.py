@@ -84,9 +84,9 @@ sys.path.insert(0, str(REPO / "bench"))
 
 import bench_proofs  # noqa: E402  —— 硬件记录（host_info）的唯一出处
 import cross_validate as cv  # noqa: E402  —— 向量表与 golden 比对的唯一出处
-from policydsl.cert import utc_now  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.serialize import spec_canonical_text  # noqa: E402
+from policydsl.evidence.cert import utc_now  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.serialize import spec_canonical_text  # noqa: E402
 
 DEFAULT_POP = REPO / "circuits" / "target" / "release" / "pop-script"
 DEFAULT_HISTORY = REPO / "bench" / "results" / "regression-prove.jsonl"

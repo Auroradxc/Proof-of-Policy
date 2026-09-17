@@ -12,7 +12,7 @@
      → 验签失败；
   ④ 旧路径（自填 ``tool_calls``）**不再被接受**。
 
-每条都在**两个层面**各验一遍：Python 参考层（``policydsl.trace``）与电路内
+每条都在**两个层面**各验一遍：Python 参考层（``policydsl.evidence.trace``）与电路内
 Rust 实现（``pop-script --check``，即 ``pop_types::evaluate``）。二者分叉就意味着
 「链下说违规、链上说通过」，所以同一组用例必须两边都过。
 
@@ -36,14 +36,14 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
-from policydsl import anchor, cert, keys, trace  # noqa: E402
-from policydsl.agent import AgentMonitor  # noqa: E402
-from policydsl.compile import compile_policy  # noqa: E402
-from policydsl.evaluate import check  # noqa: E402
-from policydsl.langchain_adapter import PoPCallbackHandler  # noqa: E402
-from policydsl.mcp_adapter import MCPGuard  # noqa: E402
-from policydsl.model import Policy, Rule, Transcript  # noqa: E402
-from policydsl.serialize import spec_canonical_text  # noqa: E402
+from policydsl.evidence import anchor, cert, keys, trace  # noqa: E402
+from policydsl.adapters.agent import AgentMonitor  # noqa: E402
+from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.core.evaluate import check  # noqa: E402
+from policydsl.adapters.langchain_adapter import PoPCallbackHandler  # noqa: E402
+from policydsl.adapters.mcp_adapter import MCPGuard  # noqa: E402
+from policydsl.core.model import Policy, Rule, Transcript  # noqa: E402
+from policydsl.core.serialize import spec_canonical_text  # noqa: E402
 
 POP_SCRIPT = REPO / "circuits" / "target" / "release" / "pop-script"
 
@@ -279,7 +279,7 @@ class TestSeal(unittest.TestCase):
     # 一旦写进 outcome，**每一张带真实证明的证书**都会对不上
     # （见 ``docs/security-model.md`` §5.3）。
     def test_seal_lives_at_payload_level_not_in_outcome(self):
-        from policydsl.agent import AgentMonitor
+        from policydsl.adapters.agent import AgentMonitor
 
         pol = Policy("p", "1", rules=[
             Rule("keyword_block", "no_secret", {"keywords": ["sk-"]})])
@@ -493,7 +493,7 @@ class TestLegacyPathRejected(unittest.TestCase):
             Transcript(response="x", token_count=150)
         with self.assertRaises(TypeError):
             Transcript(response="x", tool_calls=[])
-        from policydsl import model
+        from policydsl.core import model
         self.assertFalse(hasattr(model, "ToolCall"))
 
     # 预算规则改判**算出来的** token 数：超限只能靠真的写出这么多 run 来触发。
