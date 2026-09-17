@@ -1938,8 +1938,17 @@ R7 引入 `from_dict` 之后，验收基线的「畸形包 → CLI」那一面**
 | `verify_cert.py` | `check_signature`(1) / `check_proof`(2) / `check_artifact_claims`(2b+2c) / `check_policy_binding`(3) / `check_response_binding`(3b) / `check_trace_binding`(3c+3d) / `check_semantic`(3e) / `check_anchor`(4+4b) / `print_report` |
 | `verify_session.py` | `check_signers`(0) / `check_certificates`(0+1) / `check_stream_chains`(2) / `check_zk_proofs`(3) / `check_chain_anchoring`(4) / `print_report` |
 
-`verify_cert.main`：**434 行 → 65 行**（文件 518 → 608 行，多出来的是 docstring
-与函数头）。`verify_session.main`：330 → 44 行。合计 `+495 / −324`。
+`verify_cert.main`：**433 行 → 64 行**（文件 518 → 608 行，多出来的是 docstring
+与函数头）。`verify_session.main`：**287 行 → 45 行**。合计 `+495 / −324`。
+
+> 行数量法（可复核）：**下一个顶层定义的行号 − 本函数起始行号**。即
+> `grep -n '^def \|^if __name__' scripts/verify/verify_cert.py`，重构前用
+> `git show dfc1467^:<file> | grep -n …`。**不**含 `main` 与下一个 `def`
+> 之间的空行分隔，故与「函数体行数」相差 1–2 行。
+>
+> 初稿（`dfc1467` 内）这里写的是「434 → 65 / 330 → 44」——同一量法下算错的两个
+> 数（`330` 更是把重构前的文件总行数 344 记串了）。本段为**事后更正**，代码本身
+> 未变，`dfc1467` 的 `+495 / −324` 与之相符。
 
 **分工约定**：每个 `check_*` 只产出**自己那几张卡片**，由 `main` 按调用顺序
 `results +=` 合并。「卡片顺序」是这批脚本的可观察契约（`tests/` 里多处按名取用），
