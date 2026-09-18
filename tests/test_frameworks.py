@@ -15,6 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from policydsl.evidence import cert  # noqa: E402
 from policydsl.evidence import keys  # noqa: E402
+from policydsl.evidence import trace  # noqa: E402
+from policydsl.evidence.trace import ToolGateway  # noqa: E402
 from policydsl.adapters.agent import AgentMonitor  # noqa: E402
 from policydsl.adapters.langchain_adapter import (  # noqa: E402
     EarlyStop, PoPCallbackHandler, langchain_available, verify_certificates, verify_chain,
@@ -161,16 +163,62 @@ class TestToolMonitorRouting(unittest.TestCase):
         self.assertEqual(tool["outcome"]["violations"][0]["rule"], "no_secret_args")
         self.assertTrue(verify_certificates(h))
 
-    # 反例（非恒真对照）：不给 tool_monitor 时，内容策略判工具调用直接抛 ——
-    # 上一条测的不是「随便怎样都能过」。这个抛同时是那个静默 fail-open 的现场：
-    # 回调在 LangChain 里抛，会被吞成一条 warning，调用方什么都看不到。
-    def test_content_monitor_cannot_judge_tool_calls(self):
+    # 反例（非恒真对照）+ fail-closed 现场：不给 tool_monitor 时，内容策略判工具
+    # 调用会抛 PolicyError。从前这个异常被 LangChain 吞成一条 warning，而回执
+    # 已经入链 —— 产物上留下一条**没有证书的孤儿回执**（「这次调用没判定」与
+    # 「这次调用是干净的」同形，正是 P0-4 要消灭的那类歧义）。
+    # 现在不抛：为**同一条回执**出一张 fail-closed 证书，判为**不通过**。
+    def test_content_monitor_yields_fail_closed_cert(self):
         h = PoPCallbackHandler(self.content)
         h.on_tool_start({"name": "search_kb"}, "{'q': 'x'}", run_id="t1")
-        with self.assertRaises(PolicyError) as ctx:
-            h.on_tool_end("ok", run_id="t1")
-        self.assertIn("needs a response for content rules", str(ctx.exception))
-        self.assertEqual(h.certificates, [])   # 零证书 —— 这正是要抓的那个形状
+        h.on_tool_end("ok", run_id="t1")                  # 不再抛
+        self.assertEqual(len(h.certificates), 1)
+        payload = self._payload(h, 0)
+        self.assertEqual(payload["mode"], "tool-call")    # 确实是工具路径的证书
+        # 判不了 ⇒ 判为不通过。「一张写 passed=True 的证书绝不该出现在一条脏
+        # 轨迹上」，判不了只会更该如此（口径见 tool_call_outcome）。
+        self.assertFalse(payload["outcome"]["passed"])
+        # violations 空是**如实**：没有判定出任何违规，而不是「没有违规」。
+        # 把这两件事分开的是 judgment 块 —— 少了它，passed=False + violations=[]
+        # 会被读成「有违规但没列出来」。
+        self.assertEqual(payload["outcome"]["violations"], [])
+        self.assertEqual(payload["judgment"]["performed"], False)
+        self.assertEqual(payload["judgment"]["type"], "PolicyError")
+        # 脱敏：只有消息的 SHA-256，没有原文（异常消息里常有 prompt / 密钥）
+        self.assertEqual(len(payload["judgment"]["message_sha256"]), 64)
+        self.assertNotIn("needs a response", json.dumps(payload))
+        # 回执**有人认领**了：这正是这条改动要保住的那条不变量
+        seal = payload["trace_seal"]
+        self.assertEqual(seal["count"], len(h.gateway.receipts))
+        self.assertEqual(trace.unclaimed_seqs(h.gateway.receipts, [seal["count"]]), [])
+        # 异常原件留在 monitor 上（进程内可取）—— 「异常仍被吞」的直接回答
+        self.assertEqual(len(h.monitor.judgment_failures), 1)
+        self.assertIsInstance(h.monitor.judgment_failures[0], PolicyError)
+
+    # 反例（非恒真对照）：正常的工具调用**不带** judgment 块 —— 证明上一条测的
+    # 那个标志不是「每张工具证书都有」。另：失败表在正常路径上必须是空的。
+    def test_judgment_block_absent_on_healthy_path(self):
+        h = PoPCallbackHandler(self.content, tool_monitor=self.tools)
+        h.on_tool_start({"name": "search_kb"}, "{'q': 'refund'}", run_id="t1")
+        h.on_tool_end("ok", run_id="t1")
+        payload = self._payload(h, 0)
+        self.assertNotIn("judgment", payload)
+        self.assertEqual(h.monitor.judgment_failures, [])
+
+    # 工具**报错**路径上判定也失败了：工具自身的失败（P0-4 的 error 块）与
+    # 「判定没做成」（judgment 块）是两件事，**都要留下** —— 兜底证书若覆盖掉
+    # 调用方给的 extra，工具故障就从产物上消失了。
+    def test_fail_closed_keeps_the_tool_error_block(self):
+        h = PoPCallbackHandler(self.content)          # 内容策略判不了工具调用
+        h.on_tool_start({"name": "search_kb"}, "{'q': 'x'}", run_id="t1")
+        h.on_tool_error(RuntimeError("tool blew up"), run_id="t1")
+        payload = self._payload(h, 0)
+        self.assertEqual(payload["error"]["phase"], "tool")        # 工具自己的失败
+        self.assertEqual(payload["error"]["type"], "RuntimeError")
+        self.assertEqual(payload["judgment"]["performed"], False)  # 判定没做成
+        self.assertEqual(payload["judgment"]["type"], "PolicyError")
+        # 两件事都记进 errors：工具失败 + （无）判定失败原件在 monitor 上
+        self.assertEqual([type(e).__name__ for e in h.errors], ["RuntimeError"])
 
     # 缺省沿用 monitor ⇒ 与旧行为逐字等价（15+ 处单参调用不受影响）
     def test_default_tool_monitor_is_the_same_object(self):
@@ -210,6 +258,60 @@ class TestToolMonitorRouting(unittest.TestCase):
         self.assertIs(h.tool_monitor, self.tools)
         guard = lg.LangGraphGuard(self.content, tool_monitor=self.tools)
         self.assertIs(guard.callbacks().tool_monitor, self.tools)
+
+
+class TestFailClosedResidual(unittest.TestCase):
+    """fail-closed 的两个边界：签名器坏掉（残余窗口）、孤儿回执要**可检测**。"""
+
+    def setUp(self):
+        self.content = AgentMonitor(load_pack("agent_content_v1.json"))
+        self.tools = AgentMonitor(load_pack("agent_tool_v1.json"))
+
+    # **残余窗口**：签名器本身坏了，fail-closed 证书也签不出来（没有签名器就没有
+    # 证书，无解）。这时唯一能做的是**别静默** —— 异常记进 handler.errors 后继续
+    # 抛。给不出证据的时候，沉默是最坏的那一种回答。
+    def test_broken_signer_is_recorded_and_not_swallowed(self):
+        class _Broken:
+            keyid = "ed25519:broken"
+
+            def sign(self, _data):
+                raise RuntimeError("signer is gone")
+
+        h = PoPCallbackHandler(AgentMonitor(load_pack("agent_tool_v1.json"),
+                                            signer=_Broken()))
+        h.on_tool_start({"name": "search_kb"}, "{'q': 'x'}", run_id="t1")
+        with self.assertRaises(RuntimeError) as ctx:
+            h.on_tool_end("ok", run_id="t1")
+        self.assertIn("signer is gone", str(ctx.exception))
+        self.assertEqual([type(e).__name__ for e in h.errors], ["RuntimeError"])
+        # 两处留痕：正常签发那一步的失败 + 兜底签发那一步的失败
+        self.assertEqual([type(e).__name__ for e in h.monitor.judgment_failures],
+                         ["RuntimeError", "RuntimeError"])
+        # 形状如实：回执签出来了（issue 在出证之前），而证书一张都没有 ——
+        # 这正是下一条要能**测出来**的那种形状，而不是「我们说它不会发生」。
+        self.assertEqual(len(h.gateway.receipts), 1)
+        self.assertEqual(h.certificates, [])
+        self.assertEqual(trace.unclaimed_seqs(h.gateway.receipts, []), [0])
+
+    # 上面那种形状必须**可检测**：把「回执 ⟺ 证书」的配对做成能跑的东西。
+    def test_orphan_receipt_is_detectable(self):
+        gw = ToolGateway()
+        gw.issue("search_kb", {"q": "x"}, result="ok")
+        # 会话里最后一张证书是在链还空着的时候出的（count=0）⇒ 序号 0 无人认领
+        self.assertEqual(trace.unclaimed_seqs(gw.receipts, [0]), [0])
+
+    def test_healthy_session_has_no_orphan(self):
+        h = PoPCallbackHandler(self.content, tool_monitor=self.tools)
+        h.on_tool_start({"name": "search_kb"}, "{'q': 'refund'}", run_id="t1")
+        h.on_tool_end("ok", run_id="t1")
+        counts = [cert.envelope_payload(env)["trace_seal"]["count"]
+                  for env in h.certificates]
+        self.assertEqual(counts, [1])   # 前提：这张证书是在链已有 1 条时出的
+        self.assertEqual(trace.unclaimed_seqs(h.gateway.receipts, counts), [])
+
+    # 空链不是孤儿（``max`` 取 ``default=0``）：没有回执的会话不该被误报
+    def test_empty_chain_is_not_an_orphan(self):
+        self.assertEqual(trace.unclaimed_seqs([], []), [])
 
 
 class TestErrorCallbacksOffline(unittest.TestCase):
@@ -710,11 +812,11 @@ class TestRealLangChain(unittest.TestCase):
         self.assertEqual(payload["mode"], "tool-call")
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret_args")
 
-    # 反面：**LangChain 缺省吞掉回调异常**。持内容策略的 handler 接工具事件时
-    # 判定会抛 PolicyError，但调用方既拿不到异常、产物上也一张证书都没有 ——
-    # 「这次调用不合规」与「这次调用没发生过」同形。这条用例把**框架行为**钉住：
-    # 它若哪天改成向上抛，这里会失败，那时适配器可以少一层防御。
-    def test_real_tool_with_content_monitor_fails_silently(self):
+    # 反面：**LangChain 缺省吞掉回调异常**（`BaseCallbackHandler.raise_error`
+    # 缺省 False）。这条框架行为决定了 fail-closed 不能靠「抛出去」表达 ——
+    # 抛出只会变成一条 warning，调用方什么都看不到。所以它必须在**回调内部**
+    # 完成，这条走真框架验它确实完成了。
+    def test_real_tool_with_content_monitor_is_fail_closed(self):
         try:
             from langchain_core.tools import tool
         except Exception as exc:  # pragma: no cover
@@ -726,9 +828,13 @@ class TestRealLangChain(unittest.TestCase):
             return "ok"
 
         h = PoPCallbackHandler(AgentMonitor(load_pack("agent_content_v1.json")))
-        # 不抛：异常在回调层被吞掉了（BaseCallbackHandler.raise_error 缺省 False）
         search_kb.invoke({"query": "refund"}, config={"callbacks": [h]})
-        self.assertEqual(h.certificates, [])   # 零证书 —— fail-open 的形状
+        # 真框架下也出了证：判不了 ⇒ **一张 fail-closed 证书**，而不是零张
+        self.assertEqual(len(h.certificates), 1)
+        _, payload = cert.verify_envelope(h.certificates[0], ring_of(h))
+        self.assertEqual(payload["mode"], "tool-call")
+        self.assertFalse(payload["outcome"]["passed"])
+        self.assertEqual(payload["judgment"]["performed"], False)
 
 
 class TestStreamingOffline(unittest.TestCase):

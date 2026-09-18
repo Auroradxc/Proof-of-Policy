@@ -17,10 +17,9 @@ callbacks 配置。
 from __future__ import annotations
 
 import ast
-import hashlib
 from typing import Any, Dict, List, Optional
 
-from policydsl.adapters.agent import AgentMonitor
+from policydsl.adapters.agent import AgentMonitor, failure_fingerprint
 from policydsl.evidence import cert as _cert
 from policydsl.evidence.trace import ToolGateway, extract_result_text
 
@@ -146,11 +145,12 @@ def error_block(phase: str, error: BaseException,
     「截断处的前缀」，而不是「本次生成的全文」—— 模型本会继续吐出的部分
     **不在**这张证书的判定范围内，这个字段就是那句免责声明的可核对形式。
     """
-    msg = str(error)
     return {
         "phase": phase,
-        "type": type(error).__name__,
-        "message_sha256": hashlib.sha256(msg.encode("utf-8")).hexdigest(),
+        # 指纹（类型名 + 消息哈希）由 :func:`failure_fingerprint` 统一给出 ——
+        # 工具路径的 fail-closed 证书里那个 ``judgment`` 块用的是同一个函数，
+        # 两处脱敏口径若各写一份，日后必然各走各的。
+        **failure_fingerprint(error),
         "scope": "partial-prefix",   # 判的是截断处的前缀，不是全文
         "tokens": tokens,
         "text_len": text_len,
@@ -446,12 +446,12 @@ class PoPCallbackHandler(BaseCallbackHandler):
         rec = self._tool_starts.pop(run_id, None) or {"name": _tool_name(None, kwargs),
                                                       "args": {}}
         text = str(error)
-        receipt = self.gateway.issue(rec["name"], rec["args"], result=text)
-        self._emit(self.tool_monitor.on_tool_call(
-            receipt, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode,
-            chain=self.gateway.receipts, seal=self.gateway.seal(),
-            extra={"error": error_block("tool", error, text_len=len(text))}))
+        # 先记工具自身的失败，再出证：万一出证这一步抛出（签名器坏了），
+        # 工具失败这件事也不能跟着一起丢。
         self.errors.append(error)
+        self._certify_tool(rec, text,
+                           extra={"error": error_block("tool", error,
+                                                       text_len=len(text))})
 
     # -- 工具（工具调用路径） --
     def on_tool_start(self, serialized: Any, input_str: Any, **kwargs: Any) -> None:
@@ -468,12 +468,33 @@ class PoPCallbackHandler(BaseCallbackHandler):
         """
         run_id = str(kwargs.get("run_id") or "")
         rec = self._tool_starts.pop(run_id, None) or {"name": _tool_name(None, kwargs), "args": {}}
-        receipt = self.gateway.issue(rec["name"], rec["args"],
-                                     result=extract_result_text(output))
-        self._emit(self.tool_monitor.on_tool_call(receipt, vkey_hash=self.vkey_hash,
-                                                  proof_mode=self.proof_mode,
-                                                  chain=self.gateway.receipts,
-                                                  seal=self.gateway.seal()))
+        self._certify_tool(rec, extract_result_text(output))
+
+    def _certify_tool(self, rec: Dict[str, Any], result: str,
+                      extra: Optional[Dict[str, Any]] = None) -> None:
+        """工具路径的「签发回执 → 判定 → 出证」，**整段**包住（fail-closed）。
+
+        顺序仍是「**先签回执、后判定**」：回执是判定的入参（P1-5 判的是网关签发
+        的回执，不是 agent 自报的调用），这是**数据依赖**，不是书写顺序 —— 挪不动。
+        要保证的不是「回执一定不出现」，而是「回执**一定有**证书」。
+
+        那为什么 ``AgentMonitor.on_tool_call`` 自己已经 fail-closed 了，这里还要再
+        包一层：判定失败它能兜住（为同一条回执补一张 fail-closed 证书），但
+        **签名器本身坏了**时它连兜底那张也签不出来。那是唯一能让回执重新变成孤儿
+        的情形，而适配器这一层是唯一知道「刚签发了一条回执」的地方，所以由它兜底
+        留痕：记进 :attr:`errors` 后**继续抛** —— 给不出证据时就不能假装无事发生
+        （LangChain 缺省会把这次抛出吞成一条 warning，所以产物之外还得有这一份
+        进程内记录；直接调用回调的框架/测试则能当场看见）。
+        """
+        receipt = self.gateway.issue(rec["name"], rec["args"], result=result)
+        try:
+            self._emit(self.tool_monitor.on_tool_call(
+                receipt, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode,
+                chain=self.gateway.receipts, seal=self.gateway.seal(),
+                extra=extra))
+        except Exception as exc:  # noqa: BLE001 —— 签不出证书只剩「没签名器」这一种
+            self.errors.append(exc)
+            raise
 
 
 def _handler_keyring(handler: "PoPCallbackHandler") -> Any:

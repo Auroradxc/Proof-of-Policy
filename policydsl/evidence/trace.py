@@ -284,6 +284,33 @@ def seal_from_json(d: Any) -> Optional[ToolSeal]:
     return None if not d else ToolSeal.from_dict(d)
 
 
+def unclaimed_seqs(receipts: Sequence[ToolReceipt],
+                   seal_counts: Sequence[int]) -> List[int]:
+    """链上**没有任何 seal 覆盖到**的回执序号 —— 「孤儿回执」检测。
+
+    用法：把会话里**每张证书**的 ``trace_seal.count`` 收集起来传进来::
+
+        unclaimed = unclaimed_seqs(gateway.receipts,
+                                   [p["trace_seal"]["count"] for p in payloads])
+        assert not unclaimed, f"这些回执没有任何证书认领：{unclaimed}"
+
+    **判据是「覆盖」而不是「逐条判过」**：一张证书的 seal 记的是「出这张证书时
+    链上有几条回执」，所以序号 ``s`` 的回执被认领，当且仅当存在一张证书是在链已
+    含它之后出的（``count >= s + 1``）。这不等于「每条都被单独判过」—— 但两条
+    出证路径判的都是**整条链**（``tool_call_outcome`` / ``generate_outcome`` 都
+    收全链），所以覆盖到它的那张证书，判定范围里就含它。这个检查是**保守**的：
+    它证明不了每条都被判过，但能证明**链尾没有悬空的回执**。
+
+    悬空在链尾正是 `AgentMonitor.on_tool_call` 的 fail-closed 要消灭的那种情形
+    （判定抛异常 ⇒ 回执已入链而证书没有）。中段的孤儿回执在产物上无从与「被后续
+    证书的整链判定覆盖」区分，这是本检查的已知上界。
+
+    没有回执时返回空表（``max`` 取 ``default=0``），空链不是孤儿。
+    """
+    covered = max(seal_counts, default=0)
+    return [r.seq for r in receipts if r.seq + 1 > covered]
+
+
 def arg_str(value: Any) -> str:
     """把参数值统一成字符串（与电路侧 ``String`` 对齐）。
 

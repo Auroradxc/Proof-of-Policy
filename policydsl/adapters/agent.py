@@ -27,6 +27,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 from policydsl.evidence import cert, keys, trace
@@ -34,6 +35,23 @@ from policydsl.privacy import commit
 from policydsl.core.compile import compile_policy
 from policydsl.core.evaluate import check
 from policydsl.core.model import Policy, PolicyError, Transcript
+
+
+def failure_fingerprint(error: BaseException) -> Dict[str, Any]:
+    """失败的**可公开指纹**：异常类型名 + 消息的 SHA-256。
+
+    异常消息里常有 prompt 片段、URL、偶尔还有密钥（HTTP 客户端的报错尤其容易
+    带上请求头），所以这里**只放指纹、不放原文** —— 与证书其余部分「只放承诺、
+    不放明文」同一口径（见 ``docs/security-model.md`` §2）。要核对具体是哪次
+    失败，让持有原文的一方自己算哈希来比。
+
+    ``error_block()``（适配器层）与 fail-closed 工具的 ``judgment`` 块共用它：
+    两处脱敏口径若各写一份，日后必然各走各的。
+    """
+    return {
+        "type": type(error).__name__,
+        "message_sha256": hashlib.sha256(str(error).encode("utf-8")).hexdigest(),
+    }
 
 
 class AgentMonitor:
@@ -55,6 +73,10 @@ class AgentMonitor:
         self.mode = mode
         self.signer = signer
         self.spec = compile_policy(policy)  # 编译一次，供后续所有判定复用
+        #: 工具路径上**判定或签发失败**的异常（fail-closed 的进程内留痕）。
+        #: 每次失败都**同时**出一张 fail-closed 证书（见 :meth:`unjudged_tool_cert`），
+        #: 这里留的是原件 —— 证书里只有类型名与消息哈希，够核对、不够调试。
+        self.judgment_failures: List[BaseException] = []
 
     # -- 生成路径（电路内规则类型） --
     def generate_outcome(self, response: str, mask: Optional[List[int]] = None,
@@ -167,11 +189,95 @@ class AgentMonitor:
         ``extra`` 是载荷**顶层**的旁证（与 :meth:`on_generate` 同款），目前用于
         工具失败时的 ``error`` 块 —— 与 ``seal``/``challenge`` 一样，它**不进**
         ``outcome``，因为 ``outcome`` 是证明公开值的镜像，而电路里没有这些字段。
+
+        **fail-closed（判定做不了 ⇒ 出证，且判为不通过）**：判定、构造、签名
+        任一环抛异常时，为**同一条回执**出一张 fail-closed 证书（见
+        :meth:`unjudged_tool_cert`），而不是把异常抛给调用方。理由有两条：
+
+        ① **回执必须有人认领**。回执由网关在调用**执行后**签发，它记的是
+           「agent 干了什么」；判定失败时若直接抛出去，回执就留在链上没有证书
+           —— 产物上「这次调用没判定」与「这次调用是干净的」同形，正是 P0-4
+           要消灭的那类歧义；
+        ② **重抛把正确性交给了调用方**。全仓有六个 ``issue() → on_tool_call()``
+           的调用点（四个适配器），重抛要求每一处都记得 ``_emit(exc.certificate)``
+           才不会把证书丢掉，漏一个就退回孤儿回执。失败不再需要靠异常来「不被
+           吞」：它已经是产物上一条签过名、第三方可核验的事实。
+
+        留痕有三处，各有各的用处：证书里是 ``judgment`` 块（类型名 + 消息哈希）、
+        :attr:`judgment_failures` 里是异常原件（进程内调试）、调用方的
+        ``errors`` 由适配器负责（框架侧可见）。
         """
+        try:
+            return self._judged_tool_cert(receipt, ts, response, vkey_hash,
+                                          proof_mode, chain, seal, extra)
+        except Exception as exc:  # noqa: BLE001 —— 判定/构造/签名，任一环
+            self.judgment_failures.append(exc)
+            try:
+                return self.unjudged_tool_cert(receipt, exc, ts=ts,
+                                               vkey_hash=vkey_hash,
+                                               proof_mode=proof_mode,
+                                               chain=chain, seal=seal,
+                                               extra=extra)
+            except Exception as exc2:  # noqa: BLE001
+                # 连兜底那张也签不出来。已知的唯一成因是**签名器本身坏了** ——
+                # 没有签名器就没有证书，无解。既然给不出证据，就**不能**假装
+                # 无事发生：留痕后继续抛，让调用方（适配器）把它记进 errors。
+                self.judgment_failures.append(exc2)
+                raise
+
+    def _judged_tool_cert(self, receipt: "trace.ToolReceipt",
+                          ts: Optional[str], response: Optional[str],
+                          vkey_hash: str, proof_mode: Optional[str],
+                          chain: Optional[List[Any]],
+                          seal: "Optional[trace.ToolSeal]",
+                          extra: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        """正常路径：判定 + 构造 + 签名（:meth:`on_tool_call` 的失败保护在它外面）。"""
         outcome = self.tool_call_outcome(receipt, response, chain=chain)
         payload = cert.build_payload(self.policy.id, self.policy.version, self.spec,
                                      "tool-call", outcome, vkey_hash, None, ts,
                                      proof_mode=proof_mode, extra=extra,
+                                     trace_seal=trace.seal_to_json(seal))
+        return cert.sign_payload(payload, self.signer)
+
+    def unjudged_tool_cert(self, receipt: "trace.ToolReceipt",
+                           error: BaseException, ts: Optional[str] = None,
+                           vkey_hash: str = "unproven",
+                           proof_mode: Optional[str] = None,
+                           chain: Optional[List[Any]] = None,
+                           seal: "Optional[trace.ToolSeal]" = None,
+                           extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """**判定做不了**时为这条回执出的 fail-closed 证书。
+
+        它回答的是「这条回执怎么样了」，**不是**「它合规」：
+
+        - ``outcome.passed = False`` —— 判不了就不该出现 ``passed=True``。这是
+          :meth:`tool_call_outcome` 自己钉的口径（「一张写 ``passed=True`` 的证书
+          绝不该出现在一条脏轨迹上」），判不了只会更该如此；
+        - ``outcome.violations = []`` —— **如实**：没有判定出任何违规，而不是
+          「没有违规」。这两件事靠顶层 ``judgment`` 块分开：
+          ``{"performed": false, "type": …, "message_sha256": …}``。它是旁证，
+          与 ``error`` / ``trace_seal`` 同款地放在**顶层**（``outcome`` 是证明
+          公开值的镜像，电路里没有这个字段）；调用方原本的 ``extra``（例如工具
+          自身失败时的 ``error`` 块）**原样保留**，不覆盖 —— 那是另一件事，
+          丢掉它等于把工具故障从产物上抹掉；
+        - ``mode`` 仍是 ``"tool-call"``：这确实是工具路径上出的证书。
+
+        **为什么不把回执从链上撤掉**（最容易被想到的那个「修法」）：工具**已经
+        执行了** —— ``on_tool_end`` 时副作用已经发生。抹掉回执等于**伪造轨迹**，
+        而且方向反了：谁能制造一次判定失败，谁就能让自己的工具调用从证据链上
+        消失而副作用照留，比孤儿回执更严重。回执链记的是「agent 干了什么」，
+        不是「什么被判过」。
+        """
+        ch = list(chain) if chain is not None else [receipt]
+        fp = failure_fingerprint(error)
+        note = dict(extra or {})
+        note["judgment"] = {"performed": False, "type": fp["type"],
+                            "message_sha256": fp["message_sha256"]}
+        outcome = {"passed": False, "trace_root": trace.trace_root(ch),
+                   "violations": []}
+        payload = cert.build_payload(self.policy.id, self.policy.version, self.spec,
+                                     "tool-call", outcome, vkey_hash, None, ts,
+                                     proof_mode=proof_mode, extra=note,
                                      trace_seal=trace.seal_to_json(seal))
         return cert.sign_payload(payload, self.signer)
 

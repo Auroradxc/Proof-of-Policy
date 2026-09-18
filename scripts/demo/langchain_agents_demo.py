@@ -230,8 +230,23 @@ class Session:
                 "error": bool(p.get("error")),
                 "error_phase": ((p.get("error") or {}).get("phase")),
                 "seal_count": ((p.get("trace_seal") or {}).get("count")),
+                # 缺省 True：**没有** ``judgment`` 块 = 判定正常做过了。
+                # fail-closed 证书才带这个块（``performed: false``）。
+                "judged": ((p.get("judgment") or {}).get("performed", True)),
             })
         return out
+
+    def unclaimed(self) -> list:
+        """链上**没有证书认领**的回执序号 —— 「孤儿回执」检测（见 ``trace.unclaimed_seqs``）。
+
+        回执由网关在工具**执行后**签发，证书随后才出。从前判定一抛异常，回执就已经
+        入链而证书没有 —— 产物上多一条没人认领的回执，而第三方核验读得出这个缺口。
+        这条不变量（回执 ⟺ 证书）现在靠 fail-closed 兜住，这个方法是它的**可跑形式**。
+        """
+        counts = [((cert.envelope_payload(env).get("trace_seal") or {}).get("count"))
+                  for env in self.certificates]
+        return trace.unclaimed_seqs(self.gateway.receipts,
+                                    [c for c in counts if c is not None])
 
 
 def write_bundle(s: Session, out_dir: Path, name: str) -> Path:
@@ -417,6 +432,20 @@ def main() -> int:
         if name == "C":
             if not v or not any(r["error"] for r in v):
                 failures.append("C 应当签出一张带 error 块的证书（P0-4）")
+
+        # 三个场景都要过：**每个工具调用都要有证书认领**（fail-closed 的不变量）。
+        # 这是硬断言，与模型无关 —— 回执条数是确定的，孤儿与否也是确定的。
+        orphan = sess.unclaimed()
+        if orphan:
+            failures.append(
+                f"{name} 的回执链上有 {len(orphan)} 条孤儿回执（序号 {orphan}）——"
+                f"没有任何证书认领它们；判定失败必须落成 fail-closed 证书，"
+                f"而不是把回执留在链上")
+        # 反过来也查一次：fail-closed 证书一旦出现，就是「判定没做成」的**显式**标记，
+        # 不该在正常场景里出现（出现了说明 monitor 接错了 —— 场景 A 尤其不该有）。
+        if name == "A" and any(r["judged"] is False for r in v):
+            failures.append("A 出现了 judgment.performed=false 的证书 ——"
+                            "工具路径的 monitor 接错了（工具调用判不了）")
 
     # 一把网关横跨两条路径：trace_root 必须**只有一条**
     print("核验配方（第三方只凭公开产物）：")

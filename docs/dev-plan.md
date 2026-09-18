@@ -318,7 +318,8 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
    `Error in PoPCallbackHandler.on_tool_end callback` 的 warning）。净效果：
    这次工具调用**既没有证书、也没有任何调用方可见的报错**，在产物上与
    「这次调用是干净的」完全同形。三个层次里只有适配器这一层是静默的 ——
-   `GenericGuard` 会把同一个异常原样抛给调用方。
+   `GenericGuard` 会把同一个异常原样抛给调用方（**这条已在第 8 条改掉**：它
+   现在也不抛了，改出 fail-closed 证书；此处保留作当时的对照，代价见第 8 条）。
 
    **为什么这是既有缺陷，不是新需求**：同一个仓库里的 `LangGraphEventCertifier`
    （`langgraph_adapter.py:156`）**早就有** `tool_monitor: Optional[AgentMonitor]
@@ -344,6 +345,11 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
    `verify_certificates` 仍为真。
    端到端证据是接入测试 demo 本身：**两个按事件过滤的子类被删掉**，改成一个
    handler 直连，三场景仍全绿、第三方 `verify_session.py` 仍全 PASS。
+   该反例的**形态在第 8 条改过**：当时「不给 `tool_monitor`」的结果是**零证书 +
+   异常被吞**，现在改为一张 `passed=false` 的 fail-closed 证书（不再是零证书，
+   但仍**不是** pass —— 反例要证的那件事没变）。对应的用例同时改了名：
+   `test_content_monitor_cannot_judge_tool_calls` →
+   `test_content_monitor_yields_fail_closed_cert`。
 
    > **没顺手做的一件事（如实记）**：`gateway.issue()` 排在 `on_tool_call` **之前**，
    > 所以工具判定一旦抛异常，回执链上会留下一条**没有证书的孤儿回执**，
@@ -362,6 +368,79 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
    §8.4 新增红线「回调里的异常会不会被吞」，§8.5 新增 `result_monitor` ≠ `tool_monitor`。
    顺带把 §8.2 表里**已经漂了的行号**对齐回实现（那些行号在本次改动前就对不上，
    是既有漂移）。
+
+8. **工具回调的 fail-closed**：`gateway.issue()` 与 `on_tool_call()` 这一对
+   至今**没有任何保护** —— 判定一旦抛异常，回执已经入链而证书没有，链上留下
+   一条**没人认领的孤儿回执**；异常本身再被 LangChain 吞掉，于是产物上
+   「这次工具调用没有判定」与「这次调用是干净的」完全同形。
+
+   **触发条件**（第 7 条收尾时如实记下的那条，这里正式立账）：修好
+   `tool_monitor` 路由之后，只要工具策略自身不含内容规则就不会抛 —— 但这不是
+   「不会发生」：① 工具策略里**混进**一条内容规则（`keyword_block` /
+   `pattern_block` 这类要 transcript 的 response 的），`tool_call_outcome` 仍抛
+   `PolicyError`；② 签名器本身坏了，`cert.sign_payload` 抛。两种都留下孤儿回执。
+
+   **这不是 LangChain 一家的问题**：全仓**六个**调用点同款同形 ——
+   `langchain_adapter.py:449/471`、`langgraph_adapter.py:105/221/250`、
+   `mcp_adapter.py:206`、`generic_adapter.py:161`。所以**修在适配器层是错的**
+   （改一处漏三处，而且下一条新适配器缺省就漏）；修在 `AgentMonitor.on_tool_call`
+   —— 六个调用点都从那里过，而签名也在那里。
+
+   **为什么不把 `issue()` 挪到 `on_tool_call()` 后面**：挪不动。回执**就是**
+   `on_tool_call` 的入参（P1-5 判的是「网关签发的回执」，不是 agent 自报的调用），
+   这个顺序是数据依赖，不是书写顺序。
+
+   **为什么不「回滚」那条回执**：工具**已经执行了**。`on_tool_end` 时副作用已经
+   发生，把它的回执从链上抹掉等于**伪造轨迹** —— 而且方向反了：谁能制造判定失败，
+   谁就能让自己的工具调用从证据链上消失而副作用照留。这是比孤儿回执更严重的洞。
+   回执链记的是「agent 干了什么」，不是「什么被判过」。
+
+   **改法（失败即拒：判定做不了 ⇒ 出证，且判为不通过）**：`on_tool_call` 内部把
+   「判定 + 构造 + 签名」整段包住，任一环失败就为**同一条回执**签一张 fail-closed
+   证书：
+   - `mode` 仍是 `"tool-call"`（它确实是工具路径上出的证书）；
+   - `outcome = {"passed": False, "trace_root": <全链>, "violations": []}` ——
+     `passed=False` 用的是 `tool_call_outcome` 自己钉的口径（「一张写
+     `passed=True` 的证书绝不该出现在一条脏轨迹上」，判不了就更不该）；而
+     `violations` 为空是**如实**（没有判定出任何违规）；
+   - 载荷**顶层**新增 `judgment = {"performed": false, "type": …,
+     "message_sha256": …}` —— 与 `error` / `trace_seal` 同款（顶层旁证，不进
+     `outcome`，因为电路里没有这个字段）。它与 `violations: []` 合起来把
+     「**判不了**」与「**判过、没违规**」这两件事分开；
+   - 异常追加进 `AgentMonitor.judgment_failures`（进程内可取 —— 这是对
+     「异常仍被吞」的直接回答）。
+
+   **脱敏口径复用 `error_block`**：只放**类型名**与消息的 **SHA-256**，不放原文
+   （异常消息里常有 prompt 片段、URL、偶尔有密钥）。为此把这段抽成
+   `_failure_fingerprint()`，`error_block` 与 `judgment` 共用它 ——
+   **不改 `error_block` 的签名、不动 `scope` 的词汇**（`"partial-prefix"` 仍是
+   它唯一的值，避免把「判到哪了」与「判没判」混进同一个字段）。
+
+   **为什么不重抛**：重抛会要求六个调用点各自 `_emit(exc.certificate)` 才不会把
+   证书丢掉，漏一个就退回孤儿回执 —— 把「不许有孤儿回执」交给六处人工纪律，
+   正是这次要消灭的东西。而且失败不再需要靠异常来「不被吞」：它已经是产物上一条
+   **签过名、第三方可核验**的事实，比日志里一行 warning 结实。
+
+   **代价（如实记）**：`GenericGuard` 此前把同一个异常**原样抛给调用方**，改动后
+   **不再抛**（改出证书）。以「捕获 `PolicyError`」为唯一信号的调用方要改看
+   `judgment.performed` / `judgment_failures`。不设开关：加一个「失败就抛」的开关
+   等于把 fail-open 缺省请回来。
+
+   **残余窗口（如实记）**：签名器本身坏了的时候，fail-closed 证书**也签不出来**
+   （没有签名器就没有证书，无解）。这时靠 `judgment_failures` 与调用方的
+   `handler.errors` 留痕；LangChain 适配器的 `_certify_tool()` 负责这一步。
+   另三个适配器的这条窗口**未动** —— 它们的**判定**失败已被上面的改动覆盖，
+   剩下的只是「签名器坏掉」这一种，按本文一贯做法另开一条逐个落地。
+
+   **可核验（把注释变成能跑的东西）**：新增「回执 ⟺ 工具证书」配对检查，demo 里
+   断言、单测里立一条 —— 孤儿回执从此**可检测**，而不只是「我们不这么做」。
+
+   **验收**：① 工具策略里混入内容规则 ⇒ 每个工具调用出 **1** 张 fail-closed 证书，
+   且 `passed=false` / `violations=[]` / `judgment.performed=false` 三者同时出现、
+   `judgment_failures` 有记录；② **反例**：正常工具调用**不带** `judgment` 块
+   —— 证明前一条不是恒真的；③ 签名器坏掉时不静默（记入 `handler.errors`）；
+   ④ 配对检查能**检测出**孤儿回执（造一条做负对照）；⑤ 端到端：接入测试 demo
+   三场景仍全绿、`verify_session.py` 仍全 PASS，且**回执条数与工具证书数一一对上**。
 
 #### 5.1.3 验收（#98 落地后的如实版本）
 

@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from policydsl.evidence import cert, keys, trace  # noqa: E402
 from policydsl.adapters import generic_adapter as ga  # noqa: E402
-from policydsl.core.model import Policy, PolicyError, Rule  # noqa: E402
+from policydsl.core.model import Policy, Rule  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -207,14 +207,24 @@ class TestSealTiming(unittest.TestCase):
 class TestHonestFailures(unittest.TestCase):
     """该抛的时候抛 —— 悄悄判过是最坏的一种「通过」。"""
 
-    # 策略里有内容规则却不给 response：抛 PolicyError，而不是按「无结果」判过
-    def test_a_content_rule_without_a_response_raises(self):
+    # 策略里有内容规则却不给 response：**不能**按「无结果」判过。从前这里抛
+    # PolicyError，现在改出**一张 fail-closed 证书** —— 判为不通过，并带
+    # ``judgment`` 块说明判定根本没做成。要守的不变量是同一个（绝不悄悄判过），
+    # 变的只是「判不了」的表达式：异常 ⇒ 产物上一条签过名的事实。
+    def test_a_content_rule_without_a_response_is_fail_closed(self):
         g = guard_of(CONTENT_PACK)
-        with self.assertRaises(PolicyError) as ctx:
-            g.tool_call("search_kb", {"query": "x"}, result="anything")
-        self.assertIn("needs a response", str(ctx.exception))
-        # 抛之前**不留半张证书**：回执照签（调用确实发生过），证书没有
-        self.assertEqual(len(g.certificates), 0)
+        env = g.tool_call("search_kb", {"query": "x"}, result="anything")
+        self.assertEqual(len(g.certificates), 1)
+        payload = payload_of(env)
+        self.assertFalse(payload["outcome"]["passed"])           # 不是「判过」
+        self.assertEqual(payload["outcome"]["violations"], [])   # 也没判出违规
+        self.assertEqual(payload["judgment"]["performed"], False)
+        self.assertEqual(payload["judgment"]["type"], "PolicyError")
+        # 回执照签（调用确实发生过）—— 这条从前就有，没变；变的是它现在**有人认领**
+        self.assertEqual(len(g.gateway.receipts), 1)
+        self.assertEqual(
+            trace.unclaimed_seqs(g.gateway.receipts,
+                                 [payload["trace_seal"]["count"]]), [])
 
     # 私钥绝不落盘：写出的每个文件里都找不到两把私钥的私密字节
     def test_write_session_emits_only_public_material(self):

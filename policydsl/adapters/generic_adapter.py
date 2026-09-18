@@ -155,8 +155,12 @@ class GenericGuard:
         它造的是**不进链**的预览回执，供飞行前筛查用）。
 
         ``response`` 只有**内容类规则**（``tool_result_guard``）才需要 ——
-        它要审的是结果原文。纯参数/预算类策略可以不传；但策略里有内容规则
-        而不传，这里会如实抛 ``PolicyError``（而不是悄悄按「无结果」判过）。
+        它要审的是结果原文。纯参数/预算类策略可以不传；策略里有内容规则却不传时
+        结果判不出来，这里**不抛异常**，而是出一张 **fail-closed 证书**（判为
+        **不通过**，顶层带 ``judgment`` 块说明判定没做成）—— 见
+        :meth:`AgentMonitor.on_tool_call`。要守的不变量是「**绝不悄悄按『无结果』
+        判过**」；异常只是它从前的一种表达式，而产物上一条 ``passed=False`` 的
+        事实更结实：调用方没接住异常时，「判不了」也不会跟着一起消失。
         """
         receipt = self.gateway.issue(name, args, result=result, ts=ts)
         env = self.monitor.on_tool_call(

@@ -255,7 +255,10 @@ def verify_chain(certs) -> bool      # 序号连续 + prev 链接
 |---|---|
 | `PoPCallbackHandler(monitor, tool_monitor=None, vkey_hash="unproven", proof_sha256=None, on_cert=None, stream_check=True, stream_step_chars=1, on_stream_cert=None, stop_on_violation=False, on_early_stop=None, proof_mode=None, gateway=None, hard_stop=False)` | 回调处理器（`stream_step_chars` = 采样步长，**字符**而非回调次数；`tool_monitor` = 工具路径的判定器，缺省沿用 `monitor`） |
 | `EarlyStop(RuntimeError)` | `hard_stop` 掐断流用的异常；`.certificate` = 那张停止证书 |
-| `error_block(phase, error, tokens=0, text_len=0)` | 构造载荷顶层的 `error` 块（`scope` 固定 `"partial-prefix"`） |
+| `error_block(phase, error, tokens=0, text_len=0)` | 构造载荷顶层的 `error` 块（`scope` 固定 `"partial-prefix"`）—— 「这次调用**失败**了」 |
+| `AgentMonitor.on_tool_call(...)` | 工具路径出证。**fail-closed**：判定/构造/签名任一环失败时**不抛异常**，改为给**同一条回执**出一张 fail-closed 证书（`outcome.passed=False`、`violations=[]`、顶层 `judgment={"performed": false, "type", "message_sha256"}`）—— 判不了 ⇒ 判为不通过，「判不了」与「判过、没违规」由 `judgment` 块区分 |
+| `AgentMonitor.judgment_failures` | 工具路径上判定/签发失败的**异常原件**（进程内留痕；证书里只有类型名与消息哈希，够核对不够调试） |
+| `unclaimed_seqs(receipts, seal_counts)` | 「回执 ⟺ 证书」配对检查：返回链上**没有任何 seal 覆盖到**的回执序号（孤儿回执检测，`trace.py`） |
 | `handler.errors` | 本 handler 见到的异常清单（含 `EarlyStop`）—— 只看 `certificates` 分不出「正常结束」与「带错结束」 |
 | `handler.certificates` / `handler.stream_certificates` | 权威证书 / 流式（含早停）证书 |
 | `handler.stream_chain(run_id)` | 该 run 的流式证书链的载荷摘要列表 |
@@ -573,22 +576,24 @@ FAIL**（第三方重算不了链尾），不是「默认通过」。这就是�
 |---|---|---|---|---|---|
 | 1 | 「模型完成」→ `monitor.on_generate` | 生成路径没有证书 | `on_llm_end`（`langchain_adapter.py:388`） | `guard_node(kind="generate")`、`LangGraphEventCertifier`（`langgraph_adapter.py:71,148`） | `judge_result`（结果侧，`mcp_adapter.py:158`） |
 | 2 | 「工具结束」→ `gateway.issue` **再** `tool_monitor.on_tool_call` | 判的是 agent 自述，不是网关回执 | `on_tool_end:463` | `LangGraphGuard.tool_node`（`:143`） | `call_tool`（`:179`，异步；同步版 `call_tool_sync:224`） |
-| 3 | **一把网关**，跨路径共用（显式 `gateway=`） | 两条链各指一条 `trace_root`，会话被劈成两条 | `PoPCallbackHandler(gateway=…)`（`:221`） | `LangGraphGuard(gateway=…)`（`:130`） | `MCPGuard(gateway=…)`（`:72`） |
+| 3 | **一把网关**，跨路径共用（显式 `gateway=`） | 两条链各指一条 `trace_root`，会话被劈成两条 | `PoPCallbackHandler(gateway=…)`（`:214`） | `LangGraphGuard(gateway=…)`（`:130`） | `MCPGuard(gateway=…)`（`:72`） |
 | 4 | `seal` 取**签发那一刻**的，不缓存 | 缓存的 seal = 悄悄关掉截尾检测 | 每个签名点现取 `gateway.seal()` | 同左 | `judge_result` |
 | 5 | `vkey_hash` + `proof_mode` **成对**给 | 第三方无从判断「隐藏了什么」 | 构造参数（`:216`） | `guard_node(..., proof_mode=)` | 构造参数（`:72`） |
-| 6 | **宽松提取**事件形状 | 换个框架版本就静默漏事件 | `_extract_text:53`、`_parse_args:86` | `_content_text:32` | `extract_result_text`（`trace.py:315`） |
-| 7 | 缺依赖时**导入回退 + 离线 fake** | 单测必须装框架，CI 跑不动 | `HAVE_LANGCHAIN`（`:30`） | `require_langgraph()`（`:48`） | 本就不 import mcp |
+| 6 | **宽松提取**事件形状 | 换个框架版本就静默漏事件 | `_extract_text:52`、`_parse_args:85` | `_content_text:32` | `extract_result_text`（`trace.py:327`） |
+| 7 | 缺依赖时**导入回退 + 离线 fake** | 单测必须装框架，CI 跑不动 | `HAVE_LANGCHAIN`（`:29`） | `require_langgraph()`（`:48`） | 本就不 import mcp |
 | 8 | 有 token 级事件就接流式 | 失去早停与增量证书 | `on_llm_new_token:307` | 经同一 handler | — |
-| 9 | 失败也**签证书**，别只记日志 | 「失败」不成为产物上的事实 | `on_llm_error:405`、`on_tool_error:436` | 经同一 handler | — |
+| 9 | 失败也**签证书**，别只记日志；**回执必须有人认领** | 「失败」不成为产物上的事实；判定失败留下**孤儿回执** | `on_llm_error:405`、`on_tool_error:436`；工具判定失败由 `AgentMonitor.on_tool_call` 兜成 fail-closed 证书（`agent.py:176`） | 经同一 handler（同一处兜底） | — |
 
 第 3、4 两条是 `demo_e2e.py` 早期真踩过的（§6 第 4b 条），**不要以为新框架能绕开**。
 
 > 第 2 条还有一个**静默**的踩法（2026-09-18 实测撞到，见 [`../dev-plan.md`](../dev-plan.md)
 > §5.1.2 第 7 条）：**拿生成路径的 monitor 去判工具事件**。内容规则要 transcript 的
-> response，`on_tool_call` 因此抛 `PolicyError`；而**回调异常会被回调系统吞掉**
-> （LangChain 只留一条 `Error in …on_tool_end callback` 的 warning）—— 这次工具调用
-> 于是**既没有证书、也没有任何调用方可见的报错**，在产物上与「这次调用是干净的」
-> 完全同形。**两条路径要用两个 monitor**（`tool_monitor=`），这不是洁癖。
+> response，`on_tool_call` 因此判不出来；而**回调异常会被回调系统吞掉**
+> （LangChain 只留一条 `Error in …on_tool_end callback` 的 warning）—— 修成 fail-closed
+> 之前，这次工具调用**既没有证书、也没有任何调用方可见的报错**，在产物上与「这次调用
+> 是干净的」完全同形。**两条路径要用两个 monitor**（`tool_monitor=`），这不是洁癖：
+> 接错了虽然现在会留下证据（第 8 条那处兜底会给每次工具调用出一张 `passed=false` 的
+> fail-closed 证书），但**每一次工具调用都被判成不通过**，产物等于全废。
 
 ### 8.3 接一个新框架的步骤
 
@@ -614,9 +619,13 @@ FAIL**（第三方重算不了链尾），不是「默认通过」。这就是�
 - **回调里的异常会不会被吞**（比上一条更靠前，也更隐蔽）：上面那道门是「你自己
   抛的异常能不能出去」，这一条是「**别人抛的异常你能不能看见**」。缺省吞掉意味着
   回调层的任何 bug 在调用方看来都是「什么都没发生」—— 产物上没有证书，也没有
-  报错。所以新框架第一件事是**验一次失败的回调会不会静默**：故意让判定抛一个，
-  看零证书是否伴随零报错。`tests/test_frameworks.py` 的
-  `test_real_tool_with_content_monitor_fails_silently` 把这条框架行为钉住了。
+  报错。新框架第一件事是**验一次失败的回调会不会静默**：故意让判定抛一个，看零证书
+  是否伴随零报错。`tests/test_frameworks.py` 的
+  `test_real_tool_with_content_monitor_is_fail_closed` 把「真框架下判不了时会出证、
+  而不是静默」钉住了。
+  **推论（这条最容易做错）**：既然异常可能出不去，**fail-closed 就不能靠抛异常实现**
+  —— 它必须在**回调内部**完成（把失败变成产物上一条签过名的事实）。所以适配器的工具
+  路径要把 `issue() → on_tool_call()` 整段包住，别把「异常会被抛出去」当成兜底。
 - **回调的执行时机与顺序**：`on_tool_start`/`on_tool_end` 是否配对、
   `run_id` 在哪个字段、错误回调会不会被触发，各家不同
   （`langchain_adapter` 用 `_tool_starts[run_id]` 暂存就是为这个）。
