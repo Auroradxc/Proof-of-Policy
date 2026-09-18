@@ -225,14 +225,20 @@ zk-policy/
 │                         #   adapters（框架适配，唯一允许带可选依赖的地方）/ runtime（常驻服务）
 ├── policy_packs/         # 示例策略包（JSON）
 ├── semantic/             # P2-9：语义规则的模型与特征（确定性 ONNX 导出 + ezkl 产物）
-├── circuits/             # SP1 程序与驱动（Rust，v6 workspace：types/program/infer-program/session-program/script/verifier）
-├── contracts/            # Anchor.sol + 入库 artifact（Anchor.json，部署无需 solc）
+├── circuits/             # SP1 程序与驱动（Rust，v6 workspace：types/program/infer-program/
+│                         #   session-program/script/verifier）；本目录另有 README.md
+├── contracts/            # Anchor.sol + 入库 artifact（Anchor.json，部署无需 solc）；另有 README.md
 ├── scripts/              # 端到端脚本，按用途分 5 组：demo / prove / verify / anchor / ops
 ├── tests/                # 单测与集成测试（unittest，stdlib + 可选框架）
-├── bench/                # 评测（周期数 / 证明成本 / 验证成本；结果在 bench/results/）
+├── bench/                # 评测（周期数 / 证明成本 / 验证成本；结果在 bench/results/）；另有 README.md
 ├── paper/                # 论文（proof-of-policy.tex 是权威源，.md 是镜像）
 ├── docs/                 # 架构 / DSL / 复现指南 / 安全模型 / 分板块模块文档 modules/
-└── roadmap.md            # 8 周开发映射
+├── .github/workflows/    # CI：纯 Python 闸门 + Rust 闸门（含跨语言对拍），见 ci.yml
+├── .pop-keys/            # 出证方 Ed25519 私钥（**gitignored，不入库**）
+├── requirements-ezkl.txt     # 可选依赖分层：ezkl 栈（见 docs/development.md §2.1）
+├── requirements-frameworks.txt  # 可选依赖分层：langchain / langgraph / mcp
+├── roadmap.md            # 8 周开发映射（**历史**；当前计划见 docs/dev-plan.md）
+└── 方向二_README.md       # 8 周学习阶段的对外说明
 ```
 
 **文档总入口**：[`docs/README.md`](docs/README.md) —— 全部文档的索引、各自的状态标注
@@ -242,7 +248,8 @@ zk-policy/
 
 详见 **《方向2_Proof-of-Policy_8周计划_v2_零基础版.md》** —— 该文件在**仓库外的上层工作区**
 `Proof-of-Policy/02_项目计划/`（不随本仓库分发），本仓库内的历史映射表见
-[`roadmap.md`](roadmap.md)，当前计划见 [`docs/plan-p0p1p2.md`](docs/plan-p0p1p2.md)。
+[`roadmap.md`](roadmap.md)，**当前计划见 [`docs/dev-plan.md`](docs/dev-plan.md)**
+（`docs/plan-p0p1p2.md` 是 P0–P2 的历史记录，已冻结）。
 
 本仓库按周打标（落点按**实际交付**订正，2026-09-12）：
 

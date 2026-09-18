@@ -1,7 +1,7 @@
 # 01 · 策略 DSL 与编译
 
 > 覆盖 `policydsl/core/model.py`、`compile.py`、`evaluate.py`、`serialize.py`、`normalize.py`、
-> `nfa.py`、`pii.py`、`__init__.py`、`__main__.py`。
+> `nfa.py`、`pii.py`、`model_fp.py`、`__init__.py`、`__main__.py`。
 > 这一板块回答：**策略长什么样 → 编译成什么 → 谁怎么判定它**。
 
 ---

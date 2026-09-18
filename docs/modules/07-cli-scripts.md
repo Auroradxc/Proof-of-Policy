@@ -1,6 +1,6 @@
 # 07 · CLI 与脚本
 
-> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（16 个 Python 入口 + 7 个 shell = 23 个，
+> 覆盖 `policydsl/__main__.py` 与 `scripts/` 下的全部脚本（18 个 Python 入口 + 7 个 shell = 25 个，
 > 外加引导用的 `_bootstrap.py`）。
 > 这一板块回答：**每个脚本负责哪一段，什么时候该用哪个。**
 > 完整的复现顺序见 [`../reproduce.md`](../reproduce.md)；这里讲的是**脚本内部在做什么**。
@@ -23,6 +23,8 @@
 | `verify_cert.py` | **第三方**独立验证单张证书 | `pop-script` / `pop-verify` | 验证已有证明 | ~20 s |
 | `demo_e2e.py` | 一键真实会话（LangChain + MCP + zk + **公私对比** + 锚定） | `pop-script` | 可 `--no-prove` / `--no-contrast` / `--model`（真模型） | host 秒级；出证 **~2.5 分钟**（1 份证明 —— 对比那 2 张默认只做宿主校验） |
 | `verify_session.py` | **第三方**独立验证整个会话包 | 同上 | 验证已有证明 | 秒级 |
+| `acceptance.py` | **等效替代的机械判据**：七个可观察面的快照采集与逐路径比对 | 否 | 否 | 秒级 |
+| `loader_parity.py` | **策略加载器对拍**（R7 之前的活口）：同一批策略包上的哈希集合与签名集合 | 否 | 否 | 秒级 |
 | `ezkl_prove.py` | 语义规则（`semantic_bound`）的 ezkl 出证/验证/自检 | 否（需 ezkl+torch） | 否（ezkl 自己的证明） | setup ~48 s / prove ~77 s |
 | `compose_proof.py` | **组合证明**（P1-6）：策略半 + 推理半各出一份 → 合成 → 联合验证 | `pop-script` | 是（可 `--no-prove` / `--reuse-proofs`） | 两次出证，各 ~2 分钟 |
 | `prove_session.py` | **会话聚合证明**（P2-10）：一个 run 的流式证书 → 一次证明 + 独立验证 | `pop-script` | 是（可 `--no-prove`） | 出证 ~2.5 分钟（3 张证书） |
@@ -40,13 +42,13 @@
 > 顺序调用下表里的驱动，并如实记下「哪条跑了 / 哪条为什么跳过 / 耗时与峰值内存」。
 > 完整说明见 §3。
 
-**这 23 个文件在盘上分在 5 个组里**（表里写的是脚本名，实际路径要加组前缀）：
+**这 25 个文件在盘上分在 5 个组里**（表里写的是脚本名，实际路径要加组前缀）：
 
 | 组 | 脚本 |
 |---|---|
 | `scripts/demo/` | `demo_all.sh` `demo_e2e.py` `private_demo.py` `make_shots.py` |
 | `scripts/prove/` | `cross_validate.py` `ezkl_prove.py` `compose_proof.py` `prove_session.py` `prove_multiparty.py` `prove_policy.py` `regression_prove.py` `issue_cert.py` `gen_key.py` |
-| `scripts/verify/` | `verify_cert.py` `verify_session.py` |
+| `scripts/verify/` | `verify_cert.py` `verify_session.py` `acceptance.py` `loader_parity.py` |
 | `scripts/anchor/` | `anchor_e2e.sh` `deploy_anchor.py` |
 | `scripts/ops/` | `proof_service.py` `make_audit_proof.sh` `install_ezkl.sh` `install_frameworks.sh` `retry_install_frameworks.sh` `retry_install_foundry.sh` |
 
@@ -540,6 +542,40 @@ python3 scripts/verify/verify_session.py --session S [--keyring 公钥] \
   > 却没有任何东西能证伪的字段。现在它会被当场判 FAIL
   > （`tests/test_policy_binding.py::TestVkeyLabelHonestyRejected` 用 `"demo"`
   > 本身作为反例锁住）。
+
+### 2.11b `acceptance.py` / `loader_parity.py` —— 重构的机械判据
+
+这两个**不是**给使用者跑的，是给**改代码的人**跑的：它们把「我这次改动的行为
+没变」从一句人读 diff 得出的判断，变成一条命令。§5.7 的 P0–P3 每一阶段的大验收
+都用的是 `acceptance.py --verify`（见 [`../dev-plan.md`](../dev-plan.md) §5.7.22）。
+
+```bash
+python3 scripts/verify/acceptance.py --snapshot tests/acceptance_baseline.json   # 采集
+python3 scripts/verify/acceptance.py --verify   tests/acceptance_baseline.json   # 现算并比对
+python3 scripts/verify/acceptance.py --verify   tests/acceptance_baseline.json --faces 1,5   # 只比部分面
+
+python3 scripts/verify/loader_parity.py --snapshot tests/loader_parity_baseline.json
+python3 scripts/verify/loader_parity.py --verify   tests/loader_parity_baseline.json
+python3 scripts/verify/loader_parity.py --verify   tests/loader_parity_baseline.json --against from_dict
+```
+
+- `acceptance.py` 的**七面**：① 7 个策略包的完整 `ConstraintSpec` 与 `sha256`；
+  ② 7 包 × 20 条语料的判定结论（**两条路径同测**：`evaluate.check` 与
+  `commit.canonical_violations`）；③ 模型层健壮性（12 种畸形包 → 在哪一段抛什么
+  异常、文案逐字）；④ CLI 层健壮性（子进程退出码与 stderr，临时路径归一成 `<TMP>`）；
+  ⑤ 流式证书序列 `(chars, passed)`；⑥ 7 包的 `compile` / `check` 正常路径；
+  ⑦ `policydsl.__all__` 逐符号可解析。
+- **有意变更要显式改快照。** 快照不替你判断「该不该变」，它只保证**变了就一定有人
+  看见** —— 改策略包会让 `policy_hash` 变、用例当场红，人工确认后重新 `--snapshot`
+  并把 diff 进提交。这条分界正是「等效性被证明」与「变更被承认」的区别。
+- `loader_parity.py` 比的是**集合**而非逐份记录（**去重后的哈希集合**与**签名集合**：
+  `description` / `semantic` / 规则名序列）。取集合是为了让「11 份旧加载器」与
+  「1 份统一加载器」可比 —— 两边归约成同一个问题：*这批包上出现过几种答案？*
+- 它的**顺序不可颠倒**：必须先采快照、再删旧加载器、最后用快照核。R7 要做的
+  就是删掉那十几份，删完再想问「它们当初是不是等价」已经比不了了。
+- 它保证的是「对这批**随包发行**的策略，新旧加载器给出同一个 `policy_hash` 与同一组
+  非哈希字段」，**不**保证「对任意 JSON 都等价」—— 把不等价处**点名**才是用处之一
+  （输出里的 `differences` 一节）。
 
 ### 2.12 `deploy_anchor.py` / `make_shots.py`
 

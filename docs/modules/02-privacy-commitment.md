@@ -1,6 +1,6 @@
 # 02 · 隐私与承诺（私有模式）
 
-> 覆盖 `policydsl/privacy/commit.py`，依赖 `nfa.py` 的区间计算。
+> 覆盖 `policydsl/privacy/commit.py`、`challenge.py`，依赖 `nfa.py` 的区间计算。
 > 这一板块回答：**如何在不说出响应内容的前提下，证明「我判定过了，结论是这个」，
 > 并且「我遮蔽掉的确实是我声称命中的内容」。**
 

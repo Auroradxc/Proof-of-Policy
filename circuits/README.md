@@ -89,5 +89,6 @@ python3 bench/bench_cycles.py
    `scripts/prove/issue_cert.py` / `verify_cert.py` 端到端（第三方验证全 PASS，含 SP1 证明密码学验证）。
 
 > **Phase 5 之后的工作不在本文件**：P0 绑定收紧、P1 轨迹/组合/链上/形式化、P2 语义/会话/多证明者/规模评测
-> 见 [`docs/plan-p0p1p2.md`](../docs/plan-p0p1p2.md)（当前权威计划）。上面几条的向量数（5/5、7/7）
+> 见 [`docs/dev-plan.md`](../docs/dev-plan.md)（**当前唯一维护中的计划**；`plan-p0p1p2.md`
+> 是 P0–P2 的历史记录，已冻结）。上面几条的向量数（5/5、7/7）
 > 是**当时的集**；当前是 **19 向量，host 19/19 · prove 19/19**（`docs/reproduce.md` §验收判据）。

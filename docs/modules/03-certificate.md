@@ -1,6 +1,6 @@
 # 03 · 合规证书
 
-> 覆盖 `policydsl/evidence/cert.py`、`policydsl/adapters/agent.py`。
+> 覆盖 `policydsl/evidence/cert.py`、`keys.py`、`trace.py`，以及 `policydsl/adapters/agent.py`。
 > 这一板块回答：**一次判定结果怎么变成一张第三方可独立核验的证书。**
 
 ---

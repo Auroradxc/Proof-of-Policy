@@ -44,7 +44,8 @@ zk-policy/
 │   │   ├── serialize.py          #     ConstraintSpec → serde 外部标签枚举 JSON
 │   │   ├── nfa.py                #     正则子集 → 可序列化 NFA + Pike VM（唯一的正则编译器）
 │   │   ├── pii.py                #     规范 PII 模式 + IBAN MOD-97 校验位
-│   │   └── normalize.py          #     同形异义折叠（P2-9b）：关键词规则的规范化层
+│   │   ├── normalize.py          #     同形异义折叠（P2-9b）：关键词规则的规范化层
+│   │   └── model_fp.py           #     模型指纹契约：onnx 哈希 / 路径口径 / 图字符上限（R14 下沉）
 │   ├── privacy/                  #   私有模式原语
 │   │   ├── commit.py             #     承诺 / 选择性披露 / 可证明脱敏 / 证据开示 / 挑战-响应绑定
 │   │   └── challenge.py          #     一次性挑战 nonce 的生成、编解码与重放记录
@@ -150,13 +151,13 @@ zk-policy/
 
 | # | 文档 | 覆盖文件 | 一句话 |
 |---|---|---|---|
-| 01 | [策略 DSL 与编译](01-policy-dsl.md) | `core/`：`model.py` `compile.py` `evaluate.py` `serialize.py` `pii.py` `nfa.py` `normalize.py`；`__init__.py` `__main__.py` | 把 JSON 策略变成可跨层消费的约束契约，并给出参考判定 |
+| 01 | [策略 DSL 与编译](01-policy-dsl.md) | `core/`：`model.py` `compile.py` `evaluate.py` `serialize.py` `pii.py` `nfa.py` `normalize.py` `model_fp.py`；`__init__.py` `__main__.py` | 把 JSON 策略变成可跨层消费的约束契约，并给出参考判定 |
 | 02 | [隐私与承诺](02-privacy-commitment.md) | `privacy/`：`commit.py` `challenge.py`（+ `core/nfa.py` 的区间计算） | 私有模式：承诺、选择性披露、可证明脱敏、证据开示、挑战-响应绑定 |
-| 03 | [合规证书](03-certificate.md) | `evidence/cert.py`；`adapters/agent.py` | 把一次判定包成可签名、可重算哈希的 DSSE 信封 |
+| 03 | [合规证书](03-certificate.md) | `evidence/cert.py` `evidence/keys.py` `evidence/trace.py`；`adapters/agent.py` | 把一次判定包成可签名、可重算哈希的 DSSE 信封 |
 | 04 | [锚定与审计](04-anchoring-audit.md) | `evidence/`：`anchor.py` `verifier.py`；`contracts/` | 防篡改记录：本地哈希链账本 + 链上存在性证明 |
 | 05 | [ZK 电路层](05-zk-circuits.md) | `circuits/`：`types` `program` `infer-program` `session-program` `script` `verifier` | zkVM 内重放判定并承诺结果；证明的生成与验证；**三个 guest 的键分离**（P1-6 / P2-10）（**注意四种证明模式的安全性差异**，见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md)） |
 | 06 | [框架集成](06-frameworks.md) | `adapters/`：`langchain_adapter.py` `langgraph_adapter.py` `mcp_adapter.py` `generic_adapter.py` `llm.py` | 把两个钩子接到真实 agent 框架上（含流式、真早停、飞行前拦截与工具清单发现）；**§8 接入指南**：框架无关的参考适配器 + 契约清单 + 接新框架的步骤与红线 |
-| 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/`（5 组：`demo/` `prove/` `verify/` `anchor/` `ops/`，外加引导 `_bootstrap.py`；含散落在其中的库用法：`proofs/multiparty.py` §2.9） | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
+| 07 | [CLI 与脚本](07-cli-scripts.md) | `scripts/`（5 组：`demo/` `prove/` `verify/` `anchor/` `ops/`，外加引导 `_bootstrap.py`）；`runtime/`（`service.py` `auth.py`，§2.14）；`paths.py`；含散落在其中的库用法：`proofs/multiparty.py` §2.9 | 出证、交叉验证、私密 demo、端到端会话、一键锚定 |
 | 08 | [测试与评测](08-tests-bench.md) | `tests/*` `bench/*` | 782 个测试覆盖什么、评测数字怎么来的 |
 
 三条**不在本目录**但同样属于实现层的线（各自有独立文档，故未拆成板块）：

@@ -1,8 +1,9 @@
 # 8 周开发映射
 
 > ⚠️ **本文件是「8 周学习计划」阶段的历史映射表，不是当前开发计划。**
-> 当前计划看 [`docs/plan-p0p1p2.md`](docs/plan-p0p1p2.md)（P0/P1/P2 补足计划 + T1–T4 待办）
-> 与 [`docs/dev-plan.md`](docs/dev-plan.md)（按代码板块的 checklist）。
+> 当前计划看 [`docs/dev-plan.md`](docs/dev-plan.md)（**唯一维护中的计划**）。
+> [`docs/plan-p0p1p2.md`](docs/plan-p0p1p2.md) 是 P0–P2 的**历史工作记录**（已冻结）——
+> 其中的 T1–T4 待办至今仍未销案，但**现状一律以 `dev-plan.md` 为准**。
 > 三套编号的对应关系见下面 §3。
 >
 > **2026-09-12 订正**：本文件与 [`docs/8week-gantt.md`](docs/8week-gantt.md) 的勾选清单
@@ -24,11 +25,11 @@
 | W4 | 透明模式 MVP | `circuits/program` + `circuits/script` | PoP v0：公开响应→证明→验证 | ✅ |
 | W5 | 私有模式 | `policydsl/privacy/commit.py` + `pop-types::evaluate_private` | 验证者看不到全文 | ✅ |
 | W6 | Agent 集成 | `policydsl/adapters/agent.py` + 三个框架适配器 + `policydsl/evidence/cert.py` + `policydsl/evidence/anchor.py` + `scripts/demo/demo_e2e.py`；链上见 `contracts/Anchor.sol` | 真实会话产出证书 | ✅（**原计划的 `demo/` 目录未使用** —— 功能落在上述模块，该空目录已删除） |
-| W7 | 评测 + 安全模型 | `bench/`（6 个脚本）+ `docs/security-model.md` v2（L1–L9）+ `docs/quadrant.md` | 成本曲线 + 四象限表 | ✅ |
+| W7 | 评测 + 安全模型 | `bench/`（**当时 6 个脚本，现 8 个**）+ `docs/security-model.md` v2（L1–L9）+ `docs/quadrant.md` | 成本曲线 + 四象限表 | ✅ |
 | W8 | 论文 + 发布 | `paper/proof-of-policy.tex`（权威源）+ `docs/reproduce.md` + `scripts/demo/make_shots.py` → `docs/demo/` 截图 | 导师按 README 复现通过 | ✅（**demo 视频未产出**，改由一键 demo + 截图替代） |
 
 > W8 之后的工作（P0 补足、P1 轨迹/组合/链上/形式化、P2 语义/会话/多证明者/规模评测）
-> 不在 8 周计划内，见 `docs/plan-p0p1p2.md`。
+> 不在 8 周计划内：历史记录见 `docs/plan-p0p1p2.md`，**当前计划见 `docs/dev-plan.md`**。
 
 ## 2. 完成度标记（Checklist）
 
@@ -59,5 +60,6 @@
 | —— | **P7-c** 链上锚定 RPC 后端 | **P1-7** 的代码侧基础；见 `docs/plan-p7.md` §C |
 | —— | —— | **P0-1…P0-4 / P1-5…P1-8 / P2-9…P2-12**，待办 **T1–T4** |
 
-> 读法：**`plan-p0p1p2.md` 是当前的权威计划**；`dev-plan.md` 是按代码板块的 checklist；
+> 读法：**`dev-plan.md` 是当前唯一维护中的计划**；`plan-p0p1p2.md` / `plan-p7.md` 是
+> P0–P2 / P7 的**历史记录**（已冻结，保留原样作证据）；
 > 本文件与 `8week-gantt.md` 只保留 8 周学习阶段的历史对应，不再更新。
