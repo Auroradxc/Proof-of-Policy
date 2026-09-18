@@ -2816,3 +2816,81 @@ R13 四条删除各自的门禁全绿，R14 四条判据全过且等效性由快
   当成已修**。下一轮谁动 `Policy.from_dict` 附近，请把这个案底一并带上。
 - **R14 之后 `core` 已无倒置**，`tests/test_layering.py` 会挡住回退。但那条闸门
   **只覆盖 `core → proofs`** 这一个方向、这两个包；别把它当成完整的层次检查器。
+
+---
+
+### 5.8 结构/架构文档校对 + demo 子系统重整（2026-09-18 立）
+
+#### 5.8.1 起因与两条边界
+
+用户 2026-09-18 的要求：**调整梳理项目结构和架构设计组织，重新编写 demo 对应文档
+和相关功能模块，开发使用文档。**
+
+§5.6（2026-09-17）已经做过一轮同类工作（拆包 / 分组 / 索引 / demo 文档 / 手册，
+七步七个提交，见 §5.6.11）。**但之后 §5.7 的 R1–R18 重构又动过代码** ——
+所以本轮的性质是**校对式重写**。动手前先定死两条边界：
+
+1. **目录物理布局不动。** 它被 `test_scripts_layout` / `test_doc_links` /
+   `test_layering` / `test_frontdoor` 共 **27 条断言**钉住（2026-09-18 实测全绿），
+   且刚在 §5.6 理过一遍。本轮**只把「文档说的」与「代码是的」重新对上**，
+   不改结构本身。
+2. **demo 子系统连代码一起重整**（用户 2026-09-18 明确选择）。
+   理由是普查发现那里有**真实断点**，不是措辞问题 —— 见下表第 7–9 条。
+
+#### 5.8.2 现状普查（每条都能从仓库直接核对）
+
+| # | 漂移 | 现场 | 性质 |
+|---|---|---|---|
+| 1 | `07` 的脚本计数是旧的 | 头部与 §1 写「**16** 个 Python 入口 + 7 个 shell = **23**」；磁盘实为 **18 + 7 = 25**。差额恰是 verify 组漏列的两个 | 计数 |
+| 2 | verify 组清单漏两个脚本 | `07-cli-scripts.md` §1 的组表只写 `verify_cert.py` `verify_session.py`，`scripts/verify/` 下实有 **4 个**：另有 `acceptance.py`、`loader_parity.py`（`grep` 在该文件里 **0 命中**）。注：只此一处漏；根 `README.md` 并无逐脚本清单 | 漏项 |
+| 3 | `core/model_fp.py` 在文档里失踪 | R14（`e25720e`）从 `proofs/semantic.py` 下沉来的模块。`01-policy-dsl.md` 头部覆盖行、`modules/README.md` 的布局树**与**板块表 —— **三处都没有它**（`grep -c model_fp` 在两个文件里均为 **0**）。只有 `08-tests-bench.md:53,57` 在讲 R5/R14 两条测试时提过 | 漏项 |
+| 4 | 四个模块没有板块认领 | `evidence/trace.py`（P1-5 处处引用）、`evidence/keys.py`、`runtime/{service,auth}.py`、`paths.py` —— **正文有提，覆盖列表里没有**：03 头部只写 `cert.py`+`agent.py`、04 头部只写 `anchor.py`+`verifier.py`；02 头部只写 `commit.py`，漏了 `challenge.py` | 归属 |
+| 5 | 5 处把**已冻结的历史文档**说成「当前计划」 | `README.md:245`、`roadmap.md:4`、`roadmap.md:62`、`docs/8week-gantt.md:4`、`circuits/README.md:92` 都指向 `plan-p0p1p2.md`；而 `docs/README.md` §2.2 已把它列为**已冻结历史**、写明唯一维护中的计划是 `dev-plan.md`。**文档与文档自相矛盾** | 自相矛盾 |
+| 6 | `bench/README.md` 说「**六个**脚本」，实际 **8 个** | 表里缺 `bench_streaming.py` 与 `bench_prover_knobs.py`（后者是 R11 新增）—— 两份在该文件里均 **0 命中**。`08-tests-bench.md` 两份都提了 | 漏项 |
+| 7 | `demo_all.sh` 的 `_solo` 是**死目录** | `demo_all.sh:94-95` 建 `$OUT_DIR/_solo`，注释写「供不走 out-dir 参数的驱动（private_demo）用」；但 `private_demo.py:171` 把产物路径**硬编码**成 `REPO/scripts/examples/out/private`，**根本不读这个变量**。于是每条支路都落在统一产物目录里，只有私有模式那条约 13 个产物散在源码目录下 | 名不副实 |
+| 8 | 报告/截图那条腿**没接进编排** | `demo_all.sh` 全程**不调用** `make_shots.py`；而 `make_shots.py:30` 的默认输入是 `scripts/examples/out/e2e/session.json`，与 `demo_all.sh` 产出的 `…/out/all/policy/session.json` **不是同一份**。跑完编排想拿报告，得自己拼 `--session` 参数 | 断链 |
+| 9 | `docs/demo/` 下三份产物过期 | `session_report.svg`、`session_summary.png`、`verify_result.png` 的 mtime 都是 **09-13 02:36**，早于 `make_shots.py` 当前版本（09-17 08:08）**4 天**；只有 `.html` 是新的。且 `docs/demo/README.md` **通篇不提** `make_shots.py`（0 命中）—— 四份产物在文档里没有出处 | 过期 |
+| 10 | 根 README 目录结构树漏项 | 漏 `.github/workflows/ci.yml`（全仓 README **无「CI」字样**）、`requirements-ezkl.txt` / `requirements-frameworks.txt`、`方向二_README.md`、`.pop-keys/`，以及 `contracts/` `circuits/` `bench/` 三个子目录 README | 漏项 |
+| 11 | `docs/demo/README.md` 的环境前提过窄 | §2 写「fast 只要 Python 3 与标准库」，但 `policy` 支路驱动 `demo_e2e.py` 要 langchain / langgraph / mcp 才跑得起来（那正是它演示的东西） | 口径 |
+
+**另一项单独登记，不在本轮改动内**：`policydsl/.pop-keys/signing.key` 是一份
+**孤儿私钥** —— 与根 `.pop-keys/signing.key` 内容不同（`a656b8…` vs `dca2d0…`），
+而 `policydsl/evidence/keys.py:48` 的缺省路径 `DEFAULT_KEY_PATH` 指向**根**那份，
+所以 `policydsl/` 里这份**没有任何代码会读**（全仓 `grep` 只有这一处 `DEFAULT_KEY_PATH`
+定义，无相对路径写法）。来源已查明：mtime **09-17 07:56**，而拆包提交 `22642bc`
+是 **09-17 08:06** —— 正是 `paths.py` docstring 记的那次 `parent.parent` 事故
+（拆包期间 `policydsl/evidence/keys.py` 的 `parent.parent` 一度等于 `policydsl/`）。
+**该事故已修**（`REPO` 现由 `find_repo()` 按标记搜索），这份文件是**残留**。
+两份都在 `.gitignore` 内、不入库。**本轮只登记、不删除** —— 它不是本轮创建的东西，
+处置权交回用户。
+
+#### 5.8.3 分步与验收闸门
+
+每步**独立提交**，闸门不过就迭代到过（长期规则）。文档类步骤的闸门是
+`test_doc_links`（相对链接悬空 0）+ 全量套件；代码类另加真跑。
+
+| 步 | 做什么 | 闸门 | 状态 |
+|---|---|---|---|
+| 0 | 方案（本提交） | — | ✅ 2026-09-18 |
+| 1 | **结构/架构文档校对**（第 1–5、10 条）：07 计数与 verify 组、`model_fp` 补三处、trace/keys/runtime/paths 认领、02 头部补 `challenge.py`、5 处计划错指、根 README 目录树 | 悬空链接 0 + **782 passed / 15 skipped** | |
+| 2 | **评测文档**（第 6 条）：`bench/README.md` 六→八个、补两行；`08` 校对其 bench 节 | 同上 | |
+| 3 | **demo 代码重整**（第 7–9 条）：`private_demo.py` 加 `--out-dir`（缺省值**保持原样**，只是可覆盖）并接进 `demo_all.sh`；删死 `_solo`；`demo_all.sh --shots` 把报告腿接上 | `test_demo_e2e` + `demo_all.sh`（fast）+ `--shots` 真跑出四份产物 | |
+| 4 | **拆 `demo_e2e.py` 的 `main`**（258 行）：纯搬位置、行为不变，口径同 R8 | `test_demo_e2e` + fast demo **输出逐行不变** | |
+| 5 | **demo 文档重写**（第 9、11 条）：补 `make_shots` 一环、修环境前提、统一计时口径、更新产物树；**重渲**三份过期产物 | 8 条支路与 `LANES` 机械比对一致 + 四份产物 mtime 全部更新 | |
+| 6 | **开发手册校对**：`docs/development.md` 补两条 verify 脚本与 `--shots` 用法，计数对齐 | 手册里每条新命令**实敲一遍** | |
+| 7 | 收尾：测试计数「四处同步」、交叉链接普查、推送 | 全量 + 工作树干净 + origin 同步 | |
+
+**本轮的重闸门**（步 4 之后一次跑完，不跑两遍）：`bash scripts/demo/demo_all.sh --prove`
+真跑一轮 —— 8 条支路全 PASS、**SKIP 集合 = ∅**。≈21 min、峰值 ~11 GB、**必须串行**
+（§5.7.22 的两条实测教训：长任务 `setsid` 脱离；盯它的手段也要不吃内存）。
+
+#### 5.8.4 边界（本轮**不做**）
+
+- **不动 `policydsl/` 与 `scripts/` 的目录布局** —— 那要另开一轮，且会碰四条结构测试。
+- **不动论文** —— 本机无 TeX 工具链，改了无法本地验证（§5.6.11 已如实登记）。
+- **不重跑 bench 数字** —— R11 的 `bench/results/ablation_live.*` 是未跟踪产物，
+  按 §5.7.16 的约定一直不动、也不入库；本轮只把它在文档里**登记清楚**。
+- **不删** `policydsl/.pop-keys/`（见 §5.8.2 末段）。
+- **不接 `make_shots` 进第 9 条支路** —— 它是「收尾一步」而不是一条独立支路，
+  加进去会让「8 条支路」这个已被测试与文档钉住的口径变成 9（改动面远大于收益）。
+  做法是给 `demo_all.sh` 加 `--shots` **开关**，缺省不开。
