@@ -442,6 +442,36 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
    ④ 配对检查能**检测出**孤儿回执（造一条做负对照）；⑤ 端到端：接入测试 demo
    三场景仍全绿、`verify_session.py` 仍全 PASS，且**回执条数与工具证书数一一对上**。
 
+9. **`describe()` 报的端点必须是**真的那个：`llm.py` 的 `_ENV_BASE["openai"]` 只认
+   `OPENAI_BASE_URL`，而 `langchain_openai` 认的是 `OPENAI_API_BASE`（它自己的
+   `base_url_env`）—— 用后者配自备端点时，那行摘要**不报端点**，于是读产物的人
+   只能猜这次生成打到了哪里。`describe()` 存在的全部意义就是不用猜。
+
+   **发现路径**：给第 7/8 条做真模型验证时，终端第一行是
+   `llm model: openai:deepseek-v4-pro  (openai:deepseek-v4-pro)` —— 没有
+   `@ https://api.deepseek.com`，而请求确实发到了 DeepSeek。这个缺陷是**用**
+   暴露的，不是读代码读出来的。
+
+   **实测的优先级**（构造真客户端、读它真正会用的 `base_url`，不是读文档）：
+   - 两个都设 ⇒ 用 `OPENAI_API_BASE` 那个；
+   - 只设 `OPENAI_API_BASE` ⇒ 用它；只设 `OPENAI_BASE_URL` ⇒ 用它；
+   - 都不设 ⇒ `https://api.openai.com/v1/`（官方端点）。
+
+   即 `OPENAI_API_BASE` **优先**于 `OPENAI_BASE_URL`。
+
+   **改法**：`_ENV_BASE` 的值改成**按优先级排好的元组**，新增 `effective_base()`
+   取第一个设了的；`describe()` 与 `_require_env()` 的提示都走它。`anthropic` 只有
+   一个名字，元组里就一项 —— 形状统一，不为某家开特例。
+
+   **不做的事（如实记）**：不从构造好的客户端回读 `base_url`。那需要客户端，而
+   `describe(spec)` 只拿得到规格串；为它把 `build_chat_model` 改成返回
+   `(model, 描述)` 会把「构造」与「显示」绑在一起，而两者各有调用方。优先级是
+   实测过的（上表），不是从文档抄的 —— 保住这一条比回读更值。
+
+   **验收**：① 两个都设时 `describe()` 报 `OPENAI_API_BASE` 那个值；② **反例**：
+   只设 `OPENAI_BASE_URL` 时报复它 —— 证明①不是「恒报某一个」；③ 都不设时**不报**
+   端点（缺省走官方；报一个假端点比不报更糟）；④ `ANTHROPIC_BASE_URL` 照旧生效。
+
 #### 5.1.3 验收（#98 落地后的如实版本）
 
 - `demo_e2e.py --model <spec>` 端到端跑通，`verify_session.py` 全 PASS；

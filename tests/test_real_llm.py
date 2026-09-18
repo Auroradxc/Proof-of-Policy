@@ -131,6 +131,51 @@ class TestModelSpec(unittest.TestCase):
             else:
                 os.environ["OPENAI_BASE_URL"] = saved
 
+    # ``openai`` 有**两个**端点变量名：``OPENAI_API_BASE``（langchain_openai 自己
+    # 认）与 ``OPENAI_BASE_URL``（底层 openai SDK 认）。只认一个，用另一个配自备
+    # 端点时那行摘要就会**静默不报端点** —— 而它存在的意义就是让人不必猜这次生成
+    # 打到了哪里。两个都认，且顺序必须是**真实请求的优先级**。
+    def test_describe_reports_the_endpoint_that_actually_wins(self):
+        env = {"OPENAI_API_BASE": "https://api-base.example",
+               "OPENAI_BASE_URL": "https://base-url.example"}
+        # 两个都设 ⇒ 用 OPENAI_API_BASE（这条优先级是构造真客户端实测出来的，
+        # 见 llm._ENV_BASE 的注释；不是从文档抄的）
+        self.assertEqual(llm.effective_base("openai", env), "https://api-base.example")
+        # 反例（非恒真对照）：只设 OPENAI_BASE_URL 时报复它 —— 证明上一条不是
+        # 「恒报某一个名字」
+        self.assertEqual(llm.effective_base("openai", {"OPENAI_BASE_URL": "https://b.example"}),
+                         "https://b.example")
+
+    def test_describe_omits_the_endpoint_when_none_is_set(self):
+        # 都不设 = 走官方端点。这时**不报**端点是对的：报一个不生效的端点比不报更糟
+        self.assertIsNone(llm.effective_base("openai", {}))
+        # describe() 读的是进程环境，所以这里先把两个名字都摘掉再断言 ——
+        # 否则这条用例会随「跑测试的机器恰好设了端点」而红，测的就不是代码了
+        saved = {v: os.environ.pop(v, None) for v in llm._ENV_BASE["openai"]}
+        try:
+            self.assertEqual(llm.describe("openai:x"), "openai:x")
+        finally:
+            for var, value in saved.items():
+                if value is not None:
+                    os.environ[var] = value
+
+    def test_anthropic_base_url_still_works(self):
+        self.assertEqual(llm.effective_base("anthropic", {"ANTHROPIC_BASE_URL": "https://a.example"}),
+                         "https://a.example")
+
+    def test_missing_key_hint_names_both_openai_variables(self):
+        # 提示里两个名字都要给：只说一个，使用者按另一个配好之后仍会看到「没配」
+        saved = os.environ.pop("OPENAI_API_KEY", None)
+        try:
+            with self.assertRaises(llm.ModelSpecError) as ctx:
+                llm.build_chat_model("openai:gpt-4o-mini")
+            msg = str(ctx.exception)
+            self.assertIn("OPENAI_API_BASE", msg)
+            self.assertIn("OPENAI_BASE_URL", msg)
+        finally:
+            if saved is not None:
+                os.environ["OPENAI_API_KEY"] = saved
+
 
 @unittest.skipUnless(_openai_available(), "langchain_openai not installed")
 class TestRealClientHardStop(unittest.TestCase):
