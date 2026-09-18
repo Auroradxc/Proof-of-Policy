@@ -167,7 +167,6 @@ td code{font-size:12.5px}
 .fg-l--acc{fill:var(--acc-ink)}
 .fg-ar{stroke:var(--muted); stroke-width:1.5; fill:none}
 .fg-ar--acc{stroke:var(--acc); stroke-dasharray:5 4}
-#fgA path{fill:var(--muted)}
 #fgB path{fill:var(--acc)}
 
 /* ---------- 如实标注 ---------- */
@@ -381,12 +380,15 @@ html:not([data-mode="present"]) .hint{display:none}
     <div class="eyebrow">系统框架</div>
     <h2>六层结构：出证侧五层 + 验证侧一层</h2>
     <svg class="fg" viewBox="0 0 1180 500" role="img"
-         aria-label="系统框架图：策略层、契约层、运行时层、产物层、证明层构成出证侧，验证层为第三方；契约层同时约束两端，验证层只吃公开产物">
+         aria-label="系统框架图：六层自上而下为一次出证的真实顺序 —— 策略层、契约层、运行时层、产物层、证明层构成出证侧，验证层为第三方。带内向右的箭头表示同层数据流，带间向下的箭头表示流程推进一步；右侧蓝色虚线表示契约层同时约束验证层。">
       <defs>
-        <marker id="fgA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M0,0 L10,5 L0,10 z"/>
-        </marker>
-        <marker id="fgB" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+        <!-- 带内/带间的箭头是**直接画出来的折线**（开叉的 > 与 V），不用 marker：
+             折线本身就是箭头的形状，再挂 marker-end 会在箭尖上叠出第二个箭头。
+             只有右侧那条虚线耦合线用 marker，且参数取定死的一份：
+             markerUnits="userSpaceOnUse" + refX=10 ⇒ 箭尖**正好落在路径终点**，
+             所以那条线画到哪，箭头就指到哪，不受 stroke-width 影响。 -->
+        <marker id="fgB" viewBox="0 0 10 10" refX="10" refY="5"
+                markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
           <path d="M0,0 L10,5 L0,10 z"/>
         </marker>
       </defs>
@@ -397,16 +399,16 @@ html:not([data-mode="present"]) .hint{display:none}
       <rect class="fg-chip" x="120" y="26" width="318" height="44" rx="9"/>
       <text class="fg-t" x="136" y="46">策略包 JSON</text>
       <text class="fg-s" x="136" y="61">policy_packs/*.json · 8 类规则</text>
-      <path class="fg-ar" d="M446,43 L455,48 L446,53" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M446,43 L455,48 L446,53"/>
       <rect class="fg-chip" x="464" y="26" width="318" height="44" rx="9"/>
       <text class="fg-t" x="480" y="46">编译器</text>
       <text class="fg-s" x="480" y="61">core/compile.py · fail-fast 语法闸门</text>
-      <path class="fg-ar" d="M790,43 L799,48 L790,53" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M790,43 L799,48 L790,53"/>
       <rect class="fg-chip" x="808" y="26" width="318" height="44" rx="9"/>
       <text class="fg-t" x="824" y="46">语义规则旁路</text>
       <text class="fg-s" x="824" y="61">semantic_bound → ezkl 陪伴证明</text>
 
-      <path class="fg-ar" d="M618,83 L627,88 L618,93" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M573,84 L578,92 L583,84"/>
 
       <!-- ---- 契约层（强调） ---- -->
       <rect class="fg-band fg-band--acc" x="14" y="94" width="1128" height="68" rx="12"/>
@@ -414,14 +416,16 @@ html:not([data-mode="present"]) .hint{display:none}
       <rect class="fg-chip" x="120" y="106" width="318" height="44" rx="9"/>
       <text class="fg-t" x="136" y="126">ConstraintSpec</text>
       <text class="fg-s" x="136" y="141">spec_version · policy_id · constraints[]</text>
+      <path class="fg-ar" d="M446.5,123 L455.5,128 L446.5,133"/>
       <rect class="fg-chip" x="464" y="106" width="318" height="44" rx="9"/>
       <text class="fg-t" x="480" y="126">policy_hash</text>
       <text class="fg-s" x="480" y="141">规范化 JSON 的 sha256（description 不计入）</text>
+      <path class="fg-ar" d="M790.5,123 L799.5,128 L790.5,133"/>
       <rect class="fg-chip" x="808" y="106" width="318" height="44" rx="9"/>
       <text class="fg-t" x="824" y="126">三方比对</text>
       <text class="fg-s" x="824" y="141">出证方 · 验证方 · 电路公开值 须同值</text>
 
-      <path class="fg-ar" d="M618,163 L627,168 L618,173" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M573,164 L578,172 L583,164"/>
 
       <!-- ---- 运行时层 ---- -->
       <rect class="fg-band" x="14" y="174" width="1128" height="68" rx="12"/>
@@ -429,20 +433,20 @@ html:not([data-mode="present"]) .hint{display:none}
       <rect class="fg-chip" x="120" y="186" width="232" height="44" rx="9"/>
       <text class="fg-t" x="134" y="206">真实 agent</text>
       <text class="fg-s" x="134" y="221">LangChain/LangGraph/MCP</text>
-      <path class="fg-ar" d="M360,203 L369,208 L360,213" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M360,203 L369,208 L360,213"/>
       <rect class="fg-chip" x="378" y="186" width="232" height="44" rx="9"/>
       <text class="fg-t" x="392" y="206">适配器 ×4</text>
       <text class="fg-s" x="392" y="221">adapters/ 回调插桩</text>
-      <path class="fg-ar" d="M618,203 L627,208 L618,213" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M618,203 L627,208 L618,213"/>
       <rect class="fg-chip" x="636" y="186" width="232" height="44" rx="9"/>
       <text class="fg-t" x="650" y="206">AgentMonitor</text>
       <text class="fg-s" x="650" y="221">判定 → 出证（两个钩子）</text>
-      <path class="fg-ar" d="M876,203 L885,208 L876,213" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M876,203 L885,208 L876,213"/>
       <rect class="fg-chip" x="894" y="186" width="232" height="44" rx="9"/>
       <text class="fg-t" x="908" y="206">ToolGateway</text>
       <text class="fg-s" x="908" y="221">执行后签发回执链</text>
 
-      <path class="fg-ar" d="M618,243 L627,248 L618,253" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M573,244 L578,252 L583,244"/>
 
       <!-- ---- 产物层 ---- -->
       <rect class="fg-band" x="14" y="254" width="1128" height="68" rx="12"/>
@@ -450,20 +454,20 @@ html:not([data-mode="present"]) .hint{display:none}
       <rect class="fg-chip" x="120" y="266" width="232" height="44" rx="9"/>
       <text class="fg-t" x="134" y="286">证书 cert.json</text>
       <text class="fg-s" x="134" y="301">DSSE 信封 + Ed25519</text>
-      <path class="fg-ar" d="M360,283 L369,288 L360,293" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M360,283 L369,288 L360,293"/>
       <rect class="fg-chip" x="378" y="266" width="232" height="44" rx="9"/>
       <text class="fg-t" x="392" y="286">回执链 + ToolSeal</text>
       <text class="fg-s" x="392" y="301">顶层 trace_seal · 拦截尾</text>
-      <path class="fg-ar" d="M618,283 L627,288 L618,293" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M618,283 L627,288 L618,293"/>
       <rect class="fg-chip" x="636" y="266" width="232" height="44" rx="9"/>
       <text class="fg-t" x="650" y="286">账本 ledger.jsonl</text>
       <text class="fg-s" x="650" y="301">摘要追加 · 防篡改</text>
-      <path class="fg-ar" d="M876,283 L885,288 L876,293" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M876,283 L885,288 L876,293"/>
       <rect class="fg-chip" x="894" y="266" width="232" height="44" rx="9"/>
       <text class="fg-t" x="908" y="286">链上 Anchor.sol</text>
       <text class="fg-s" x="908" y="301">本地 Anvil · 无 solc 部署</text>
 
-      <path class="fg-ar" d="M618,323 L627,328 L618,333" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M573,324 L578,332 L583,324"/>
 
       <!-- ---- 证明层 ---- -->
       <rect class="fg-band" x="14" y="334" width="1128" height="68" rx="12"/>
@@ -471,20 +475,20 @@ html:not([data-mode="present"]) .hint{display:none}
       <rect class="fg-chip" x="120" y="346" width="232" height="44" rx="9"/>
       <text class="fg-t" x="134" y="366">pop-program</text>
       <text class="fg-s" x="134" y="381">域 policy · 策略合规</text>
-      <path class="fg-ar" d="M360,363 L369,368 L360,373" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M360,363 L369,368 L360,373"/>
       <rect class="fg-chip" x="378" y="346" width="232" height="44" rx="9"/>
       <text class="fg-t" x="392" y="366">pop-infer</text>
       <text class="fg-s" x="392" y="381">域 infer · 推理完整性</text>
-      <path class="fg-ar" d="M618,363 L627,368 L618,373" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M618,363 L627,368 L618,373"/>
       <rect class="fg-chip" x="636" y="346" width="232" height="44" rx="9"/>
       <text class="fg-t" x="650" y="366">pop-session</text>
       <text class="fg-s" x="650" y="381">域 session · 跨证书一致</text>
-      <path class="fg-ar" d="M876,363 L885,368 L876,373" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M876,363 L885,368 L876,373"/>
       <rect class="fg-chip" x="894" y="346" width="232" height="44" rx="9"/>
       <text class="fg-t" x="908" y="366">ezkl 陪伴证明</text>
       <text class="fg-s" x="908" y="381">语义规则 · 与 SP1 合取</text>
 
-      <path class="fg-ar" d="M618,403 L627,408 L618,413" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M573,404 L578,412 L583,404"/>
 
       <!-- ---- 验证层 ---- -->
       <rect class="fg-band" x="14" y="414" width="1128" height="68" rx="12"/>
@@ -492,22 +496,24 @@ html:not([data-mode="present"]) .hint{display:none}
       <rect class="fg-chip" x="120" y="426" width="318" height="44" rx="9"/>
       <text class="fg-t" x="136" y="446">verify_cert.py</text>
       <text class="fg-s" x="136" y="461">逐项验签 + 复算</text>
-      <path class="fg-ar" d="M446,443 L455,448 L446,453" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M446,443 L455,448 L446,453"/>
       <rect class="fg-chip" x="464" y="426" width="318" height="44" rx="9"/>
       <text class="fg-t" x="480" y="446">verify_session.py</text>
       <text class="fg-s" x="480" y="461">会话级 · 10 项检查</text>
-      <path class="fg-ar" d="M790,443 L799,448 L790,453" marker-end="url(#fgA)"/>
+      <path class="fg-ar" d="M790,443 L799,448 L790,453"/>
       <rect class="fg-chip" x="808" y="426" width="318" height="44" rx="9"/>
       <text class="fg-t" x="824" y="446">pop-verify</text>
       <text class="fg-s" x="824" y="461">免证明器 · 审计方用</text>
 
       <!-- ---- 契约同时约束验证侧 ---- -->
-      <path class="fg-ar fg-ar--acc" d="M1142,128 H1160 V446" marker-end="url(#fgB)"/>
+      <path class="fg-ar fg-ar--acc" d="M1142,128 H1162 V448 H1142" marker-end="url(#fgB)"/>
     </svg>
     <div class="grid g3">
       <div class="card card--flat">
         <div class="card__t">怎么读这张图</div>
-        <div class="card__d">六层自上而下 = <strong>一次出证的真实顺序</strong>；同一行里的方框是<strong>并列</strong>关系，箭头是<strong>数据流</strong>。</div>
+        <div class="card__d">六层自上而下 = <strong>一次出证的真实顺序</strong>。两种箭头，两个意思：
+          <strong>带内向右</strong>（<code>&gt;</code>）= 同一层的<strong>数据流</strong>，方框彼此<strong>并列</strong>；
+          <strong>带间向下</strong>（<code>∨</code>）= 上一层产出交给下一层，<strong>流程推进</strong>。</div>
       </div>
       <div class="card card--flat">
         <div class="card__t">蓝色那条是关键</div>
