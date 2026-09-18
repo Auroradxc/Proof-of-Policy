@@ -600,6 +600,11 @@ python3 scripts/verify/loader_parity.py --verify   tests/loader_parity_baseline.
   `contracts/Anchor.json`。末尾打印 `export POP_ANCHOR_RPC=… / POP_ANCHOR_CONTRACT=…`。
 - `make_shots.py`：`--run-demo` 会先跑 demo 再生成 `docs/demo/session_report.html`、
   `session_report.svg`、`session_summary.png`、`verify_result.png`。
+  `--session` 与 `--out-dir` 的缺省值就是上面那两条（`out/e2e/session.json` 与
+  `docs/demo`），所以「先跑一遍 demo、再跑一次本脚本」就是全部复现步骤。
+  摘要卡片上的 zk 那一行**档位与结论并排**（`unproven (host-check only) passed=True`）——
+  宿主校验也给出 `passed`，只印结论会被读成「出过证明了」（P0-4 同一条口径）。
+  `demo_all.sh --shots` 调的就是它，但产物落 `$OUT_DIR/shots/`，不动入库的那四份。
 
 ---
 
@@ -855,7 +860,7 @@ bash scripts/anchor/anchor_e2e.sh --keep          # 结束后不关 anvil
 | 什么都没跑过，先看全貌 | `bash scripts/demo/demo_all.sh --list` | 秒（只列 8 条支路） |
 | 想看完整链路，但不想等证明 | `python3 scripts/demo/demo_e2e.py --no-prove` | **~1.2 s**（本机实测） |
 | 要一次跑完 8 条支路 | `bash scripts/demo/demo_all.sh` | **~13 s**（fast 模式） |
-| 同上，但要真证书 | `bash scripts/demo/demo_all.sh --prove` | 25–30 min，且期间别跑别的重活 |
+| 同上，但要真证书 | `bash scripts/demo/demo_all.sh --prove` | 26–27 min（本机实测），且期间别跑别的重活 |
 | 最小的一件事：一条响应 × 一条策略 | `SP1_PROVER=cpu python3 scripts/prove/prove_policy.py --pack <pack>.json --response <resp>.txt` | 数分钟 |
 | 改完规则做回归 | `SP1_PROVER=cpu python3 scripts/prove/cross_validate.py …` | 真出证 ≈45 min；`--no-prove` 秒级 |
 | 核验**一张**证书（第三方视角） | `python3 scripts/verify/verify_cert.py --cert <cert>.json [--response <resp>.txt]` | 秒 |

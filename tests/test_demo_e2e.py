@@ -9,6 +9,7 @@
 """
 
 import json
+import re
 import subprocess
 import sys
 import tempfile
@@ -101,6 +102,41 @@ class TestEndToEndDemo(unittest.TestCase):
             for name in ("session_report.html", "session_report.svg",
                          "session_summary.png", "verify_result.png"):
                 self.assertTrue((shots_dir / name).exists(), f"missing {name}")
+
+
+class TestDemoLanesMatchDoc(unittest.TestCase):
+    """`demo_all.sh` 的支路数组与 `docs/demo/README.md` §3 的表格**机械比对**。
+
+    这是同一个事实的两份抄写：脚本里的 `LANES` 决定**跑什么**，文档那张表决定
+    **读的人以为会跑什么**。两者分叉时不会有任何东西报错 —— 文档会安静地描述一条
+    不存在的支路（或者漏掉一条真在跑的），而两边单独看都自洽。本轮 §5.8 的
+    一批偏移就是这个形状。
+
+    比的是 key / 中文名 / 驱动脚本三个字段，**顺序也算**（顺序即依赖顺序）。
+    改一边就得改另一边；这条用例存在的唯一目的就是这个。
+
+    不需要 langchain/mcp（纯文本比对），所以**不加** `skipUnless` —— 它是这一批
+    用例里最不该被跳过的那个。
+    """
+
+    def test_doc_table_matches_lanes(self):
+        sh = (REPO / "scripts" / "demo" / "demo_all.sh").read_text(encoding="utf-8")
+        block = re.search(r"^LANES=\((.*?)^\)", sh, re.S | re.M)
+        self.assertIsNotNone(block, "demo_all.sh 里找不到 LANES=( … ) 数组")
+        lanes = [m.groups()[:3] for m in
+                 (re.match(r'\s*"([^|]+)\|([^|]+)\|([^|]+)\|', ln)
+                  for ln in block.group(1).strip().splitlines()) if m]
+        doc = (REPO / "docs" / "demo" / "README.md").read_text(encoding="utf-8")
+        rows = re.findall(r"^\| `([a-z]+)` \| ([^|]+) \| `([^`]+)` \|", doc, re.M)
+
+        # 先确认解析**真的**取到了东西：正则一失效，下面就退化成「0 == 0」式的全绿。
+        self.assertGreaterEqual(len(lanes), 5, f"LANES 只解析出 {len(lanes)} 条")
+        self.assertGreaterEqual(len(rows), 5, f"文档表格只解析出 {len(rows)} 行")
+        self.assertEqual(len(lanes), len(rows),
+                         f"支路条数不一致：LANES {len(lanes)} 条 vs 文档 {len(rows)} 行")
+        for i, ((k, name, drv), (dk, dname, ddrv)) in enumerate(zip(lanes, rows), 1):
+            self.assertEqual((k, name.strip(), drv), (dk, dname.strip(), ddrv),
+                             f"第 {i} 条支路对不上（LANES: {k} / 文档: {dk}）")
 
 
 def _fingerprint(session: dict) -> list:

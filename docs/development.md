@@ -84,7 +84,7 @@ bash scripts/ops/install_frameworks.sh
 
 | # | 命令 | 实测耗时 | 看到什么算对 |
 |---|---|---:|---|
-| 3.1 | `python3 -m unittest discover tests` | **38.6 s** | `Ran 782 tests … OK (skipped=15)` |
+| 3.1 | `python3 -m unittest discover tests` | **40.6 s** | `Ran 783 tests … OK (skipped=15)` |
 | 3.2 | `bash scripts/demo/demo_all.sh --list` | 秒 | 8 条支路的 key / 中文名 / 驱动脚本 |
 | 3.3 | `bash scripts/demo/demo_all.sh` | **13.2 s** | 末尾 `汇总：没有 FAIL`；报告在 `scripts/examples/out/all/REPORT.md` |
 | 3.4 | `python3 scripts/demo/demo_e2e.py --no-prove` | **1.16 s** | 会话摘要 + `llm model : fake (offline)` |
@@ -239,7 +239,7 @@ python3 scripts/verify/verify_cert.py \
 
 ### 4.2 提交前清单
 
-1. `python3 -m unittest discover tests` → **782 / 15**，工作树里没有计划外的文件。
+1. `python3 -m unittest discover tests` → **783 / 15**，工作树里没有计划外的文件。
 2. 改了 `scripts/` 结构 → `tests.test_scripts_layout` 过。
 3. 改了会产生数字的东西 → 数字**四处同步**（见 [`modules/08`](modules/08-tests-bench.md)）。
 4. 改了文档 → 相对链接不悬空。

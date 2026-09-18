@@ -27,6 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/（_boot
 from _bootstrap import REPO, bootstrap  # noqa: E402
 
 bootstrap()
+from policydsl.evidence import cert  # noqa: E402
+
 DEFAULT_SESSION = REPO / "scripts" / "examples" / "out" / "e2e" / "session.json"
 
 # 本机 DejaVu 字体路径（PNG 渲染用，ASCII 即可）
@@ -100,6 +102,26 @@ def _card(size, lines, title, subtitle):
     return img
 
 
+def zk_line(summ: dict) -> str:
+    """zk 那一行的正文：**档位与结论必须并排出现**。
+
+    只写 `present passed=True` 是过度声明 —— 宿主校验（`--no-prove`）同样给出
+    `passed`，但它**一个字节的密码学都没算**；`unproven` 正是这种证书在
+    `binding.proof_mode` 里的**正确**取值（与 `cert.py` 的 `VKEY_HASH_UNPROVEN`、
+    `issue_cert.py`、`verify_session.py` 四处口径一致，见 P0-4）。
+    卡片是要被单独看的那份产物，所以档位不能省。
+
+    PNG 的文本按设计是**纯 ASCII**（见文件头：无需 CJK 字体），中文注解留给 HTML。
+    """
+    passed = summ.get("zk_passed")
+    if passed is None:
+        return "-"
+    mode = summ.get("zk_proof_mode") or "?"
+    if mode == cert.PROOF_MODE_UNPROVEN:
+        mode += " (host-check only)"
+    return f"{mode}  passed={passed}"
+
+
 def render_pngs(data: dict, out: Path) -> list:
     """渲染两张 PNG：摘要卡片 + 验证清单。"""
     written = []
@@ -111,7 +133,7 @@ def render_pngs(data: dict, out: Path) -> list:
         (f"certificates : {summ.get('certificates', len(s['certificates']))}   stream={summ.get('stream_certs', 0)}", FG),
         (f"kinds        : {kinds_txt}", MUTED),
         (f"blocked calls: {summ.get('blocked_tool_calls')}", FG),
-        (f"zk proof     : {'present' if summ.get('zk_passed') is not None else '-'}   passed={summ.get('zk_passed')}", FG),
+        (f"zk proof     : {zk_line(summ)}", FG),
         (f"ledger       : {s.get('ledger', 'ledger.jsonl')}  chain={'ok' if summ.get('ledger_ok') else 'broken'}", FG),
         ("", FG),
         ("agent session -> certificates -> anchor ledger -> independent verification", MUTED),
@@ -176,6 +198,10 @@ def render_html(data: dict, out: Path) -> Path:
     s = data["session"]
     summ = s.get("summary", {})
     kinds = "".join(f"<span class='pill'>{_esc(k)} <b>{v}</b></span>" for k, v in sorted(data["kinds"].items()))
+    zk_mode = summ.get("zk_proof_mode") or "?"
+    # 同样是「档位与结论并排」：宿主校验的证书 passed 也可能为 True，
+    # 单看一个 passed=True 会读成「出过证明了」。
+    zk_note = "（宿主校验，未出证）" if zk_mode == cert.PROOF_MODE_UNPROVEN else ""
     checks = "".join(
         f"<li class='{'ok' if c['ok'] else 'bad'}'><span>{'PASS' if c['ok'] else 'FAIL'}</span>"
         f"<code>{_esc(c['name'])}</code><em>{_esc(c['detail'])}</em></li>"
@@ -199,7 +225,7 @@ def render_html(data: dict, out: Path) -> Path:
 <div class="card">
   <div class="big">{summ.get('certificates', 0)} 张证书</div>
   <div class="muted">stream={summ.get('stream_certs', 0)} · blocked tool calls={summ.get('blocked_tool_calls')}
-   · zk passed={summ.get('zk_passed')} · ledger chain={'ok' if summ.get('ledger_ok') else 'broken'}</div>
+   · zk {zk_mode}{zk_note} passed={summ.get('zk_passed')} · ledger chain={'ok' if summ.get('ledger_ok') else 'broken'}</div>
   <div style="margin-top:10px">{kinds}</div>
 </div>
 <div class="card">

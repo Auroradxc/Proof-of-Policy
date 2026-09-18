@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（42 个模块，782 个用例）与 `bench/`（7 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（42 个模块，783 个用例）与 `bench/`（7 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,7 +8,7 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 期望 782 passed, 15 skipped
+python3 -m unittest discover -s tests -t . -v   # 期望 783 passed, 15 skipped
 ```
 
 | 模块 | 用例数 | 守护的性质 |
@@ -35,7 +35,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 782 passed, 15 skipped
 | `test_rules_incircuit` | 13 | 七类规则在 `--check` 下与 Python golden 逐点对齐（**P1-5**：轨迹类规则判回执链，链坏两端都 fail-closed；**P2-9b**：`normalized_keyword_block` 7 组逐点对拍 + 私有模式下证据承诺与 Python 一致） |
 | `test_ablation` | 7 | pike ≡ naive（Python 与 Rust 两侧）；**`TestBenchCorpusParsers`**（2 例）钉住基准脚本的采样点解析 —— 行为对（`--ns 100,200,400,800` 真能跑）+ 结构对（`bench_ablation` 与 `bench_cycles` 引用的是**同一个**函数对象，再抄一份出来就红）。守的是 R18 那个真 bug：私有副本把 `replace(",", " ")` 写成 `replace(";", " ")`，于是脚本 docstring 举的例子跑不过，而**没有测试**覆盖这两个函数 |
 | `test_verifier_only` | 8 | `prefer_verifier_only` 三条件、core 不走近路；**P0-4**：`artifact_proof_modes` 收齐多来源、缺失不编默认值、来源不一致如实暴露 |
-| `test_demo_e2e` | 4 | 端到端会话产物结构；**`--model` 与离线桩同构**（#98：真客户端跑出的会话与 fake 路径**逐条同形** —— 比的是两份会话的形状，不是一个写死的数字，因为写死的数字在假路径改动之后不会报错、只会静默地变成另一件事），外加「规格写错必须报错、绝不静默退回桩」 |
+| `test_demo_e2e` | 5 | 端到端会话产物结构；**`--model` 与离线桩同构**（#98：真客户端跑出的会话与 fake 路径**逐条同形** —— 比的是两份会话的形状，不是一个写死的数字，因为写死的数字在假路径改动之后不会报错、只会静默地变成另一件事），外加「规格写错必须报错、绝不静默退回桩」；`TestDemoLanesMatchDoc`（1 例）把 `demo_all.sh` 的 `LANES` 数组与 `docs/demo/README.md` §3 的表格**逐字段机械比对** —— 这是同一个事实的两份抄写，分叉时不会有任何东西报错 |
 | `test_ezkl_evm` | 10 | **T2**：`ezkl_evm.run` 对同步/异步/Future 三种可调用对象都成立（5 例，**不依赖 ezkl**）；真实 ezkl 下裸调用必抛 `no running event loop`（把上游坏行为钉死）、包一层即产出 `Halo2Verifier` 源码与 `verifyProof` ABI、连调互不影响、`reusable` 变体 + VK artifact（`vka.json` 实为 bincode，不是 JSON）、**剥空 `PATH` 也不调用 solc** |
 | `test_semantic` | 30 | **P2-9**：语义规则（学习型规则）的委托与绑定，**含 6 条反例**（换 ONNX、换 vk、改阈值、翻转 `direction`、换证明文件/换响应、图外自算特征）与 fail-closed 四路（缺材料目录/缺陪伴证明/缺 `--response`/多带证明）；**分层**见下 —— 30 例中只有 1 例（`test_real_proof_verifies_and_binds`）需 ezkl 与 32 MiB `srs`，其余 29 例在本机实际执行 |
 | `test_compose` | 48 | **P1-6**：组合证明 `Compose = (推理完整性 ∧ 策略合规)`。三层 —— ① 参考实现逐位一致（`pop-script --check --job infer` ↔ `policydsl/proofs/infer.py`：模型哈希/响应绑定/输入绑定/输出）② 组合绑定的 **5 组反例**（换证明文件·缺失、同 vkey·非期望 vkey、换模型·换输入、两半绑不同 T·送达 T′ 不符、形状·模式·域·policy_hash 重编译）③ **四条驱动接线回归**（`--job` 旗标 ≠ part 的 kind；`part_from_proof` 得把旗标而不是 kind 传下去；验证结果的 `mode` 不能被当展示元信息剥掉；`pop-script --verify` 必须显式给 `--out`，否则在仓库根落一个 `results.json`）——这几条对应 2026-09-12 真端到端跑出来的真 bug，单测当时全绿。真·端到端 5 例由 `POP_TEST_COMPOSE=1` 打开 |
@@ -55,7 +55,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 782 passed, 15 skipped
 | `test_bench_views` | 6 | **入库的基准视图必须恰好是它那份数据渲染出来的**（R11）。分工是：`bench/results/*.json` 是**数据**（跑基准时自动落盘），`*.md` 是**视图**（同一个 `dump()` 顺手渲染）。视图由数据完全决定 —— 这既是承诺，也是个可机械检查的性质；而它一旦破了**不会有人发现**：谁手工改了 `.md` 里一句措辞，下一次重跑基准就**静默**覆盖回去；反过来只提交 `.json` 忘了 `.md`，入库的就是过期的表（`.md` 恰恰是论文/文档/issue 里引的那一份）。**不用「跑一遍基准对拍」来测** —— 那要真出证十几分钟、还得撞 `proofs.json` 里那几个**故意留着的 OOM 点**；渲染是纯函数，直接调它：零成本、无副作用，红起来意思完全一样。查的**不是「数字对不对」**（数字是量出来的，本文件造不出），而是「入库的这份视图，是不是这份数据渲染的那个」。新增入库结果只要往 `VIEWS` 加一行。另钉：三张旋钮表**口径各不相同（默认矩阵 / 默认旋钮实验 / 旋钮 A/B），不要混读**；cliff 那张必须**每个点都在每个臂下量过**，且所探的点必须**真的是缺省会 OOM 的那些** —— 这一条是在「跨文件的同一份语料」被实测**证伪**之后改的（`demo` 语料是个 glob，其 sha256 随时间变，跨文件比它是**假命题**），改法是把**测量**本身换成一次 `--arms` 调用、两臂共用同一份装载好的语料 |
 | `test_frontdoor` | 9 | **门面的 `__all__` 是一份承诺**（R12）。`from policydsl import Policy` 是本包对外的稳定面，而 `__all__` 出问题时**没有任何东西会报错**：**漏掉一个名字** → `from policydsl import *` 的使用者拿不到它，报错发生在**他的**代码里、不在本仓的 CI 里；**混进解析不了的名字**（拼错/被删/搬家没同步）→ `import *` 直接抛 `AttributeError`，而本包的测试若都点名导入就一个都碰不到；**重名** → `len(__all__)` 与实际导出的符号数对不上，而那个长度常被人当「门面有多大」读；**门面递出来的是另一个对象**（本地定义了个同名包装/别名）→ 名字还在、也解析得了，语义已经不是子包里的那一个。四条都不在「跑一遍看看」的射程里。与验收快照第 6 面（`6_import_surface`）分工明确：快照记名单的**内容**，变了要**人**确认后重采（那是「变更被承认」）；本文件记名单的**不变量**（不重不漏、能解析、与命名空间一致），名单**坏**了才红 —— 只有快照，改名单会退化成「反正重采一次就绿了」；只有不变量，名单被谁加了看不出来。**同名函数只要求「至少一处同一对象」**：仓库里合法地存在两个同名的 `verify_chain`（`evidence/trace.py` 收回执链、`adapters/langchain_adapter.py` 收证书表），而 `adapters` 只在别的用例 import 它时才进 `sys.modules` —— 早先「所有定义模块都必须一致」的写法因此**依赖执行顺序**（单跑绿、全量红），已改成「可调用物：至少一处是同一对象；常量：所有定义模块逐字相等」 |
 | `test_layering` | 6 | **`core` 不许 import `proofs`**（R14）。`core` 是**判定层**（决定「合不合规」），`proofs` 是**出证编排层**（决定「怎么把判定包成一份可验证的产物」）；两层关系**单向** —— 出证层产出的东西要被判定层理解，判定层不该反过来依赖出证层。R14 之前这里是真倒置：`core/compile.py` 与 `core/evaluate.py` 为了取模型指纹写了四处 `from policydsl.proofs import semantic`，修法是把那组**纯契约**函数（模型指纹 / 路径口径 / 图的字符上限）下沉到 `core/model_fp.py`。门槛值得存在的理由很具体：倒置**能被重新引入**，而引入时**不会有任何东西变红**（多一条 import 而已，功能照跑）。**必须走 AST 不走正则**：被搬出来的 `core/model_fp.py` 的 docstring 里**就写着**那串字（作为反例说明），按文本扫会把它误判成违规；而只扫模块级又会漏掉 R14 修掉的**全部四处 —— 它们都在函数体里**，所以 `ast.walk` 走全树。门槛自己也要能被证伪（本仓反复记过的失败模式「**空集合上全绿**」）：一条断言扫描确实覆盖到 `core` 包（目录改了 / glob 写错会当场红），四条注入探针（模块级注入 / **函数级注入** / 换成 `core.model_fp` 不算违规 / docstring 里的文字不算 import）。**已实测非恒真**：往 `core/compile.py` 注入一句函数级 `from policydsl.proofs import semantic`，用例变红并指出 `(文件, 行号, 模块)`；恢复后工作区零 diff |
-| **合计** | **782** | |
+| **合计** | **783** | |
 
 ### 15 个 skip（都是设计内的）
 
@@ -501,7 +501,7 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **782 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后与验收基线加入后重测、2026-09-17 R3（NFA 编译缓存）后重测、2026-09-17 P1-①（加载器对拍）后重测、2026-09-17 R4（驱动路径收敛）后重测、2026-09-17 R5（工件摘要收敛）后重测、2026-09-17 R6（kind 翻译表收敛）后重测、2026-09-17 R7（策略加载器收敛 + 包形状闸门）后重测、2026-09-18 R8–R14（拆 main / 流式等效替代 / 转移表 / 旋钮实验 / 门面 / 死代码 / 分层倒置）后重测；CI 上更多 skip，见 §1）、
+  当前验收判据是 **783 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后与验收基线加入后重测、2026-09-17 R3（NFA 编译缓存）后重测、2026-09-17 P1-①（加载器对拍）后重测、2026-09-17 R4（驱动路径收敛）后重测、2026-09-17 R5（工件摘要收敛）后重测、2026-09-17 R6（kind 翻译表收敛）后重测、2026-09-17 R7（策略加载器收敛 + 包形状闸门）后重测、2026-09-18 R8–R14（拆 main / 流式等效替代 / 转移表 / 旋钮实验 / 门面 / 死代码 / 分层倒置）后重测、2026-09-18 §5.8 步 5（demo 支路表闸门，+1 例）后重测；CI 上更多 skip，见 §1）、
   `cross_validate` **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 整批重跑，见下）。
   这条判据现在**有自动留痕**：`scripts/prove/regression_prove.py` 每次运行把它追加进
   `bench/results/regression-prove.jsonl`（只追加），并附 git sha / 硬件 / 证明器二进制摘要
@@ -523,7 +523,7 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
 ### 1. 跑测试
 
 ```bash
-python3 -m unittest discover tests                # 全量：782 passed / 15 skipped，~39 s
+python3 -m unittest discover tests                # 全量：783 passed / 15 skipped，~41 s
 python3 -m unittest tests.test_dsl -v             # 单个模块（哪一板块 → 见 §1 的表）
 python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 ```
@@ -561,7 +561,7 @@ python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 
 **唯一有留痕的是 `cross_validate` 的判据**：`scripts/prove/regression_prove.py`
 每次运行把它追加进 `bench/results/regression-prove.jsonl`（**只追加**），并附
-git sha / 硬件 / 证明器二进制摘要，所以「782 passed」这类数字指得回具体的某一次运行（T3）。
+git sha / 硬件 / 证明器二进制摘要，所以「783 passed」这类数字指得回具体的某一次运行（T3）。
 
 ## 怎么改它
 
@@ -576,8 +576,8 @@ git sha / 硬件 / 证明器二进制摘要，所以「782 passed」这类数字
 **「四处同步」清单**（改测试计数时，这四处都写着同一批数字）：
 
 1. 本文件 §1 表的**那一行**与**合计行**；
-2. 本文件**顶部**那句「42 个模块，782 个用例」；
-3. 本文件 §5 扩展指引里的**验收判据**（`782 passed / 15 skip`）；
+2. 本文件**顶部**那句「42 个模块，783 个用例」；
+3. 本文件 §5 扩展指引里的**验收判据**（`783 passed / 15 skip`）；
 4. `docs/README.md` 的计数口径 + `README.md` / `docs/reproduce.md` 的验收判据。
 
 （`docs/README.md` §3 已把「测试计数 → 08」写成约定：**本文件是唯一权威源**，
@@ -601,7 +601,7 @@ git sha / 硬件 / 证明器二进制摘要，所以「782 passed」这类数字
 
 ```bash
 # 改完测试层的两条验证
-python3 -m unittest discover tests                # 782 passed / 15 skipped（数对不上先查 §1 表）
+python3 -m unittest discover tests                # 783 passed / 15 skipped（数对不上先查 §1 表）
 python3 -m unittest tests.test_scripts_layout     # 若动过 scripts/ 分组
 ```
 

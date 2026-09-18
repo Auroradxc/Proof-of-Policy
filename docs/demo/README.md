@@ -24,7 +24,8 @@
 
 ```bash
 bash scripts/demo/demo_all.sh                # fast：宿主校验，不出真证明（本机实测 13 s）
-bash scripts/demo/demo_all.sh --prove        # 出真证明（每条数分钟、峰值 ~10 GB，约 25–30 分钟）
+bash scripts/demo/demo_all.sh --prove        # 出真证明（每条数分钟、峰值 ~10 GB，本机实测 26–27 分钟）
+bash scripts/demo/demo_all.sh --shots        # 额外跑第 9 步：把会话渲染成 HTML/SVG/PNG（见 §6）
 bash scripts/demo/demo_all.sh --list         # 只列 8 条支路，不跑
 bash scripts/demo/demo_all.sh --out-dir DIR  # 产物与报告落到 DIR
 ```
@@ -35,10 +36,17 @@ bash scripts/demo/demo_all.sh --out-dir DIR  # 产物与报告落到 DIR
 **跳过（缺依赖）不算失败** —— 但会在报告里单列。跳过与通过必须能分开看，
 否则「全绿」会变成一句没法核对的话。
 
-**依赖**：`fast` 只要 Python 3 与标准库；`--prove` 还要 `circuits/` 构建过
-（`circuits/target/release/pop-script`，见 [`../reproduce.md`](../reproduce.md) §2）。
-两条支路另有独立依赖，缺了会 SKIP 而不是 FAIL：语义规则要 ezkl，
-链上锚定要 foundry（`anvil`/`cast`）。
+**依赖**：
+
+- **fast 与 `--prove` 都要** `langchain-core` 和 `mcp`：支路①**真的在跑** LangChain
+  的流式管线和一台上真实的 MCP stdio 服务器，不是在模拟。装法
+  `pip install -r requirements-frameworks.txt`（或只装这两个）。
+  ⚠️ 缺了**不会 SKIP，会直接 FAIL** —— 实测 `ImportError: blocked: mcp`
+  （别信「fast 只要标准库」那类说法，它是错的）。
+- **`--prove` 另要** `circuits/` 构建过（`circuits/target/release/pop-script`，
+  见 [`../reproduce.md`](../reproduce.md) §2）。
+- **两条支路各有独立依赖**，缺了会 **SKIP 而不是 FAIL**：语义规则要 ezkl，
+  链上锚定要 foundry（`anvil`/`cast`）。
 
 ---
 
@@ -56,6 +64,10 @@ bash scripts/demo/demo_all.sh --out-dir DIR  # 产物与报告落到 DIR
 | `verify` | 第三方独立验证 | `scripts/verify/verify_session.py` | 上游 `policy` 的 `session.json` | SKIP |
 
 顺序就是执行顺序：`session` 与 `verify` 排在被依赖的 `policy` 之后。
+
+> **还有第 9 步，但它不是支路**：`--shots` 会多跑一步「会话报告渲染」
+> （`make_shots.py`，见 §6）。它不产生任何**结论**，所以 `--list` 仍列 8 条、
+> 验收判据也不含它 —— 上面这张是**支路**表，不是步骤表。
 
 ### 3.1 `policy` · 公开模式主干
 
@@ -194,23 +206,69 @@ scripts/examples/out/all/
 ├── REPORT.md              # 汇总报告（可单独读；终端那份的落盘版，去色）
 ├── logs/<key>.log         # 每条支路的完整输出
 ├── logs/<key>.time        # /usr/bin/time 的峰值 RSS（KiB）
-├── _solo/                 # 供不走 --out-dir 参数的驱动（private_demo）用
 ├── policy/                # session.json / ledger.jsonl / zk / zk_public / zk_private
+├── private/               # vectors_check.json / host.json（--prove 时另有 proof.json）
 ├── compose/               # 两份半证明的 vectors 与宿主结果
 ├── session/               # run*.outcome.json
 ├── anchor/                # deploy.json / ledger.jsonl / session.json
-└── multiparty/            # 各角色的切片与签名
+├── multiparty/            # 各角色的切片与签名
+└── shots/                 # 只有 --shots 才有：四份图文物（见 §6）
 ```
 
 （`semantic` 那条跑的是 `ezkl_prove.py selftest`，不给 `--out-dir`，
 所以没有自己的目录 —— 它的产物在 `semantic/artifacts/`。）
+
+**八条支路的产物**都落在这个目录下，一条不漏。私有模式那条此前是个例外：
+`private_demo.py` 把路径**硬编码**成 `scripts/examples/out/private`，于是它的产物
+散在源码目录里。现在它有了 `--out-dir`（缺省值**不变**，单独跑还是老位置），
+`demo_all.sh` 显式传 `$OUT_DIR/private`。
 
 `REPORT.md` 顶上记着模式、生成时间、机器（核数 / CPU 型号 / 内存 GiB）——
 数字因此指得回具体的某一次运行。**终端的颜色不会进报告**（落盘前先去色）。
 
 ---
 
-## 6. 常见问题
+## 6. 四份渲染产物（`scripts/demo/make_shots.py`）
+
+[`demo/`](.) 目录下有四份**入库**的图文物，由 `make_shots.py` 从一次会话渲染而来
+（不需要浏览器，也不需要 CJK 字体 —— PNG 的文本按设计是纯 ASCII）：
+
+| 产物 | 是什么 |
+|---|---|
+| [`session_report.html`](session_report.html) | 自包含的报告页（可打开、可打印） |
+| [`session_report.svg`](session_report.svg) | 矢量卡片（供查看器/转换器） |
+| [`session_summary.png`](session_summary.png) | 摘要卡片（Pillow） |
+| [`verify_result.png`](verify_result.png) | 第三方验证清单（Pillow） |
+
+重新生成 —— `--session` 缺省就是 `scripts/examples/out/e2e/session.json`，
+`--out-dir` 缺省就是本目录，所以两条命令就是全部：
+
+```bash
+python3 scripts/demo/demo_e2e.py --no-prove   # 先产出一份会话（缺省落 out/e2e/）
+python3 scripts/demo/make_shots.py            # 再渲染四份产物到 docs/demo/
+```
+
+`demo_all.sh --shots`（§2）跑的是同一件事，只是产物落 `$OUT_DIR/shots/`，
+**不动入库的这四份**。
+
+> ⚠️ **这四份是从 `--no-prove`（宿主校验）的会话渲染的。** 摘要卡片因此写的是
+> `zk proof : unproven (host-check only) passed=True` —— **档位与结论并排出现是
+> 刻意的**：宿主校验同样给出 `passed`，但它**一个字节的密码学都没算**；只印一个
+> `passed=True`，读的人会把「Python ↔ Rust 对拍一致」读成「出过证明了」。
+> 这与 P0-4 是同一条口径（`binding.proof_mode` 如实标注证据档位）。
+>
+> 想要一份**带真证明**的图文物：先 `bash scripts/demo/demo_all.sh --prove`，
+> 再 `python3 scripts/demo/make_shots.py --session scripts/examples/out/all/policy/session.json`。
+> `--run-demo` 则让 `make_shots.py` 自己先把 demo 跑一遍。
+
+---
+
+## 7. 常见问题
+
+**`policy` 报 FAIL：`ImportError: blocked: mcp`（或 `langchain_core`）。**
+支路①真的在跑 LangChain 与 MCP，所以这两包是硬前置：`pip install -r
+requirements-frameworks.txt`。这里**刻意不做成 SKIP** —— 少了它「公开模式主干」
+这条支路根本不存在，把它降级成 SKIP 会让八条支路里最重要的那条静默缺席。
 
 **`anchor` 报 SKIP：未装 foundry。**
 跑 `bash scripts/ops/retry_install_foundry.sh`，或把 `~/.foundry/bin` 加进 `PATH`
