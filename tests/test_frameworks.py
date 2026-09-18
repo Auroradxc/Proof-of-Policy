@@ -14,12 +14,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from policydsl.evidence import cert  # noqa: E402
+from policydsl.evidence import keys  # noqa: E402
 from policydsl.adapters.agent import AgentMonitor  # noqa: E402
 from policydsl.adapters.langchain_adapter import (  # noqa: E402
     EarlyStop, PoPCallbackHandler, langchain_available, verify_certificates, verify_chain,
 )
 from policydsl.adapters import langgraph_adapter as lg  # noqa: E402
-from policydsl.core.model import Policy, Rule  # noqa: E402
+from policydsl.core.model import Policy, PolicyError, Rule  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -125,6 +126,90 @@ class TestCallbackHandlerOffline(unittest.TestCase):
         h = PoPCallbackHandler(self.content, on_cert=seen.append)
         h.on_llm_end(fake_llm_result("fine"), run_id="r1")
         self.assertEqual(len(seen), 1)
+
+
+class TestToolMonitorRouting(unittest.TestCase):
+    """两条路径的 monitor 分开：``tool_monitor`` 只判工具事件（dev-plan §5.1.2 第 7 条）。
+
+    这一组是**反歧义**用例。「一个 handler 管两条路径」在修之前会以一个静默的
+    fail-open 收场：持内容策略的 monitor 判工具调用时 ``on_tool_call`` 抛
+    ``PolicyError``，而 **LangChain 缺省吞掉回调异常** —— 这次工具调用
+    **零证书、零报错**，在产物上与「这次调用是干净的」完全同形。
+    """
+
+    def setUp(self):
+        self.content = AgentMonitor(load_pack("agent_content_v1.json"))
+        self.tools = AgentMonitor(load_pack("agent_tool_v1.json"))
+
+    def _payload(self, h, i):
+        ok, payload = cert.verify_envelope(h.certificates[i], ring_of(h))
+        self.assertTrue(ok)
+        return payload
+
+    # 一个 handler + 两个 monitor：生成走内容策略、工具走工具策略，各出一张证书
+    def test_one_handler_routes_both_paths(self):
+        h = PoPCallbackHandler(self.content, tool_monitor=self.tools)
+        h.on_llm_end(fake_llm_result("A safe, plain reply."), run_id="r1")
+        h.on_tool_start({"name": "search_kb"}, "{'q': 'refund', 'api_key': 'k'}", run_id="t1")
+        h.on_tool_end("ok", run_id="t1")
+        self.assertEqual([self._payload(h, i)["mode"] for i in range(2)],
+                         ["public", "tool-call"])
+        # 工具那张的判据必须来自**工具**策略：no_secret_args 只存在于工具包里，
+        # 内容包判不出它（反过来，内容包的 no_bad_topics 也判不了工具事件）。
+        tool = self._payload(h, 1)
+        self.assertFalse(tool["outcome"]["passed"])
+        self.assertEqual(tool["outcome"]["violations"][0]["rule"], "no_secret_args")
+        self.assertTrue(verify_certificates(h))
+
+    # 反例（非恒真对照）：不给 tool_monitor 时，内容策略判工具调用直接抛 ——
+    # 上一条测的不是「随便怎样都能过」。这个抛同时是那个静默 fail-open 的现场：
+    # 回调在 LangChain 里抛，会被吞成一条 warning，调用方什么都看不到。
+    def test_content_monitor_cannot_judge_tool_calls(self):
+        h = PoPCallbackHandler(self.content)
+        h.on_tool_start({"name": "search_kb"}, "{'q': 'x'}", run_id="t1")
+        with self.assertRaises(PolicyError) as ctx:
+            h.on_tool_end("ok", run_id="t1")
+        self.assertIn("needs a response for content rules", str(ctx.exception))
+        self.assertEqual(h.certificates, [])   # 零证书 —— 这正是要抓的那个形状
+
+    # 缺省沿用 monitor ⇒ 与旧行为逐字等价（15+ 处单参调用不受影响）
+    def test_default_tool_monitor_is_the_same_object(self):
+        h = PoPCallbackHandler(self.content)
+        self.assertIs(h.tool_monitor, h.monitor)
+
+    # 工具**报错**路径同样要路由到 tool_monitor（一次错误调用也是一次工具调用）
+    def test_tool_error_routes_to_tool_monitor(self):
+        h = PoPCallbackHandler(self.content, tool_monitor=self.tools)
+        h.on_tool_start({"name": "search_kb"}, "{'q': 'x', 'token': 't'}", run_id="t1")
+        h.on_tool_error(RuntimeError("tool blew up"), run_id="t1")
+        self.assertEqual(len(h.certificates), 1)
+        payload = self._payload(h, 0)
+        self.assertEqual(payload["mode"], "tool-call")
+        self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret_args")
+        self.assertEqual(payload["error"]["phase"], "tool")   # P0-4：失败也留痕
+
+    # 两个 monitor 可以各持一把签名器：自验签的 keyring 必须覆盖**两把**，
+    # 否则工具证书自验不过 —— 那不是「证书有问题」，是 ring 取窄了。
+    def test_verify_certificates_covers_both_signers(self):
+        content = AgentMonitor(load_pack("agent_content_v1.json"),
+                               signer=keys.ephemeral_signer())
+        tools = AgentMonitor(load_pack("agent_tool_v1.json"),
+                             signer=keys.ephemeral_signer())
+        self.assertNotEqual(content.signer.keyid, tools.signer.keyid)  # 非恒真前提
+        h = PoPCallbackHandler(content, tool_monitor=tools)
+        h.on_llm_end(fake_llm_result("fine"), run_id="r1")
+        h.on_tool_start({"name": "search_kb"}, "{'q': 'refund'}", run_id="t1")
+        h.on_tool_end("ok", run_id="t1")
+        self.assertEqual(len(h.certificates), 2)
+        self.assertTrue(verify_certificates(h))
+
+    # LangGraph 侧入口（attach / LangGraphGuard）的 **handler_kwargs 要把
+    # tool_monitor 透传下去 —— 否则这个口子在 LangGraph 路径上「说了没接上」
+    def test_langgraph_entrypoints_pass_tool_monitor_through(self):
+        h = lg.attach(self.content, tool_monitor=self.tools)
+        self.assertIs(h.tool_monitor, self.tools)
+        guard = lg.LangGraphGuard(self.content, tool_monitor=self.tools)
+        self.assertIs(guard.callbacks().tool_monitor, self.tools)
 
 
 class TestErrorCallbacksOffline(unittest.TestCase):
@@ -602,6 +687,48 @@ class TestRealLangChain(unittest.TestCase):
         self.assertEqual(payload["mode"], "tool-call")
         self.assertFalse(payload["outcome"]["passed"])
         self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret_args")
+
+    # 真实框架下，**一个** handler 就能同时管两条路径（不需要为工具另挂一个
+    # 只认工具事件的 handler）—— 这正是 tool_monitor 要替换掉的那种绕法。
+    def test_real_tool_with_one_handler_two_monitors(self):
+        try:
+            from langchain_core.tools import tool
+        except Exception as exc:  # pragma: no cover
+            self.skipTest(f"langchain tool API unavailable: {exc}")
+
+        @tool
+        def search_kb(query: str, token: str = "") -> str:
+            """Search the knowledge base."""
+            return "ok"
+
+        content = AgentMonitor(load_pack("agent_content_v1.json"))
+        tools = AgentMonitor(load_pack("agent_tool_v1.json"))
+        h = PoPCallbackHandler(content, tool_monitor=tools)
+        search_kb.invoke({"query": "refund", "token": "secret"}, config={"callbacks": [h]})
+        self.assertEqual(len(h.certificates), 1)
+        _, payload = cert.verify_envelope(h.certificates[0], ring_of(h))
+        self.assertEqual(payload["mode"], "tool-call")
+        self.assertEqual(payload["outcome"]["violations"][0]["rule"], "no_secret_args")
+
+    # 反面：**LangChain 缺省吞掉回调异常**。持内容策略的 handler 接工具事件时
+    # 判定会抛 PolicyError，但调用方既拿不到异常、产物上也一张证书都没有 ——
+    # 「这次调用不合规」与「这次调用没发生过」同形。这条用例把**框架行为**钉住：
+    # 它若哪天改成向上抛，这里会失败，那时适配器可以少一层防御。
+    def test_real_tool_with_content_monitor_fails_silently(self):
+        try:
+            from langchain_core.tools import tool
+        except Exception as exc:  # pragma: no cover
+            self.skipTest(f"langchain tool API unavailable: {exc}")
+
+        @tool
+        def search_kb(query: str) -> str:
+            """Search the knowledge base."""
+            return "ok"
+
+        h = PoPCallbackHandler(AgentMonitor(load_pack("agent_content_v1.json")))
+        # 不抛：异常在回调层被吞掉了（BaseCallbackHandler.raise_error 缺省 False）
+        search_kb.invoke({"query": "refund"}, config={"callbacks": [h]})
+        self.assertEqual(h.certificates, [])   # 零证书 —— fail-open 的形状
 
 
 class TestStreamingOffline(unittest.TestCase):

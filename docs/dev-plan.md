@@ -303,6 +303,56 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
    **反例对照**（旧口径实测，写进用例注释）：同一句逐字符喂出 3 张、整段一次只出
    2 张 —— 连第一张「干净前缀」都丢了。
 
+7. **给 `PoPCallbackHandler` 补 `tool_monitor`**：让工具事件走工具策略，
+   与同仓的 `LangGraphEventCertifier` 对齐。**方案（2026-09-18 立）**
+
+   **发现路径**：为「路线一：接入真实 agent」做的两个 LangChain agent 接入测试
+   （`scripts/demo/langchain_agents_demo.py`，一个合规、一个违规）撞出来的 ——
+   不是读代码读出来的。
+
+   **现象（fail-open，且是静默的）**：`on_tool_end` / `on_tool_error` 此前**硬编码**
+   把工具调用交给 `self.monitor` 判定。若那个 monitor 持的是**内容**策略
+   （`keyword_block` / `pattern_block` 这类要 transcript 的 response 的规则），
+   `AgentMonitor.on_tool_call` 会抛 `PolicyError` —— 而 **LangChain 缺省吞掉回调
+   异常**（`BaseCallbackHandler.raise_error` 缺省 `False`，只留一条
+   `Error in PoPCallbackHandler.on_tool_end callback` 的 warning）。净效果：
+   这次工具调用**既没有证书、也没有任何调用方可见的报错**，在产物上与
+   「这次调用是干净的」完全同形。三个层次里只有适配器这一层是静默的 ——
+   `GenericGuard` 会把同一个异常原样抛给调用方。
+
+   **为什么这是既有缺陷，不是新需求**：同一个仓库里的 `LangGraphEventCertifier`
+   （`langgraph_adapter.py:156`）**早就有** `tool_monitor: Optional[AgentMonitor]
+   = None` + `self.tool_monitor = tool_monitor or monitor`，两条工具路径都走它。
+   所以这一步**不加功能**，是把 LangChain 回调层对齐到同仓已经解决过的同一个问题
+   —— 属自审里 ①④⑤⑥ 那一族（跨层不一致）。
+
+   **改法**：签名里 `tool_monitor` 放在 `monitor` **之后**（与 `LangGraphEventCertifier`
+   同槽位，两份签名在 `06-frameworks.md` 里是并排读的）；`self.tool_monitor =
+   tool_monitor or monitor` ⇒ **缺省与旧行为逐字等价**，既有 15+ 处单参调用不受影响
+   （另跑一次 AST 扫描确认没有调用方按位置传第 2 个参数）。两条工具路径改走
+   `self.tool_monitor`。**刻意不叫 `result_monitor`**：MCP 那个判的是工具的*返回文本*
+   （`result_monitor.on_generate`），这个判的是*工具调用本身*（`on_tool_call`）—— 同名会
+   把两种角色读混。
+   连带一处：`verify_certificates` 的缺省 keyring 原先只取 `handler.monitor.signer`，
+   两个 monitor 签名器不同时工具证书会自验不过 —— 改为 `cert.keyring(*两个签名器)`。
+
+   **验收**：① 一个 handler（`monitor=` 内容策略、`tool_monitor=` 工具策略）做一次
+   工具调用 ⇒ 出 **1** 张工具证书，判据取自**工具**策略；② **反例**：不给
+   `tool_monitor` 时同一次调用零证书 —— 证明前一条不是恒真的；③ 缺省等价
+   （`tool_monitor is monitor`）；④ `LangGraphGuard` / `attach` 的 `**handler_kwargs`
+   真能把 `tool_monitor` 透传下去；⑤ 两个 monitor 签名器不同时
+   `verify_certificates` 仍为真。
+   端到端证据是接入测试 demo 本身：**两个按事件过滤的子类被删掉**，改成一个
+   handler 直连，三场景仍全绿、第三方 `verify_session.py` 仍全 PASS。
+
+   > **没顺手做的一件事（如实记）**：`gateway.issue()` 排在 `on_tool_call` **之前**，
+   > 所以工具判定一旦抛异常，回执链上会留下一条**没有证书的孤儿回执**，
+   > 回执条数与证书数对不上。接了 `tool_monitor` 之后这条路的触发条件窄了很多
+   > （工具策略自身不含内容规则就不会抛），但它**没有消失** —— 任何工具路径的异常
+   > 仍会留下孤儿回执，且异常仍被 LangChain 吞掉。要修的是**另一条语义**
+   > （工具回调的 fail-closed：异常要变成产物上的事实，而不是被吞掉），
+   > 与本次的「路由接错」不是一件事，另开一条。
+
 #### 5.1.3 验收（#98 落地后的如实版本）
 
 - `demo_e2e.py --model <spec>` 端到端跑通，`verify_session.py` 全 PASS；

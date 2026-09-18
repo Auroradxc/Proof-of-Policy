@@ -253,13 +253,13 @@ def verify_chain(certs) -> bool      # 序号连续 + prev 链接
 
 | 名称 | 说明 |
 |---|---|
-| `PoPCallbackHandler(monitor, vkey_hash="unproven", proof_sha256=None, on_cert=None, stream_check=True, stream_step_chars=1, on_stream_cert=None, stop_on_violation=False, on_early_stop=None, proof_mode=None, gateway=None, hard_stop=False)` | 回调处理器（`stream_step_chars` = 采样步长，**字符**而非回调次数） |
+| `PoPCallbackHandler(monitor, tool_monitor=None, vkey_hash="unproven", proof_sha256=None, on_cert=None, stream_check=True, stream_step_chars=1, on_stream_cert=None, stop_on_violation=False, on_early_stop=None, proof_mode=None, gateway=None, hard_stop=False)` | 回调处理器（`stream_step_chars` = 采样步长，**字符**而非回调次数；`tool_monitor` = 工具路径的判定器，缺省沿用 `monitor`） |
 | `EarlyStop(RuntimeError)` | `hard_stop` 掐断流用的异常；`.certificate` = 那张停止证书 |
 | `error_block(phase, error, tokens=0, text_len=0)` | 构造载荷顶层的 `error` 块（`scope` 固定 `"partial-prefix"`） |
 | `handler.errors` | 本 handler 见到的异常清单（含 `EarlyStop`）—— 只看 `certificates` 分不出「正常结束」与「带错结束」 |
 | `handler.certificates` / `handler.stream_certificates` | 权威证书 / 流式（含早停）证书 |
 | `handler.stream_chain(run_id)` | 该 run 的流式证书链的载荷摘要列表 |
-| `verify_certificates(handler, keyring=None)` | 截至目前所有**权威**证书都能验签；`keyring` 缺省用 handler 自己的签名器（自验签），第三方验证传**公钥** |
+| `verify_certificates(handler, keyring=None)` | 截至目前所有**权威**证书都能验签；`keyring` 缺省用 handler 自己持有的**全部**签名器（`monitor` + `tool_monitor` 各一把时两把都收，自验签），第三方验证传**公钥** |
 | `verify_chain(certs)` | 流式链完整性（序号 + prev） |
 | `langchain_available()` / `langgraph_available()` | 依赖探测 |
 
@@ -571,17 +571,24 @@ FAIL**（第三方重算不了链尾），不是「默认通过」。这就是�
 
 | # | 必须做对 | 做错的后果 | LangChain | LangGraph | MCP |
 |---|---|---|---|---|---|
-| 1 | 「模型完成」→ `monitor.on_generate` | 生成路径没有证书 | `on_llm_end`（`langchain_adapter.py:352`） | `guard_node(kind="generate")`、`LangGraphEventCertifier`（`langgraph_adapter.py:71,148`） | `judge_result`（结果侧，`mcp_adapter.py:158`） |
-| 2 | 「工具结束」→ `gateway.issue` **再** `monitor.on_tool_call` | 判的是 agent 自述，不是网关回执 | `on_tool_end:427` | `LangGraphGuard.tool_node`（`:143`） | `call_tool`（`:179`，异步；同步版 `call_tool_sync:224`） |
-| 3 | **一把网关**，跨路径共用（显式 `gateway=`） | 两条链各指一条 `trace_root`，会话被劈成两条 | `PoPCallbackHandler(gateway=…)`（`:188`） | `LangGraphGuard(gateway=…)`（`:130`） | `MCPGuard(gateway=…)`（`:72`） |
+| 1 | 「模型完成」→ `monitor.on_generate` | 生成路径没有证书 | `on_llm_end`（`langchain_adapter.py:388`） | `guard_node(kind="generate")`、`LangGraphEventCertifier`（`langgraph_adapter.py:71,148`） | `judge_result`（结果侧，`mcp_adapter.py:158`） |
+| 2 | 「工具结束」→ `gateway.issue` **再** `tool_monitor.on_tool_call` | 判的是 agent 自述，不是网关回执 | `on_tool_end:463` | `LangGraphGuard.tool_node`（`:143`） | `call_tool`（`:179`，异步；同步版 `call_tool_sync:224`） |
+| 3 | **一把网关**，跨路径共用（显式 `gateway=`） | 两条链各指一条 `trace_root`，会话被劈成两条 | `PoPCallbackHandler(gateway=…)`（`:221`） | `LangGraphGuard(gateway=…)`（`:130`） | `MCPGuard(gateway=…)`（`:72`） |
 | 4 | `seal` 取**签发那一刻**的，不缓存 | 缓存的 seal = 悄悄关掉截尾检测 | 每个签名点现取 `gateway.seal()` | 同左 | `judge_result` |
-| 5 | `vkey_hash` + `proof_mode` **成对**给 | 第三方无从判断「隐藏了什么」 | 构造参数（`:183`） | `guard_node(..., proof_mode=)` | 构造参数（`:72`） |
+| 5 | `vkey_hash` + `proof_mode` **成对**给 | 第三方无从判断「隐藏了什么」 | 构造参数（`:216`） | `guard_node(..., proof_mode=)` | 构造参数（`:72`） |
 | 6 | **宽松提取**事件形状 | 换个框架版本就静默漏事件 | `_extract_text:53`、`_parse_args:86` | `_content_text:32` | `extract_result_text`（`trace.py:315`） |
 | 7 | 缺依赖时**导入回退 + 离线 fake** | 单测必须装框架，CI 跑不动 | `HAVE_LANGCHAIN`（`:30`） | `require_langgraph()`（`:48`） | 本就不 import mcp |
-| 8 | 有 token 级事件就接流式 | 失去早停与增量证书 | `on_llm_new_token:271` | 经同一 handler | — |
-| 9 | 失败也**签证书**，别只记日志 | 「失败」不成为产物上的事实 | `on_llm_error:369`、`on_tool_error:400` | 经同一 handler | — |
+| 8 | 有 token 级事件就接流式 | 失去早停与增量证书 | `on_llm_new_token:307` | 经同一 handler | — |
+| 9 | 失败也**签证书**，别只记日志 | 「失败」不成为产物上的事实 | `on_llm_error:405`、`on_tool_error:436` | 经同一 handler | — |
 
 第 3、4 两条是 `demo_e2e.py` 早期真踩过的（§6 第 4b 条），**不要以为新框架能绕开**。
+
+> 第 2 条还有一个**静默**的踩法（2026-09-18 实测撞到，见 [`../dev-plan.md`](../dev-plan.md)
+> §5.1.2 第 7 条）：**拿生成路径的 monitor 去判工具事件**。内容规则要 transcript 的
+> response，`on_tool_call` 因此抛 `PolicyError`；而**回调异常会被回调系统吞掉**
+> （LangChain 只留一条 `Error in …on_tool_end callback` 的 warning）—— 这次工具调用
+> 于是**既没有证书、也没有任何调用方可见的报错**，在产物上与「这次调用是干净的」
+> 完全同形。**两条路径要用两个 monitor**（`tool_monitor=`），这不是洁癖。
 
 ### 8.3 接一个新框架的步骤
 
@@ -604,6 +611,12 @@ FAIL**（第三方重算不了链尾），不是「默认通过」。这就是�
   ① 异常**会不会被回调系统吞掉**（LangChain 靠 `raise_error = False` 兜住）；
   ② 掐断后**走哪条错误路由**。换个框架，这两条都得重新验一遍 ——
   照抄 `EarlyStop` 的类名不解决任何问题。
+- **回调里的异常会不会被吞**（比上一条更靠前，也更隐蔽）：上面那道门是「你自己
+  抛的异常能不能出去」，这一条是「**别人抛的异常你能不能看见**」。缺省吞掉意味着
+  回调层的任何 bug 在调用方看来都是「什么都没发生」—— 产物上没有证书，也没有
+  报错。所以新框架第一件事是**验一次失败的回调会不会静默**：故意让判定抛一个，
+  看零证书是否伴随零报错。`tests/test_frameworks.py` 的
+  `test_real_tool_with_content_monitor_fails_silently` 把这条框架行为钉住了。
 - **回调的执行时机与顺序**：`on_tool_start`/`on_tool_end` 是否配对、
   `run_id` 在哪个字段、错误回调会不会被触发，各家不同
   （`langchain_adapter` 用 `_tool_starts[run_id]` 暂存就是为这个）。
@@ -615,6 +628,14 @@ FAIL**（第三方重算不了链尾），不是「默认通过」。这就是�
 - **给工具路径加结果侧认证**：需要的不是新代码，而是给 `MCPGuard` / 新适配器传
   `result_monitor=<内容策略 monitor>`。
 - **`result_monitor` 与 `monitor` 要用同一把网关**，理由同第 3 条。
+
+> **`result_monitor` ≠ `tool_monitor`，别把两者读混**（都是「第二个 monitor」）：
+> `result_monitor`（MCP）判的是工具的**返回文本**，走 `on_generate` —— 它是内容
+> 规则，只是判的对象换成了工具输出；`tool_monitor`（LangChain 回调 / LangGraph
+> 事件认证器）判的是**工具调用本身**（名字 + 参数 + 结果摘要的回执），走
+> `on_tool_call` —— 它用的是工具策略（`tool_arg_guard` / `budget_bound`）。
+> 同一个适配器**可以两者都要**：工具调用合不合规是 `tool_monitor` 的事，
+> 工具吐回来的那段文本合不合规是 `result_monitor` 的事。
 
 ### 8.6 变异测试：这条线怎么自查「测试是不是咬住了」
 

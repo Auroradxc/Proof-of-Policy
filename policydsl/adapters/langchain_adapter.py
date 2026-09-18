@@ -191,9 +191,29 @@ class PoPCallbackHandler(BaseCallbackHandler):
 
     ⚠️ ``streaming.tokens`` 是**回调次数**，仍然 provider 相关，只作诊断用；
     要跨 provider 比较，用 ``streaming.chars``（累计前缀的字符数）。
+
+    **两条路径的 monitor 是分开的**：``monitor`` 判生成路径，``tool_monitor``
+    判工具路径，缺省沿用 ``monitor``（⇒ 与旧行为逐字等价）。这不是洁癖，
+    它修的是一个**静默的 fail-open**：
+
+    ``on_tool_end`` / ``on_tool_error`` 此前**硬编码**把工具调用交给
+    ``self.monitor`` 判。若那个 monitor 持的是**内容**策略
+    （``keyword_block`` / ``pattern_block`` 这类要 transcript 的 response 的规则），
+    ``AgentMonitor.on_tool_call`` 会抛 ``PolicyError`` —— 而 **LangChain 缺省吞掉
+    回调异常**（``BaseCallbackHandler.raise_error`` 缺省 ``False``，只留一条
+    ``Error in PoPCallbackHandler.on_tool_end callback`` 的 warning）。净效果是
+    这次工具调用**既没有证书、也没有任何调用方可见的报错**，在产物上与
+    「这次调用是干净的」完全同形。同仓的 ``LangGraphEventCertifier`` 早就有
+    ``tool_monitor``，这里与之对齐。
+
+    名字**刻意不叫 ``result_monitor``**：MCP 那个判的是工具的*返回文本*
+    （``result_monitor.on_generate``），这个判的是*工具调用本身*
+    （``on_tool_call``）—— 角色不同，同名会把两者读混。
     """
 
-    def __init__(self, monitor: AgentMonitor, vkey_hash: str = "unproven",
+    def __init__(self, monitor: AgentMonitor,
+                 tool_monitor: Optional[AgentMonitor] = None,
+                 vkey_hash: str = "unproven",
                  proof_sha256: Optional[str] = None, on_cert=None,
                  stream_check: bool = True, stream_step_chars: int = 1,
                  on_stream_cert=None, stop_on_violation: bool = False,
@@ -202,6 +222,9 @@ class PoPCallbackHandler(BaseCallbackHandler):
                  hard_stop: bool = False):
         super().__init__()
         self.monitor = monitor
+        # 工具路径的 monitor。``or`` 而非 ``if None`` —— 与 LangGraphEventCertifier
+        # 同款，且缺省就是「一个 monitor 管两条路径」的旧行为。
+        self.tool_monitor = tool_monitor or monitor
         # 工具网关（P1-5）：工具回执由它签发（``on_tool_end`` 在工具**执行后**
         # 触发，此刻结果已经拿到，所以能签出含结果摘要的真回执）。
         self.gateway = gateway if gateway is not None else ToolGateway()
@@ -411,7 +434,7 @@ class PoPCallbackHandler(BaseCallbackHandler):
         self.errors.append(error)
 
     def on_tool_error(self, error: BaseException, **kwargs: Any) -> None:
-        """工具报错：网关照常签回执，工具路径照常出证。
+        """工具报错：网关照常签回执，工具路径照常出证（走 ``tool_monitor``）。
 
         工具失败**不是**「这次调用没发生过」—— MCP 服务器把执行失败当作一次
         正常返回（``isError: true`` + 错误消息），而那条错误消息本身就是内容
@@ -424,7 +447,7 @@ class PoPCallbackHandler(BaseCallbackHandler):
                                                       "args": {}}
         text = str(error)
         receipt = self.gateway.issue(rec["name"], rec["args"], result=text)
-        self._emit(self.monitor.on_tool_call(
+        self._emit(self.tool_monitor.on_tool_call(
             receipt, vkey_hash=self.vkey_hash, proof_mode=self.proof_mode,
             chain=self.gateway.receipts, seal=self.gateway.seal(),
             extra={"error": error_block("tool", error, text_len=len(text))}))
@@ -438,25 +461,45 @@ class PoPCallbackHandler(BaseCallbackHandler):
                                      "args": _parse_args(input_str)}
 
     def on_tool_end(self, output: Any, **kwargs: Any) -> None:
-        """工具结束：网关签发回执，再凭回执签发工具调用证书（P1-5）。"""
+        """工具结束：网关签发回执，再凭回执签发工具调用证书（P1-5）。
+
+        判定走 ``self.tool_monitor`` —— 持内容策略的 monitor 判工具调用会抛
+        ``PolicyError``，而 LangChain 缺省吞掉回调异常（见类 docstring）。
+        """
         run_id = str(kwargs.get("run_id") or "")
         rec = self._tool_starts.pop(run_id, None) or {"name": _tool_name(None, kwargs), "args": {}}
         receipt = self.gateway.issue(rec["name"], rec["args"],
                                      result=extract_result_text(output))
-        self._emit(self.monitor.on_tool_call(receipt, vkey_hash=self.vkey_hash,
-                                             proof_mode=self.proof_mode,
-                                             chain=self.gateway.receipts,
-                                             seal=self.gateway.seal()))
+        self._emit(self.tool_monitor.on_tool_call(receipt, vkey_hash=self.vkey_hash,
+                                                  proof_mode=self.proof_mode,
+                                                  chain=self.gateway.receipts,
+                                                  seal=self.gateway.seal()))
+
+
+def _handler_keyring(handler: "PoPCallbackHandler") -> Any:
+    """handler 持有的**全部** monitor 的签名器装成的 keyring（自验签用）。
+
+    取两个而不是只取 ``monitor``：``tool_monitor`` 可以持另一把签名器，只取一把
+    会让工具证书自验不过 —— 那不是「证书有问题」，是自验的 ring 取窄了。
+    两条路径共用同一把签名器时（常见情形）这里自然只有一把，keyid 相同即去重。
+    """
+    signers = []
+    for m in (getattr(handler, "monitor", None), getattr(handler, "tool_monitor", None)):
+        signer = getattr(m, "signer", None)
+        if signer is not None:
+            signers.append(signer)
+    return _cert.keyring(*signers)
 
 
 def verify_certificates(handler: "PoPCallbackHandler", keyring: Any = None) -> bool:
     """截至目前签发的所有证书都能验证通过。
 
     ``keyring`` 可以是 ``Signer`` / 公钥 / ``{keyid: 验签器}`` / 裸 ``bytes``
-    （旧式 HMAC，仅测试）。**缺省用 handler 自己的签名器**——那是「自验签」，
-    对 demo/测试够用；第三方验证必须传入**公钥**，见 ``policydsl.evidence.keys``。
+    （旧式 HMAC，仅测试）。**缺省用 handler 自己持有的全部签名器**——那是
+    「自验签」，对 demo/测试够用；第三方验证必须传入**公钥**，
+    见 ``policydsl.evidence.keys``。
     """
-    kr = keyring if keyring is not None else handler.monitor.signer
+    kr = keyring if keyring is not None else _handler_keyring(handler)
     return all(_cert.verify_envelope(env, kr)[0] for env in handler.certificates)
 
 
