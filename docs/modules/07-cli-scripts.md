@@ -471,6 +471,13 @@ python3 scripts/demo/demo_e2e.py --model anthropic:claude-sonnet-5 # 需 ANTHROP
 5. **锚定**：每张证书的 `cert_digest` 入账本；给了 `--rpc/--contract` 就**同时上链**
    （成功后回写 `meta.on_chain`）。
 
+> **文件骨架**：上面这五步都在 `run_demo(args)` 里，它跑完落 `session.json` 并返回
+> 一份**结果记录**（dict）；`print_summary(r)` 只读那份记录打终端摘要，不写盘、
+> 不判定；`parse_args()` 管参数；`main()` 只剩「串起来 + 算退出码」四行。
+> 判定（`ok`）在 `run_demo` 末尾算一次、由 `main` 读 —— 所以摘要不会与退出码
+> 说两套话。这条切分是**纯搬位置**（`docs/dev-plan.md` §5.8.3 步 4），CLI 与输出
+> 逐行未变。
+
 > ⚠️ **第 4 步默认只做宿主校验，两张证书都标 `unproven`** —— 这不是为了省时间，
 > 是**证不了**：用本 demo 的 `agent_content_v1`（3 条规则、含 `pattern_block`）出证，
 > **公开模式能过、私有模式不能**。本机 11.9 GB 上实测被内核 OOM-kill，

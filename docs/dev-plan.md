@@ -2875,7 +2875,7 @@ R13 四条删除各自的门禁全绿，R14 四条判据全过且等效性由快
 | 1 | **结构/架构文档校对**（第 1–5、10 条）：07 计数与 verify 组、`model_fp` 补三处、trace/keys/runtime/paths 认领、02 头部补 `challenge.py`、5 处计划错指、根 README 目录树 | 悬空链接 0 + **782 passed / 15 skipped** | ✅ `4b473ad` |
 | 2 | **评测文档**（第 6 条）：`bench/README.md` 六→八个、补两行；`08` 校对其 bench 节 | 同上 | ✅ `9c6dba6` |
 | 3 | **demo 代码重整**（第 7–9 条）：`private_demo.py` 加 `--out-dir`（缺省值**保持原样**，只是可覆盖）并接进 `demo_all.sh`；删死 `_solo`；`demo_all.sh --shots` 把报告腿接上 | `test_demo_e2e` + `demo_all.sh`（fast）+ `--shots` 真跑出四份产物 | ✅ 2026-09-18 |
-| 4 | **拆 `demo_e2e.py` 的 `main`**（258 行）：纯搬位置、行为不变，口径同 R8 | `test_demo_e2e` + fast demo **输出逐行不变** | |
+| 4 | **拆 `demo_e2e.py` 的 `main`**（258 行）：纯搬位置、行为不变，口径同 R8 | `test_demo_e2e` + fast demo **输出逐行不变** | ✅ 2026-09-18 |
 | 5 | **demo 文档重写**（第 9、11 条）：补 `make_shots` 一环、修环境前提、统一计时口径、更新产物树；**重渲**三份过期产物 | 8 条支路与 `LANES` 机械比对一致 + 四份产物 mtime 全部更新 | |
 | 6 | **开发手册校对**：`docs/development.md` 补两条 verify 脚本与 `--shots` 用法，计数对齐 | 手册里每条新命令**实敲一遍** | |
 | 7 | 收尾：测试计数「四处同步」、交叉链接普查、推送 | 全量 + 工作树干净 + origin 同步 | |

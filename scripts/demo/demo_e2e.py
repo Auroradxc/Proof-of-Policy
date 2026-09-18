@@ -378,7 +378,20 @@ def mode_contrast(out_dir: Path, response: str, vkey: str, prove: bool,
     return pub, priv, ok
 
 
-def main() -> int:
+# ------------------------------------------------------- 参数 / 骨架 / 摘要 --
+# `main` 此前是 258 行的一整块：解析参数、跑五段链路、汇总会话、打十几行终端
+# 摘要、算退出码，五件事挤在一个作用域里。它们的**生命周期并不相同** ——
+# 参数要能被单独读，摘要是**纯输出**、只依赖产物记录，判定是另一回事。
+# 捆在一起之后：改任何一段都得先读懂整块；而「打印」与「判定」混在一起意味着
+# 摘要里一个格式化错误会变成一次运行失败（反之，判定被打印副作用影响也一样糟）。
+#
+# 这里按生命周期切成四段，**纯搬位置、行为一字不改**（回归判据：fast 模式
+# 的终端输出逐行不变，见 docs/dev-plan.md §5.8.3 步 4）：
+#   parse_args    → 参数
+#   run_demo      → 跑链路 + 落 `session.json`，返回一份**结果记录**
+#   print_summary → 只读那份记录，把终端摘要打出来（不判定、不写盘）
+#   main          → 串起来 + 算退出码
+def parse_args(argv=None) -> argparse.Namespace:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", type=Path, default=REPO / "scripts" / "examples" / "out" / "e2e")
     ap.add_argument("--no-prove", action="store_true", help="skip the real SP1 proof")
@@ -403,8 +416,16 @@ def main() -> int:
                          "自备端点）。缺省是离线桩 —— CI 与 demo_all.sh 不依赖网络与 key。"
                          "注意：真模型下「违规那条会不会被触发」是**数据相关**的，"
                          "证书张数随之下浮动，见 docs/dev-plan.md §5.1.3")
-    args = ap.parse_args()
+    return ap.parse_args(argv)
 
+
+def run_demo(args) -> dict:
+    """跑完整条链路，落 `session.json`，返回一份**结果记录**（dict）。
+
+    记录里既有产物坐标（`out_dir` / `ledger` / `session` / `signer` / `proof_rel`），
+    也有判定所需的三项（`ok` 已在末尾算好）。`print_summary` 只读它，不重算 ——
+    「打印的数」与「判定的数」出自同一处，才不会出现摘要说 PASS、退出码 1 这种局面。
+    """
     out_dir: Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     ledger = out_dir / "ledger.jsonl"
@@ -583,6 +604,28 @@ def main() -> int:
                             "anchored": on_chain["n"], "last_tx": on_chain.get("tx_hash")}
     (out_dir / "session.json").write_text(json.dumps(session, indent=2))
 
+    return {
+        "out_dir": out_dir, "ledger": ledger, "reason": reason, "session": session,
+        "signer": signer, "n_entries": len(session_entries),
+        "proof_rel": proof_rel, "zk_passed": zk_passed, "zk_mode": zk_mode,
+        "zk_challenge": zk_ch, "ok_challenge": ok_challenge,
+        "contrast": contrast, "on_chain": on_chain,
+        # 判定在这里算一次，`main` 直接读 —— 摘要因此不可能与退出码说两套话。
+        "ok": ok_chain and ok_challenge and (contrast is None or contrast["ok"]),
+    }
+
+
+def print_summary(r: dict) -> None:
+    """只读结果记录，把终端摘要打出来。**不写盘、不判定、不抛异常。**
+
+    每一行都是现读的：`llm model` 那行**永远**打（读产物的人不该去猜那段生成
+    到底是不是真的），`--no-prove` / `--no-contrast` 造成的缺席也在行内写明。
+    """
+    out_dir, session, signer = r["out_dir"], r["session"], r["signer"]
+    ledger, reason, on_chain = r["ledger"], r["reason"], r["on_chain"]
+    proof_rel, zk_passed, zk_mode = r["proof_rel"], r["zk_passed"], r["zk_mode"]
+    zk_ch, ok_challenge, contrast = r["zk_challenge"], r["ok_challenge"], r["contrast"]
+
     print(f"session     : {out_dir / 'session.json'}")
     print(f"signer      : {signer.keyid}")
     print(f"              public_hex={signer.public_hex}")
@@ -626,13 +669,17 @@ def main() -> int:
         print(f"             证据档位: {'core（--contrast-prove）' if contrast['proved'] else 'unproven（宿主校验；本机 12 GB 证不了这条策略的私有模式，见 README）'}")
     print(f"ledger      : {ledger} chain={reason}")
     if on_chain["n"]:
-        print(f"on-chain    : {on_chain['n']}/{len(session_entries)} anchored on "
+        print(f"on-chain    : {on_chain['n']}/{r['n_entries']} anchored on "
               f"{on_chain['contract']} (tx={str(on_chain.get('tx_hash'))[:18]}…)")
     else:
         print("on-chain    : skipped (no --rpc/--contract; pass them to anchor on a real chain)")
     print("\nverify with: python3 scripts/verify/verify_session.py --session " + str(out_dir / "session.json"))
-    ok = ok_chain and ok_challenge and (contrast is None or contrast["ok"])
-    return 0 if ok else 1
+
+
+def main() -> int:
+    r = run_demo(parse_args())
+    print_summary(r)
+    return 0 if r["ok"] else 1
 
 
 if __name__ == "__main__":
