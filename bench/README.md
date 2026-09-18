@@ -1,7 +1,8 @@
 # bench/ — 评测
 
-六个脚本：前四个覆盖「成本 vs（响应长度 × 规则数 × 匹配模式）」，后两个覆盖
-P2-9 的语义规则与 P1-6 的组合证明：
+八个脚本：前四个覆盖「成本 vs（响应长度 × 规则数 × 匹配模式）」，接着两个覆盖
+P2-9 的语义规则与 P1-6 的组合证明，最后两个是**流式路径的二次代价**与
+**SP1 prover 旋钮矩阵**：
 
 | 脚本 | 测什么 | 用时 | 说明 |
 |---|---|---|---|
@@ -11,6 +12,8 @@ P2-9 的语义规则与 P1-6 的组合证明：
 | `bench_verify.py` | **验证成本**（冷启动 CLI / vkey setup / 纯验证） | 每次 ~20s | 区分「CLI 冷启动（含构造证明器）」与「纯密码学验证」 |
 | `bench_semantic.py` | **ezkl 陪伴证明的成本**（setup / prove / verify） | 真出 ezkl 证明 | **各阶段分进程**跑（叠加会 OOM）；见 `docs/design-semantic-rules.md` §8 |
 | `bench_compose.py` | **组合证明的成本**（`pop-program` / `pop-infer` 两半各自 prove/verify + 组合层开销） | 真出两份 SP1 证明 | **两半分进程**跑；逐条检验「成本 ≈ 两者之和、由推理主导」这句假设 |
+| `bench_streaming.py` | **流式路径的二次代价**：逐字符采样 ⇒ 总代价 `Θ(L²)` | 几秒–几十秒（**不出证**） | 走**真实**回调 `on_llm_new_token` 逐字符喂，不自己模拟采样循环；是「~0.07 ms/字符」那句**线性外推**的取证工具（0.07 ms 是 `L≈200` 的瞬时值，被当常数用了）。`semantic_demo_v1` **流不了**（委托给 ezkl 的那类直接 `NotImplementedError`）——这条边界**当断言跑**并写进结果，不静默跳过 |
+| `bench_prover_knobs.py` | **SP1 prover 旋钮矩阵**（R11）：`SP1_WORKER_*` 一族能不能把那条 ~10.15 GiB 的地板压低 | 每个配置一次真证明 | 旋钮**没有 CLI**，全在环境变量里（读 `sp1-prover` 源码确认在本仓路径上）；实测 `NUM_CORE_WORKERS` 4→1 省 **1.14 GiB**，而只压通道容量**一点没省** —— 占内存的是 worker 数。另有一组**悬崖 A/B**（`prover_knobs_cliff.*`）|
 
 运行（需先构建 `circuits`，见 `docs/reproduce.md` §2）：
 
@@ -24,9 +27,19 @@ SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>  # → bench/re
 SP1_PROVER=cpu python3 bench/bench_semantic.py                  # → bench/results/semantic.{json,md}
 SP1_PROVER=cpu python3 bench/bench_compose.py                   # → bench/results/compose.{json,md}
 python3 bench/bench_compose.py --render-only                    # 不出证：由已有 JSON 重渲染 .md
+python3 bench/bench_streaming.py                                # → bench/results/streaming.{json,md}
+SP1_PROVER=cpu python3 bench/bench_prover_knobs.py              # → bench/results/prover_knobs.{json,md}
+python3 bench/bench_prover_knobs.py --render-only               # 不出证：由已有 JSON 重渲染 .md
 ```
 
 结果写入 `bench/results/`（**已入库**，供论文/文档引用）；中间产物 `bench/work/` 被忽略。
+
+> **一处刻意的例外**：`bench/results/ablation_live.{json,md}` 是 R11 那轮留下的**活体实验
+> 产物**，既**不入库**、也**一直不动**（见 [`../docs/dev-plan.md`](../docs/dev-plan.md)
+> §5.7.16）。所以 `git status` 里长期挂着这两个未跟踪文件是**预期状态**，不是漏提交。
+> （`tests/test_bench_views.py` 的 `VIEWS` 只申报了 `proofs` / `prover_knobs` /
+> `prover_knobs_cliff` 三份，`ablation` 系列本来就不在它的管辖内 —— 别把这条
+> 未跟踪当成「视图闸门漏了」。）
 **对标**：`bench/comparison_zkagent.md`（vs zkAgent, ePrint 2026/199）。
 
 设计要点：

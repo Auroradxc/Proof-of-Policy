@@ -131,7 +131,7 @@ core 边车不得走快路径 —— 这些保证正向检查**不是恒真**的
 
 ## 3. 评测（`bench/`）
 
-**七个脚本**，覆盖七种成本：
+**八个脚本**，覆盖八种成本：
 
 | 脚本 | 测什么 | 用时不出证？ | 输出 |
 |---|---|---|---|
@@ -142,6 +142,7 @@ core 边车不得走快路径 —— 这些保证正向检查**不是恒真**的
 | `bench_semantic.py` | **ezkl 陪伴证明的成本**（setup / prove / verify） | 真出 ezkl 证明 | `bench/results/semantic.{json,md}` |
 | `bench_compose.py` | **组合证明的成本**（两半各自 prove/verify + 组合层开销） | 真出两份 SP1 证明 | `bench/results/compose.{json,md}` |
 | `bench_streaming.py` | **流式路径的 `Θ(L²)` 代价**（逐字符喂真实回调；6 个包 × 3 个长度） | 全程 **~9 s**（不出证） | `bench/results/streaming.{json,md}` |
+| `bench_prover_knobs.py` | **SP1 prover 旋钮矩阵**（R11）：`SP1_WORKER_*` 能否压低那条 ~10.15 GiB 的地板；另有悬崖 A/B | 每个配置一次真证明 | `bench/results/prover_knobs{,_cliff}.{json,md}` |
 
 ```bash
 python3 bench/bench_cycles.py
@@ -150,6 +151,7 @@ python3 bench/bench_streaming.py
 SP1_PROVER=cpu python3 bench/bench_proofs.py
 SP1_PROVER=cpu python3 bench/bench_verify.py --proof <proof.bin>
 SP1_PROVER=cpu python3 bench/bench_compose.py
+SP1_PROVER=cpu python3 bench/bench_prover_knobs.py     # 旋钮无 CLI，全在 SP1_WORKER_* 环境变量
 ```
 
 > `bench_proofs.py` 另有 `--proof-mode {core,compressed,groth16,plonk}`（默认 core）与
