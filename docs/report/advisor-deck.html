@@ -123,6 +123,9 @@ thead th{font-size:11.5px; font-weight:650; color:var(--muted); letter-spacing:.
 tbody tr:last-child td{border-bottom:0}
 td.n,th.n{font-variant-numeric:tabular-nums; white-space:nowrap}
 td code{font-size:12.5px}
+.tbl--sm table{font-size:12.5px}
+.tbl--sm th,.tbl--sm td{padding:5.5px 10px}
+.tbl--sm td code{font-size:11.5px}
 
 /* ---------- 状态标 ---------- */
 .chip{display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; padding:2.5px 8px; border-radius:999px; border:1px solid transparent; white-space:nowrap}
@@ -132,7 +135,7 @@ td code{font-size:12.5px}
 .chip--acc{color:var(--acc-ink); background:var(--acc-soft); border-color:color-mix(in srgb,var(--acc) 30%,transparent)}
 .chip--mute{color:var(--muted); background:var(--line-2); border-color:var(--line)}
 
-/* ---------- 标签-内容行（未解决问题 / 备答） ---------- */
+/* ---------- 标签-内容行 ---------- */
 .rows{display:flex; flex-direction:column}
 .rowitem{display:grid; grid-template-columns:104px minmax(0,1fr); gap:14px; padding:9px 0; border-top:1px solid var(--line-2); align-items:start}
 .rowitem:first-child{border-top:0}
@@ -140,13 +143,32 @@ td code{font-size:12.5px}
 .rowitem__v{font-size:14px; line-height:1.6}
 @media (max-width:620px){ .rowitem{grid-template-columns:minmax(0,1fr); gap:3px} }
 
-/* ---------- 终端内嵌面板（两主题下都是深色，终端本来就该是深色） ---------- */
+/* ---------- 终端 / 代码内嵌面板（两主题下都是深色） ---------- */
 .term{background:var(--sunken); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow-x:auto}
 .term pre{margin:0; font-family:var(--mono); font-size:12.5px; line-height:1.75; color:var(--sunken-ink)}
 .term .ok{color:#34c77b}
 .term .dim{color:#8b94a8}
 .term .hl{color:#6ea8fe}
+.term .cm{color:#8b94a8}
+/* 正文里的「这一处要动两层」类强调。.term 内的 .hl 只作用于代码块，
+   表格单元格里用不了，所以正文用 .mark，两者互不冒充。 */
+.mark{color:var(--acc-ink); background:var(--acc-soft); border-radius:4px; padding:1px 4px; font-weight:600}
 .shot{display:block; width:100%; height:auto; border:1px solid var(--line); border-radius:10px}
+
+/* ---------- 框架图（内联 SVG，两主题都跟着 token 走） ---------- */
+.fg{display:block; width:100%; height:auto}
+.fg-band{fill:var(--card); stroke:var(--line); stroke-width:1}
+.fg-band--acc{fill:var(--acc-soft); stroke:var(--acc); stroke-width:1.4}
+.fg-chip{fill:var(--bg); stroke:var(--line); stroke-width:1}
+.fg-band--acc .fg-chip{fill:var(--card); stroke:color-mix(in srgb,var(--acc) 40%,transparent)}
+.fg-t{font-weight:650; font-size:13px; fill:var(--ink)}
+.fg-s{font-size:10px; fill:var(--muted); font-family:var(--mono)}
+.fg-l{font-weight:700; font-size:13.5px; fill:var(--muted); letter-spacing:.04em}
+.fg-l--acc{fill:var(--acc-ink)}
+.fg-ar{stroke:var(--muted); stroke-width:1.5; fill:none}
+.fg-ar--acc{stroke:var(--acc); stroke-dasharray:5 4}
+#fgA path{fill:var(--muted)}
+#fgB path{fill:var(--acc)}
 
 /* ---------- 如实标注 ---------- */
 .honest{border-left:0; background:var(--warn-soft); border:1px solid color-mix(in srgb,var(--warn) 34%,transparent); border-radius:var(--r); padding:12px 15px}
@@ -200,46 +222,54 @@ html:not([data-mode="present"]) .hint{display:none}
       <div class="kpi"><div class="kpi__n">8<small>条</small></div><div class="kpi__l">端到端支路，各带独立驱动</div></div>
       <div class="kpi"><div class="kpi__n">801<small>/15</small></div><div class="kpi__l">全量测试通过 / 设计内跳过</div></div>
       <div class="kpi"><div class="kpi__n">3<small>个</small></div><div class="kpi__l">SP1 guest 程序，键分离</div></div>
-      <div class="kpi"><div class="kpi__n">L1<small>–L9</small></div><div class="kpi__l">形式化安全模型引理，逐条给代码落点</div></div>
+      <div class="kpi"><div class="kpi__n">1<small>台</small></div><div class="kpi__l">云机是唯一的外部阻塞（≥64 GB）</div></div>
     </div>
-    <p class="src">仓库：zk-policy ｜ 一键复现：<code>bash scripts/demo/demo_all.sh</code> ｜ 逐条数字的出处见文末附录</p>
+    <p class="src">汇报脉络：任务目标 → 进度 → 设计思路与实现（含框架图）→ 系统流程 → 模块耦合 → 可切换的模式与状态 → 创新点 → 未完成 → 未来落地</p>
   </div>
 </section>
 
-<!-- ============================ 2 · 问题与定位 ============================ -->
+<!-- ============================ 2 · 任务目标 ============================ -->
 <section class="slide" id="s2">
   <div class="slide__in">
-    <div class="eyebrow">问题</div>
-    <h2>「我的 agent 是合规的」——这句话凭什么信？</h2>
-    <div class="grid g3">
-      <div class="card">
-        <div class="card__t">① 日志可伪造</div>
-        <div class="card__d">运营方自己记的日志，自己就能改。审计方拿到的是一份<strong>声明</strong>，不是证据。</div>
-      </div>
-      <div class="card">
-        <div class="card__t">② 「护栏跑过了」≠「合规了」</div>
-        <div class="card__d">TEE 路线证明的是<strong>护栏代码被执行过</strong>（执行 ≠ 合规），而且要把输入输出交给第三方硬件。</div>
-      </div>
-      <div class="card">
-        <div class="card__t">③ 隐私与可核验相互顶牛</div>
-        <div class="card__d">要把响应交出来才能验 —— 可一旦交出来，合规的那部分内容也一并泄露了。</div>
-      </div>
-    </div>
+    <div class="eyebrow">任务目标</div>
+    <h2>要证明什么，以及<strong>不</strong>证明什么</h2>
     <div class="card lift">
-      <div class="card__t">本项目要的东西：一份<strong>验证方自己算得出来</strong>的证据</div>
-      <div class="q">给定<strong>公开策略 π</strong> 与一条响应 <code>T</code>，任何人都能独立验证「<code>T</code> 满足 π」；
-        而违规内容只以<strong>证据承诺</strong>披露 —— 结论公开、内容不公开、无硬件信任。</div>
+      <div class="card__t">目标一句话</div>
+      <div class="q">给定<strong>公开策略 π</strong> 与一条 agent 响应 <code>T</code>，产出一份
+        <strong>验证方自己算得出来</strong>的证据：「<code>T</code> 满足 π」——
+        结论公开、违规内容不公开、<strong>无硬件信任</strong>。</div>
     </div>
-    <div class="grid g2u">
+    <div class="grid g2">
       <div class="card">
-        <div class="card__t">坐标系（<code>docs/quadrant.md</code>）</div>
-        <div class="card__d">纵轴＝证明<strong>性质成立</strong>还是<strong>护栏执行过</strong>；横轴＝信任来自<strong>密码学</strong>还是<strong>硬件/人工</strong>。
-          「密码学健全 × 证性质」这一格<strong>此前为空</strong>，本项目落在该格。</div>
+        <div class="card__t">要做到的四件事</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">① 可判定</div><div class="rowitem__v">把策略写成<strong>机器可判定</strong>的规则，编译成一个跨层契约</div></div>
+          <div class="rowitem"><div class="rowitem__k">② 可证明</div><div class="rowitem__v">判定过程搬进 zkVM（SP1），产出证明而<strong>不暴露响应</strong></div></div>
+          <div class="rowitem"><div class="rowitem__k">③ 可核验</div><div class="rowitem__v">第三方<strong>只用公开产物</strong>就能复算，不需要信运营方</div></div>
+          <div class="rowitem"><div class="rowitem__k">④ 可接入</div><div class="rowitem__v">接<strong>真实</strong> agent 框架，判的是真会话，不是 mock</div></div>
+        </div>
       </div>
       <div class="card">
-        <div class="card__t">一句话边界</div>
-        <div class="card__d">证的是<strong>策略满足性</strong>，<strong>不是</strong>推理正确性；不涉及模型权重，也不证明「这条 <code>T</code> 一定是那个 LLM 算出来的」。</div>
+        <div class="card__t">明确<strong>不</strong>做的事（答辩防线）</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">不证推理</div><div class="rowitem__v">不证「模型算得对」，也不证「这条 <code>T</code> 一定是那个 LLM 算出来的」（代理 MLP 除外，且如实标注）</div></div>
+          <div class="rowitem"><div class="rowitem__k">不碰权重</div><div class="rowitem__v">不涉及模型权重与训练过程</div></div>
+          <div class="rowitem"><div class="rowitem__k">不做实时</div><div class="rowitem__v">不做实时护栏 —— 出证按分钟计，定位是<strong>离线审计 / 报送 / 批量核查</strong></div></div>
+          <div class="rowitem"><div class="rowitem__k">不声称全隐</div><div class="rowitem__v">「零知识」只到<strong>策略零知识</strong>：不保证响应内容不可恢复</div></div>
+        </div>
       </div>
+    </div>
+    <div class="tbl-wrap tbl--sm">
+      <table>
+        <thead><tr><th>交付判据（怎么算做完了）</th><th>判据形态</th><th>现状</th></tr></thead>
+        <tbody>
+          <tr><td>端到端支路可跑</td><td><code>bash scripts/demo/demo_all.sh</code> 无 FAIL、SKIP 集合不变</td><td><span class="chip chip--ok">8/8 通过</span></td></tr>
+          <tr><td>第三方能独立复算</td><td><code>verify_session.py</code> 只用公开产物 → <code>RESULT: PASS</code></td><td><span class="chip chip--ok">10/10 检查</span></td></tr>
+          <tr><td>两层判定一致</td><td>跨语言对拍 Python↔Rust 逐点相同（CI <code>rust</code> job）</td><td><span class="chip chip--ok">19/19</span></td></tr>
+          <tr><td>真出证能过</td><td><code>regression_prove.py --label …</code> 出证腿 + 验证腿双 PASS</td><td><span class="chip chip--ok">5 次留痕</span></td></tr>
+          <tr><td>换证明模式也能出证</td><td><code>compressed</code>/<code>groth16</code>/<code>plonk</code> 真证明 + 链上验证合约</td><td><span class="chip chip--warn">卡在本机内存（T1）</span></td></tr>
+        </tbody>
+      </table>
     </div>
   </div>
 </section>
@@ -275,10 +305,226 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 4 · 八环流程 ============================ -->
-<section class="slide" id="s4">
+<!-- ============================ 4 · 完成度地图 ============================ -->
+<section class="slide slide--tight" id="s4">
   <div class="slide__in">
-    <div class="eyebrow">完整流程 · 八环</div>
+    <div class="eyebrow">完成度地图</div>
+    <h2>哪块完成了、哪块没有 —— 一页看完</h2>
+    <div class="tbl-wrap tbl--sm">
+      <table>
+        <thead><tr><th>模块</th><th>状态</th><th>做到哪 / 缺什么</th></tr></thead>
+        <tbody>
+          <tr><td>策略 DSL 与编译</td><td><span class="chip chip--ok">完成</span></td><td>8 类规则；编译期 fail-fast 语法子集闸门；<strong>跨语言对拍 19/19</strong></td></tr>
+          <tr><td>运行时插桩（4 个适配器）</td><td><span class="chip chip--ok">完成</span></td><td>LangChain / LangGraph / MCP / 通用，均按真会话路径实测</td></tr>
+          <tr><td>证书与账本</td><td><span class="chip chip--ok">完成</span></td><td>DSSE 信封 + Ed25519；链式防篡改账本；<code>verify_cert.py</code> 逐项 PASS</td></tr>
+          <tr><td>SP1 核心证明</td><td><span class="chip chip--ok">完成</span></td><td>19 向量真出证，5 次留痕 <code>vkey_hash</code>/<code>proof_bytes</code> 全同</td></tr>
+          <tr><td>工具轨迹绑定</td><td><span class="chip chip--ok">完成</span></td><td>回执链 + <code>ToolSeal</code>；工具回调 fail-closed 已落地</td></tr>
+          <tr><td>组合 / 会话 / 多方证明</td><td><span class="chip chip--ok">完成</span></td><td>三条支路各自跑通；推理半是<strong>代理 MLP</strong>（非真实 LLM）</td></tr>
+          <tr><td>语义规则（ezkl）</td><td><span class="chip chip--warn">部分</span></td><td>公开模式已通；<strong>私有模式不支持</strong>；随包是演示用小模型</td></tr>
+          <tr><td>链上锚定</td><td><span class="chip chip--warn">部分</span></td><td>本地 Anvil 端到端跑通；<strong>未接公共测试网/主网</strong>，合约里<strong>没有</strong>证明验证</td></tr>
+          <tr><td>groth16 / plonk 真证明</td><td><span class="chip chip--bad">未做</span></td><td>本机 compressed 峰值 11.0 GB、groth16 峰值 11.07 GB <strong>均 OOM</strong>（= T1）</td></tr>
+          <tr><td>定时回归（T3）</td><td><span class="chip chip--bad">未做</span></td><td>cron/systemd 配方已写进文档，但<strong>没有任何机器挂着它</strong></td></tr>
+          <tr><td>生产化</td><td><span class="chip chip--bad">未做</span></td><td>私钥 HSM/KMS 托管、服务 TLS、细粒度权限都没有</td></tr>
+          <tr><td>demo 视频（里程碑 m3）</td><td><span class="chip chip--bad">未交付</span></td><td><strong>如实记为未交付</strong>，改由一键 demo + 截图替代</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="src">状态口径：<span class="chip chip--ok">完成</span> = 有可复现的判据且已通过；<span class="chip chip--warn">部分</span> = 主路通但边界明确未覆盖；<span class="chip chip--bad">未做/未交付</span> = 有登记、有归口，但产物不存在。</p>
+  </div>
+</section>
+
+<!-- ============================ 5 · 设计思路 ============================ -->
+<section class="slide" id="s5">
+  <div class="slide__in">
+    <div class="eyebrow">设计思路</div>
+    <h2>威胁模型与四条核心取舍</h2>
+    <div class="grid g2u">
+      <div class="card">
+        <div class="card__t">对手能做什么（威胁模型）</div>
+        <div class="card__d" style="margin-bottom:9px">假定 <strong>运营方是恶意的</strong>：它能改日志、改代码、夸大合规性，也能挑输入。</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">要防的</div><div class="rowitem__v">伪造合规结论 · 篡改/替换响应 · 删改工具调用记录 · 截断轨迹尾部</div></div>
+          <div class="rowitem"><div class="rowitem__k">不防的</div><div class="rowitem__v">工具网关本身作恶（假设 A4，是模型里<strong>最弱的一环</strong>，已如实标注）· 底层哈希/签名的密码学假设被攻破</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__t">为什么不用 TEE</div>
+        <div class="card__d">TEE 路线证的是「<strong>护栏代码被执行过</strong>」—— 执行 ≠ 合规；而且它要求把输入输出交给第三方硬件，
+          恰好与<strong>内容隐私</strong>相抵。本项目把信任从<strong>硬件</strong>换到 <strong>zkVM 健全性 + 哈希</strong>，
+          代价是每次开销从「硬件延迟」变成「证明时间」。</div>
+      </div>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">取舍 ① 证「性质」而不是「执行」</div>
+        <div class="card__d">证明的公开值是 <code>passed / violations / policy_hash…</code>，不是「某段代码跑过」的日志。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">取舍 ② 判「整条链」而不是「这一条」</div>
+        <div class="card__d">工具证书的 <code>passed</code> 含义是「会话进行到这次调用为止一直合规」。保守取侧：一张写 <code>passed=True</code> 的证书绝不该出现在一条脏轨迹上。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">取舍 ③ 判不了就<strong>出证判失败</strong>，不是沉默</div>
+        <div class="card__d">fail-closed：判定做不了 ⇒ 仍为同一条回执签一张 <code>passed=false</code> 的证书 + 顶层 <code>judgment</code> 块。沉默与「干净」在产物上同形，那正是要消灭的歧义。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">取舍 ④ 层间只签<strong>一份</strong>合同</div>
+        <div class="card__d">Python 参考层与 Rust 电路层之间只有 <code>ConstraintSpec</code> 一个接口，其余各自实现、用对拍保证一致。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 6 · 系统框架图 ============================ -->
+<section class="slide" id="s6">
+  <div class="slide__in">
+    <div class="eyebrow">系统框架</div>
+    <h2>六层结构：出证侧五层 + 验证侧一层</h2>
+    <svg class="fg" viewBox="0 0 1180 500" role="img"
+         aria-label="系统框架图：策略层、契约层、运行时层、产物层、证明层构成出证侧，验证层为第三方；契约层同时约束两端，验证层只吃公开产物">
+      <defs>
+        <marker id="fgA" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z"/>
+        </marker>
+        <marker id="fgB" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z"/>
+        </marker>
+      </defs>
+
+      <!-- ---- 策略层 ---- -->
+      <rect class="fg-band" x="14" y="14" width="1128" height="68" rx="12"/>
+      <text class="fg-l" x="26" y="54">策略层</text>
+      <rect class="fg-chip" x="120" y="26" width="318" height="44" rx="9"/>
+      <text class="fg-t" x="136" y="46">策略包 JSON</text>
+      <text class="fg-s" x="136" y="61">policy_packs/*.json · 8 类规则</text>
+      <path class="fg-ar" d="M446,43 L455,48 L446,53" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="464" y="26" width="318" height="44" rx="9"/>
+      <text class="fg-t" x="480" y="46">编译器</text>
+      <text class="fg-s" x="480" y="61">core/compile.py · fail-fast 语法闸门</text>
+      <path class="fg-ar" d="M790,43 L799,48 L790,53" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="808" y="26" width="318" height="44" rx="9"/>
+      <text class="fg-t" x="824" y="46">语义规则旁路</text>
+      <text class="fg-s" x="824" y="61">semantic_bound → ezkl 陪伴证明</text>
+
+      <path class="fg-ar" d="M618,83 L627,88 L618,93" marker-end="url(#fgA)"/>
+
+      <!-- ---- 契约层（强调） ---- -->
+      <rect class="fg-band fg-band--acc" x="14" y="94" width="1128" height="68" rx="12"/>
+      <text class="fg-l fg-l--acc" x="26" y="134">契约层</text>
+      <rect class="fg-chip" x="120" y="106" width="318" height="44" rx="9"/>
+      <text class="fg-t" x="136" y="126">ConstraintSpec</text>
+      <text class="fg-s" x="136" y="141">spec_version · policy_id · constraints[]</text>
+      <rect class="fg-chip" x="464" y="106" width="318" height="44" rx="9"/>
+      <text class="fg-t" x="480" y="126">policy_hash</text>
+      <text class="fg-s" x="480" y="141">规范化 JSON 的 sha256（description 不计入）</text>
+      <rect class="fg-chip" x="808" y="106" width="318" height="44" rx="9"/>
+      <text class="fg-t" x="824" y="126">三方比对</text>
+      <text class="fg-s" x="824" y="141">出证方 · 验证方 · 电路公开值 须同值</text>
+
+      <path class="fg-ar" d="M618,163 L627,168 L618,173" marker-end="url(#fgA)"/>
+
+      <!-- ---- 运行时层 ---- -->
+      <rect class="fg-band" x="14" y="174" width="1128" height="68" rx="12"/>
+      <text class="fg-l" x="26" y="214">运行时层</text>
+      <rect class="fg-chip" x="120" y="186" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="134" y="206">真实 agent</text>
+      <text class="fg-s" x="134" y="221">LangChain/LangGraph/MCP</text>
+      <path class="fg-ar" d="M360,203 L369,208 L360,213" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="378" y="186" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="392" y="206">适配器 ×4</text>
+      <text class="fg-s" x="392" y="221">adapters/ 回调插桩</text>
+      <path class="fg-ar" d="M618,203 L627,208 L618,213" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="636" y="186" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="650" y="206">AgentMonitor</text>
+      <text class="fg-s" x="650" y="221">判定 → 出证（两个钩子）</text>
+      <path class="fg-ar" d="M876,203 L885,208 L876,213" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="894" y="186" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="908" y="206">ToolGateway</text>
+      <text class="fg-s" x="908" y="221">执行后签发回执链</text>
+
+      <path class="fg-ar" d="M618,243 L627,248 L618,253" marker-end="url(#fgA)"/>
+
+      <!-- ---- 产物层 ---- -->
+      <rect class="fg-band" x="14" y="254" width="1128" height="68" rx="12"/>
+      <text class="fg-l" x="26" y="294">产物层</text>
+      <rect class="fg-chip" x="120" y="266" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="134" y="286">证书 cert.json</text>
+      <text class="fg-s" x="134" y="301">DSSE 信封 + Ed25519</text>
+      <path class="fg-ar" d="M360,283 L369,288 L360,293" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="378" y="266" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="392" y="286">回执链 + ToolSeal</text>
+      <text class="fg-s" x="392" y="301">顶层 trace_seal · 拦截尾</text>
+      <path class="fg-ar" d="M618,283 L627,288 L618,293" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="636" y="266" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="650" y="286">账本 ledger.jsonl</text>
+      <text class="fg-s" x="650" y="301">摘要追加 · 防篡改</text>
+      <path class="fg-ar" d="M876,283 L885,288 L876,293" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="894" y="266" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="908" y="286">链上 Anchor.sol</text>
+      <text class="fg-s" x="908" y="301">本地 Anvil · 无 solc 部署</text>
+
+      <path class="fg-ar" d="M618,323 L627,328 L618,333" marker-end="url(#fgA)"/>
+
+      <!-- ---- 证明层 ---- -->
+      <rect class="fg-band" x="14" y="334" width="1128" height="68" rx="12"/>
+      <text class="fg-l" x="26" y="374">证明层</text>
+      <rect class="fg-chip" x="120" y="346" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="134" y="366">pop-program</text>
+      <text class="fg-s" x="134" y="381">域 policy · 策略合规</text>
+      <path class="fg-ar" d="M360,363 L369,368 L360,373" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="378" y="346" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="392" y="366">pop-infer</text>
+      <text class="fg-s" x="392" y="381">域 infer · 推理完整性</text>
+      <path class="fg-ar" d="M618,363 L627,368 L618,373" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="636" y="346" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="650" y="366">pop-session</text>
+      <text class="fg-s" x="650" y="381">域 session · 跨证书一致</text>
+      <path class="fg-ar" d="M876,363 L885,368 L876,373" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="894" y="346" width="232" height="44" rx="9"/>
+      <text class="fg-t" x="908" y="366">ezkl 陪伴证明</text>
+      <text class="fg-s" x="908" y="381">语义规则 · 与 SP1 合取</text>
+
+      <path class="fg-ar" d="M618,403 L627,408 L618,413" marker-end="url(#fgA)"/>
+
+      <!-- ---- 验证层 ---- -->
+      <rect class="fg-band" x="14" y="414" width="1128" height="68" rx="12"/>
+      <text class="fg-l" x="26" y="454">验证层</text>
+      <rect class="fg-chip" x="120" y="426" width="318" height="44" rx="9"/>
+      <text class="fg-t" x="136" y="446">verify_cert.py</text>
+      <text class="fg-s" x="136" y="461">逐项验签 + 复算</text>
+      <path class="fg-ar" d="M446,443 L455,448 L446,453" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="464" y="426" width="318" height="44" rx="9"/>
+      <text class="fg-t" x="480" y="446">verify_session.py</text>
+      <text class="fg-s" x="480" y="461">会话级 · 10 项检查</text>
+      <path class="fg-ar" d="M790,443 L799,448 L790,453" marker-end="url(#fgA)"/>
+      <rect class="fg-chip" x="808" y="426" width="318" height="44" rx="9"/>
+      <text class="fg-t" x="824" y="446">pop-verify</text>
+      <text class="fg-s" x="824" y="461">免证明器 · 审计方用</text>
+
+      <!-- ---- 契约同时约束验证侧 ---- -->
+      <path class="fg-ar fg-ar--acc" d="M1142,128 H1160 V446" marker-end="url(#fgB)"/>
+    </svg>
+    <div class="grid g3">
+      <div class="card card--flat">
+        <div class="card__t">怎么读这张图</div>
+        <div class="card__d">六层自上而下 = <strong>一次出证的真实顺序</strong>；同一行里的方框是<strong>并列</strong>关系，箭头是<strong>数据流</strong>。</div>
+      </div>
+      <div class="card card--flat">
+        <div class="card__t">蓝色那条是关键</div>
+        <div class="card__d"><code>ConstraintSpec</code> 同时约束<strong>两端</strong>（右侧虚线）：验证方拿公开产物<strong>现场重编译</strong>，得到的 <code>policy_hash</code> 必须与电路公开值里的那个逐字节相同。</div>
+      </div>
+      <div class="card card--flat">
+        <div class="card__t">唯一的层间接口</div>
+        <div class="card__d">Python 参考层与 Rust 电路层之间<strong>只有这一份合同</strong>；其余靠<strong>跨语言对拍</strong>保证一致，不靠人盯。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 7 · 八环流水线 ============================ -->
+<section class="slide" id="s7">
+  <div class="slide__in">
+    <div class="eyebrow">系统实现流程 · 八环</div>
     <h2>从策略编写到第三方验证</h2>
     <div class="flow flow--4">
       <div class="node"><div class="node__n">01</div><div class="node__t">策略编写</div><div class="node__d">人写 JSON 策略包，8 类规则<br><code>policy_packs/*.json</code></div></div>
@@ -298,16 +544,16 @@ html:not([data-mode="present"]) .hint{display:none}
       </div>
       <div class="card">
         <div class="card__t">每一环都有可核验的产物</div>
-        <div class="card__d">不是流程图上的方框 —— 每一环落成仓库里的具体文件，且下一环的输入就是上一环的产物（见附录的产物地图）。</div>
+        <div class="card__d">不是流程图上的方框 —— 每一环落成仓库里的具体文件，且下一环的输入就是上一环的产物。</div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ============================ 5 · 八条支路 ============================ -->
-<section class="slide" id="s5">
+<!-- ============================ 8 · 八条支路 ============================ -->
+<section class="slide" id="s8">
   <div class="slide__in">
-    <div class="eyebrow">完整流程 · 八条支路</div>
+    <div class="eyebrow">系统实现流程 · 八条支路</div>
     <h2>不是一条 demo，是八条各有驱动的端到端支路</h2>
     <div class="tbl-wrap">
       <table>
@@ -333,11 +579,45 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 6 · 两个层间合同 ============================ -->
-<section class="slide slide--tight" id="s6">
+<!-- ============================ 9 · 模块耦合 · 分层 ============================ -->
+<section class="slide" id="s9">
   <div class="slide__in">
-    <div class="eyebrow">设计细节 · 层间合同</div>
-    <h2>两层之间只签两份合同</h2>
+    <div class="eyebrow">模块耦合 · 分层</div>
+    <h2>依赖只许朝一个方向：<code>core</code> 谁也不认识</h2>
+    <div class="tbl-wrap tbl--sm">
+      <table>
+        <thead><tr><th>层</th><th>目录</th><th>职责</th><th>它依赖谁</th></tr></thead>
+        <tbody>
+          <tr><td>⑤ 脚本 / 服务</td><td><code>scripts/</code></td><td>八条支路的驱动、证明服务、回归编排</td><td>以下全部</td></tr>
+          <tr><td>④ 适配器</td><td><code>policydsl/adapters/</code></td><td>把真实框架的回调转成判定与出证</td><td><code>evidence</code> · <code>core</code></td></tr>
+          <tr><td>③ 证据</td><td><code>policydsl/evidence/</code></td><td>证书 / 回执链 / 密钥 / 账本 / 隐私承诺</td><td><code>core</code> · 密码学库</td></tr>
+          <tr><td>② 核心</td><td><code>policydsl/core/</code></td><td>策略模型、编译器、判定引擎、正则子集</td><td><strong>标准库</strong></td></tr>
+          <tr><td>① 电路</td><td><code>circuits/</code></td><td>三个 SP1 guest + NFA 的 Rust 实现</td><td>只吃 <code>ConstraintSpec</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid g3">
+      <div class="card">
+        <div class="card__t">为什么这条最要紧</div>
+        <div class="card__d"><code>core</code> <strong>零外部依赖</strong> ⇒ 判定引擎可以在任何机器上跑，CI 的 <code>tests</code> job 因此不需要装任何东西，<strong>判据只有一份</strong>。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">耦合是怎么被钉住的</div>
+        <div class="card__d"><code>test_layering.py</code> 直接检查依赖方向；<code>test_frontdoor.py</code>、<code>test_doc_links.py</code>（47 份文档 / 291 条链接 / 悬空 0）各守一面。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">唯一的跨语言耦合点</div>
+        <div class="card__d">就是 <code>ConstraintSpec</code>。四个<strong>域分隔符</strong>（<code>pop-trace-v1</code> / <code>pop-bind-v1</code> / <code>pop-infer-v1</code> / <code>pop-session-node-v1</code>）有一条测试<strong>逐字节</strong>比对两侧字面量，且它<strong>不需要 Rust 工具链</strong>。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 10 · 模块耦合 · 两份合同 ============================ -->
+<section class="slide slide--tight" id="s10">
+  <div class="slide__in">
+    <div class="eyebrow">模块耦合 · 合同</div>
+    <h2>层间只签两份合同，其余都是各自实现</h2>
     <div class="grid g2">
       <div class="card">
         <div class="card__t">① <code>ConstraintSpec</code>：策略 → 约束</div>
@@ -346,8 +626,7 @@ html:not([data-mode="present"]) .hint{display:none}
           <code>constraints[]</code> / <code>sha256</code>。<br>
           <code>sha256</code> 只作用于<strong>规范化 JSON 文本</strong>（<code>description</code> 不进哈希）—— 它就是
           <code>policy_hash</code> 的来源，也是<strong>三方比对</strong>的基础：出证方、验证方、电路公开值，
-          三方现场重编译必须得到同一个值。<br>
-          <strong>跨语言对拍</strong>：Python 参考层与 Rust/SP1 电路层各自实现判定，CI 的 <code>rust</code> job 逐点比。
+          三方现场重编译必须得到同一个值。
         </div>
       </div>
       <div class="card">
@@ -355,15 +634,15 @@ html:not([data-mode="present"]) .hint{display:none}
         <div class="card__d">
           <code>outcome</code> <strong>只放电路公开值的镜像</strong>：公开模式为
           <code>{passed, violations, policy_hash, response_binding, trace_root, delegated}</code>。<br>
-          <code>trace_seal</code>（会话末端承诺）、<code>ai_act</code>（合规标注）、<code>binding</code>、
-          <code>error</code> 块一律在<strong>顶层</strong> —— 因为电路里没有这些字段。<br>
+          <code>trace_seal</code>、<code>ai_act</code>、<code>binding</code>、<code>error</code>、<code>judgment</code>
+          一律在<strong>顶层</strong> —— 因为电路里没有这些字段。<br>
           <strong>把链下东西塞进 <code>outcome</code>，会让「证明过的」与「没证明的」看起来一样。</strong>
         </div>
       </div>
     </div>
     <div class="card">
       <div class="card__t">三个哈希，各绑一件事（都在域分隔符下）</div>
-      <div class="tbl-wrap" style="border:0">
+      <div class="tbl-wrap tbl--sm" style="border:0">
         <table>
           <thead><tr><th>名字</th><th>定义</th><th>绑什么</th></tr></thead>
           <tbody>
@@ -375,151 +654,208 @@ html:not([data-mode="present"]) .hint{display:none}
       </div>
       <div class="card__d" style="margin-top:9px">
         域分隔符是「同一哈希在两个用途下互不冒充」的<strong>全部实现</strong>。写错一个字符的后果不是报错，
-        而是两侧各自自洽、<strong>合起来对不上</strong> —— 所以有一条测试<strong>逐字节</strong>比对四个域
-        （<code>pop-trace-v1</code> / <code>pop-bind-v1</code> / <code>pop-infer-v1</code> / <code>pop-session-node-v1</code>）
-        在 Python 与 Rust 两侧的字面量，且它<strong>不需要 Rust 工具链</strong>，因此进得了零依赖的 CI 通道。
+        而是两侧各自自洽、<strong>合起来对不上</strong>。
       </div>
     </div>
   </div>
 </section>
 
-<!-- ============================ 7 · 轨迹绑定 ============================ -->
-<section class="slide" id="s7">
-  <div class="slide__in">
-    <div class="eyebrow">设计细节 · 轨迹绑定</div>
-    <h2>工具调用不是 agent 自报的</h2>
-    <div class="grid g2u">
-      <div class="card">
-        <div class="card__t">由<strong>工具网关</strong>在调用<strong>执行后</strong>签发回执链</div>
-        <div class="card__d">
-          每条 <code>ToolReceipt{seq, tool, args, result_digest, ts, prev, keyid, sig}</code>，
-          <code>prev</code> 把前一条的摘要串进来 —— 「链」这个结构本身就是承诺。
-        </div>
-        <div class="rows" style="margin-top:10px">
-          <div class="rowitem"><div class="rowitem__k">结构</div><div class="rowitem__v">由<strong>电路</strong>保证：删一条 / 换一条 / 重排序 → <code>trace_unbound</code> <strong>fail-closed</strong></div></div>
-          <div class="rowitem"><div class="rowitem__k">身份</div><div class="rowitem__v">链下 Ed25519 验签 + 公开值 <code>trace_root</code>（电路内<strong>不</strong>验签名，如实标注）</div></div>
-          <div class="rowitem"><div class="rowitem__k">截尾</div><div class="rowitem__v">网关的<strong>会话末端承诺</strong> <code>ToolSeal{count, trace_root, ts, keyid, sig}</code> 拦</div></div>
-          <div class="rowitem"><div class="rowitem__k">前提</div><div class="rowitem__v">验证方须给 <code>--gateway-key</code>，否则脚本如实标注「签名未验」</div></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card__t">为什么要专门拦「截尾」</div>
-        <div class="card__d">
-          把链尾那条<strong>违规回执整条删掉</strong>，剩下的前缀依然是一条合法的链 —— 这类攻击不破坏任何哈希，
-          只有「<strong>承诺的条数/根</strong> vs <strong>实际交付的条数/根</strong>」的比对才拦得住。
-        </div>
-        <div class="honest" style="margin-top:11px">
-          <div class="honest__t">如实标注的边界</div>
-          <p>会话聚合电路<strong>不验网关签名</strong>（zkVM 里没有网关公钥）；且 <code>[0..k]</code> 前缀的
-            <code>index</code>/<code>prev</code> 依然连续 —— 即电路本身接受一个被砍了尾巴的证书集，
-            <strong>拦下它的是链下的根比对</strong>。</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ 8 · 双隐私模式 ============================ -->
-<section class="slide" id="s8">
-  <div class="slide__in">
-    <div class="eyebrow">设计细节 · 双隐私模式</div>
-    <h2>同一条响应、同一条策略、同一个 nonce —— 差别只在「你看见什么」</h2>
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th>验证方能看到</th><th>公开模式</th><th>私有模式</th></tr></thead>
-        <tbody>
-          <tr><td>结论 <code>passed</code></td><td>相同</td><td>相同</td></tr>
-          <tr><td>策略指纹 <code>policy_hash</code></td><td>相同</td><td>相同</td></tr>
-          <tr><td>命中了哪几条规则</td><td>相同</td><td>相同</td></tr>
-          <tr><td>每条规则的证据</td><td><strong>明文</strong>：命中词 <code>exploit</code>、连密钥正则 <code>sk-[A-Za-z0-9]{16,}</code> 一起照抄</td><td><strong>证据承诺</strong>（哈希）+ 脱敏见证</td></tr>
-          <tr><td>响应本身的承诺</td><td>—（该模式不承诺 <code>T</code>）</td><td>有</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="grid g2">
-      <div class="card">
-        <div class="card__t">判定结果<strong>必须</strong>相同</div>
-        <div class="card__d">同一个 <code>T</code>、同一条策略，所以两张证书的 <code>policy_hash</code> 与 <code>passed</code> 一致 ——
-          脚本<strong>自己断言</strong>这一点，不一致就是 FAIL。差别只在验证方看得见什么。</div>
-      </div>
-      <div class="card">
-        <div class="card__t">私有模式的出口不是「涂黑」</div>
-        <div class="card__d">是<strong>证据选择性开示</strong>：开示一件证据时，该件必须与证书里那条承诺
-          <strong>逐条相符</strong>，篡改一件即被拒。</div>
-      </div>
-    </div>
-    <div class="honest">
-      <div class="honest__t">这条的自我限制（本项目的核心诚实项）</div>
-      <p>私有模式保证的是「<strong>公开值不含明文</strong>」，<strong>不是</strong>「响应内容不可恢复」——
-        公开值里的响应承诺是 <code>T</code> 的公开函数，对低熵文本可<strong>离线枚举猜测-验证</strong>。</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ 9 · 三个 guest ============================ -->
-<section class="slide" id="s9">
-  <div class="slide__in">
-    <div class="eyebrow">设计细节 · ZK 电路</div>
-    <h2>三个 guest 程序，键必须分离</h2>
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th>guest</th><th>证什么</th><th>域</th><th>公开输入</th></tr></thead>
-        <tbody>
-          <tr><td><code>pop-program</code></td><td>策略合规（8 类规则，语义规则登记委托）</td><td><code>"policy"</code></td><td><code>Outcome</code></td></tr>
-          <tr><td><code>pop-infer</code></td><td>推理完整性（<strong>代理 MLP</strong>，权重为编译期常量）</td><td><code>"infer"</code></td><td><code>InferOutput</code></td></tr>
-          <tr><td><code>pop-session</code></td><td>跨证书一致性：<code>policy_hash</code> 全同 / 链无缝 / 覆盖完整轨迹</td><td><code>"session"</code></td><td><code>SessionOutput</code></td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="grid g2">
-      <div class="card">
-        <div class="card__t">为什么必须<strong>不同程序</strong>（键分离）</div>
-        <div class="card__d">两个 guest 入口各断言一次自己的域。否则「这份证明属于哪一半」无从判断 ——
-          同一把 vkey 既能签策略结论又能签推理结论，组合证明就成了各说各话。</div>
-      </div>
-      <div class="card">
-        <div class="card__t">组合证明回答的问题</div>
-        <div class="card__d"><code>Compose = (推理完整性 ∧ 策略合规)</code> —— 回答
-          「<strong>这条 <code>T</code> 是被那个模型算出来的吗</strong>」，这是策略合规本身<strong>不覆盖</strong>的问题。</div>
-      </div>
-    </div>
-    <div class="honest">
-      <div class="honest__t">如实标注</div>
-      <p>推理半当前是<strong>代理</strong>（确定性定点 MLP），<strong>不是</strong>真实 LLM 的推理证明；
-        且「组合成本由推理主导」在代理规模下<strong>不成立</strong>（如实写进了评测）。</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ 10 · 服务化 ============================ -->
-<section class="slide" id="s10">
-  <div class="slide__in">
-    <div class="eyebrow">设计细节 · 服务化</div>
-    <h2>两个阶段差 4 个数量级，所以是两条接口</h2>
-    <div class="kpis">
-      <div class="kpi"><div class="kpi__n">&lt;10<small> ms</small></div><div class="kpi__l">宿主判定：在线段，证书如实标 <code>unproven</code></div></div>
-      <div class="kpi"><div class="kpi__n">~2.5<small> min</small></div><div class="kpi__l">SP1 core 证明：离线段，峰值 ~10.2 GiB</div></div>
-      <div class="kpi"><div class="kpi__n">1<small> 个</small></div><div class="kpi__l">12 GB 机器同时只能跑一个证明器</div></div>
-    </div>
-    <div class="grid g2">
-      <div class="card">
-        <div class="card__t">两段不是「降级」关系</div>
-        <div class="card__d"><code>POST /v1/check</code> 的证书<strong>一开始就写明自己不是证明</strong>
-          （<code>proof_mode: unproven</code>、<code>vkey_hash: unproven</code>），没有「看起来验过了」的空间；
-          <code>POST /v1/attest</code> 把<strong>同一条响应</strong>升级成真证明，两段传同一个 <code>nonce</code> 时绑的是同一条 <code>T</code>。</div>
-      </div>
-      <div class="card">
-        <div class="card__t">满载行为是<strong>硬事实</strong>，不是策略</div>
-        <div class="card__d">~10.15 GiB 是证明的<strong>固定地板</strong> ⇒ 默认 <code>concurrency=1</code>，
-          超出<strong>排队</strong>（队列满返 429，而不是收下之后 OOM）；
-          <strong>不可出证的策略当场拒</strong>（返 400 并标 <code>serviceable: false</code>）。</div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ 11 · 进度 · 八周交付 ============================ -->
+<!-- ============================ 11 · 功能实现 · 判定引擎 ============================ -->
 <section class="slide" id="s11">
+  <div class="slide__in">
+    <div class="eyebrow">功能实现 · 判定引擎</div>
+    <h2>八类规则，两种判定路径</h2>
+    <div class="grid g2u">
+      <div class="tbl-wrap tbl--sm">
+        <table>
+          <thead><tr><th>规则类</th><th>判什么</th><th>在哪判</th></tr></thead>
+          <tbody>
+            <tr><td><code>keyword_block</code></td><td>字面命中禁用词</td><td><span class="chip chip--ok">电路内</span></td></tr>
+            <tr><td><code>normalized_keyword_block</code></td><td>归一化后命中（大小写/全角/变体）</td><td><span class="chip chip--ok">电路内</span></td></tr>
+            <tr><td><code>length_bound</code></td><td>长度上下界</td><td><span class="chip chip--ok">电路内</span></td></tr>
+            <tr><td><code>pattern_block</code></td><td>正则子集（PII / 密钥 / 注入式样）</td><td><span class="chip chip--ok">电路内</span></td></tr>
+            <tr><td><code>format_check</code></td><td>格式合规（规范子集，确定性）</td><td><span class="chip chip--ok">电路内</span></td></tr>
+            <tr><td><code>tool_arg_guard</code></td><td>工具参数（判的是<strong>回执</strong>）</td><td><span class="chip chip--ok">电路内</span></td></tr>
+            <tr><td><code>budget_bound</code></td><td>调用次数 / 预算</td><td><span class="chip chip--ok">电路内</span></td></tr>
+            <tr><td><code>semantic_bound</code></td><td>语义（主题级）</td><td><span class="chip chip--warn">委托 ezkl</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <div class="card__t">正则不是「拿来就用」</div>
+          <div class="card__d">只收一个<strong>语法子集</strong>：编译期 fail-fast 拒绝子集外的写法，再用 Thompson 构造编成<strong>一个</strong> NFA，
+            由 <strong>Pike VM</strong> 判定。逐起点重跑是 O(n²)、可被<strong>对抗输入</strong>拖垮（见第 20 页消融）。</div>
+        </div>
+        <div class="card">
+          <div class="card__t">两层各自实现，靠对拍对齐</div>
+          <div class="card__d">Python（<code>core/evaluate.py</code>）与 Rust（<code>circuits/</code>）<strong>各写一遍</strong>，
+            CI 的 <code>rust</code> job 逐点比。基线落在 <code>tests/acceptance_baseline.json</code>（七面）与
+            <code>loader_parity_baseline.json</code>，比对结果 <strong>exit 0/2/3 分档</strong>。</div>
+        </div>
+        <div class="honest">
+          <div class="honest__t">如实标注</div>
+          <p>语义规则的 <code>passed=true</code> <strong>不等于</strong>策略被满足：验证脚本因此打印<strong>两行</strong>
+            （<code>RESULT:</code> 与 <code>合规:</code>），且<strong>只支持公开模式</strong>。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 12 · 功能实现 · 轨迹与隐私 ============================ -->
+<section class="slide" id="s12">
+  <div class="slide__in">
+    <div class="eyebrow">功能实现 · 轨迹绑定与隐私</div>
+    <h2>工具调用不是 agent 自报的；隐私不是「涂黑」</h2>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">轨迹绑定：网关在调用<strong>执行后</strong>签发</div>
+        <div class="card__d" style="margin-bottom:9px">每条 <code>ToolReceipt{seq, tool, args, result_digest, ts, prev, keyid, sig}</code>，
+          <code>prev</code> 把前一条的摘要串进来 —— 「链」这个结构本身就是承诺。</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">结构</div><div class="rowitem__v"><strong>电路</strong>保证：删一条 / 换一条 / 重排序 → <code>trace_unbound</code> fail-closed</div></div>
+          <div class="rowitem"><div class="rowitem__k">身份</div><div class="rowitem__v">链下 Ed25519 验签（电路内<strong>不</strong>验，如实标注）</div></div>
+          <div class="rowitem"><div class="rowitem__k">截尾</div><div class="rowitem__v">会话末端承诺 <code>ToolSeal{count, trace_root, ts, keyid, sig}</code> 拦 —— 删掉链尾那条违规回执，前缀依然合法，只有<strong>条数/根比对</strong>拦得住</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__t">双隐私模式：同一条响应、同一条策略、同一个 nonce</div>
+        <div class="tbl-wrap tbl--sm" style="border:0">
+          <table>
+            <thead><tr><th>验证方能看到</th><th>公开</th><th>私有</th></tr></thead>
+            <tbody>
+              <tr><td><code>passed</code> / <code>policy_hash</code></td><td>相同</td><td>相同</td></tr>
+              <tr><td>命中了哪几条规则</td><td>相同</td><td>相同</td></tr>
+              <tr><td>每条规则的证据</td><td><strong>明文</strong>（命中词、连密钥正则一起照抄）</td><td><strong>证据承诺</strong> + 脱敏见证</td></tr>
+              <tr><td>响应本身的承诺</td><td>—</td><td>有</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card__d" style="margin-top:9px">判定结果<strong>必须</strong>相同 —— 脚本自己断言这一点，不一致就是 FAIL。
+          私有模式的出口不是「涂黑」，是<strong>证据选择性开示</strong>：开示一件必须与证书里那条承诺逐条相符。</div>
+        <div class="honest" style="margin-top:10px">
+          <div class="honest__t">上界（核心诚实项）</div>
+          <p>保证的是「公开值不含明文」，<strong>不是</strong>「内容不可恢复」。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 13 · 可切换的模式与状态 ============================ -->
+<section class="slide slide--tight" id="s13">
+  <div class="slide__in">
+    <div class="eyebrow">可切换的状态与模式</div>
+    <h2>哪些是运行时可以切的</h2>
+    <div class="tbl-wrap tbl--sm">
+      <table>
+        <thead><tr><th>可切的东西</th><th>取值</th><th>怎么切</th><th>切了会怎样</th></tr></thead>
+        <tbody>
+          <tr><td><strong>隐私模式</strong></td><td><code>public</code> / <code>private</code></td><td><code>AgentMonitor(policy, mode=…)</code> · <code>--mode</code></td><td>违规证据：明文 ↔ 证据承诺；私有另加响应绑定。<strong>判定结果不变</strong></td></tr>
+          <tr><td><strong>证明模式</strong></td><td><code>unproven</code> / <code>core</code> / <code>compressed</code> / <code>groth16</code> / <code>plonk</code></td><td><code>--prove</code> · <code>--proof-mode</code></td><td>写进 <code>binding.vkey_hash</code> + <code>proof_mode</code>；后两者本机<strong>出不了</strong>（T1）</td></tr>
+          <tr><td><strong>模型</strong></td><td>离线桩 / 真 provider</td><td><code>--model openai:&lt;m&gt;</code> / 不传</td><td>不传就打印 <code>llm model: fake (offline)</code> —— 如实标注，含糊不得</td></tr>
+          <tr><td><strong>早停</strong></td><td>软停 / 硬停</td><td><code>stop_on_violation</code> · <code>hard_stop</code></td><td>硬停真的<strong>掐断传输</strong>（抛 <code>EarlyStop</code>），被掐断那次没有 <code>on_llm_end</code> ⇒ 只有停止证书</td></tr>
+          <tr><td><strong>判定口径</strong></td><td>整链 / 单条</td><td><code>chain=gateway.receipts</code> / 新建网关</td><td>决定工具证书 <code>passed</code> 的含义：会话至今合规 ↔ 本次调用干净</td></tr>
+          <tr><td><strong>语义规则</strong></td><td>开 / 关</td><td>策略包里有没有 <code>semantic_bound</code></td><td>开则走 ezkl 陪伴证明；<strong>流式路径会抛</strong> <code>NotImplementedError</code>（未做）</td></tr>
+          <tr><td><strong>账本 / 链上</strong></td><td>只落账本 / 同时上链</td><td><code>--rpc</code> · <code>--contract</code> · <code>--private-key</code></td><td>不上链也能验证，只是少了「第三方时间戳」这一层</td></tr>
+          <tr><td><strong>服务并发</strong></td><td><code>--concurrency</code> / <code>--max-queue</code></td><td>启动参数（缺省 1 / 8）</td><td>不是策略是<strong>硬事实</strong>：~10.15 GiB 地板 ⇒ 同时跑两个是 OOM；队列满返 <strong>429</strong></td></tr>
+          <tr><td><strong>服务鉴权</strong></td><td>无 / token / <code>--require-auth</code></td><td><code>--auth-token</code> · <code>--auth-file</code> · <code>--auth-admin</code></td><td>没配就照常起，但 <code>/v1/health</code> 如实写 <code>auth: none</code>。权限<strong>只有二元开关</strong>（未做细粒度）</td></tr>
+          <tr><td><strong>服务预检</strong></td><td>只宿主校验 / 真出证</td><td><code>--host-check</code></td><td>几秒完成并如实标 <code>proof_mode=unproven</code>，用来验队列机制本身</td></tr>
+          <tr><td><strong>结果留痕</strong></td><td>追加写</td><td><code>regression_prove.py --label …</code></td><td><code>regression-prove.jsonl</code> <strong>只追加不覆盖</strong>，任何一腿 FAIL 即非零退出</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 14 · 可切换 · 代码细节 ============================ -->
+<section class="slide" id="s14">
+  <div class="slide__in">
+    <div class="eyebrow">可切换的状态与模式 · 代码细节</div>
+    <h2>切换点长什么样</h2>
+    <div class="grid g2">
+      <div class="term">
+<pre><span class="cm"># ① 隐私模式：一次会话选一次</span>
+<span class="cm">#    判定结果必须相同，不同的只是「你看见什么」</span>
+monitor = AgentMonitor(policy, mode=<span class="hl">"private"</span>)
+<span class="cm">#                          └ public | private</span>
+
+<span class="cm"># ② 生成路径：挑战值 + 整条回执链 + 会话末端承诺</span>
+<span class="cm">#    三者一起进证书；seal 落在载荷**顶层**</span>
+cert = monitor.on_generate(resp, nonce=nonce,
+                           receipts=gw.receipts,
+                           seal=gw.seal(),
+                           vkey_hash=vk, proof_mode=<span class="hl">"core"</span>)
+
+<span class="cm"># ③ 工具路径：判的是网关**执行后**签发的真回执</span>
+<span class="cm">#    不是 agent 自报的 {name, args}</span>
+cert = monitor.on_tool_call(receipt,
+                            chain=gw.receipts,
+                            seal=gw.seal())
+
+<span class="cm"># ④ 判定做不了（fail-closed）：仍然出证</span>
+<span class="cm">#    passed=False + 顶层 judgment 块</span>
+<span class="cm">#    {"performed": false, "type": …,</span>
+<span class="cm">#     "message_sha256": …}  —— 不留孤儿回执</span></pre>
+      </div>
+      <div class="stack">
+        <div class="term">
+<pre><span class="cm"># 演示：换模型 / 换模式 / 加挑战绑定</span>
+python3 scripts/demo/demo_e2e.py \
+    --model openai:deepseek-v4-pro \
+    --prove --proof-mode core \
+    --nonce &lt;hex&gt; --contrast-prove
+
+<span class="cm"># 证明服务：并发、队列、鉴权、锚定</span>
+python3 scripts/ops/proof_service.py \
+    --concurrency 1 --max-queue 8 \
+    --mode private --proof-mode core \
+    --require-auth --rpc $RPC --contract $ADDR</pre>
+        </div>
+        <div class="card">
+          <div class="card__t">三处<strong>刻意的</strong>「不给缺省值」</div>
+          <div class="rows">
+            <div class="rowitem"><div class="rowitem__k">seal</div><div class="rowitem__v">不传 ⇒ 验证方给了网关公钥时 <code>trace_seal</code> 卡直接判 <strong>FAIL</strong>。没有它就无法排除截尾，所以不兜底</div></div>
+            <div class="rowitem"><div class="rowitem__k">proof_mode</div><div class="rowitem__v">未标注一律 <code>unknown</code>，<strong>不</strong>做「未知即安全」的默认 —— 那正是隐藏程度表要防的错误</div></div>
+            <div class="rowitem"><div class="rowitem__k">concurrency</div><div class="rowitem__v">缺省 1 是硬约束而非保守取值：同时跑两个证明器是 OOM，不是慢</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 15 · 可修改 / 可扩展的点 ============================ -->
+<section class="slide slide--tight" id="s15">
+  <div class="slide__in">
+    <div class="eyebrow">可修改 / 可扩展的点</div>
+    <h2>想改什么，改哪儿，代价多大</h2>
+    <div class="tbl-wrap tbl--sm">
+      <table>
+        <thead><tr><th>想改什么</th><th>改哪儿</th><th>代价</th></tr></thead>
+        <tbody>
+          <tr><td><strong>调策略</strong>（换禁用词、改长度、加正则）</td><td>直接改 <code>policy_packs/*.json</code>，重编译即换 <code>policy_hash</code></td><td><span class="chip chip--ok">极小</span>不改代码</td></tr>
+          <tr><td><strong>接一个新框架</strong></td><td>实现两个回调 + 一会话一把 <code>ToolGateway</code>（照 <code>GenericGuard</code> 抄）</td><td><span class="chip chip--ok">小</span>加一个适配器文件</td></tr>
+          <tr><td><strong>换签名算法</strong></td><td>实现 <code>cert.Signer</code> 协议（<code>sign</code> / <code>keyid</code> / <code>public_key</code>）</td><td><span class="chip chip--ok">小</span>证书其余部分不动</td></tr>
+          <tr><td><strong>换锚定后端</strong></td><td><code>evidence/ledger.py</code> 的写入端 / 换一个同类 <code>Anchor.sol</code></td><td><span class="chip chip--ok">小</span></td></tr>
+          <tr><td><strong>加一类规则</strong></td><td><code>core/model.py</code> 加 kind + <code>evaluate.py</code> 实现 + <span class="mark">电路侧 <code>pop-program</code></span> + 更新两条对拍基线</td><td><span class="chip chip--warn">中</span>必须同时动 Python 与 Rust</td></tr>
+          <tr><td><strong>换语义模型</strong></td><td><code>semantic/</code> 的模型与 <code>training_report.json</code>；<code>encode</code> 须保持<strong>单射</strong></td><td><span class="chip chip--warn">中</span>需真实数据集与更大模型</td></tr>
+          <tr><td><strong>换证明系统</strong></td><td>电路在 <code>circuits/</code>（三个 guest 入口）；<code>proof_mode</code> 已预留 <code>groth16</code>/<code>plonk</code></td><td><span class="chip chip--bad">大</span>需 ≥64 GB 机器（T1）</td></tr>
+          <tr><td><strong>换判定语言/运行时</strong></td><td>NG</td><td><span class="chip chip--mute">不在设计内</span>zkVM 内跑通用运行时与本方案的规模假设冲突</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="honest">
+      <div class="honest__t">一条自我约束</div>
+      <p>「加一类规则」是<strong>唯一</strong>必须跨层改的扩展点：它不是缺陷，而是「电路内判定」这个选择本身的代价。
+        项目用<strong>对拍基线 + fail-fast 语法闸门</strong>把这份代价压到「改了必须留证据」，而不是「改了看不出来」。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 16 · 进度 · 八周交付 ============================ -->
+<section class="slide" id="s16">
   <div class="slide__in">
     <div class="eyebrow">开展进度</div>
     <h2>八周计划的交付物已全部落地</h2>
@@ -545,21 +881,21 @@ html:not([data-mode="present"]) .hint{display:none}
       </div>
       <div class="card">
         <div class="card__t">超过计划的部分</div>
-        <div class="card__d">组合证明 / 会话聚合 / 多证明者 / 链上锚定 / 证明服务 这五条<strong>不在 8 周计划内</strong>，
-          是计划完成后继续加的（见支路 ④⑤⑥⑦ 与服务化）。Phase 0–6 与 P7 清单、R1–R18 重构<strong>全部 ✅</strong>。</div>
+        <div class="card__d">组合证明 / 会话聚合 / 多证明者 / 链上锚定 / 证明服务 这五条<strong>不在 8 周计划内</strong>。
+          Phase 0–6 与 P7 清单、R1–R18 重构<strong>全部 ✅</strong>。</div>
       </div>
     </div>
     <div class="honest">
       <div class="honest__t">唯一的外部阻塞（要说在前面）</div>
-      <p>P1 段收尾只剩一件事：<strong>租一台 ≥64 GB 的云机</strong>，在它上面出 <code>compressed</code>/<code>groth16</code>
+      <p>P1 段收尾只剩一件事：<strong>租一台 ≥64 GB 的云机</strong>（T1），在它上面出 <code>compressed</code>/<code>groth16</code>
         真证明并测通链上验证合约（P1-7）。本机 12 GB 下 compressed 峰值 11.0 GB、groth16 峰值 11.07 GB
         <strong>都被 OOM 杀</strong> —— 这条<strong>不是「没做」，是这台机器做不了</strong>。除它之外没有第二处卡点。</p>
     </div>
   </div>
 </section>
 
-<!-- ============================ 12 · 进度 · 可核验 ============================ -->
-<section class="slide" id="s12">
+<!-- ============================ 17 · 进度 · 可核验 ============================ -->
+<section class="slide" id="s17">
   <div class="slide__in">
     <div class="eyebrow">开展进度 · 可核验</div>
     <h2>现在能跑出什么</h2>
@@ -591,8 +927,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 13 · 进度 · 测试与闸门 ============================ -->
-<section class="slide" id="s13">
+<!-- ============================ 18 · 进度 · 测试与闸门 ============================ -->
+<section class="slide" id="s18">
   <div class="slide__in">
     <div class="eyebrow">开展进度 · 质量与近期工作</div>
     <h2>测试、闸门，以及最近在修什么</h2>
@@ -601,12 +937,13 @@ html:not([data-mode="present"]) .hint{display:none}
         <table>
           <thead><tr><th>项</th><th>数字 / 事实</th></tr></thead>
           <tbody>
-            <tr><td>全量测试</td><td class="n"><strong>801 passed / 15 skipped</strong>（2026-09-18 实测；五处文档仍停在 783，见未解决⑨）</td></tr>
+            <tr><td>全量测试</td><td class="n"><strong>801 passed / 15 skipped</strong>（2026-09-18 实测；五处文档仍停在 783，见第 23 页）</td></tr>
             <tr><td>15 个 skip</td><td>全是<strong>设计内</strong>：需更强机器 / 真出证 / 缺可选依赖，逐条登记</td></tr>
             <tr><td>CI · tests</td><td><strong>零依赖</strong>，任何机器同一份判据</td></tr>
             <tr><td>CI · rust</td><td>建驱动 + <strong>跨语言对拍</strong> Python↔Rust</td></tr>
-            <tr><td>出证回归</td><td>19/19 PASS · 首次真跑 40.5 min（峰值 10.72 GiB）+ 验证腿 180.4 s；P0–P3 各重跑一次，稳定在 <strong>1846.8–1987.5 s</strong>，5 次 <code>vkey_hash</code>/<code>proof_bytes</code> 全同</td></tr>
-            <tr><td>代码规模</td><td><code>policydsl/</code> 11,347 行 · <code>tests/</code> 15,209 行 · 83 个模块</td></tr>
+            <tr><td>出证回归</td><td>19/19 PASS · 首次真跑 40.5 min（峰值 10.72 GiB）+ 验证腿 180.4 s；P0–P3 各重跑一次，稳定在 <strong>1846.8–1987.5 s</strong></td></tr>
+            <tr><td>文档闸门</td><td>47 份文档 / 291 条链接 / <strong>悬空 0</strong>；分层与入口各一条</td></tr>
+            <tr><td>代码规模</td><td><code>policydsl/</code> 11,347 行 · <code>tests/</code> 15,209 行 · 42 个测试模块</td></tr>
           </tbody>
         </table>
       </div>
@@ -615,22 +952,22 @@ html:not([data-mode="present"]) .hint{display:none}
         <div class="rows" style="margin-top:8px">
           <div class="rowitem"><div class="rowitem__k">fail-closed</div><div class="rowitem__v">工具判定做不了时不再留「孤儿回执」、异常不再被框架吞掉，而是签一张 <code>passed=false</code> 的证书</div></div>
           <div class="rowitem"><div class="rowitem__k">端点摘要</div><div class="rowitem__v">终端摘要此前不显示自备端点（认错了环境变量名），现按<strong>实测优先级</strong>报告真正生效的那个</div></div>
-          <div class="rowitem"><div class="rowitem__k">重构 R1–R18</div><div class="rowitem__v">已采纳并在执行，逐阶段验收记录在 <code>docs/dev-plan.md</code> §5.7–§5.8</div></div>
+          <div class="rowitem"><div class="rowitem__k">重构 R1–R18</div><div class="rowitem__v">已采纳并<strong>全部执行完</strong>，逐阶段验收记录在 <code>docs/dev-plan.md</code> §5.7–§5.8</div></div>
         </div>
       </div>
     </div>
     <div class="honest">
       <div class="honest__t">一条要说在前面的实话</div>
-      <p><code>git log</code> 里 8/3–8/4 是骨架、<strong>9/10 一次批量导入</strong>，之后两周有 141 次提交 ——
-        <strong>仓库历史本身不体现 8 周逐日开发</strong>。要证明过程投入，请用学习日历与各阶段按日记录，不要以提交数为证。</p>
+      <p><code>git log</code> 里 8/3–8/4 是骨架、<strong>9/10 一次「Initial commit」批量导入</strong>，之后 9/7–9/18 有 141 次提交 ——
+        <strong>仓库历史本身不体现 8 周逐日开发</strong>。要证明过程投入，请用学习日历与各阶段按日记录，<strong>不要以提交数为证</strong>。</p>
     </div>
   </div>
 </section>
 
-<!-- ============================ 14 · 创新点 ============================ -->
-<section class="slide" id="s14">
+<!-- ============================ 19 · 创新点 ============================ -->
+<section class="slide" id="s19">
   <div class="slide__in">
-    <div class="eyebrow">创新点</div>
+    <div class="eyebrow">创新点与思路</div>
     <h2>空位在哪，我们填了什么</h2>
     <div class="card">
       <div class="card__t">已有的四派各自不足</div>
@@ -657,13 +994,15 @@ html:not([data-mode="present"]) .hint{display:none}
     </div>
     <div class="card">
       <div class="card__t">④ 评测</div>
-      <div class="card__d">周期数矩阵 · NFA 消融（含对抗输入下的二次退化）· 真实证明时间/大小/内存 · 信任-成本四象限。</div>
+      <div class="card__d">周期数矩阵 · NFA 消融（含对抗输入下的二次退化）· 真实证明时间/大小/内存 · 信任-成本四象限。
+        坐标系见 <code>docs/quadrant.md</code>：纵轴＝证<strong>性质成立</strong>还是<strong>护栏执行过</strong>，横轴＝信任来自<strong>密码学</strong>还是<strong>硬件/人工</strong>；
+        「密码学健全 × 证性质」这一格<strong>此前为空</strong>，本项目落在该格。</div>
     </div>
   </div>
 </section>
 
-<!-- ============================ 15 · 消融与对标 ============================ -->
-<section class="slide" id="s15">
+<!-- ============================ 20 · 消融与对标 ============================ -->
+<section class="slide" id="s20">
   <div class="slide__in">
     <div class="eyebrow">创新点 · 证据</div>
     <h2>设计对不对，靠消融说话</h2>
@@ -681,7 +1020,7 @@ html:not([data-mode="present"]) .hint{display:none}
           </table>
         </div>
         <div class="card__d" style="margin-top:9px">比值随 n <strong>翻倍</strong> ⇒ 朴素做法是 O(n²)、可被<strong>对抗输入</strong>拖垮，
-          Pike 保持线性。自然语言上两者只差 1.5–2.1× —— <strong>只测常规文本会得出「随便哪种都行」的错误结论</strong>。</div>
+          Pike 保持线性。常规文本上两者只差 1.5–2.1× —— <strong>只测常规文本会得出「随便哪种都行」的错误结论</strong>。</div>
       </div>
       <div class="card">
         <div class="card__t">与最贴近的同期工作对标</div>
@@ -703,8 +1042,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 16 · 实用价值 ============================ -->
-<section class="slide" id="s16">
+<!-- ============================ 21 · 实用价值 ============================ -->
+<section class="slide" id="s21">
   <div class="slide__in">
     <div class="eyebrow">实用价值</div>
     <h2>合规义务落在证书的字段上，不只在文档里</h2>
@@ -731,7 +1070,7 @@ html:not([data-mode="present"]) .hint{display:none}
           <div class="card__t">已经能交付的形态</div>
           <div class="rows">
             <div class="rowitem"><div class="rowitem__k">免证明器</div><div class="rowitem__v"><code>pop-verify</code> 让验证方<strong>不需要构建 prover</strong> 即可验证（审计路径）</div></div>
-            <div class="rowitem"><div class="rowitem__k">常驻服务</div><div class="rowitem__v">两段接口 + 排队 + 满载 429 + 不可出证当场拒</div></div>
+            <div class="rowitem"><div class="rowitem__k">常驻服务</div><div class="rowitem__v">两段接口 + 排队 + 满载 429 + 不可出证当场拒（返 400 并标 <code>serviceable:false</code>）</div></div>
             <div class="rowitem"><div class="rowitem__k">链上锚定</div><div class="rowitem__v"><code>Anchor.sol</code> + 本地 Anvil 一键端到端（first-write-wins，部署不需要 solc）</div></div>
             <div class="rowitem"><div class="rowitem__k">接现实框架</div><div class="rowitem__v">LangChain / LangGraph / MCP 已实测；接自己的框架只需实现两个回调 + 一会话一把网关</div></div>
           </div>
@@ -741,33 +1080,33 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 17 · 未解决 1/2 ============================ -->
-<section class="slide slide--tight" id="s17">
+<!-- ============================ 22 · 未完成 1/2 ============================ -->
+<section class="slide slide--tight" id="s22">
   <div class="slide__in">
     <div class="eyebrow">还未解决的问题 · 1 / 2</div>
     <h2>先说最要紧的四条</h2>
-    <div class="tbl-wrap">
+    <div class="tbl-wrap tbl--sm">
       <table>
         <thead><tr><th>问题</th><th>现状与影响</th><th>出路</th></tr></thead>
         <tbody>
           <tr>
-            <td><strong>① 私有模式的隐私上界</strong></td>
+            <td><strong>① 私有模式的隐私上界</strong><br><span class="chip chip--warn">上界明确</span></td>
             <td>只保证「公开值不含明文」。两个<strong>独立</strong>理由：SP1 <code>core</code>/<code>compressed</code> 证明<strong>非零知识</strong>（官方安全模型明文 + 本机源码审计）；更根本地，「响应绑定」与「内容隐藏」对<strong>低熵 <code>T</code> 互斥</strong> —— 公开值里的承诺可离线枚举猜测-验证，<strong>与证明系统无关</strong></td>
             <td>要「不可恢复」须换零知识证明系统（groth16/plonk 隐藏见证）：<strong>本机内存不够，仅设计上可行、未实测</strong></td>
           </tr>
           <tr>
-            <td><strong>② 内存天花板</strong></td>
-            <td>prover <strong>固定地板 ~10.15 GiB</strong>：最小配置（200 字符 × 1 规则）就已 10.39 GiB。本机 11.7 GiB 下，3 规则 × 200 字符、1 规则 × 20k 字符均被 <strong>OOM 杀</strong>；可行域呈「两级台阶」</td>
-            <td>换 ≥16 GB 机器；已把「OOM 判据」写成测试（复刻被杀时的无输出无末行）</td>
+            <td><strong>② 内存天花板</strong><br><span class="chip chip--bad">外部阻塞</span></td>
+            <td>prover <strong>固定地板 ~10.15 GiB</strong>：最小配置（200 字符 × 1 规则）就已 10.39 GiB。本机 11.7 GiB 下，3 规则 × 200 字符、1 规则 × 20k 字符均被 <strong>OOM 杀</strong>；可行域呈「两级台阶」。<strong>它的直接后果就是 T1</strong></td>
+            <td>换 ≥16 GB 机器出 compressed/groth16；已把「OOM 判据」写成测试（复刻被杀时的无输出无末行）</td>
           </tr>
           <tr>
-            <td><strong>③ 组合证明的推理半是代理</strong></td>
-            <td><code>pop-infer</code> 是确定性定点 MLP，<strong>不是</strong>真实 LLM 的推理证明；「组合成本由推理主导」在代理规模下<strong>不成立</strong>（如实写进评测）</td>
+            <td><strong>③ 组合证明的推理半是代理</strong><br><span class="chip chip--warn">部分完成</span></td>
+            <td><code>pop-infer</code> 是确定性定点 MLP，<strong>不是</strong>真实 LLM 的推理证明；且「组合成本由推理主导」在代理规模下<strong>不成立</strong>（如实写进评测）</td>
             <td>需要真实模型的推理证明（zkAgent 方向），其源码不可得 —— 属另一条工作线</td>
           </tr>
           <tr>
-            <td><strong>④ 语义规则的三条硬边界</strong></td>
-            <td><code>passed=true</code> 且 <code>delegated</code> 非空的证明<strong>不等于策略被满足</strong>（验证脚本因此打印<strong>两行</strong>：<code>RESULT:</code> 与 <code>合规:</code>）；<strong>只支持公开模式</strong>（<code>encode</code> 在词表上单射，可反查原文）；随包模型是<strong>演示用小模型</strong>（留出集 acc 0.99 / n=100），不构成语义安全保证</td>
+            <td><strong>④ 语义规则的三条硬边界</strong><br><span class="chip chip--warn">部分完成</span></td>
+            <td>① <code>passed=true</code> 且 <code>delegated</code> 非空的证明<strong>不等于策略被满足</strong>（验证脚本因此打印<strong>两行</strong>：<code>RESULT:</code> 与 <code>合规:</code>）；② <strong>只支持公开模式</strong>（<code>encode</code> 在词表上单射，可反查原文）；③ 随包模型是<strong>演示用小模型</strong>（留出集 acc 0.99 / n=100），不构成语义安全保证</td>
             <td>换更强的私有语义证明路线；模型侧需要真实数据集与更大模型</td>
           </tr>
         </tbody>
@@ -776,29 +1115,70 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 18 · 未解决 2/2 ============================ -->
-<section class="slide slide--tight" id="s18">
+<!-- ============================ 23 · 未完成 2/2 ============================ -->
+<section class="slide slide--tight" id="s23">
   <div class="slide__in">
     <div class="eyebrow">还未解决的问题 · 2 / 2</div>
-    <h2>另外五条，以及一条关于文档本身的</h2>
-    <div class="tbl-wrap">
+    <h2>另外六条</h2>
+    <div class="tbl-wrap tbl--sm">
       <table>
         <thead><tr><th>问题</th><th>现状与影响</th><th>出路</th></tr></thead>
         <tbody>
-          <tr><td><strong>⑤ 链上「可验证」是过度声明</strong></td><td>目前<strong>只锚定证书摘要</strong>，合约里<strong>没有</strong> <code>anchorWithProof</code> —— 链上并未验证证明</td><td>接入 SP1 链上 verifier 接口；本地 Anvil 已通，公共测试网/主网未部署</td></tr>
-          <tr><td><strong>⑥ 尾截断的拦截点偏弱</strong></td><td>会话聚合电路<strong>不验网关签名</strong>；且 <code>[0..k]</code> 前缀的 <code>index</code>/<code>prev</code> 依然连续 —— <strong>只有 Merkle 根比对拦得住</strong>被砍尾巴的证书集</td><td>已有 <code>trace_seal</code> + 根比对两道链下关；电路内可用的网关身份是长期方向</td></tr>
-          <tr><td><strong>⑦ 多证明者的边界</strong></td><td>不覆盖三方合谋；三段切片<strong>共享同一个 guest</strong>（各持一把键只是责任划分）；<strong>递归聚合未做</strong>，验证成本 O(N)</td><td>递归聚合是明确的后续工作</td></tr>
-          <tr><td><strong>⑧ 生产化缺口</strong></td><td>签名私钥托管（HSM/KMS）未做；链上部署仅本地 Anvil（<strong>与 T1 同源</strong>）；<strong>demo 视频里程碑未产出</strong>（改由一键 demo + 截图替代）；T3 定时回归的 cron/systemd 配方已写进 docstring，但<strong>没有任何机器真的挂着它</strong></td><td>按需推进；T3 需一台常驻机器</td></tr>
-          <tr><td><strong>⑨ 文档数字漂移</strong></td><td>测试数在<strong>四处</strong>不一致（论文稿 469/13、<code>security-model.md</code> 783/15、<code>refactor-proposal.md</code> 685/15、<code>modules/08-tests-bench.md</code> 783/15），而<strong>实测 801/15</strong> —— 连权威口径 08 篇自己也滞后</td><td>按仓库「过期就标注、不静默改」的纪律已记录；建议以 08 篇为唯一口径回填，并把「五处同步」做成自动化检查（现为人工逐处核对）</td></tr>
-          <tr><td><strong>⑩ 登记在案、未销案</strong></td><td>一次孤立的 <code>failures=1</code> flake 与一次 13 跑中的 1 次 error <strong>均未复现</strong>；含 <code>semantic_bound</code> 的策略包走流式<strong>喂第一个字符就抛</strong> <code>NotImplementedError</code>；CLI 对三类畸形包以 traceback 崩（R17a <strong>决定不修</strong>）；<code>zk_path</code> 的 3 张证书不绑轨迹；服务化 token 明文过网；论文 <code>.tex</code> 本机<strong>编译不了</strong>（无 TeX 工具链）</td><td>逐条写明归口，没有一条是「悄悄留着」的</td></tr>
+          <tr><td><strong>⑤ 链上「可验证」是过度声明</strong><br><span class="chip chip--warn">边界明确</span></td><td>目前<strong>只锚定证书摘要</strong>，合约里<strong>没有</strong> <code>anchorWithProof</code> —— 链上并未验证证明</td><td>接入 SP1 链上 verifier 接口；本地 Anvil 已通，公共测试网/主网未部署</td></tr>
+          <tr><td><strong>⑥ 尾截断的拦截点偏弱</strong><br><span class="chip chip--warn">边界明确</span></td><td>会话聚合电路<strong>不验网关签名</strong>；且 <code>[0..k]</code> 前缀的 <code>index</code>/<code>prev</code> 依然连续 —— <strong>只有 Merkle 根比对拦得住</strong>被砍尾巴的证书集</td><td>已有 <code>trace_seal</code> + 根比对两道链下关；电路内可用的网关身份是长期方向</td></tr>
+          <tr><td><strong>⑦ 多证明者的边界</strong><br><span class="chip chip--warn">边界明确</span></td><td>不覆盖三方合谋；三段切片<strong>共享同一个 guest</strong>（各持一把键只是责任划分）；<strong>递归聚合未做</strong>，验证成本 O(N)</td><td>递归聚合是明确的后续工作</td></tr>
+          <tr><td><strong>⑧ 生产化缺口</strong><br><span class="chip chip--bad">未做</span></td><td>签名私钥托管（HSM/KMS）未做；链上部署仅本地 Anvil（<strong>与 T1 同源</strong>）；<strong>demo 视频里程碑未产出</strong>；T3 定时回归的 cron/systemd 配方已写进 docstring，但<strong>没有任何机器挂着它</strong></td><td>按需推进；T3 需一台常驻机器</td></tr>
+          <tr><td><strong>⑨ 文档数字漂移</strong><br><span class="chip chip--mute">文档问题</span></td><td>测试数在<strong>四处</strong>不一致（论文稿 469/13、<code>security-model.md</code> 783/15、<code>refactor-proposal.md</code> 685/15、<code>modules/08-tests-bench.md</code> 783/15），而<strong>实测 801/15</strong> —— 连权威口径 08 篇自己也滞后</td><td>按仓库「过期就标注、不静默改」的纪律已记录；建议以 08 篇为唯一口径回填，并把「五处同步」做成自动化检查（现为人工逐处核对）</td></tr>
+          <tr><td><strong>⑩ 登记在案、未销案</strong><br><span class="chip chip--mute">已登记</span></td><td>一次孤立的 <code>failures=1</code> flake 与一次 13 跑中的 1 次 error <strong>均未复现</strong>；含 <code>semantic_bound</code> 的策略包走流式<strong>喂第一个字符就抛</strong> <code>NotImplementedError</code>；CLI 对三类畸形包以 traceback 崩（R17a <strong>决定不修</strong>）；<code>zk_path</code> 的 3 张证书不绑轨迹；服务化 token 明文过网、权限只有二元开关；论文 <code>.tex</code> 本机<strong>编译不了</strong>（无 TeX 工具链）</td><td>逐条写明归口，没有一条是「悄悄留着」的</td></tr>
         </tbody>
       </table>
     </div>
   </div>
 </section>
 
-<!-- ============================ 19 · 附录 ============================ -->
-<section class="slide" id="s19">
+<!-- ============================ 24 · 未来落地与完善 ============================ -->
+<section class="slide slide--tight" id="s24">
+  <div class="slide__in">
+    <div class="eyebrow">未来还可以进一步落地和完善的部分</div>
+    <h2>按「需要什么」分三档</h2>
+    <div class="grid g3">
+      <div class="card">
+        <div class="card__t"><span class="chip chip--ok">不花钱</span> 现在这台机器就能做</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">文档回填</div><div class="rowitem__v">把 <code>801/15</code> 一次性回填到五处，并把「五处同步」做成自动化检查</div></div>
+          <div class="rowitem"><div class="rowitem__k">补齐 fail-closed</div><div class="rowitem__v">另三个适配器的「签名器坏掉」窗口按同款落地</div></div>
+          <div class="rowitem"><div class="rowitem__k">端点口径统一</div><div class="rowitem__v"><code>--stub</code> 路径改走 <code>effective_base()</code>，消掉两套取法</div></div>
+          <div class="rowitem"><div class="rowitem__k">验证卡</div><div class="rowitem__v"><code>verify_cert.py</code> 增一张卡，专门标出 <code>judgment.performed=false</code> 的证书</div></div>
+          <div class="rowitem"><div class="rowitem__k">语义流式</div><div class="rowitem__v">补上含 <code>semantic_bound</code> 策略包的流式路径</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__t"><span class="chip chip--warn">要一台机器</span> 有硬件就能收尾</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">T1</div><div class="rowitem__v">≥64 GB 云机 → <code>compressed</code>/<code>groth16</code>/<code>plonk</code> 真出证 + <strong>链上验证合约</strong>测通（= P1-7，唯一挡在收尾前的任务）</div></div>
+          <div class="rowitem"><div class="rowitem__k">T3</div><div class="rowitem__v">把定时回归挂到 cron/systemd 上，让「每次提交都真出证一遍」真的发生</div></div>
+          <div class="rowitem"><div class="rowitem__k">全矩阵</div><div class="rowitem__v">证明侧补 20k/50k/100k 三个规模点（P2-12）</div></div>
+          <div class="rowitem"><div class="rowitem__k">verifier-only</div><div class="rowitem__v">真端到端跑一遍「审计方只有公开产物」的部署形态（需 ≥16 GB）</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__t"><span class="chip chip--acc">研究方向</span> 需要新的工作线</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">隐私上界</div><div class="rowitem__v">换零知识证明系统（隐藏见证）解掉「低熵可枚举」—— 设计上可行，未实测</div></div>
+          <div class="rowitem"><div class="rowitem__k">真实推理证明</div><div class="rowitem__v">用真实 LLM 的推理证明替掉 <code>pop-infer</code> 的代理 MLP</div></div>
+          <div class="rowitem"><div class="rowitem__k">递归聚合</div><div class="rowitem__v">把多证明者的验证成本从 O(N) 降到 O(1)</div></div>
+          <div class="rowitem"><div class="rowitem__k">网关身份</div><div class="rowitem__v">让电路内/链上有可用的网关身份，把截尾拦截点从链下推进链上</div></div>
+          <div class="rowitem"><div class="rowitem__k">语义规则</div><div class="rowitem__v">私有模式下的语义证明；真实数据集 + 更大模型</div></div>
+          <div class="rowitem"><div class="rowitem__k">工程化</div><div class="rowitem__v">私钥 HSM/KMS 托管、服务 TLS、细粒度权限、公共测试网部署</div></div>
+        </div>
+      </div>
+    </div>
+    <p class="src">这一页与第 22–23 页是同一批事实的两种切法：那里按「问题」列，这里按「还需要什么才能推进」列。</p>
+  </div>
+</section>
+
+<!-- ============================ 25 · 附录 ============================ -->
+<section class="slide" id="s25">
   <div class="slide__in">
     <div class="eyebrow">附录</div>
     <h2>复现入口 · 备答 · 出处</h2>
@@ -829,6 +1209,7 @@ python3 scripts/verify/verify_session.py \
           <div class="rowitem"><div class="rowitem__k">安全模型/边界</div><div class="rowitem__v"><code>docs/security-model.md</code> · <code>docs/sp1-zk-audit.md</code></div></div>
           <div class="rowitem"><div class="rowitem__k">欧盟映射</div><div class="rowitem__v"><code>docs/eu-ai-act-mapping.md</code></div></div>
           <div class="rowitem"><div class="rowitem__k">测试计数</div><div class="rowitem__v"><code>docs/modules/08-tests-bench.md</code></div></div>
+          <div class="rowitem"><div class="rowitem__k">进度与残留项</div><div class="rowitem__v"><code>docs/dev-plan.md</code> §5.1–§5.8</div></div>
         </div>
         <div class="card__d" style="margin-top:8px">完整版见 <code>docs/report/advisor-report.md</code></div>
       </div>
@@ -838,82 +1219,79 @@ python3 scripts/verify/verify_session.py \
 
 </div>
 
-<div class="hint" id="hint">← → 翻页 · F 全屏 · 打印可导出 PDF</div>
 <div class="foot">
-  <button id="theme" type="button" title="切换明暗">◐ 主题</button>
-  <button id="prev" type="button" title="上一页">←</button>
-  <span class="pager" id="pager">1 / 1</span>
-  <button id="next" type="button" title="下一页">→</button>
+  <button id="theme" type="button" title="切换主题（t）">主题</button>
+  <button id="prev" type="button" title="上一页（←）">←</button>
+  <span class="pager" id="pager">1 / 25</span>
+  <button id="next" type="button" title="下一页（→）">→</button>
+  <button id="full" type="button" title="全屏（f）">全屏</button>
 </div>
+<div class="hint">← → 翻页 · t 主题 · f 全屏 · #n 跳页 · Ctrl/⌘+P 导出 PDF</div>
 
 <script>
-(function(){
-  var root=document.documentElement, deck=document.getElementById('deck');
-  var slides=[].slice.call(deck.querySelectorAll('.slide'));
-  var bar=document.getElementById('bar'), pager=document.getElementById('pager'), hint=document.getElementById('hint');
-  var i=0;
+(function () {
+  var root = document.documentElement;
+  var deck = document.getElementById('deck');
+  var slides = Array.prototype.slice.call(deck.querySelectorAll('.slide'));
+  var pager = document.getElementById('pager');
+  var bar = document.getElementById('bar');
+  var KEY = 'pop-deck-theme';
+  var i = 0;
 
-  root.setAttribute('data-mode','present');
-  slides.forEach(function(s,n){ s.setAttribute('aria-label',(n+1)+' / '+slides.length); });
+  // 有 JS 才进入「一次一页」；没有 JS 时这份文档就是一篇可读的长文
+  root.setAttribute('data-mode', 'present');
 
-  function paint(){
-    pager.textContent=(i+1)+' / '+slides.length;
-    bar.style.width=((i+1)/slides.length*100)+'%';
-    if(history.replaceState) history.replaceState(null,'','#'+(i+1));
-  }
-  function go(n,fromHash){
-    i=Math.max(0,Math.min(slides.length-1,n));
-    if(!fromHash) slides[i].scrollIntoView({block:'center'});
-    paint();
-  }
-  function current(){
-    var best=0,bd=Infinity;
-    slides.forEach(function(s,n){
-      var r=s.getBoundingClientRect(), d=Math.abs(r.top+r.height/2-innerHeight/2);
-      if(d<bd){bd=d;best=n}
-    });
-    return best;
-  }
-
-  deck.addEventListener('scroll',function(){ var c=current(); if(c!==i){i=c;paint();} },{passive:true});
-
-  document.addEventListener('keydown',function(e){
-    if(e.metaKey||e.ctrlKey||e.altKey) return;
-    var k=e.key;
-    if(k==='ArrowRight'||k==='ArrowDown'||k===' '||k==='PageDown'){ e.preventDefault(); go(i+1); }
-    else if(k==='ArrowLeft'||k==='ArrowUp'||k==='PageUp'){ e.preventDefault(); go(i-1); }
-    else if(k==='Home'){ e.preventDefault(); go(0); }
-    else if(k==='End'){ e.preventDefault(); go(slides.length-1); }
-    else if(k==='f'||k==='F'){
-      if(document.fullscreenElement) document.exitFullscreen();
-      else if(root.requestFullscreen) root.requestFullscreen();
-    }
-    else if(k==='t'||k==='T'){ toggleTheme(); }
+  function theme(v) { root.setAttribute('data-theme', v); try { localStorage.setItem(KEY, v); } catch (e) {} }
+  try {
+    var saved = localStorage.getItem(KEY);
+    if (saved === 'dark' || saved === 'light') root.setAttribute('data-theme', saved);
+  } catch (e) {}
+  document.getElementById('theme').addEventListener('click', function () {
+    theme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
   });
 
-  document.getElementById('prev').addEventListener('click',function(){ go(i-1); });
-  document.getElementById('next').addEventListener('click',function(){ go(i+1); });
-
-  function toggleTheme(){
-    var cur=root.getAttribute('data-theme');
-    var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
-    var next = cur ? (cur==='dark'?'light':'dark') : (sysDark?'light':'dark');
-    root.setAttribute('data-theme',next);
-    try{ localStorage.setItem('pop-deck-theme',next); }catch(e){}
+  function indexOfTop() {
+    var best = 0, bestD = Infinity;
+    for (var k = 0; k < slides.length; k++) {
+      var d = Math.abs(slides[k].getBoundingClientRect().top);
+      if (d < bestD) { bestD = d; best = k; }
+    }
+    return best;
   }
-  document.getElementById('theme').addEventListener('click',toggleTheme);
-  try{
-    var saved=localStorage.getItem('pop-deck-theme');
-    if(saved==='dark'||saved==='light') root.setAttribute('data-theme',saved);
-  }catch(e){}
-
-  if(hint){
-    setTimeout(function(){ hint.style.transition='opacity .6s'; hint.style.opacity='0'; },6000);
+  function paint() {
+    i = indexOfTop();
+    pager.textContent = (i + 1) + ' / ' + slides.length;
+    var max = deck.scrollHeight - deck.clientHeight;
+    bar.style.width = (max > 0 ? (deck.scrollTop / max) * 100 : 0) + '%';
+  }
+  function go(n) {
+    n = Math.max(0, Math.min(slides.length - 1, n));
+    slides[n].scrollIntoView({ block: 'center', behavior: 'auto' });
+    try { history.replaceState(null, '', '#' + (n + 1)); } catch (e) {}
   }
 
-  var m=/^#(\d+)$/.exec(location.hash);
-  go(m?parseInt(m[1],10)-1:0,true);
-  if(!m) slides[0].scrollIntoView({block:'center'});
+  deck.addEventListener('scroll', paint, { passive: true });
+  window.addEventListener('resize', paint);
+  document.getElementById('prev').addEventListener('click', function () { go(indexOfTop() - 1); });
+  document.getElementById('next').addEventListener('click', function () { go(indexOfTop() + 1); });
+  document.getElementById('full').addEventListener('click', function () {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (root.requestFullscreen) root.requestFullscreen();
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+    var k = e.key;
+    if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown' || k === ' ') { e.preventDefault(); go(indexOfTop() + 1); }
+    else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') { e.preventDefault(); go(indexOfTop() - 1); }
+    else if (k === 'Home') { e.preventDefault(); go(0); }
+    else if (k === 'End') { e.preventDefault(); go(slides.length - 1); }
+    else if (k === 'f' || k === 'F') { document.getElementById('full').click(); }
+    else if (k === 't' || k === 'T') { document.getElementById('theme').click(); }
+  });
+
+  var m = /^#(\d+)$/.exec(location.hash);
+  go(m ? parseInt(m[1], 10) - 1 : 0);
   paint();
 })();
 </script>
