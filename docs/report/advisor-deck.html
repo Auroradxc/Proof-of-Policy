@@ -266,7 +266,7 @@ html:not([data-mode="present"]) .hint{display:none}
           <tr><td>第三方能独立复算</td><td><code>verify_session.py</code> 只用公开产物 → <code>RESULT: PASS</code></td><td><span class="chip chip--ok">10/10 检查</span></td></tr>
           <tr><td>两层判定一致</td><td>跨语言对拍 Python↔Rust 逐点相同（CI <code>rust</code> job）</td><td><span class="chip chip--ok">19/19</span></td></tr>
           <tr><td>真出证能过</td><td><code>regression_prove.py --label …</code> 出证腿 + 验证腿双 PASS</td><td><span class="chip chip--ok">5 次留痕</span></td></tr>
-          <tr><td>换证明模式也能出证</td><td><code>compressed</code>/<code>groth16</code>/<code>plonk</code> 真证明 + 链上验证合约</td><td><span class="chip chip--warn">卡在本机内存（T1）</span></td></tr>
+          <tr><td>换证明模式也能出证</td><td><code>compressed</code>/<code>groth16</code>/<code>plonk</code> 真证明 + 链上验证合约</td><td><span class="chip chip--warn">卡在本机内存（T1）</span> <code>groth16</code>/<code>plonk</code> + 链上验证需 <strong>≥64 GB</strong>，<code>compressed</code> 需 <strong>≥16 GB</strong> —— 本机 11.7 GiB 两档都装不下</td></tr>
         </tbody>
       </table>
     </div>
@@ -328,14 +328,49 @@ html:not([data-mode="present"]) .hint{display:none}
         </tbody>
       </table>
     </div>
-    <p class="src">状态口径：<span class="chip chip--ok">完成</span> = 有可复现的判据且已通过；<span class="chip chip--warn">部分</span> = 主路通但边界明确未覆盖；<span class="chip chip--bad">未做/未交付</span> = 有登记、有归口，但产物不存在。</p>
+    <p class="src">状态口径：<span class="chip chip--ok">完成</span> = 有可复现的判据且已通过；<span class="chip chip--warn">部分</span> = 主路通但边界明确未覆盖；<span class="chip chip--bad">未做/未交付</span> = 有登记、有归口，但产物不存在。表中 <strong>T1</strong> = 唯一的外部阻塞：<code>groth16</code>/<code>plonk</code> 真出证 + <strong>链上验证合约</strong>测通需一台 ≥64 GB 云机（<code>compressed</code> 只需 ≥16 GB —— 本机 11.7 GiB 两个都装不下）；<strong>T3</strong> = 定时回归，需一台常驻机器。</p>
   </div>
 </section>
 
-<!-- ============================ 5 · 设计思路 ============================ -->
-<section class="slide" id="s5">
+<!-- ============================ 5 · 整体设计思路 ============================ -->
+<section class="slide slide--tight" id="s5">
   <div class="slide__in">
-    <div class="eyebrow">设计思路</div>
+    <div class="eyebrow">整体设计思路</div>
+    <h2>一条推理链：每一步都是被上一步逼出来的</h2>
+    <div class="tbl-wrap tbl--sm">
+      <table>
+        <thead><tr><th class="n">#</th><th>不解决会怎样（问题）</th><th>于是只能这么做（决定）</th><th>落在框架图的哪一层</th></tr></thead>
+        <tbody>
+          <tr><td class="n">1</td><td>「我们合规」只有运营方一张嘴，验证方无法复核</td><td>让验证方<strong>自己算得出来</strong>：判定结果必须是可复算的公开产物</td><td>产物层 · 验证层</td></tr>
+          <tr><td class="n">2</td><td>可复算要求交出内容，与<strong>内容隐私</strong>直接相抵</td><td>让判定在<strong>不暴露响应 T</strong> 的前提下完成；信任根从<strong>硬件</strong>换成 <strong>zkVM 健全性 + 哈希</strong></td><td>证明层</td></tr>
+          <tr><td class="n">3</td><td>「护栏代码被执行过」<strong>推不出</strong>「输出合规」</td><td>证<strong>性质</strong>（T 满足 π），不证执行；公开值是 <code>passed / violations / policy_hash</code></td><td>证明层</td></tr>
+          <tr><td class="n">4</td><td>只判一条响应，<strong>前面和后面发生的事</strong>都不在证据里</td><td>判<strong>整条会话链</strong>：工具调用由网关签回执，会话末端再签承诺，轨迹不能自报、不能被截尾</td><td>运行时层 · 产物层</td></tr>
+          <tr><td class="n">5</td><td>出证比验证贵约 <strong>4 个数量级</strong>，全塞进请求路径就没人用</td><td>拆两个时间尺度（在线宿主校验 / 离线真证明），且<strong>一开始就写明</strong>哪张证书附了证明</td><td>证明层 · 产物层</td></tr>
+          <tr><td class="n">6</td><td>「判不了」与「判过且干净」在产物上<strong>同形</strong></td><td><strong>fail-closed</strong>：判不了也为这条回执出证，并判为不通过</td><td>产物层</td></tr>
+          <tr><td class="n">7</td><td>同一个判定在 Python 与 Rust 各写一遍，<strong>必然漂移</strong></td><td>层间只签<strong>一份合同</strong>，一致性交给机器对拍而不是靠人复查</td><td>契约层</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">这条链的输入是<strong>策略层</strong></div>
+        <div class="card__d">左边 7 步全部发生在「人写完 <code>π</code>」之后 —— 策略层是前提，不是结论。
+          右列合起来正好覆盖框架图的六层：<strong>策略层是输入，契约层、运行时层、产物层、证明层是出证侧，验证层是第三方</strong>。
+          下一页的框架图，就是这 7 条同时成立时的形状。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">第 3–7 条还有各自的<strong>代价</strong></div>
+        <div class="card__d">这里只写「逼出了什么决定」；每条决定<strong>放弃了什么、防住了什么对手</strong>，
+          下一页单独展开（威胁模型 + 四条核心取舍）。所以这两页是<strong>概览与展开</strong>的关系，不是重复。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 6 · 设计思路 ============================ -->
+<section class="slide" id="s6">
+  <div class="slide__in">
+    <div class="eyebrow">设计思路 · 威胁模型</div>
     <h2>威胁模型与四条核心取舍</h2>
     <div class="grid g2u">
       <div class="card">
@@ -374,8 +409,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 6 · 系统框架图 ============================ -->
-<section class="slide" id="s6">
+<!-- ============================ 7 · 系统框架图 ============================ -->
+<section class="slide" id="s7">
   <div class="slide__in">
     <div class="eyebrow">系统框架</div>
     <h2>六层结构：出证侧五层 + 验证侧一层</h2>
@@ -527,8 +562,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 7 · 八环流水线 ============================ -->
-<section class="slide" id="s7">
+<!-- ============================ 8 · 八环流水线 ============================ -->
+<section class="slide" id="s8">
   <div class="slide__in">
     <div class="eyebrow">系统实现流程 · 八环</div>
     <h2>从策略编写到第三方验证</h2>
@@ -556,8 +591,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 8 · 八条支路 ============================ -->
-<section class="slide" id="s8">
+<!-- ============================ 9 · 八条支路 ============================ -->
+<section class="slide" id="s9">
   <div class="slide__in">
     <div class="eyebrow">系统实现流程 · 八条支路</div>
     <h2>不是一条 demo，是八条各有驱动的端到端支路</h2>
@@ -585,8 +620,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 9 · 模块耦合 · 分层 ============================ -->
-<section class="slide" id="s9">
+<!-- ============================ 10 · 模块耦合 · 分层 ============================ -->
+<section class="slide" id="s10">
   <div class="slide__in">
     <div class="eyebrow">模块耦合 · 分层</div>
     <h2>依赖只许朝一个方向：<code>core</code> 谁也不认识</h2>
@@ -619,8 +654,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 10 · 模块耦合 · 两份合同 ============================ -->
-<section class="slide slide--tight" id="s10">
+<!-- ============================ 11 · 模块耦合 · 两份合同 ============================ -->
+<section class="slide slide--tight" id="s11">
   <div class="slide__in">
     <div class="eyebrow">模块耦合 · 合同</div>
     <h2>层间只签两份合同，其余都是各自实现</h2>
@@ -666,8 +701,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 11 · 功能实现 · 判定引擎 ============================ -->
-<section class="slide" id="s11">
+<!-- ============================ 12 · 功能实现 · 判定引擎 ============================ -->
+<section class="slide" id="s12">
   <div class="slide__in">
     <div class="eyebrow">功能实现 · 判定引擎</div>
     <h2>八类规则，两种判定路径</h2>
@@ -691,7 +726,7 @@ html:not([data-mode="present"]) .hint{display:none}
         <div class="card">
           <div class="card__t">正则不是「拿来就用」</div>
           <div class="card__d">只收一个<strong>语法子集</strong>：编译期 fail-fast 拒绝子集外的写法，再用 Thompson 构造编成<strong>一个</strong> NFA，
-            由 <strong>Pike VM</strong> 判定。逐起点重跑是 O(n²)、可被<strong>对抗输入</strong>拖垮（见第 20 页消融）。</div>
+            由 <strong>Pike VM</strong> 判定。逐起点重跑是 O(n²)、可被<strong>对抗输入</strong>拖垮（见第 19 页消融）。</div>
         </div>
         <div class="card">
           <div class="card__t">两层各自实现，靠对拍对齐</div>
@@ -709,8 +744,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 12 · 功能实现 · 轨迹与隐私 ============================ -->
-<section class="slide" id="s12">
+<!-- ============================ 13 · 功能实现 · 轨迹与隐私 ============================ -->
+<section class="slide" id="s13">
   <div class="slide__in">
     <div class="eyebrow">功能实现 · 轨迹绑定与隐私</div>
     <h2>工具调用不是 agent 自报的；隐私不是「涂黑」</h2>
@@ -749,8 +784,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 13 · 可切换的模式与状态 ============================ -->
-<section class="slide slide--tight" id="s13">
+<!-- ============================ 14 · 可切换的模式与状态 ============================ -->
+<section class="slide slide--tight" id="s14">
   <div class="slide__in">
     <div class="eyebrow">可切换的状态与模式</div>
     <h2>哪些是运行时可以切的</h2>
@@ -775,8 +810,8 @@ html:not([data-mode="present"]) .hint{display:none}
   </div>
 </section>
 
-<!-- ============================ 14 · 可切换 · 代码细节 ============================ -->
-<section class="slide" id="s14">
+<!-- ============================ 15 · 可切换 · 代码细节 ============================ -->
+<section class="slide" id="s15">
   <div class="slide__in">
     <div class="eyebrow">可切换的状态与模式 · 代码细节</div>
     <h2>切换点长什么样</h2>
@@ -832,8 +867,8 @@ python3 scripts/ops/proof_service.py \
   </div>
 </section>
 
-<!-- ============================ 15 · 可修改 / 可扩展的点 ============================ -->
-<section class="slide slide--tight" id="s15">
+<!-- ============================ 16 · 可修改 / 可扩展的点 ============================ -->
+<section class="slide slide--tight" id="s16">
   <div class="slide__in">
     <div class="eyebrow">可修改 / 可扩展的点</div>
     <h2>想改什么，改哪儿，代价多大</h2>
@@ -860,50 +895,10 @@ python3 scripts/ops/proof_service.py \
   </div>
 </section>
 
-<!-- ============================ 16 · 进度 · 八周交付 ============================ -->
-<section class="slide" id="s16">
-  <div class="slide__in">
-    <div class="eyebrow">开展进度</div>
-    <h2>八周计划的交付物已全部落地</h2>
-    <div class="tbl-wrap">
-      <table>
-        <thead><tr><th class="n">周</th><th>计划</th><th>实际交付</th><th>差异</th></tr></thead>
-        <tbody>
-          <tr><td class="n">W2–W3</td><td>规则库 + PII 正则</td><td><code>policydsl/core/</code> + <code>nfa.py</code> / <code>pii.py</code></td><td>按计划</td></tr>
-          <tr><td class="n">W4 ★</td><td>透明模式端到端（MVP）</td><td>PoP v0 <strong>真出证</strong></td><td>按计划</td></tr>
-          <tr><td class="n">W5</td><td>私有模式</td><td>承诺 + 违规定位 + 脱敏</td><td>按计划</td></tr>
-          <tr><td class="n">W6</td><td><code>demo/</code> + 证书脚本</td><td>三个框架适配器 + 证书 + 一键 demo</td><td>落点改了（空目录已删）</td></tr>
-          <tr><td class="n">W7</td><td>评测 + 安全模型</td><td><code>bench/</code> + 安全模型 L1–L9</td><td>按计划</td></tr>
-          <tr><td class="n">W8</td><td>论文 + 复现指南</td><td><code>paper/*.tex</code>（权威源）+ <code>reproduce.md</code> + 截图</td><td>按计划</td></tr>
-          <tr><td class="n">—</td><td>demo 视频（里程碑 m3）</td><td><strong>未产出</strong></td><td><span class="chip chip--warn">如实记为未交付</span>改由一键 demo + 截图替代</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="grid g2">
-      <div class="card">
-        <div class="card__t">论文状态</div>
-        <div class="card__d">结构完整：摘要 → 相关工作（含 zkAgent 小节）→ 威胁模型 → 系统 → 安全模型（L1–L9）→ 实现 → 评测（7 节）→ 局限 → 结论 → 复现附录。
-          标注为<strong>工作稿 Phase 6 / W8</strong>；<strong>作者信息未填</strong>，投稿目标待定。</div>
-      </div>
-      <div class="card">
-        <div class="card__t">超过计划的部分</div>
-        <div class="card__d">组合证明 / 会话聚合 / 多证明者 / 链上锚定 / 证明服务 这五条<strong>不在 8 周计划内</strong>。
-          Phase 0–6 与 P7 清单、R1–R18 重构<strong>全部 ✅</strong>。</div>
-      </div>
-    </div>
-    <div class="honest">
-      <div class="honest__t">唯一的外部阻塞（要说在前面）</div>
-      <p>P1 段收尾只剩一件事：<strong>租一台 ≥64 GB 的云机</strong>（T1），在它上面出 <code>compressed</code>/<code>groth16</code>
-        真证明并测通链上验证合约（P1-7）。本机 12 GB 下 compressed 峰值 11.0 GB、groth16 峰值 11.07 GB
-        <strong>都被 OOM 杀</strong> —— 这条<strong>不是「没做」，是这台机器做不了</strong>。除它之外没有第二处卡点。</p>
-    </div>
-  </div>
-</section>
-
 <!-- ============================ 17 · 进度 · 可核验 ============================ -->
 <section class="slide" id="s17">
   <div class="slide__in">
-    <div class="eyebrow">开展进度 · 可核验</div>
+    <div class="eyebrow">开展进度</div>
     <h2>现在能跑出什么</h2>
     <div class="grid g2">
       <div class="stack">
@@ -933,45 +928,8 @@ python3 scripts/ops/proof_service.py \
   </div>
 </section>
 
-<!-- ============================ 18 · 进度 · 测试与闸门 ============================ -->
+<!-- ============================ 18 · 创新点 ============================ -->
 <section class="slide" id="s18">
-  <div class="slide__in">
-    <div class="eyebrow">开展进度 · 质量与近期工作</div>
-    <h2>测试、闸门，以及最近在修什么</h2>
-    <div class="grid g2u">
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr><th>项</th><th>数字 / 事实</th></tr></thead>
-          <tbody>
-            <tr><td>全量测试</td><td class="n"><strong>801 passed / 15 skipped</strong>（2026-09-18 实测；五处文档仍停在 783，见第 23 页）</td></tr>
-            <tr><td>15 个 skip</td><td>全是<strong>设计内</strong>：需更强机器 / 真出证 / 缺可选依赖，逐条登记</td></tr>
-            <tr><td>CI · tests</td><td><strong>零依赖</strong>，任何机器同一份判据</td></tr>
-            <tr><td>CI · rust</td><td>建驱动 + <strong>跨语言对拍</strong> Python↔Rust</td></tr>
-            <tr><td>出证回归</td><td>19/19 PASS · 首次真跑 40.5 min（峰值 10.72 GiB）+ 验证腿 180.4 s；P0–P3 各重跑一次，稳定在 <strong>1846.8–1987.5 s</strong></td></tr>
-            <tr><td>文档闸门</td><td>47 份文档 / 291 条链接 / <strong>悬空 0</strong>；分层与入口各一条</td></tr>
-            <tr><td>代码规模</td><td><code>policydsl/</code> 11,347 行 · <code>tests/</code> 15,209 行 · 42 个测试模块</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="card">
-        <div class="card__t">最近的改动都属同一类：把<strong>静默的错</strong>变成<strong>响的错</strong></div>
-        <div class="rows" style="margin-top:8px">
-          <div class="rowitem"><div class="rowitem__k">fail-closed</div><div class="rowitem__v">工具判定做不了时不再留「孤儿回执」、异常不再被框架吞掉，而是签一张 <code>passed=false</code> 的证书</div></div>
-          <div class="rowitem"><div class="rowitem__k">端点摘要</div><div class="rowitem__v">终端摘要此前不显示自备端点（认错了环境变量名），现按<strong>实测优先级</strong>报告真正生效的那个</div></div>
-          <div class="rowitem"><div class="rowitem__k">重构 R1–R18</div><div class="rowitem__v">已采纳并<strong>全部执行完</strong>，逐阶段验收记录在 <code>docs/dev-plan.md</code> §5.7–§5.8</div></div>
-        </div>
-      </div>
-    </div>
-    <div class="honest">
-      <div class="honest__t">一条要说在前面的实话</div>
-      <p><code>git log</code> 里 8/3–8/4 是骨架、<strong>9/10 一次「Initial commit」批量导入</strong>，之后 9/7–9/18 有 141 次提交 ——
-        <strong>仓库历史本身不体现 8 周逐日开发</strong>。要证明过程投入，请用学习日历与各阶段按日记录，<strong>不要以提交数为证</strong>。</p>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ 19 · 创新点 ============================ -->
-<section class="slide" id="s19">
   <div class="slide__in">
     <div class="eyebrow">创新点与思路</div>
     <h2>空位在哪，我们填了什么</h2>
@@ -1007,8 +965,8 @@ python3 scripts/ops/proof_service.py \
   </div>
 </section>
 
-<!-- ============================ 20 · 消融与对标 ============================ -->
-<section class="slide" id="s20">
+<!-- ============================ 19 · 消融与对标 ============================ -->
+<section class="slide" id="s19">
   <div class="slide__in">
     <div class="eyebrow">创新点 · 证据</div>
     <h2>设计对不对，靠消融说话</h2>
@@ -1048,8 +1006,8 @@ python3 scripts/ops/proof_service.py \
   </div>
 </section>
 
-<!-- ============================ 21 · 实用价值 ============================ -->
-<section class="slide" id="s21">
+<!-- ============================ 20 · 实用价值 ============================ -->
+<section class="slide" id="s20">
   <div class="slide__in">
     <div class="eyebrow">实用价值</div>
     <h2>合规义务落在证书的字段上，不只在文档里</h2>
@@ -1086,11 +1044,11 @@ python3 scripts/ops/proof_service.py \
   </div>
 </section>
 
-<!-- ============================ 22 · 未完成 1/2 ============================ -->
-<section class="slide slide--tight" id="s22">
+<!-- ============================ 21 · 未完成的问题 ============================ -->
+<section class="slide slide--tight" id="s21">
   <div class="slide__in">
-    <div class="eyebrow">还未解决的问题 · 1 / 2</div>
-    <h2>先说最要紧的四条</h2>
+    <div class="eyebrow">还未解决的问题</div>
+    <h2>最要紧的四条</h2>
     <div class="tbl-wrap tbl--sm">
       <table>
         <thead><tr><th>问题</th><th>现状与影响</th><th>出路</th></tr></thead>
@@ -1103,7 +1061,7 @@ python3 scripts/ops/proof_service.py \
           <tr>
             <td><strong>② 内存天花板</strong><br><span class="chip chip--bad">外部阻塞</span></td>
             <td>prover <strong>固定地板 ~10.15 GiB</strong>：最小配置（200 字符 × 1 规则）就已 10.39 GiB。本机 11.7 GiB 下，3 规则 × 200 字符、1 规则 × 20k 字符均被 <strong>OOM 杀</strong>；可行域呈「两级台阶」。<strong>它的直接后果就是 T1</strong></td>
-            <td>换 ≥16 GB 机器出 compressed/groth16；已把「OOM 判据」写成测试（复刻被杀时的无输出无末行）</td>
+            <td>换 ≥16 GB 机器出 <code>compressed</code>；<code>groth16</code>/<code>plonk</code> 需 ≥64 GB（即 T1）。已把「OOM 判据」写成测试（复刻被杀时的无输出无末行）</td>
           </tr>
           <tr>
             <td><strong>③ 组合证明的推理半是代理</strong><br><span class="chip chip--warn">部分完成</span></td>
@@ -1118,36 +1076,16 @@ python3 scripts/ops/proof_service.py \
         </tbody>
       </table>
     </div>
+    <p class="src">完整 <strong>10 条</strong>（另 6 条：文档数字漂移、登记在案未销案等）见 <code>docs/report/advisor-report.md</code> §9。</p>
   </div>
 </section>
 
-<!-- ============================ 23 · 未完成 2/2 ============================ -->
-<section class="slide slide--tight" id="s23">
-  <div class="slide__in">
-    <div class="eyebrow">还未解决的问题 · 2 / 2</div>
-    <h2>另外六条</h2>
-    <div class="tbl-wrap tbl--sm">
-      <table>
-        <thead><tr><th>问题</th><th>现状与影响</th><th>出路</th></tr></thead>
-        <tbody>
-          <tr><td><strong>⑤ 链上「可验证」是过度声明</strong><br><span class="chip chip--warn">边界明确</span></td><td>目前<strong>只锚定证书摘要</strong>，合约里<strong>没有</strong> <code>anchorWithProof</code> —— 链上并未验证证明</td><td>接入 SP1 链上 verifier 接口；本地 Anvil 已通，公共测试网/主网未部署</td></tr>
-          <tr><td><strong>⑥ 尾截断的拦截点偏弱</strong><br><span class="chip chip--warn">边界明确</span></td><td>会话聚合电路<strong>不验网关签名</strong>；且 <code>[0..k]</code> 前缀的 <code>index</code>/<code>prev</code> 依然连续 —— <strong>只有 Merkle 根比对拦得住</strong>被砍尾巴的证书集</td><td>已有 <code>trace_seal</code> + 根比对两道链下关；电路内可用的网关身份是长期方向</td></tr>
-          <tr><td><strong>⑦ 多证明者的边界</strong><br><span class="chip chip--warn">边界明确</span></td><td>不覆盖三方合谋；三段切片<strong>共享同一个 guest</strong>（各持一把键只是责任划分）；<strong>递归聚合未做</strong>，验证成本 O(N)</td><td>递归聚合是明确的后续工作</td></tr>
-          <tr><td><strong>⑧ 生产化缺口</strong><br><span class="chip chip--bad">未做</span></td><td>签名私钥托管（HSM/KMS）未做；链上部署仅本地 Anvil（<strong>与 T1 同源</strong>）；<strong>demo 视频里程碑未产出</strong>；T3 定时回归的 cron/systemd 配方已写进 docstring，但<strong>没有任何机器挂着它</strong></td><td>按需推进；T3 需一台常驻机器</td></tr>
-          <tr><td><strong>⑨ 文档数字漂移</strong><br><span class="chip chip--mute">文档问题</span></td><td>测试数在<strong>四处</strong>不一致（论文稿 469/13、<code>security-model.md</code> 783/15、<code>refactor-proposal.md</code> 685/15、<code>modules/08-tests-bench.md</code> 783/15），而<strong>实测 801/15</strong> —— 连权威口径 08 篇自己也滞后</td><td>按仓库「过期就标注、不静默改」的纪律已记录；建议以 08 篇为唯一口径回填，并把「五处同步」做成自动化检查（现为人工逐处核对）</td></tr>
-          <tr><td><strong>⑩ 登记在案、未销案</strong><br><span class="chip chip--mute">已登记</span></td><td>一次孤立的 <code>failures=1</code> flake 与一次 13 跑中的 1 次 error <strong>均未复现</strong>；含 <code>semantic_bound</code> 的策略包走流式<strong>喂第一个字符就抛</strong> <code>NotImplementedError</code>；CLI 对三类畸形包以 traceback 崩（R17a <strong>决定不修</strong>）；<code>zk_path</code> 的 3 张证书不绑轨迹；服务化 token 明文过网、权限只有二元开关；论文 <code>.tex</code> 本机<strong>编译不了</strong>（无 TeX 工具链）</td><td>逐条写明归口，没有一条是「悄悄留着」的</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
-
-<!-- ============================ 24 · 未来落地与完善 ============================ -->
-<section class="slide slide--tight" id="s24">
+<!-- ============================ 22 · 未来落地与完善 ============================ -->
+<section class="slide slide--tight" id="s22">
   <div class="slide__in">
     <div class="eyebrow">未来还可以进一步落地和完善的部分</div>
     <h2>按「需要什么」分三档</h2>
-    <div class="grid g3">
+<div class="grid g3">
       <div class="card">
         <div class="card__t"><span class="chip chip--ok">不花钱</span> 现在这台机器就能做</div>
         <div class="rows">
@@ -1161,7 +1099,7 @@ python3 scripts/ops/proof_service.py \
       <div class="card">
         <div class="card__t"><span class="chip chip--warn">要一台机器</span> 有硬件就能收尾</div>
         <div class="rows">
-          <div class="rowitem"><div class="rowitem__k">T1</div><div class="rowitem__v">≥64 GB 云机 → <code>compressed</code>/<code>groth16</code>/<code>plonk</code> 真出证 + <strong>链上验证合约</strong>测通（= P1-7，唯一挡在收尾前的任务）</div></div>
+          <div class="rowitem"><div class="rowitem__k">T1</div><div class="rowitem__v">≥64 GB 云机 → <code>groth16</code>/<code>plonk</code> 真出证 + <strong>链上验证合约</strong>测通（顺带用 ≥16 GB 档把 <code>compressed</code> 全矩阵补齐；唯一挡在收尾前的任务）</div></div>
           <div class="rowitem"><div class="rowitem__k">T3</div><div class="rowitem__v">把定时回归挂到 cron/systemd 上，让「每次提交都真出证一遍」真的发生</div></div>
           <div class="rowitem"><div class="rowitem__k">全矩阵</div><div class="rowitem__v">证明侧补 20k/50k/100k 三个规模点（P2-12）</div></div>
           <div class="rowitem"><div class="rowitem__k">verifier-only</div><div class="rowitem__v">真端到端跑一遍「审计方只有公开产物」的部署形态（需 ≥16 GB）</div></div>
@@ -1179,47 +1117,7 @@ python3 scripts/ops/proof_service.py \
         </div>
       </div>
     </div>
-    <p class="src">这一页与第 22–23 页是同一批事实的两种切法：那里按「问题」列，这里按「还需要什么才能推进」列。</p>
-  </div>
-</section>
-
-<!-- ============================ 25 · 附录 ============================ -->
-<section class="slide" id="s25">
-  <div class="slide__in">
-    <div class="eyebrow">附录</div>
-    <h2>复现入口 · 备答 · 出处</h2>
-    <div class="grid g3">
-      <div class="card">
-        <div class="card__t">复现（三条命令）</div>
-        <div class="term" style="margin-top:6px">
-<pre>bash scripts/demo/demo_all.sh
-python3 -m unittest discover tests
-python3 scripts/verify/verify_session.py \
-  --session scripts/examples/out/e2e/session.json</pre>
-        </div>
-        <div class="card__d" style="margin-top:8px">指南：<code>docs/reproduce.md</code> · <code>docs/development.md</code></div>
-      </div>
-      <div class="card">
-        <div class="card__t">三个最可能被追问的</div>
-        <div class="rows">
-          <div class="rowitem"><div class="rowitem__k">「凭什么信」</div><div class="rowitem__v">信 zkVM 健全性 + 哈希，不是硬件。网关仍需信任（A4），是模型里<strong>最弱一环</strong>，已如实标注</div></div>
-          <div class="rowitem"><div class="rowitem__k">「反推响应」</div><div class="rowitem__v">反推不出<strong>明文</strong>，但<strong>能对低熵文本猜测-验证</strong> —— 这条是自己查出来写进标题的，不是被问出来的</div></div>
-          <div class="rowitem"><div class="rowitem__k">「和 zkAgent 区别」</div><div class="rowitem__v">它证<strong>模型算得对</strong>，我们证<strong>输出满足策略</strong>；义务不同，互补而非竞争</div></div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card__t">数字出处（每个都能指回文件）</div>
-        <div class="rows">
-          <div class="rowitem"><div class="rowitem__k">周期/消融</div><div class="rowitem__v"><code>bench/results/cycles.md</code></div></div>
-          <div class="rowitem"><div class="rowitem__k">证明时间/内存</div><div class="rowitem__v"><code>bench/results/proofs.md</code></div></div>
-          <div class="rowitem"><div class="rowitem__k">安全模型/边界</div><div class="rowitem__v"><code>docs/security-model.md</code> · <code>docs/sp1-zk-audit.md</code></div></div>
-          <div class="rowitem"><div class="rowitem__k">欧盟映射</div><div class="rowitem__v"><code>docs/eu-ai-act-mapping.md</code></div></div>
-          <div class="rowitem"><div class="rowitem__k">测试计数</div><div class="rowitem__v"><code>docs/modules/08-tests-bench.md</code></div></div>
-          <div class="rowitem"><div class="rowitem__k">进度与残留项</div><div class="rowitem__v"><code>docs/dev-plan.md</code> §5.1–§5.8</div></div>
-        </div>
-        <div class="card__d" style="margin-top:8px">完整版见 <code>docs/report/advisor-report.md</code></div>
-      </div>
-    </div>
+    <p class="src">这一页与第 21 页是同一批事实的两种切法：那里按「问题」列，这里按「还需要什么才能推进」列。</p>
   </div>
 </section>
 
@@ -1228,7 +1126,7 @@ python3 scripts/verify/verify_session.py \
 <div class="foot">
   <button id="theme" type="button" title="切换主题（t）">主题</button>
   <button id="prev" type="button" title="上一页（←）">←</button>
-  <span class="pager" id="pager">1 / 25</span>
+  <span class="pager" id="pager">1 / 22</span>
   <button id="next" type="button" title="下一页（→）">→</button>
   <button id="full" type="button" title="全屏（f）">全屏</button>
 </div>
