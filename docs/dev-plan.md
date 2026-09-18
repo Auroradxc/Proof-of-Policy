@@ -442,6 +442,37 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
    ④ 配对检查能**检测出**孤儿回执（造一条做负对照）；⑤ 端到端：接入测试 demo
    三场景仍全绿、`verify_session.py` 仍全 PASS，且**回执条数与工具证书数一一对上**。
 
+   **落地记录（`40d9ed8`，实测）**：全量 **797 OK / 15 skip**（改动前 791/15）。
+   修法落在 `AgentMonitor.on_tool_call()` 一处 —— 原以为要改六个调用点，实际发现
+   六个调用点是**同一段逻辑的六份副本**，所以判定/构造/签名任一环抛异常时，
+   在 `AgentMonitor` 内部转成一张 fail-closed 证书（`passed=false`、
+   `violations=[]`、顶层 `judgment={performed:false, type, message_sha256}`、
+   `extra` 原样保留），异常另存 `judgment_failures`。**没有**让六个调用点改纪律。
+
+   被改动的既有用例共 **3** 条 —— 它们此前钉的正是那条被修掉的语义，逐条改到新
+   契约并改名（这也是本次改动的**代价清单**，不是顺手改的）：
+   - `test_content_monitor_cannot_judge_tool_calls` → `..._yields_fail_closed_cert`；
+   - `test_real_tool_with_content_monitor_fails_silently` → `..._is_fail_closed`；
+   - `test_a_content_rule_without_a_response_raises` → `..._is_fail_closed`
+     （`GenericGuard` 那条代价，见上）。
+   新增 **6** 条（791→797 的差额全部来自它们）：`test_judgment_block_absent_on_healthy_path`
+   与 `test_fail_closed_keeps_the_tool_error_block`（验收②与「`extra` 原样保留」），
+   以及 `TestFailClosedResidual` 四条（签名器坏掉被记录且不被吞、孤儿回执可检出、
+   干净会话无孤儿、空链不是孤儿）—— 对应验收③④。
+
+   端到端证据：真模型（`openai:deepseek-v4-pro`）跑接入测试 demo 全绿，
+   `verify_session.py` 三场景全 PASS；demo 里**新增一条硬断言** —— 任何场景出现
+   `judgment.performed=false` 即判失败（工具路径接错会立刻冒出来），并断言
+   回执条数与工具证书数一一对上。
+   `06-frameworks.md` §2.3 API 表补 `on_tool_call` 的 fail-closed 行为、
+   `judgment_failures`、`unclaimed_seqs`；§8.4 红线补「fail-closed **不能**靠抛异常
+   实现（LangChain 吞回调异常），必须在回调内出证」这一条推论。
+
+   **与计划的一处出入（如实记）**：上面写的 `_failure_fingerprint()`，落地时叫
+   `failure_fingerprint()` —— **去掉了下划线**，因为它不再只服务本模块：
+   `langchain_adapter.error_block` 也 import 它（第 415 行说的「共用」要真的能共用，
+   就不能是私有名）。行为与脱敏口径与计划一致，只有名字不同。
+
 9. **`describe()` 报的端点必须是**真的那个：`llm.py` 的 `_ENV_BASE["openai"]` 只认
    `OPENAI_BASE_URL`，而 `langchain_openai` 认的是 `OPENAI_API_BASE`（它自己的
    `base_url_env`）—— 用后者配自备端点时，那行摘要**不报端点**，于是读产物的人
@@ -471,6 +502,21 @@ ZK / 证书 / 锚定 / 验证链一行都不用改）—— 这句话**成立**�
    **验收**：① 两个都设时 `describe()` 报 `OPENAI_API_BASE` 那个值；② **反例**：
    只设 `OPENAI_BASE_URL` 时报复它 —— 证明①不是「恒报某一个」；③ 都不设时**不报**
    端点（缺省走官方；报一个假端点比不报更糟）；④ `ANTHROPIC_BASE_URL` 照旧生效。
+
+   **落地记录（`d5461e0`，实测）**：全量 **801 OK / 15 skip**（改动前 797/15，
+   四条新用例即上面四条验收）。真模型端到端首行由
+   `llm model: openai:deepseek-v4-pro  (openai:deepseek-v4-pro)` 变为
+   `llm model: openai:deepseek-v4-pro @ https://api.deepseek.com  (openai:deepseek-v4-pro)`
+   —— 括号里仍是**原样规格**（可能没归一化，如裸名），与端点无关，故一并留着。
+   三场景仍全绿、`verify_session.py` A/B/C 仍全 PASS。
+
+   ③ 的用例写成**先把两个变量都摘掉**再断言：`describe()` 读的是进程环境，
+   不摘的话这条用例会随「跑测试的机器恰好设了端点」而红 —— 那时红的就不是代码。
+
+   **仍未做（如实记）**：`--stub` 那条路直接读 `os.environ["OPENAI_BASE_URL"]`
+   打印桩地址（`langchain_agents_demo.py:365`），没走 `effective_base()`。
+   它打的是**桩自己**的地址、由 `_start_stub` 写入，与 provider 的端点优先级无关，
+   所以不是同一个缺陷；但两处打印端点、两套取法，将来合并时容易看漏。
 
 #### 5.1.3 验收（#98 落地后的如实版本）
 
