@@ -5,9 +5,12 @@
 > 论文里的每个数字怎么复现出来（→ [`reproduce.md`](reproduce.md)）、为什么这样设计是安全的
 > （→ [`security-model.md`](security-model.md)）。
 >
-> **本文件里出现的每条命令都在本机实际执行过**（2026-09-17，本机 11.9 GiB / Python 3.10.12），
-> 表里的耗时与内存都是**实测值**，不是估计。凡是我没能在这台机器上跑通的（真 groth16、
-> 云机全矩阵），我会明确写「未在本机验证」并指向记录了它们的那份文件。
+> **本文件里出现的每条命令都在本机实际执行过**（首轮 2026-09-17；§3 与 §4.1 里的耗时于
+> 2026-09-18 逐条复敲，本机 11.9 GiB / Python 3.10.12），表里的耗时与内存都是**实测值**，
+> 不是估计 —— 复敲之后对不上的数字已经按新读数改掉。**同一台机器上 ±10% 是常态**
+> （缓存、后台进程、出证余温都会影响），所以别拿个位数去抠某条命令「应该是多少秒」。
+> 凡是我没能在这台机器上跑通的（真 groth16、云机全矩阵），我会明确写「未在本机验证」
+> 并指向记录了它们的那份文件。
 
 ---
 
@@ -40,7 +43,8 @@
 | **3 出证** | 上面 + 足够内存（**~10.15 GiB 地板**） | `--no-prove` 仍全绿；真出证被 OOM 杀 |
 | **4 链上** | foundry（`anvil` / `forge` / `cast`） | 锚定相关用例 skip；`anchor_e2e.sh` 直接告诉你装什么 |
 | **5 语义规则** | `ezkl` + `torch` + 32 MiB `kzg.srs` | `test_semantic` 29/30 仍跑（**设计如此**，见 08 §1.1） |
-| **6 框架** | `langchain` / `langgraph` / `mcp` | 真实框架用例 skip，鸭子类型 fake 顶上；套件仍全绿 |
+| **6 框架** | `langchain` / `langgraph` / `mcp` | `unittest` 侧：真实框架用例 skip、鸭子类型 fake 顶上，**套件仍全绿**；但 **demo 支路①直接 FAIL**（它真在跑这两样，不做降级 —— 见 [`demo/README.md` §2](demo/README.md)） |
+| **7 图文物** | `Pillow`（只给 `--shots` 用） | `demo_all.sh --shots` 那一步 **SKIP**，八条支路一条不少 |
 
 **关键设计：每一层缺失都被显式处理。** 所以「装不全」不会让你什么都做不了，但也**不会**
 告诉你某条路径没被跑到 —— 这正是 §4.3 第 1 条。
@@ -59,6 +63,8 @@ bash scripts/ops/retry_install_foundry.sh           # 网络受限时的重试�
 bash scripts/ops/install_ezkl.sh
 # 6 框架
 bash scripts/ops/install_frameworks.sh
+# 7 图文物（只给 demo_all.sh --shots 用）
+pip install Pillow                                    # ⚠️ 它不在任何 requirements*.txt 里
 ```
 
 三个安装脚本都放在 `scripts/ops/` 下，都带 `retry_` 变体（或本身就是重试版）—— 这台机器的
@@ -86,16 +92,16 @@ bash scripts/ops/install_frameworks.sh
 |---|---|---:|---|
 | 3.1 | `python3 -m unittest discover tests` | **40.6 s** | `Ran 783 tests … OK (skipped=15)` |
 | 3.2 | `bash scripts/demo/demo_all.sh --list` | 秒 | 8 条支路的 key / 中文名 / 驱动脚本 |
-| 3.3 | `bash scripts/demo/demo_all.sh` | **13.2 s** | 末尾 `汇总：没有 FAIL`；报告在 `scripts/examples/out/all/REPORT.md` |
-| 3.4 | `python3 scripts/demo/demo_e2e.py --no-prove` | **1.16 s** | 会话摘要 + `llm model : fake (offline)` |
-| 3.5 | `python3 scripts/verify/verify_session.py --session …/policy/session.json` | **0.081 s** | 10 项全 `[PASS]`，末行 `RESULT: PASS` |
+| 3.3 | `bash scripts/demo/demo_all.sh` | **13.5 s** | 末尾 `汇总：没有 FAIL`；报告在 `scripts/examples/out/all/REPORT.md` |
+| 3.4 | `python3 scripts/demo/demo_e2e.py --no-prove` | **1.5 s** | 会话摘要 + `llm model : fake (offline)` |
+| 3.5 | `python3 scripts/verify/verify_session.py --session …/policy/session.json` | **0.084 s** | 10 项全 `[PASS]`，末行 `RESULT: PASS` |
 | 3.6 | `python3 scripts/ops/proof_service.py --host-check` + 两条 curl | 秒 | `/v1/health` → `status: ok`；作业走到 `done` |
 | 3.7 | 真出证 + 第三方核验（§3.7） | **2:07 + 21 s** | 13 项全 `[PASS]`，`RESULT: PASS` |
 
 ### 3.1 全量测试
 
 ```bash
-python3 -m unittest discover tests                # 33.4 s
+python3 -m unittest discover tests                # 40.6 s
 python3 -m unittest tests.test_dsl -v             # 单个模块
 ```
 
@@ -118,14 +124,37 @@ bash scripts/demo/demo_all.sh
 ```
 
 8 条支路全跑一遍，但**不出真证明**（走宿主校验，证书如实标 `unproven`）。
-实测 13.2 s，8 条支路全 PASS。退出码：`0` = 所有应有步骤 PASS，`1` = 有 FAIL；
+实测 13.5 s，8 条支路全 PASS。退出码：`0` = 所有应有步骤 PASS，`1` = 有 FAIL；
 **SKIP（缺依赖）单列，不算失败**。
 
 > ⚠️ **`--no-prove` 下的 PASS 不是「已出证」。** 报告里 `zk proof` 那一行会写
 > `(skipped: --no-prove)`，证书的 `proof_mode` 是 `unproven`。这是本项目最容易读错的一处 ——
 > 见 [`demo/README.md` §4](demo/README.md)。
 
-### 3.4 单条端到端（1.2 秒）
+**加一步把会话渲染成图文物**（`--shots`，实测 14.2 s）：
+
+```bash
+bash scripts/demo/demo_all.sh --shots         # 比上面多一步，产物落 <out>/shots/
+```
+
+渲染出四份东西（HTML / SVG / 两张 PNG），**它们不是第 9 条支路** —— 不产生任何结论，
+所以 `--list` 仍然只列 8 条，验收判据也不含它。缺 Pillow 时这一步 **SKIP**
+（`python3 -c "import PIL"` 探一下），八条支路照跑不误。
+
+想要刷新**入库的那四份**（就在 [`docs/demo/`](demo/README.md) 目录里）得走渲染脚本自己的
+缺省值 —— `--session` 缺省读 `scripts/examples/out/e2e/session.json`、`--out-dir` 缺省
+就是 `docs/demo/`：
+
+```bash
+python3 scripts/demo/demo_e2e.py --no-prove   # 先产出一份会话（实测 1.5 s）
+python3 scripts/demo/make_shots.py            # 再渲染四份到 docs/demo/（实测 0.24 s）
+```
+
+`demo_all.sh --shots` 跑的是同一个渲染器，只是**产物落 `<out>/shots/`，不动入库的那四份** ——
+这一点是刻意的：入库产物要由人**明确**刷新（刷新后 `git status` 里会看见），
+不能因为跑了一次 demo 就被悄悄改写。
+
+### 3.4 单条端到端（1.5 秒）
 
 ```bash
 python3 scripts/demo/demo_e2e.py --no-prove
@@ -143,7 +172,7 @@ python3 scripts/demo/demo_e2e.py --no-prove
 python3 scripts/verify/verify_session.py --session scripts/examples/out/all/policy/session.json
 ```
 
-实测 0.081 s、10 项全 PASS。**这是「第三方视角」的那条路** —— 它只用公开产物
+实测 0.084 s、10 项全 PASS。**这是「第三方视角」的那条路** —— 它只用公开产物
 （`session.json` + ledger + proof）复算全部结论，不碰出证方的任何东西。
 
 > ⚠️ **两个读数陷阱，都在这条命令上：**
@@ -223,7 +252,8 @@ python3 scripts/verify/verify_cert.py \
 | `policydsl/` 的一个模块 | `python3 -m unittest tests.test_<板块>` | `python3 -m unittest discover tests` | `--no-prove` 全链路 |
 | `scripts/` 结构 | `python3 -m unittest tests.test_scripts_layout` | 同上 | `bash scripts/demo/demo_all.sh` |
 | **策略规则（两侧）** | `python3 scripts/prove/cross_validate.py --no-prove`（**0.048 s**，19 向量对拍） | 全量测试 | `cross_validate` 真出证（**≈45 min**） |
-| **任何「不该改变行为」的重构** | `python3 scripts/verify/acceptance.py --verify tests/acceptance_baseline.json`（**1.4 s**，七面逐路径对拍；`unittest` 里也有一份，随全量测试跑） | 全量测试 | 同上 |
+| **任何「不该改变行为」的重构** | `python3 scripts/verify/acceptance.py --verify tests/acceptance_baseline.json`（**1.1 s**，七面逐路径对拍；`unittest` 里也有一份，随全量测试跑） | 全量测试 | 同上 |
+| **策略加载 / `Policy.from_dict`** | `python3 -m unittest tests.test_loader_parity`（**0.54 s**，11 例：11 个加载器入口 × 7 个包，覆盖 77/77） | 全量测试 | —— |
 | **电路 / Rust** | `cargo build --release -p pop-script`（8.9 s） | `cross_validate --no-prove` | `POP_TEST_PROOF=1` / `cross_validate` 真出证 |
 | 证书 / 信封结构 | `python3 -m unittest tests.test_cert tests.test_policy_binding` | 全量测试 | §3.7 真出证 + 核验 |
 | 框架适配器 | `python3 -m unittest tests.test_<框架>` | 全量测试 | §3.4 带 `--model` 跑真模型 |
@@ -237,13 +267,36 @@ python3 scripts/verify/verify_cert.py \
 > 唯一的开关是 `--no-prove` 与 `--work-dir`。同类「没有 argparse」的脚本还有
 > `demo_all.sh` 之外的几个老脚本 —— 敲之前先 `grep add_argument`。
 
+**两条「重构的机械判据」**（`scripts/verify/` 下，都只读、不改生产代码）回答同一个问题：
+**这次改动有没有动到可观察行为？** 它们比「测试全绿」更贴题 —— 测试绿只说明断言都过，
+不说明没变的那些东西真的没变。
+
+| 脚本 | 覆盖 | 三档退出码 |
+|---|---|---|
+| `acceptance.py` | 七个面（CLI 文本、证书字段、哈希……）逐路径对拍 | `0` 等效 / `2` 覆盖不足 / `3` 不等效 |
+| `loader_parity.py` | 策略加载器那一面：11 个加载器入口 × 7 个包（覆盖 77/77）的哈希集合与签名集合 | 同上 |
+
+> ⚠️ **`loader_parity.py --verify` 直接敲会 `exit 3` 并打印一串「有差异」—— 那不是回归。**
+> 快照 `tests/loader_parity_baseline.json` 采于 R7 **收敛之前**，那 8 份旧加载器把
+> `description` 丢成 `''`；收敛后的统一加载器按**包内声明**填回。这正是 R7 **唯一申报的
+> 归一**（`tests/test_loader_parity.py::DECLARED_R7_NORMALIZATION`）。CLI **故意不做**
+> 这个折算 —— 折算写在测试里（`normalized_golden()`），常驻闸门是 `tests.test_loader_parity`
+> 那 11 例，不是这个 CLI。裸跑 CLI 的正确读法是**逐处看差异**：
+> `policy_hash` 在**每一个包里都必须是同一条**，不同的只许是 `description`。
+> 这就是「快照不重采（重采等于把活口变成空白支票），差异反过来被逐处断言」的落地方式。
+
 ### 4.2 提交前清单
 
 1. `python3 -m unittest discover tests` → **783 / 15**，工作树里没有计划外的文件。
 2. 改了 `scripts/` 结构 → `tests.test_scripts_layout` 过。
 3. 改了会产生数字的东西 → 数字**四处同步**（见 [`modules/08`](modules/08-tests-bench.md)）。
 4. 改了文档 → 相对链接不悬空。
-5. `git status` 干净，产物（`scripts/.work/`、`scripts/examples/out/`、`bench/work/`）没被误加。
+5. 重构（「不该改变行为」那种）→ `acceptance.py` 与 `tests.test_loader_parity` 先过一遍：
+   **1.1 s + 0.54 s**，比等全量测试的 40 秒快，也比它更贴题（见 §4.1）。全量测试里也各有一份。
+6. `git status` 干净，产物（`scripts/.work/`、`scripts/examples/out/`、`bench/work/`）没被误加。
+   **例外**：`docs/demo/` 下那四份图文物是**入库**的 —— 刷新它们是有意为之，不是误加；
+   但刷新后请顺手看一眼 diff（渲染自 `--no-prove` 的会话时，摘要卡片应当写着
+   `unproven (host-check only)`，见 [`demo/README.md` §6](demo/README.md)）。
 
 ### 4.3 ⚠️ 四个「不响的失败」
 
@@ -382,6 +435,9 @@ SP1_PROVER=cpu python3 bench/bench_proofs.py     # 每点 119–173 s + ~10 GB
 |---|---|---|
 | `demo_all.sh` | `scripts/examples/out/all/`（每条支路一个子目录 + `REPORT.md`） | 否 |
 | `demo_e2e.py --out-dir D` | `D`（缺省 `scripts/examples/out/e2e/`） | 否 |
+| `demo_all.sh --shots` | 八条支路照旧，**另加** `<out>/shots/` 下四份图文物 | 否 |
+| `make_shots.py --out-dir D` | `D`（缺省 **`docs/demo/`** —— 那四份是**入库**的） | **是**（缺省路径下） |
+| `acceptance.py --snapshot F` / `loader_parity.py --snapshot F` | `F`（入库的那两份是 `tests/acceptance_baseline.json`、`tests/loader_parity_baseline.json`） | **是**（重采要人工确认） |
 | `issue_cert.py --out-dir D` | `D`：`cert.json` / `payload.json` / `key.json` / `proof.bin` / `results.json` | 否 |
 | `cross_validate.py` | `scripts/.work/`（草稿；`--work-dir` 可改） | 否 |
 | `proof_service.py --out-dir D` | `D`（缺省 `scripts/examples/out/service/`）：`jobs/<job_id>/`、`checks/`、`ledger.jsonl` | 否 |
