@@ -135,6 +135,15 @@ FAIL → 非 0。⚠️ 它**只覆盖 1 个向量的验证腿**，这件事写�
 构造一个含 keyword + length + email 正则三条规则的用例，并**故意**让响应同时命中关键词与邮箱。
 它跑六个实验，每个都有独立的 PASS/FAIL 行：
 
+```bash
+SP1_PROVER=cpu python3 scripts/demo/private_demo.py [--no-prove] [--out-dir DIR]
+```
+
+`--out-dir` 缺省 `scripts/examples/out/private`（单独跑时的老位置，**保持不变**）；
+`demo_all.sh` 会显式传 `$OUT_DIR/private`，好让私有模式这条支路的产物跟其余七条
+落进**同一个**产物目录 —— 在此之前它的路径是**硬编码**的，是「支路都进了统一目录、
+只有这条散在源码目录下」的来源。
+
 | 实验 | 检查什么 |
 |---|---|
 | `check` | 电路内 `--check` 的私有输出与 golden **逐字段**一致（响应承诺 / 证据承诺 / 脱敏） |
@@ -694,8 +703,14 @@ curl -s -X POST localhost:8787/v1/attest -H 'Content-Type: application/json' \
 bash scripts/demo/demo_all.sh              # fast：走宿主校验（--no-prove），约 13 秒
 bash scripts/demo/demo_all.sh --prove      # 出真证明，每条支路数分钟、峰值 ~10 GB，本机实测 26–27 分钟
 bash scripts/demo/demo_all.sh --out-dir D  # 产物与报告落 D（默认 scripts/examples/out/all）
+bash scripts/demo/demo_all.sh --shots      # 额外跑第 9 步：把会话渲染成 HTML/SVG/PNG
 bash scripts/demo/demo_all.sh --list       # 只列支路，不跑
 ```
+
+> `--shots` 之后的那一步**不在 8 条支路里**（`--list` 仍列 8 条，验收判据也不含它）：
+> 它不产生任何结论，只是把第 1 条支路的会话渲染成可分享的图文，落到 `$OUT_DIR/shots/`。
+> 要刷新**入库**的 `docs/demo/` 那四份（缺省 `--out-dir` 就是它），直接跑
+> `python3 scripts/demo/make_shots.py --session <session.json>`。
 
 **它存在的理由**：本项目的端到端能力分散在 8 条支路上，`demo_e2e.py` 只覆盖其中
 「公开模式主干」一条，但第一次读仓库的人跑完它很容易以为链路已经全覆盖了。

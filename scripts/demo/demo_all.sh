@@ -11,6 +11,7 @@
 #   bash scripts/demo/demo_all.sh                # 快速模式：走宿主校验，不出真证明（本机实测 ~13 秒）
 #   bash scripts/demo/demo_all.sh --prove        # 出真证明（每条支路数分钟、峰值 ~10 GB，约 25–30 分钟）
 #   bash scripts/demo/demo_all.sh --out-dir DIR  # 产物与报告落 DIR
+#   bash scripts/demo/demo_all.sh --shots        # 额外把会话渲染成 HTML/SVG/PNG（第 9 步，不在 8 条支路里）
 #   bash scripts/demo/demo_all.sh --list         # 只列支路，不跑
 #
 # 退出码：0 = 所有**应有**的步骤都 PASS；1 = 有步骤 FAIL。
@@ -29,13 +30,15 @@ cd "$HERE"
 
 PROVE=0
 LIST=0
+SHOTS=0
 OUT_DIR="$HERE/scripts/examples/out/all"
 while [ $# -gt 0 ]; do
   case "$1" in
     --prove)   PROVE=1 ;;
     --list)    LIST=1 ;;
+    --shots)   SHOTS=1 ;;
     --out-dir) shift; OUT_DIR="$1" ;;
-    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
   shift
@@ -91,8 +94,6 @@ if [ "$LIST" = "1" ]; then
 fi
 
 rm -rf "$OUT_DIR"; mkdir -p "$OUT_DIR/logs"
-SOLO="$OUT_DIR/_solo"     # 供不走 out-dir 参数的驱动（private_demo）用
-mkdir -p "$SOLO"
 
 # ---------------------------------------------------------------- 计时工具 --
 # 用 /usr/bin/time 量墙钟与峰值 RSS。缺了就退化成 date，并如实标注「未量到内存」。
@@ -146,6 +147,8 @@ HAVE_SRS=0
 [ -f semantic/artifacts/kzg.srs ] && [ -f semantic/artifacts/model.compiled ] && HAVE_SRS=1
 HAVE_ANVIL=0
 command -v anvil >/dev/null 2>&1 && command -v cast >/dev/null 2>&1 && HAVE_ANVIL=1
+HAVE_PIL=0
+python3 -c "import PIL" >/dev/null 2>&1 && HAVE_PIL=1
 
 # ---- 1) 公开模式主干 -------------------------------------------------------
 PROVE_ARG=(); [ "$PROVE" = 0 ] && PROVE_ARG=(--no-prove)
@@ -159,7 +162,7 @@ SESSION_JSON="$OUT_DIR/policy/session.json"
 
 # ---- 2) 私有模式 -----------------------------------------------------------
 run_step private "私有模式" "scripts/demo/private_demo.py" \
-  python3 scripts/demo/private_demo.py "${PROVE_ARG[@]}"
+  python3 scripts/demo/private_demo.py "${PROVE_ARG[@]}" --out-dir "$OUT_DIR/private"
 
 # ---- 3) 语义规则（P2-9）---------------------------------------------------
 if [ "$HAVE_EZKL" = 0 ]; then
@@ -212,6 +215,25 @@ else
     python3 scripts/verify/verify_session.py --session "$SESSION_JSON"
 fi
 
+# ---- 9) 会话报告渲染（--shots，可选；**不是第 9 条支路**）------------------
+# 它不产生任何**结论**，只是把第 1 条支路（公开模式主干）的会话渲染成可分享的
+# 图文。所以：缺省不跑、不进 LANES（--list 仍是 8 条）、也不在验收判据里。
+# 缺了它，docs/demo/ 下那几张图就只能靠人记着手工刷新 —— 这正是把这条腿
+# 显式接上的理由：产物要么由命令生成，要么根本不该存在。
+# 注意它内部会**再跑一次** verify_session.py（渲染要用那份清单），所以这一步
+# 的墙钟大致等于 verify 那条支路。
+if [ "$SHOTS" = 1 ]; then
+  if [ "$HAVE_PIL" = 0 ]; then
+    skip_step shots "会话报告渲染" "scripts/demo/make_shots.py" "未装 Pillow（python3 -c 'import PIL' 失败）"
+  elif [ ! -f "$SESSION_JSON" ]; then
+    skip_step shots "会话报告渲染" "scripts/demo/make_shots.py" "缺 $SESSION_JSON（依赖「公开模式主干」的产物）"
+  else
+    run_step shots "会话报告渲染" "scripts/demo/make_shots.py" \
+      python3 scripts/demo/make_shots.py --session "$SESSION_JSON" --out-dir "$OUT_DIR/shots"
+    echo "  四份图文物在 $OUT_DIR/shots/（缺省 out-dir 是 docs/demo；那边是**入库**的那份）"
+  fi
+fi
+
 # ---------------------------------------------------------------- 汇总报告 --
 echo
 echo "${BLD}=== 支路汇总 ===${RST}"
@@ -249,7 +271,7 @@ PY
   emit "① ${YEL}链上只锚定「证书摘要」，不验证证明。${RST}"
   emit "   实测合约函数：$FNS"
   emit "   → 没有 anchorWithProof / verifyProof。链上得到的是「该摘要某时刻已存在」，"
-  emit "     不是「已证明的结论」。对外说「链上可验证」是过度声明（见 docs/plan-p0p1p2.md §P1-7）。"
+  emit "     不是「已证明的结论」。对外说「链上可验证」是过度声明（见 docs/modules/04-anchoring-audit.md「怎么用它」）。"
 else
   emit "① ${YEL}链上只锚定「证书摘要」，不验证证明${RST}（未找到 $ABI，未能现推函数表）。"
 fi
@@ -339,6 +361,18 @@ REPORT="$OUT_DIR/REPORT.md"
   echo
   echo "SKIP = 缺依赖（未装 ezkl / foundry / 上游产物缺失），不代表功能不存在；"
   echo "FAIL = 该步骤真的失败了。二者必须分开看。"
+  if [ "$SHOTS" = 1 ]; then
+    echo
+    echo "## 第 9 步：会话报告渲染（\`--shots\`）"
+    echo
+    echo "四份图文物（\`session_report.html\` / \`session_report.svg\` / \`session_summary.png\` /"
+    echo "\`verify_result.png\`）在 \`$OUT_DIR/shots/\`。这一步**不是**支路、不产生结论，"
+    echo "只是把第 1 条支路的会话渲染成可分享的图文。要刷新**入库**的那份（\`docs/demo/\`）："
+    echo
+    echo '```bash'
+    echo "python3 scripts/demo/make_shots.py --session $SESSION_JSON   # 缺省 --out-dir 即 docs/demo"
+    echo '```'
+  fi
   # 上面那几段「演示印象 ≠ 事实」同样落进报告 —— 只读 REPORT.md 的人不该漏掉它们。
   # （它们是从产物/源码现推的，所以这份报告不会随文档更新而漂移。）
   if [ "${#GAPS[@]}" -gt 0 ]; then

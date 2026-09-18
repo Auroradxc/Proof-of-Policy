@@ -11,7 +11,11 @@
   - 证据开示（EVIDENCE OPENING）：披露的片段能对照其承诺验证通过。
   - 证明（PROOF）：同一个私有任务在 SP1 内证明并复查（--no-prove 可跳过）。
 
-用法：SP1_PROVER=cpu python3 scripts/demo/private_demo.py [--no-prove]
+用法：SP1_PROVER=cpu python3 scripts/demo/private_demo.py [--no-prove] [--out-dir DIR]
+
+``--out-dir`` 的**缺省值**是 ``scripts/examples/out/private``（单独跑本脚本时的
+老位置，保持不变）；编排器 ``demo_all.sh`` 会显式传 ``--out-dir``，好让私有模式
+这条支路的产物与其余七条落在**同一个**产物目录下。
 """
 
 from __future__ import annotations
@@ -160,6 +164,8 @@ def evidence_experiment(case: dict) -> bool:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--no-prove", action="store_true")
+    ap.add_argument("--out-dir", type=Path,
+                    default=REPO / "scripts" / "examples" / "out" / "private")
     args = ap.parse_args()
 
     case = build_case()
@@ -168,7 +174,7 @@ def main() -> int:
     bad_golden = commit.private_output(case["spec"], case["response"], case["mask"],
                                        case["redacted"], [(0, 1)], nonce=case["nonce"])
 
-    out_dir = REPO / "scripts" / "examples" / "out" / "private"
+    out_dir: Path = args.out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
     check_vec = out_dir / "vectors_check.json"
