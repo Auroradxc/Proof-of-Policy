@@ -1,0 +1,919 @@
+<title>Proof-of-Policy</title>
+<style>
+/* ============================================================================
+   色板直接沿用本项目自己的两套既有设计：
+     浅色 = docs/kanban.html  :root 的 token（看板）
+     深色 = docs/demo/session_report.html 的 token（端到端报告）
+   所以这份汇报看上去与项目产物是同一套东西，而不是另起一套。
+   唯一的**新增**是 --warn（深色侧）：项目现有产物里没有"待办/边界"这一档语义，
+   而这份汇报有一整节"还未解决的问题"，需要它。浅色侧的 --warn 沿用看板的值。
+   ========================================================================= */
+:root{
+  --bg:#f4f6fa; --card:#ffffff; --sunken:#0f1118; --sunken-ink:#cfe0ff;
+  --ink:#1c2330; --ink-2:#374151; --muted:#6b7280;
+  --line:#e3e8f0; --line-2:#eef1f7;
+  --acc:#2563eb; --acc-soft:#eef3ff; --acc-ink:#1d4ed8;
+  --ok:#16a34a; --ok-soft:#eafaf0;
+  --warn:#b45309; --warn-soft:#fdf4e7;
+  --bad:#dc2626; --bad-soft:#fdeeee;
+  --shadow:0 1px 2px rgba(16,24,40,.04), 0 8px 24px -12px rgba(16,24,40,.12);
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,"Noto Sans CJK SC","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --r:12px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#12141c; --card:#1c2029; --sunken:#0e1017; --sunken-ink:#cfe0ff;
+    --ink:#e8ecf4; --ink-2:#c6cedd; --muted:#96a0b2;
+    --line:#262c38; --line-2:#20252f;
+    --acc:#6ea8fe; --acc-soft:#1b2434; --acc-ink:#9cc4ff;
+    --ok:#34c77b; --ok-soft:#152a20;
+    --warn:#e8b45a; --warn-soft:#2a2418;
+    --bad:#e85a5a; --bad-soft:#2c1a1c;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#12141c; --card:#1c2029; --sunken:#0e1017; --sunken-ink:#cfe0ff;
+  --ink:#e8ecf4; --ink-2:#c6cedd; --muted:#96a0b2;
+  --line:#262c38; --line-2:#20252f;
+  --acc:#6ea8fe; --acc-soft:#1b2434; --acc-ink:#9cc4ff;
+  --ok:#34c77b; --ok-soft:#152a20;
+  --warn:#e8b45a; --warn-soft:#2a2418;
+  --bad:#e85a5a; --bad-soft:#2c1a1c;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--sans); font-size:16px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3{margin:0; text-wrap:balance; line-height:1.25}
+p{margin:0}
+code,kbd{font-family:var(--mono); font-size:.88em}
+a{color:var(--acc-ink)}
+b,strong{font-weight:650}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- 幻灯片骨架：无 JS 时是「可读的长文」，有 JS 才变成一次一页 ---------- */
+.deck{display:flex; flex-direction:column}
+.slide{
+  min-height:100svh; display:flex; flex-direction:column; justify-content:center;
+  padding:clamp(26px,4.4vh,58px) clamp(20px,5vw,76px);
+  border-bottom:1px solid var(--line-2);
+}
+.slide:last-child{border-bottom:0}
+.slide__in{width:100%; max-width:1180px; margin:0 auto; display:flex; flex-direction:column; gap:clamp(14px,2.2vh,26px)}
+.slide--tight .slide__in{gap:clamp(10px,1.6vh,18px)}
+
+html[data-mode="present"] .deck{height:100svh; overflow-y:auto; scroll-snap-type:y proximity; overscroll-behavior-y:contain}
+html[data-mode="present"] .slide{scroll-snap-align:center; border-bottom:0}
+html[data-mode="present"]{scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){ html[data-mode="present"]{scroll-behavior:auto} }
+
+/* ---------- 页眉 ---------- */
+.eyebrow{display:flex; align-items:center; gap:9px; font-size:12.5px; color:var(--muted); letter-spacing:.04em}
+.eyebrow::before{content:""; width:7px; height:7px; border-radius:2px; background:var(--acc); flex:none}
+h1{font-size:clamp(26px,3.5vw,42px); font-weight:700; letter-spacing:-.01em}
+h2{font-size:clamp(21px,2.5vw,31px); font-weight:700}
+.h-sub{font-size:clamp(13px,1.2vw,16px); color:var(--muted); max-width:74ch}
+.lead{font-size:clamp(14.5px,1.35vw,18px); color:var(--ink-2); max-width:80ch}
+.src{font-size:12px; color:var(--muted); font-family:var(--mono); line-height:1.5}
+
+/* ---------- 版面工具 ---------- */
+.grid{display:grid; gap:clamp(10px,1.4vw,16px)}
+.g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.g2u{grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr)}
+@media (max-width:860px){ .g2,.g3,.g2u{grid-template-columns:minmax(0,1fr)} }
+.stack{display:flex; flex-direction:column; gap:12px}
+.row{display:flex; flex-wrap:wrap; gap:8px; align-items:center}
+
+/* ---------- 卡片 ---------- */
+.card{background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:clamp(13px,1.5vw,19px)}
+.card--flat{box-shadow:none}
+.card__t{font-weight:650; font-size:15px; margin-bottom:7px; display:flex; align-items:center; gap:8px}
+.card__d{font-size:14px; color:var(--muted); line-height:1.6}
+.lift{box-shadow:var(--shadow)}
+
+/* ---------- 大数字 ---------- */
+.kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:clamp(9px,1.2vw,14px)}
+.kpi{background:var(--card); border:1px solid var(--line); border-radius:var(--r); padding:13px 15px}
+.kpi__n{font-size:clamp(23px,2.6vw,33px); font-weight:700; color:var(--acc); font-variant-numeric:tabular-nums; line-height:1.1}
+.kpi__n small{font-size:.5em; font-weight:650; color:var(--muted); margin-left:3px}
+.kpi__l{font-size:12.5px; color:var(--muted); margin-top:5px; line-height:1.45}
+
+/* ---------- 编号节点（流程）：编号是真实顺序，不是装饰 ---------- */
+.flow{display:grid; grid-template-columns:repeat(auto-fit,minmax(154px,1fr)); gap:clamp(8px,1vw,12px)}
+.flow--4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media (max-width:900px){ .flow--4{grid-template-columns:repeat(2,minmax(0,1fr))} }
+.node{background:var(--card); border:1px solid var(--line); border-radius:10px; padding:11px 13px 12px}
+.node__n{font-family:var(--mono); font-size:11.5px; color:var(--acc); letter-spacing:.06em}
+.node__t{font-weight:650; font-size:14px; margin:3px 0 4px}
+.node__d{font-size:12.5px; color:var(--muted); line-height:1.5}
+.node__d code{font-size:11.5px; word-break:break-all}
+
+/* ---------- 表格 ---------- */
+.tbl-wrap{overflow-x:auto; border:1px solid var(--line); border-radius:var(--r); background:var(--card)}
+table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:520px}
+th,td{padding:9px 12px; text-align:left; vertical-align:top; border-bottom:1px solid var(--line-2)}
+thead th{font-size:11.5px; font-weight:650; color:var(--muted); letter-spacing:.07em; text-transform:uppercase; background:var(--line-2); white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+td.n,th.n{font-variant-numeric:tabular-nums; white-space:nowrap}
+td code{font-size:12.5px}
+
+/* ---------- 状态标 ---------- */
+.chip{display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; padding:2.5px 8px; border-radius:999px; border:1px solid transparent; white-space:nowrap}
+.chip--ok{color:var(--ok); background:var(--ok-soft); border-color:color-mix(in srgb,var(--ok) 30%,transparent)}
+.chip--warn{color:var(--warn); background:var(--warn-soft); border-color:color-mix(in srgb,var(--warn) 30%,transparent)}
+.chip--bad{color:var(--bad); background:var(--bad-soft); border-color:color-mix(in srgb,var(--bad) 30%,transparent)}
+.chip--acc{color:var(--acc-ink); background:var(--acc-soft); border-color:color-mix(in srgb,var(--acc) 30%,transparent)}
+.chip--mute{color:var(--muted); background:var(--line-2); border-color:var(--line)}
+
+/* ---------- 标签-内容行（未解决问题 / 备答） ---------- */
+.rows{display:flex; flex-direction:column}
+.rowitem{display:grid; grid-template-columns:104px minmax(0,1fr); gap:14px; padding:9px 0; border-top:1px solid var(--line-2); align-items:start}
+.rowitem:first-child{border-top:0}
+.rowitem__k{font-size:13px; color:var(--muted); font-weight:600}
+.rowitem__v{font-size:14px; line-height:1.6}
+@media (max-width:620px){ .rowitem{grid-template-columns:minmax(0,1fr); gap:3px} }
+
+/* ---------- 终端内嵌面板（两主题下都是深色，终端本来就该是深色） ---------- */
+.term{background:var(--sunken); border:1px solid var(--line); border-radius:10px; padding:14px 16px; overflow-x:auto}
+.term pre{margin:0; font-family:var(--mono); font-size:12.5px; line-height:1.75; color:var(--sunken-ink)}
+.term .ok{color:#34c77b}
+.term .dim{color:#8b94a8}
+.term .hl{color:#6ea8fe}
+.shot{display:block; width:100%; height:auto; border:1px solid var(--line); border-radius:10px}
+
+/* ---------- 如实标注 ---------- */
+.honest{border-left:0; background:var(--warn-soft); border:1px solid color-mix(in srgb,var(--warn) 34%,transparent); border-radius:var(--r); padding:12px 15px}
+.honest__t{font-size:12.5px; font-weight:700; color:var(--warn); letter-spacing:.05em; margin-bottom:4px}
+.honest p{font-size:13.5px; color:var(--ink-2); line-height:1.6}
+.q{font-size:15.5px; line-height:1.6; color:var(--ink-2)}
+
+/* ---------- 页脚 / 导航 ---------- */
+.foot{position:fixed; right:14px; bottom:12px; z-index:20; display:flex; align-items:center; gap:8px;
+  background:color-mix(in srgb,var(--card) 92%,transparent); backdrop-filter:blur(8px);
+  border:1px solid var(--line); border-radius:999px; padding:5px 6px; box-shadow:var(--shadow)}
+.foot button{font:inherit; font-size:12.5px; font-weight:600; color:var(--ink-2); background:transparent;
+  border:1px solid transparent; border-radius:999px; padding:4px 11px; cursor:pointer}
+.foot button:hover{background:var(--acc-soft); color:var(--acc-ink); border-color:color-mix(in srgb,var(--acc) 26%,transparent)}
+.foot button:focus-visible{outline:2px solid var(--acc); outline-offset:1px}
+.foot .pager{font-family:var(--mono); font-size:12.5px; color:var(--muted); padding:0 4px; font-variant-numeric:tabular-nums}
+.bar{position:fixed; top:0; left:0; height:2px; background:var(--acc); z-index:30; width:0; transition:width .18s}
+html:not([data-mode="present"]) .foot,html:not([data-mode="present"]) .bar{display:none}
+.hint{position:fixed; left:14px; bottom:14px; z-index:20; font-size:11.5px; color:var(--muted);
+  background:color-mix(in srgb,var(--card) 90%,transparent); border:1px solid var(--line); border-radius:999px; padding:5px 12px}
+html:not([data-mode="present"]) .hint{display:none}
+@media (max-width:700px){ .hint{display:none} }
+
+/* ---------- 打印 / 导出 PDF：每页一张 16:9 幻灯片 ---------- */
+@page{ size:297mm 167mm; margin:0 }
+@media print{
+  :root{ --bg:#fff; --card:#fff; --ink:#111823; --ink-2:#333a47; --muted:#5c6675; --line:#d7dde8; --line-2:#eceff5 }
+  html,body{background:#fff}
+  .deck{height:auto !important; overflow:visible !important; display:block}
+  .slide{min-height:0 !important; height:167mm; padding:13mm 15mm; border-bottom:0 !important;
+    break-inside:avoid; break-after:page; page-break-after:always; overflow:hidden}
+  .slide:last-child{break-after:auto; page-break-after:auto}
+  .foot,.bar,.hint{display:none !important}
+  .card,.kpi,.node,.tbl-wrap,.term{box-shadow:none}
+  h1{font-size:30pt} h2{font-size:19pt}
+}
+</style>
+
+<div class="bar" id="bar"></div>
+
+<div class="deck" id="deck">
+
+<!-- ============================ 1 · 封面 ============================ -->
+<section class="slide" id="s1">
+  <div class="slide__in">
+    <div class="eyebrow">方向二 · 阶段汇报</div>
+    <h1>Proof-of-Policy</h1>
+    <p class="lead">为 LLM agent 的响应提供<strong>策略零知识证明</strong>：证明「响应 <code>T</code> 满足公开策略 <code>π</code>」，
+      而违规内容只以<strong>证据承诺</strong>披露 —— 不依赖 TEE，可链上锚定，可被第三方<strong>仅凭公开产物</strong>独立复核。</p>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi__n">8<small>条</small></div><div class="kpi__l">端到端支路，各带独立驱动</div></div>
+      <div class="kpi"><div class="kpi__n">801<small>/15</small></div><div class="kpi__l">全量测试通过 / 设计内跳过</div></div>
+      <div class="kpi"><div class="kpi__n">3<small>个</small></div><div class="kpi__l">SP1 guest 程序，键分离</div></div>
+      <div class="kpi"><div class="kpi__n">L1<small>–L9</small></div><div class="kpi__l">形式化安全模型引理，逐条给代码落点</div></div>
+    </div>
+    <p class="src">仓库：zk-policy ｜ 一键复现：<code>bash scripts/demo/demo_all.sh</code> ｜ 逐条数字的出处见文末附录</p>
+  </div>
+</section>
+
+<!-- ============================ 2 · 问题与定位 ============================ -->
+<section class="slide" id="s2">
+  <div class="slide__in">
+    <div class="eyebrow">问题</div>
+    <h2>「我的 agent 是合规的」——这句话凭什么信？</h2>
+    <div class="grid g3">
+      <div class="card">
+        <div class="card__t">① 日志可伪造</div>
+        <div class="card__d">运营方自己记的日志，自己就能改。审计方拿到的是一份<strong>声明</strong>，不是证据。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">② 「护栏跑过了」≠「合规了」</div>
+        <div class="card__d">TEE 路线证明的是<strong>护栏代码被执行过</strong>（执行 ≠ 合规），而且要把输入输出交给第三方硬件。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">③ 隐私与可核验相互顶牛</div>
+        <div class="card__d">要把响应交出来才能验 —— 可一旦交出来，合规的那部分内容也一并泄露了。</div>
+      </div>
+    </div>
+    <div class="card lift">
+      <div class="card__t">本项目要的东西：一份<strong>验证方自己算得出来</strong>的证据</div>
+      <div class="q">给定<strong>公开策略 π</strong> 与一条响应 <code>T</code>，任何人都能独立验证「<code>T</code> 满足 π」；
+        而违规内容只以<strong>证据承诺</strong>披露 —— 结论公开、内容不公开、无硬件信任。</div>
+    </div>
+    <div class="grid g2u">
+      <div class="card">
+        <div class="card__t">坐标系（<code>docs/quadrant.md</code>）</div>
+        <div class="card__d">纵轴＝证明<strong>性质成立</strong>还是<strong>护栏执行过</strong>；横轴＝信任来自<strong>密码学</strong>还是<strong>硬件/人工</strong>。
+          「密码学健全 × 证性质」这一格<strong>此前为空</strong>，本项目落在该格。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">一句话边界</div>
+        <div class="card__d">证的是<strong>策略满足性</strong>，<strong>不是</strong>推理正确性；不涉及模型权重，也不证明「这条 <code>T</code> 一定是那个 LLM 算出来的」。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 3 · 一页速览 ============================ -->
+<section class="slide" id="s3">
+  <div class="slide__in">
+    <div class="eyebrow">一页速览</div>
+    <h2>做到哪一步了</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi__n">8<small>条</small></div><div class="kpi__l">端到端支路，各有驱动、全部跑通</div></div>
+      <div class="kpi"><div class="kpi__n">801<small>/15</small></div><div class="kpi__l">测试通过 / 设计内跳过（2026-09-18 实测）</div></div>
+      <div class="kpi"><div class="kpi__n">10<small>项</small></div><div class="kpi__l">第三方验证全 PASS（只用公开产物）</div></div>
+      <div class="kpi"><div class="kpi__n">119<small>–173 s</small></div><div class="kpi__l">真 SP1 证明耗时（2.7 MiB / 峰值 ~10.4 GiB）</div></div>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">最硬的证据</div>
+        <div class="card__d">第三方脚本 <code>verify_session.py</code> <strong>只用公开产物</strong>复算全部结论 —— 签名、策略指纹、
+          响应绑定、轨迹绑定、锚定、流式链、ZK 证明 —— <strong>10 项全 PASS</strong>，13 张证书。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">最大的自我限制</div>
+        <div class="card__d">「零知识」只到<strong>策略零知识</strong>：私有模式保证「公开值不含明文」，
+          <strong>不保证响应内容不可恢复</strong> —— 低熵文本可枚举猜测-验证，且 SP1 的 <code>core</code>/<code>compressed</code>
+          证明本身非零知识。<strong>这条是自己查出来并写进标题的</strong>。</div>
+      </div>
+    </div>
+    <div class="honest">
+      <div class="honest__t">不适合什么</div>
+      <p>实时护栏。出证按分钟计，定位是<strong>离线审计 / 报送 / 批量合规核查</strong>。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 4 · 八环流程 ============================ -->
+<section class="slide" id="s4">
+  <div class="slide__in">
+    <div class="eyebrow">完整流程 · 八环</div>
+    <h2>从策略编写到第三方验证</h2>
+    <div class="flow flow--4">
+      <div class="node"><div class="node__n">01</div><div class="node__t">策略编写</div><div class="node__d">人写 JSON 策略包，8 类规则<br><code>policy_packs/*.json</code></div></div>
+      <div class="node"><div class="node__n">02</div><div class="node__t">编译</div><div class="node__d">产出 <code>ConstraintSpec</code> —— 层间<strong>唯一契约</strong></div></div>
+      <div class="node"><div class="node__n">03</div><div class="node__t">运行时插桩</div><div class="node__d">真实 agent 会话的回调事件流（LangChain / LangGraph / MCP）</div></div>
+      <div class="node"><div class="node__n">04</div><div class="node__t">轨迹绑定</div><div class="node__d">网关签发的<strong>回执链</strong> + 会话末端承诺 <code>ToolSeal</code></div></div>
+      <div class="node"><div class="node__n">05</div><div class="node__t">证书</div><div class="node__d">DSSE 信封 + Ed25519 签名<br><code>cert.json</code></div></div>
+      <div class="node"><div class="node__n">06</div><div class="node__t">锚定</div><div class="node__d">证书摘要入防篡改账本或链<br><code>ledger.jsonl</code></div></div>
+      <div class="node"><div class="node__n">07</div><div class="node__t">ZK 证明</div><div class="node__d">SP1 出证（3 个 guest 程序）<br><code>proof.bin</code></div></div>
+      <div class="node"><div class="node__n">08</div><div class="node__t">第三方验证</div><div class="node__d"><strong>只用公开产物</strong>复算<br><code>RESULT: PASS</code></div></div>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">怎么读这张图</div>
+        <div class="card__d">01–02 把「策略」变成「约束」；03–05 把「一次会话」变成「可核验的证书」；
+          06–08 把「我说的」变成「<strong>你能自己算的</strong>」。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">每一环都有可核验的产物</div>
+        <div class="card__d">不是流程图上的方框 —— 每一环落成仓库里的具体文件，且下一环的输入就是上一环的产物（见附录的产物地图）。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 5 · 八条支路 ============================ -->
+<section class="slide" id="s5">
+  <div class="slide__in">
+    <div class="eyebrow">完整流程 · 八条支路</div>
+    <h2>不是一条 demo，是八条各有驱动的端到端支路</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th class="n">#</th><th>支路</th><th>驱动</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td class="n">①</td><td>公开模式主干：流式（含早停）+ MCP 工具 + 真 SP1 证明 + 挑战绑定 + 公私对比 + 账本</td><td><code>demo/demo_e2e.py</code></td><td><span class="chip chip--ok">已跑通</span></td></tr>
+          <tr><td class="n">②</td><td>私有模式：响应承诺 + 逐违规证据承诺 + 脱敏证明 + 证据开示</td><td><code>demo/private_demo.py</code></td><td><span class="chip chip--ok">已跑通</span></td></tr>
+          <tr><td class="n">③</td><td>语义规则：ezkl 陪伴证明，验证方与 SP1 结论<strong>合取</strong></td><td><code>prove/ezkl_prove.py</code></td><td><span class="chip chip--ok">已跑通</span></td></tr>
+          <tr><td class="n">④</td><td>组合证明：策略半 ∧ 推理半，两个 vkey（<strong>键分离</strong>）</td><td><code>prove/compose_proof.py</code></td><td><span class="chip chip--ok">已跑通</span></td></tr>
+          <tr><td class="n">⑤</td><td>会话聚合：一组证书的 Merkle 根 + 三条义务</td><td><code>prove/prove_session.py</code></td><td><span class="chip chip--ok">已跑通</span></td></tr>
+          <tr><td class="n">⑥</td><td>多证明者：按规则类切三段，各角色自证自签</td><td><code>prove/prove_multiparty.py</code></td><td><span class="chip chip--ok">已跑通</span></td></tr>
+          <tr><td class="n">⑦</td><td>链上锚定：起 Anvil → 部署 <code>Anchor.sol</code> → 摘要上链</td><td><code>anchor/anchor_e2e.sh</code></td><td><span class="chip chip--ok">已跑通</span></td></tr>
+          <tr><td class="n">⑧</td><td>第三方独立验证：只用公开产物复算全部结论</td><td><code>verify/verify_session.py</code></td><td><span class="chip chip--ok">已跑通</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="row">
+      <span class="chip chip--acc">一键</span>
+      <span class="card__d"><code>bash scripts/demo/demo_all.sh</code>（宿主校验，约半分钟）</span>
+      <span class="chip chip--acc">真证明</span>
+      <span class="card__d"><code>--prove</code>（本机实测 <strong>22.6 分钟</strong>，峰值 ~10 GB）</span>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 6 · 两个层间合同 ============================ -->
+<section class="slide slide--tight" id="s6">
+  <div class="slide__in">
+    <div class="eyebrow">设计细节 · 层间合同</div>
+    <h2>两层之间只签两份合同</h2>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">① <code>ConstraintSpec</code>：策略 → 约束</div>
+        <div class="card__d">
+          <code>spec_version</code> / <code>policy_id</code> / <code>policy_version</code> / <code>semantic</code> /
+          <code>constraints[]</code> / <code>sha256</code>。<br>
+          <code>sha256</code> 只作用于<strong>规范化 JSON 文本</strong>（<code>description</code> 不进哈希）—— 它就是
+          <code>policy_hash</code> 的来源，也是<strong>三方比对</strong>的基础：出证方、验证方、电路公开值，
+          三方现场重编译必须得到同一个值。<br>
+          <strong>跨语言对拍</strong>：Python 参考层与 Rust/SP1 电路层各自实现判定，CI 的 <code>rust</code> job 逐点比。
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__t">② 证书：<code>outcome</code> 与顶层<strong>不是</strong>一层</div>
+        <div class="card__d">
+          <code>outcome</code> <strong>只放电路公开值的镜像</strong>：公开模式为
+          <code>{passed, violations, policy_hash, response_binding, trace_root, delegated}</code>。<br>
+          <code>trace_seal</code>（会话末端承诺）、<code>ai_act</code>（合规标注）、<code>binding</code>、
+          <code>error</code> 块一律在<strong>顶层</strong> —— 因为电路里没有这些字段。<br>
+          <strong>把链下东西塞进 <code>outcome</code>，会让「证明过的」与「没证明的」看起来一样。</strong>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card__t">三个哈希，各绑一件事（都在域分隔符下）</div>
+      <div class="tbl-wrap" style="border:0">
+        <table>
+          <thead><tr><th>名字</th><th>定义</th><th>绑什么</th></tr></thead>
+          <tbody>
+            <tr><td><code>response_binding</code></td><td><code>SHA256("pop-bind-v1" ‖ u32be(len(nonce)) ‖ nonce ‖ T)</code></td><td>绑到<strong>这一条响应</strong>，防调包</td></tr>
+            <tr><td><code>trace_root</code></td><td>回执链<strong>末条回执</strong>的摘要（链起于 <code>TRACE_GENESIS</code>）</td><td>绑<strong>整条工具轨迹</strong></td></tr>
+            <tr><td><code>policy_hash</code></td><td>策略包规范化 JSON 的 <code>sha256</code></td><td>绑<strong>策略版本</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card__d" style="margin-top:9px">
+        域分隔符是「同一哈希在两个用途下互不冒充」的<strong>全部实现</strong>。写错一个字符的后果不是报错，
+        而是两侧各自自洽、<strong>合起来对不上</strong> —— 所以有一条测试<strong>逐字节</strong>比对四个域
+        （<code>pop-trace-v1</code> / <code>pop-bind-v1</code> / <code>pop-infer-v1</code> / <code>pop-session-node-v1</code>）
+        在 Python 与 Rust 两侧的字面量，且它<strong>不需要 Rust 工具链</strong>，因此进得了零依赖的 CI 通道。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 7 · 轨迹绑定 ============================ -->
+<section class="slide" id="s7">
+  <div class="slide__in">
+    <div class="eyebrow">设计细节 · 轨迹绑定</div>
+    <h2>工具调用不是 agent 自报的</h2>
+    <div class="grid g2u">
+      <div class="card">
+        <div class="card__t">由<strong>工具网关</strong>在调用<strong>执行后</strong>签发回执链</div>
+        <div class="card__d">
+          每条 <code>ToolReceipt{seq, tool, args, result_digest, ts, prev, keyid, sig}</code>，
+          <code>prev</code> 把前一条的摘要串进来 —— 「链」这个结构本身就是承诺。
+        </div>
+        <div class="rows" style="margin-top:10px">
+          <div class="rowitem"><div class="rowitem__k">结构</div><div class="rowitem__v">由<strong>电路</strong>保证：删一条 / 换一条 / 重排序 → <code>trace_unbound</code> <strong>fail-closed</strong></div></div>
+          <div class="rowitem"><div class="rowitem__k">身份</div><div class="rowitem__v">链下 Ed25519 验签 + 公开值 <code>trace_root</code>（电路内<strong>不</strong>验签名，如实标注）</div></div>
+          <div class="rowitem"><div class="rowitem__k">截尾</div><div class="rowitem__v">网关的<strong>会话末端承诺</strong> <code>ToolSeal{count, trace_root, ts, keyid, sig}</code> 拦</div></div>
+          <div class="rowitem"><div class="rowitem__k">前提</div><div class="rowitem__v">验证方须给 <code>--gateway-key</code>，否则脚本如实标注「签名未验」</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__t">为什么要专门拦「截尾」</div>
+        <div class="card__d">
+          把链尾那条<strong>违规回执整条删掉</strong>，剩下的前缀依然是一条合法的链 —— 这类攻击不破坏任何哈希，
+          只有「<strong>承诺的条数/根</strong> vs <strong>实际交付的条数/根</strong>」的比对才拦得住。
+        </div>
+        <div class="honest" style="margin-top:11px">
+          <div class="honest__t">如实标注的边界</div>
+          <p>会话聚合电路<strong>不验网关签名</strong>（zkVM 里没有网关公钥）；且 <code>[0..k]</code> 前缀的
+            <code>index</code>/<code>prev</code> 依然连续 —— 即电路本身接受一个被砍了尾巴的证书集，
+            <strong>拦下它的是链下的根比对</strong>。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 8 · 双隐私模式 ============================ -->
+<section class="slide" id="s8">
+  <div class="slide__in">
+    <div class="eyebrow">设计细节 · 双隐私模式</div>
+    <h2>同一条响应、同一条策略、同一个 nonce —— 差别只在「你看见什么」</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>验证方能看到</th><th>公开模式</th><th>私有模式</th></tr></thead>
+        <tbody>
+          <tr><td>结论 <code>passed</code></td><td>相同</td><td>相同</td></tr>
+          <tr><td>策略指纹 <code>policy_hash</code></td><td>相同</td><td>相同</td></tr>
+          <tr><td>命中了哪几条规则</td><td>相同</td><td>相同</td></tr>
+          <tr><td>每条规则的证据</td><td><strong>明文</strong>：命中词 <code>exploit</code>、连密钥正则 <code>sk-[A-Za-z0-9]{16,}</code> 一起照抄</td><td><strong>证据承诺</strong>（哈希）+ 脱敏见证</td></tr>
+          <tr><td>响应本身的承诺</td><td>—（该模式不承诺 <code>T</code>）</td><td>有</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">判定结果<strong>必须</strong>相同</div>
+        <div class="card__d">同一个 <code>T</code>、同一条策略，所以两张证书的 <code>policy_hash</code> 与 <code>passed</code> 一致 ——
+          脚本<strong>自己断言</strong>这一点，不一致就是 FAIL。差别只在验证方看得见什么。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">私有模式的出口不是「涂黑」</div>
+        <div class="card__d">是<strong>证据选择性开示</strong>：开示一件证据时，该件必须与证书里那条承诺
+          <strong>逐条相符</strong>，篡改一件即被拒。</div>
+      </div>
+    </div>
+    <div class="honest">
+      <div class="honest__t">这条的自我限制（本项目的核心诚实项）</div>
+      <p>私有模式保证的是「<strong>公开值不含明文</strong>」，<strong>不是</strong>「响应内容不可恢复」——
+        公开值里的响应承诺是 <code>T</code> 的公开函数，对低熵文本可<strong>离线枚举猜测-验证</strong>。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 9 · 三个 guest ============================ -->
+<section class="slide" id="s9">
+  <div class="slide__in">
+    <div class="eyebrow">设计细节 · ZK 电路</div>
+    <h2>三个 guest 程序，键必须分离</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>guest</th><th>证什么</th><th>域</th><th>公开输入</th></tr></thead>
+        <tbody>
+          <tr><td><code>pop-program</code></td><td>策略合规（8 类规则，语义规则登记委托）</td><td><code>"policy"</code></td><td><code>Outcome</code></td></tr>
+          <tr><td><code>pop-infer</code></td><td>推理完整性（<strong>代理 MLP</strong>，权重为编译期常量）</td><td><code>"infer"</code></td><td><code>InferOutput</code></td></tr>
+          <tr><td><code>pop-session</code></td><td>跨证书一致性：<code>policy_hash</code> 全同 / 链无缝 / 覆盖完整轨迹</td><td><code>"session"</code></td><td><code>SessionOutput</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">为什么必须<strong>不同程序</strong>（键分离）</div>
+        <div class="card__d">两个 guest 入口各断言一次自己的域。否则「这份证明属于哪一半」无从判断 ——
+          同一把 vkey 既能签策略结论又能签推理结论，组合证明就成了各说各话。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">组合证明回答的问题</div>
+        <div class="card__d"><code>Compose = (推理完整性 ∧ 策略合规)</code> —— 回答
+          「<strong>这条 <code>T</code> 是被那个模型算出来的吗</strong>」，这是策略合规本身<strong>不覆盖</strong>的问题。</div>
+      </div>
+    </div>
+    <div class="honest">
+      <div class="honest__t">如实标注</div>
+      <p>推理半当前是<strong>代理</strong>（确定性定点 MLP），<strong>不是</strong>真实 LLM 的推理证明；
+        且「组合成本由推理主导」在代理规模下<strong>不成立</strong>（如实写进了评测）。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 10 · 服务化 ============================ -->
+<section class="slide" id="s10">
+  <div class="slide__in">
+    <div class="eyebrow">设计细节 · 服务化</div>
+    <h2>两个阶段差 4 个数量级，所以是两条接口</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi__n">&lt;10<small> ms</small></div><div class="kpi__l">宿主判定：在线段，证书如实标 <code>unproven</code></div></div>
+      <div class="kpi"><div class="kpi__n">~2.5<small> min</small></div><div class="kpi__l">SP1 core 证明：离线段，峰值 ~10.2 GiB</div></div>
+      <div class="kpi"><div class="kpi__n">1<small> 个</small></div><div class="kpi__l">12 GB 机器同时只能跑一个证明器</div></div>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">两段不是「降级」关系</div>
+        <div class="card__d"><code>POST /v1/check</code> 的证书<strong>一开始就写明自己不是证明</strong>
+          （<code>proof_mode: unproven</code>、<code>vkey_hash: unproven</code>），没有「看起来验过了」的空间；
+          <code>POST /v1/attest</code> 把<strong>同一条响应</strong>升级成真证明，两段传同一个 <code>nonce</code> 时绑的是同一条 <code>T</code>。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">满载行为是<strong>硬事实</strong>，不是策略</div>
+        <div class="card__d">~10.15 GiB 是证明的<strong>固定地板</strong> ⇒ 默认 <code>concurrency=1</code>，
+          超出<strong>排队</strong>（队列满返 429，而不是收下之后 OOM）；
+          <strong>不可出证的策略当场拒</strong>（返 400 并标 <code>serviceable: false</code>）。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 11 · 进度 · 八周交付 ============================ -->
+<section class="slide" id="s11">
+  <div class="slide__in">
+    <div class="eyebrow">开展进度</div>
+    <h2>八周计划的交付物已全部落地</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th class="n">周</th><th>计划</th><th>实际交付</th><th>差异</th></tr></thead>
+        <tbody>
+          <tr><td class="n">W2–W3</td><td>规则库 + PII 正则</td><td><code>policydsl/core/</code> + <code>nfa.py</code> / <code>pii.py</code></td><td>按计划</td></tr>
+          <tr><td class="n">W4 ★</td><td>透明模式端到端（MVP）</td><td>PoP v0 <strong>真出证</strong></td><td>按计划</td></tr>
+          <tr><td class="n">W5</td><td>私有模式</td><td>承诺 + 违规定位 + 脱敏</td><td>按计划</td></tr>
+          <tr><td class="n">W6</td><td><code>demo/</code> + 证书脚本</td><td>三个框架适配器 + 证书 + 一键 demo</td><td>落点改了（空目录已删）</td></tr>
+          <tr><td class="n">W7</td><td>评测 + 安全模型</td><td><code>bench/</code> + 安全模型 L1–L9</td><td>按计划</td></tr>
+          <tr><td class="n">W8</td><td>论文 + 复现指南</td><td><code>paper/*.tex</code>（权威源）+ <code>reproduce.md</code> + 截图</td><td>按计划</td></tr>
+          <tr><td class="n">—</td><td>demo 视频（里程碑 m3）</td><td><strong>未产出</strong></td><td><span class="chip chip--warn">如实记为未交付</span>改由一键 demo + 截图替代</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">论文状态</div>
+        <div class="card__d">结构完整：摘要 → 相关工作（含 zkAgent 小节）→ 威胁模型 → 系统 → 安全模型（L1–L9）→ 实现 → 评测（7 节）→ 局限 → 结论 → 复现附录。
+          标注为<strong>工作稿 Phase 6 / W8</strong>；<strong>作者信息未填</strong>，投稿目标待定。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">超过计划的部分</div>
+        <div class="card__d">组合证明 / 会话聚合 / 多证明者 / 链上锚定 / 证明服务 这五条<strong>不在 8 周计划内</strong>，
+          是计划完成后继续加的（见支路 ④⑤⑥⑦ 与服务化）。Phase 0–6 与 P7 清单、R1–R18 重构<strong>全部 ✅</strong>。</div>
+      </div>
+    </div>
+    <div class="honest">
+      <div class="honest__t">唯一的外部阻塞（要说在前面）</div>
+      <p>P1 段收尾只剩一件事：<strong>租一台 ≥64 GB 的云机</strong>，在它上面出 <code>compressed</code>/<code>groth16</code>
+        真证明并测通链上验证合约（P1-7）。本机 12 GB 下 compressed 峰值 11.0 GB、groth16 峰值 11.07 GB
+        <strong>都被 OOM 杀</strong> —— 这条<strong>不是「没做」，是这台机器做不了</strong>。除它之外没有第二处卡点。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 12 · 进度 · 可核验 ============================ -->
+<section class="slide" id="s12">
+  <div class="slide__in">
+    <div class="eyebrow">开展进度 · 可核验</div>
+    <h2>现在能跑出什么</h2>
+    <div class="grid g2">
+      <div class="stack">
+        <div class="term">
+<pre><span class="dim">$</span> bash scripts/demo/demo_all.sh          <span class="dim"># 8 条支路，约半分钟</span>
+<span class="dim">$</span> bash scripts/demo/demo_all.sh --prove  <span class="dim"># 真证明 22.6 分钟</span>
+<span class="dim">$</span> python3 scripts/verify/verify_session.py \
+      --session scripts/examples/out/e2e/session.json
+<span class="ok">RESULT: PASS</span>   <span class="dim">13 张证书 · 10 项检查</span></pre>
+        </div>
+        <div class="card">
+          <div class="card__t">接真实模型（已用 DeepSeek 实测跑通）</div>
+          <div class="card__d"><code>--model openai:&lt;model&gt;</code> 走真 provider；不传参数时用离线桩，终端
+            <strong>如实打印</strong> <code>llm model: fake (offline)</code> ——
+            <strong>始终真实的是 callback 管线，不是模型</strong>。</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__t">这两张图都是<strong>真跑出来的</strong></div>
+        <img class="shot" src="img/verify_result.png" alt="第三方验证脚本对一次真实会话的输出：10 项检查全部 PASS，最后一行 RESULT: PASS">
+        <img class="shot" src="img/session_summary.png" alt="端到端 demo 的会话摘要：13 张证书，其中 stream=4、tool-args=3、tool-result=2、zk=3，账本链 ok" style="margin-top:10px">
+        <div class="card__d" style="margin-top:9px">下面那张是<strong>快速模式</strong>的输出，所以它自己写着
+          <code>zk proof : unproven (host-check only)</code> —— 没附真证明时<strong>证书就这么标</strong>，
+          不留「看起来验过了」的空间。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 13 · 进度 · 测试与闸门 ============================ -->
+<section class="slide" id="s13">
+  <div class="slide__in">
+    <div class="eyebrow">开展进度 · 质量与近期工作</div>
+    <h2>测试、闸门，以及最近在修什么</h2>
+    <div class="grid g2u">
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>项</th><th>数字 / 事实</th></tr></thead>
+          <tbody>
+            <tr><td>全量测试</td><td class="n"><strong>801 passed / 15 skipped</strong>（2026-09-18 实测；五处文档仍停在 783，见未解决⑨）</td></tr>
+            <tr><td>15 个 skip</td><td>全是<strong>设计内</strong>：需更强机器 / 真出证 / 缺可选依赖，逐条登记</td></tr>
+            <tr><td>CI · tests</td><td><strong>零依赖</strong>，任何机器同一份判据</td></tr>
+            <tr><td>CI · rust</td><td>建驱动 + <strong>跨语言对拍</strong> Python↔Rust</td></tr>
+            <tr><td>出证回归</td><td>19/19 PASS · 首次真跑 40.5 min（峰值 10.72 GiB）+ 验证腿 180.4 s；P0–P3 各重跑一次，稳定在 <strong>1846.8–1987.5 s</strong>，5 次 <code>vkey_hash</code>/<code>proof_bytes</code> 全同</td></tr>
+            <tr><td>代码规模</td><td><code>policydsl/</code> 11,347 行 · <code>tests/</code> 15,209 行 · 83 个模块</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card__t">最近的改动都属同一类：把<strong>静默的错</strong>变成<strong>响的错</strong></div>
+        <div class="rows" style="margin-top:8px">
+          <div class="rowitem"><div class="rowitem__k">fail-closed</div><div class="rowitem__v">工具判定做不了时不再留「孤儿回执」、异常不再被框架吞掉，而是签一张 <code>passed=false</code> 的证书</div></div>
+          <div class="rowitem"><div class="rowitem__k">端点摘要</div><div class="rowitem__v">终端摘要此前不显示自备端点（认错了环境变量名），现按<strong>实测优先级</strong>报告真正生效的那个</div></div>
+          <div class="rowitem"><div class="rowitem__k">重构 R1–R18</div><div class="rowitem__v">已采纳并在执行，逐阶段验收记录在 <code>docs/dev-plan.md</code> §5.7–§5.8</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="honest">
+      <div class="honest__t">一条要说在前面的实话</div>
+      <p><code>git log</code> 里 8/3–8/4 是骨架、<strong>9/10 一次批量导入</strong>，之后两周有 141 次提交 ——
+        <strong>仓库历史本身不体现 8 周逐日开发</strong>。要证明过程投入，请用学习日历与各阶段按日记录，不要以提交数为证。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 14 · 创新点 ============================ -->
+<section class="slide" id="s14">
+  <div class="slide__in">
+    <div class="eyebrow">创新点</div>
+    <h2>空位在哪，我们填了什么</h2>
+    <div class="card">
+      <div class="card__t">已有的四派各自不足</div>
+      <div class="card__d">
+        <strong>TEE 路线</strong>证明「护栏执行过」而<strong>执行 ≠ 合规</strong>；
+        <strong>治理栈</strong>同样依赖 TEE 与厂商设施；
+        <strong>形式验证</strong>需要人工形式化且<strong>对黑盒响应不适用</strong>；
+        <strong>ZK 正则/PII 原语</strong>只是<strong>积木</strong>而非系统。
+      </div>
+    </div>
+    <div class="grid g3">
+      <div class="card">
+        <div class="card__t">① PoP 系统</div>
+        <div class="card__d">通用 DSL → ZK 判定 → 双隐私模式 → 合规证书的<strong>开源端到端</strong>实现（8 条支路）。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">② 可序列化 NFA 契约</div>
+        <div class="card__d">正则子集跨层（Python ↔ zkVM）一致，含 fail-fast 语法子集与 Pike VM 判定。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">③ 形式化安全模型</div>
+        <div class="card__d">游戏 + 归约，含三条「推广到单条响应之外」的引理（L6 组合 / L8 跨证书 / L9 多证明者），<strong>每条给出代码落点</strong>。</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card__t">④ 评测</div>
+      <div class="card__d">周期数矩阵 · NFA 消融（含对抗输入下的二次退化）· 真实证明时间/大小/内存 · 信任-成本四象限。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 15 · 消融与对标 ============================ -->
+<section class="slide" id="s15">
+  <div class="slide__in">
+    <div class="eyebrow">创新点 · 证据</div>
+    <h2>设计对不对，靠消融说话</h2>
+    <div class="grid g2u">
+      <div>
+        <div class="card__t" style="margin-bottom:8px">病理输入（<code>a</code>×n 对正则 <code>a+b</code>）下朴素实现 vs Pike VM</div>
+        <div class="tbl-wrap">
+          <table>
+            <thead><tr><th class="n">n</th><th class="n">Pike</th><th class="n">朴素</th><th class="n">比值</th></tr></thead>
+            <tbody>
+              <tr><td class="n">100</td><td class="n">643,894</td><td class="n">12,382,720</td><td class="n"><strong>19.2×</strong></td></tr>
+              <tr><td class="n">200</td><td class="n">1,145,209</td><td class="n">48,638,946</td><td class="n"><strong>42.5×</strong></td></tr>
+              <tr><td class="n">400</td><td class="n">2,143,617</td><td class="n">193,207,130</td><td class="n"><strong>90.1×</strong></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card__d" style="margin-top:9px">比值随 n <strong>翻倍</strong> ⇒ 朴素做法是 O(n²)、可被<strong>对抗输入</strong>拖垮，
+          Pike 保持线性。自然语言上两者只差 1.5–2.1× —— <strong>只测常规文本会得出「随便哪种都行」的错误结论</strong>。</div>
+      </div>
+      <div class="card">
+        <div class="card__t">与最贴近的同期工作对标</div>
+        <div class="card__d" style="margin-bottom:8px">zkAgent（ePrint 2026/199）</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">证明时间</div><div class="rowitem__v"><strong>118.9–172.5 s</strong> vs 194.4 s / ~1069 s</div></div>
+          <div class="rowitem"><div class="rowitem__k">验证时间</div><div class="rowitem__v">~0.090 s vs 0.42 s / 0.038 s</div></div>
+          <div class="rowitem"><div class="rowitem__k">证明大小</div><div class="rowitem__v">~2.7 MiB vs ~96 MiB / 3.1 MiB</div></div>
+          <div class="rowitem"><div class="rowitem__k">硬件</div><div class="rowitem__v"><strong>24 核 / 12 GB</strong> vs 32 核 / <strong>512 GB</strong></div></div>
+          <div class="rowitem"><div class="rowitem__k">内容隐私</div><div class="rowitem__v">承诺式（双模式 + 选择性开示）vs 无</div></div>
+        </div>
+        <div class="honest" style="margin-top:10px">
+          <div class="honest__t">口径</div>
+          <p>本项目<strong>不主张「更快」</strong>，主张的是：对「合规」这条义务，在不涉及模型的前提下，
+            以<strong>同量级时间、更小内存</strong>完成，并补上承诺式隐私。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 16 · 实用价值 ============================ -->
+<section class="slide" id="s16">
+  <div class="slide__in">
+    <div class="eyebrow">实用价值</div>
+    <h2>合规义务落在证书的字段上，不只在文档里</h2>
+    <div class="grid g2">
+      <div class="card">
+        <div class="card__t">EU AI Act 工程映射</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">Art.12<br>记录保存</div><div class="rowitem__v">每张证书 <code>cert_version</code>/<code>ts</code>；
+            <code>policy_hash</code> + <code>binding{vkey_hash, proof_sha256, proof_mode}</code> 绑定策略版本与电路；
+            证书摘要入防篡改账本；粒度为<strong>单次响应 / 单次工具调用</strong></div></div>
+          <div class="rowitem"><div class="rowitem__k">Art.13<br>透明性</div><div class="rowitem__v"><code>mode</code>/<code>outcome</code> 告知内容是否公开、是否合规；
+            验证方可独立复算；私有模式只公开承诺</div></div>
+        </div>
+        <div class="card__d" style="margin-top:9px">每张证书载荷里有一个 <code>ai_act</code> 块把义务逐条落到字段；
+          文档明确标注这是<strong>工程映射、非法律意见</strong>，训练数据 / 模型卡（Art.11）<strong>明确记为超出范围</strong>。</div>
+      </div>
+      <div class="stack">
+        <div class="card">
+          <div class="card__t">定位：离线审计，不是实时护栏</div>
+          <div class="card__d">取舍一句话：每次开销从「硬件延迟」变成「证明时间」，
+            换来<strong>无硬件信任 + 内容隐私</strong>。语义规则约 77 s/条响应，同样定位为批量核查。</div>
+        </div>
+        <div class="card">
+          <div class="card__t">已经能交付的形态</div>
+          <div class="rows">
+            <div class="rowitem"><div class="rowitem__k">免证明器</div><div class="rowitem__v"><code>pop-verify</code> 让验证方<strong>不需要构建 prover</strong> 即可验证（审计路径）</div></div>
+            <div class="rowitem"><div class="rowitem__k">常驻服务</div><div class="rowitem__v">两段接口 + 排队 + 满载 429 + 不可出证当场拒</div></div>
+            <div class="rowitem"><div class="rowitem__k">链上锚定</div><div class="rowitem__v"><code>Anchor.sol</code> + 本地 Anvil 一键端到端（first-write-wins，部署不需要 solc）</div></div>
+            <div class="rowitem"><div class="rowitem__k">接现实框架</div><div class="rowitem__v">LangChain / LangGraph / MCP 已实测；接自己的框架只需实现两个回调 + 一会话一把网关</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 17 · 未解决 1/2 ============================ -->
+<section class="slide slide--tight" id="s17">
+  <div class="slide__in">
+    <div class="eyebrow">还未解决的问题 · 1 / 2</div>
+    <h2>先说最要紧的四条</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>问题</th><th>现状与影响</th><th>出路</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>① 私有模式的隐私上界</strong></td>
+            <td>只保证「公开值不含明文」。两个<strong>独立</strong>理由：SP1 <code>core</code>/<code>compressed</code> 证明<strong>非零知识</strong>（官方安全模型明文 + 本机源码审计）；更根本地，「响应绑定」与「内容隐藏」对<strong>低熵 <code>T</code> 互斥</strong> —— 公开值里的承诺可离线枚举猜测-验证，<strong>与证明系统无关</strong></td>
+            <td>要「不可恢复」须换零知识证明系统（groth16/plonk 隐藏见证）：<strong>本机内存不够，仅设计上可行、未实测</strong></td>
+          </tr>
+          <tr>
+            <td><strong>② 内存天花板</strong></td>
+            <td>prover <strong>固定地板 ~10.15 GiB</strong>：最小配置（200 字符 × 1 规则）就已 10.39 GiB。本机 11.7 GiB 下，3 规则 × 200 字符、1 规则 × 20k 字符均被 <strong>OOM 杀</strong>；可行域呈「两级台阶」</td>
+            <td>换 ≥16 GB 机器；已把「OOM 判据」写成测试（复刻被杀时的无输出无末行）</td>
+          </tr>
+          <tr>
+            <td><strong>③ 组合证明的推理半是代理</strong></td>
+            <td><code>pop-infer</code> 是确定性定点 MLP，<strong>不是</strong>真实 LLM 的推理证明；「组合成本由推理主导」在代理规模下<strong>不成立</strong>（如实写进评测）</td>
+            <td>需要真实模型的推理证明（zkAgent 方向），其源码不可得 —— 属另一条工作线</td>
+          </tr>
+          <tr>
+            <td><strong>④ 语义规则的三条硬边界</strong></td>
+            <td><code>passed=true</code> 且 <code>delegated</code> 非空的证明<strong>不等于策略被满足</strong>（验证脚本因此打印<strong>两行</strong>：<code>RESULT:</code> 与 <code>合规:</code>）；<strong>只支持公开模式</strong>（<code>encode</code> 在词表上单射，可反查原文）；随包模型是<strong>演示用小模型</strong>（留出集 acc 0.99 / n=100），不构成语义安全保证</td>
+            <td>换更强的私有语义证明路线；模型侧需要真实数据集与更大模型</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 18 · 未解决 2/2 ============================ -->
+<section class="slide slide--tight" id="s18">
+  <div class="slide__in">
+    <div class="eyebrow">还未解决的问题 · 2 / 2</div>
+    <h2>另外五条，以及一条关于文档本身的</h2>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>问题</th><th>现状与影响</th><th>出路</th></tr></thead>
+        <tbody>
+          <tr><td><strong>⑤ 链上「可验证」是过度声明</strong></td><td>目前<strong>只锚定证书摘要</strong>，合约里<strong>没有</strong> <code>anchorWithProof</code> —— 链上并未验证证明</td><td>接入 SP1 链上 verifier 接口；本地 Anvil 已通，公共测试网/主网未部署</td></tr>
+          <tr><td><strong>⑥ 尾截断的拦截点偏弱</strong></td><td>会话聚合电路<strong>不验网关签名</strong>；且 <code>[0..k]</code> 前缀的 <code>index</code>/<code>prev</code> 依然连续 —— <strong>只有 Merkle 根比对拦得住</strong>被砍尾巴的证书集</td><td>已有 <code>trace_seal</code> + 根比对两道链下关；电路内可用的网关身份是长期方向</td></tr>
+          <tr><td><strong>⑦ 多证明者的边界</strong></td><td>不覆盖三方合谋；三段切片<strong>共享同一个 guest</strong>（各持一把键只是责任划分）；<strong>递归聚合未做</strong>，验证成本 O(N)</td><td>递归聚合是明确的后续工作</td></tr>
+          <tr><td><strong>⑧ 生产化缺口</strong></td><td>签名私钥托管（HSM/KMS）未做；链上部署仅本地 Anvil（<strong>与 T1 同源</strong>）；<strong>demo 视频里程碑未产出</strong>（改由一键 demo + 截图替代）；T3 定时回归的 cron/systemd 配方已写进 docstring，但<strong>没有任何机器真的挂着它</strong></td><td>按需推进；T3 需一台常驻机器</td></tr>
+          <tr><td><strong>⑨ 文档数字漂移</strong></td><td>测试数在<strong>四处</strong>不一致（论文稿 469/13、<code>security-model.md</code> 783/15、<code>refactor-proposal.md</code> 685/15、<code>modules/08-tests-bench.md</code> 783/15），而<strong>实测 801/15</strong> —— 连权威口径 08 篇自己也滞后</td><td>按仓库「过期就标注、不静默改」的纪律已记录；建议以 08 篇为唯一口径回填，并把「五处同步」做成自动化检查（现为人工逐处核对）</td></tr>
+          <tr><td><strong>⑩ 登记在案、未销案</strong></td><td>一次孤立的 <code>failures=1</code> flake 与一次 13 跑中的 1 次 error <strong>均未复现</strong>；含 <code>semantic_bound</code> 的策略包走流式<strong>喂第一个字符就抛</strong> <code>NotImplementedError</code>；CLI 对三类畸形包以 traceback 崩（R17a <strong>决定不修</strong>）；<code>zk_path</code> 的 3 张证书不绑轨迹；服务化 token 明文过网；论文 <code>.tex</code> 本机<strong>编译不了</strong>（无 TeX 工具链）</td><td>逐条写明归口，没有一条是「悄悄留着」的</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 19 · 附录 ============================ -->
+<section class="slide" id="s19">
+  <div class="slide__in">
+    <div class="eyebrow">附录</div>
+    <h2>复现入口 · 备答 · 出处</h2>
+    <div class="grid g3">
+      <div class="card">
+        <div class="card__t">复现（三条命令）</div>
+        <div class="term" style="margin-top:6px">
+<pre>bash scripts/demo/demo_all.sh
+python3 -m unittest discover tests
+python3 scripts/verify/verify_session.py \
+  --session scripts/examples/out/e2e/session.json</pre>
+        </div>
+        <div class="card__d" style="margin-top:8px">指南：<code>docs/reproduce.md</code> · <code>docs/development.md</code></div>
+      </div>
+      <div class="card">
+        <div class="card__t">三个最可能被追问的</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">「凭什么信」</div><div class="rowitem__v">信 zkVM 健全性 + 哈希，不是硬件。网关仍需信任（A4），是模型里<strong>最弱一环</strong>，已如实标注</div></div>
+          <div class="rowitem"><div class="rowitem__k">「反推响应」</div><div class="rowitem__v">反推不出<strong>明文</strong>，但<strong>能对低熵文本猜测-验证</strong> —— 这条是自己查出来写进标题的，不是被问出来的</div></div>
+          <div class="rowitem"><div class="rowitem__k">「和 zkAgent 区别」</div><div class="rowitem__v">它证<strong>模型算得对</strong>，我们证<strong>输出满足策略</strong>；义务不同，互补而非竞争</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card__t">数字出处（每个都能指回文件）</div>
+        <div class="rows">
+          <div class="rowitem"><div class="rowitem__k">周期/消融</div><div class="rowitem__v"><code>bench/results/cycles.md</code></div></div>
+          <div class="rowitem"><div class="rowitem__k">证明时间/内存</div><div class="rowitem__v"><code>bench/results/proofs.md</code></div></div>
+          <div class="rowitem"><div class="rowitem__k">安全模型/边界</div><div class="rowitem__v"><code>docs/security-model.md</code> · <code>docs/sp1-zk-audit.md</code></div></div>
+          <div class="rowitem"><div class="rowitem__k">欧盟映射</div><div class="rowitem__v"><code>docs/eu-ai-act-mapping.md</code></div></div>
+          <div class="rowitem"><div class="rowitem__k">测试计数</div><div class="rowitem__v"><code>docs/modules/08-tests-bench.md</code></div></div>
+        </div>
+        <div class="card__d" style="margin-top:8px">完整版见 <code>docs/report/advisor-report.md</code></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<div class="hint" id="hint">← → 翻页 · F 全屏 · 打印可导出 PDF</div>
+<div class="foot">
+  <button id="theme" type="button" title="切换明暗">◐ 主题</button>
+  <button id="prev" type="button" title="上一页">←</button>
+  <span class="pager" id="pager">1 / 1</span>
+  <button id="next" type="button" title="下一页">→</button>
+</div>
+
+<script>
+(function(){
+  var root=document.documentElement, deck=document.getElementById('deck');
+  var slides=[].slice.call(deck.querySelectorAll('.slide'));
+  var bar=document.getElementById('bar'), pager=document.getElementById('pager'), hint=document.getElementById('hint');
+  var i=0;
+
+  root.setAttribute('data-mode','present');
+  slides.forEach(function(s,n){ s.setAttribute('aria-label',(n+1)+' / '+slides.length); });
+
+  function paint(){
+    pager.textContent=(i+1)+' / '+slides.length;
+    bar.style.width=((i+1)/slides.length*100)+'%';
+    if(history.replaceState) history.replaceState(null,'','#'+(i+1));
+  }
+  function go(n,fromHash){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    if(!fromHash) slides[i].scrollIntoView({block:'center'});
+    paint();
+  }
+  function current(){
+    var best=0,bd=Infinity;
+    slides.forEach(function(s,n){
+      var r=s.getBoundingClientRect(), d=Math.abs(r.top+r.height/2-innerHeight/2);
+      if(d<bd){bd=d;best=n}
+    });
+    return best;
+  }
+
+  deck.addEventListener('scroll',function(){ var c=current(); if(c!==i){i=c;paint();} },{passive:true});
+
+  document.addEventListener('keydown',function(e){
+    if(e.metaKey||e.ctrlKey||e.altKey) return;
+    var k=e.key;
+    if(k==='ArrowRight'||k==='ArrowDown'||k===' '||k==='PageDown'){ e.preventDefault(); go(i+1); }
+    else if(k==='ArrowLeft'||k==='ArrowUp'||k==='PageUp'){ e.preventDefault(); go(i-1); }
+    else if(k==='Home'){ e.preventDefault(); go(0); }
+    else if(k==='End'){ e.preventDefault(); go(slides.length-1); }
+    else if(k==='f'||k==='F'){
+      if(document.fullscreenElement) document.exitFullscreen();
+      else if(root.requestFullscreen) root.requestFullscreen();
+    }
+    else if(k==='t'||k==='T'){ toggleTheme(); }
+  });
+
+  document.getElementById('prev').addEventListener('click',function(){ go(i-1); });
+  document.getElementById('next').addEventListener('click',function(){ go(i+1); });
+
+  function toggleTheme(){
+    var cur=root.getAttribute('data-theme');
+    var sysDark=matchMedia('(prefers-color-scheme: dark)').matches;
+    var next = cur ? (cur==='dark'?'light':'dark') : (sysDark?'light':'dark');
+    root.setAttribute('data-theme',next);
+    try{ localStorage.setItem('pop-deck-theme',next); }catch(e){}
+  }
+  document.getElementById('theme').addEventListener('click',toggleTheme);
+  try{
+    var saved=localStorage.getItem('pop-deck-theme');
+    if(saved==='dark'||saved==='light') root.setAttribute('data-theme',saved);
+  }catch(e){}
+
+  if(hint){
+    setTimeout(function(){ hint.style.transition='opacity .6s'; hint.style.opacity='0'; },6000);
+  }
+
+  var m=/^#(\d+)$/.exec(location.hash);
+  go(m?parseInt(m[1],10)-1:0,true);
+  if(!m) slides[0].scrollIntoView({block:'center'});
+  paint();
+})();
+</script>
