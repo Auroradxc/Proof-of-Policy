@@ -24,13 +24,19 @@
 
 ```bash
 bash scripts/demo/demo_all.sh                # fast：宿主校验，不出真证明（本机实测 13 s）
-bash scripts/demo/demo_all.sh --prove        # 出真证明（每条数分钟、峰值 ~10 GB，本机实测 26–27 分钟）
+bash scripts/demo/demo_all.sh --prove        # 出真证明（每条数分钟、峰值 ~10 GB，本机实测 22.6 分钟）
 bash scripts/demo/demo_all.sh --shots        # 额外跑第 9 步：把会话渲染成 HTML/SVG/PNG（见 §6）
 bash scripts/demo/demo_all.sh --list         # 只列 8 条支路，不跑
 bash scripts/demo/demo_all.sh --out-dir DIR  # 产物与报告落到 DIR
 ```
 
 产物默认落在 `scripts/examples/out/all/`（gitignore 内），报告是 `REPORT.md`。
+
+> ⏱ **`--prove` 的墙钟是个量级，不是常数。** 2026-09-18 这次 8 条支路合计 **22.6 分钟**
+> （09:22:59 → 09:45:36，与各支路墙钟之和 1357.7 s 吻合 —— 八条**严格串行**，
+> 所以墙钟 ≈ 逐条相加）；更早一轮读到 **26–27 分钟**。单条最贵的是
+> **组合证明 383.6 s**，其次是会话聚合 290.5 s。出证耗时随缓存与机器负载浮动，
+> 别拿它当 SLA。
 
 **退出码**：`0` = 所有**应有**的步骤都 PASS；`1` = 有步骤 FAIL。
 **跳过（缺依赖）不算失败** —— 但会在报告里单列。跳过与通过必须能分开看，

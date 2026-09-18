@@ -9,7 +9,7 @@
 #
 # 用法：
 #   bash scripts/demo/demo_all.sh                # 快速模式：走宿主校验，不出真证明（本机实测 ~13 秒）
-#   bash scripts/demo/demo_all.sh --prove        # 出真证明（每条支路数分钟、峰值 ~10 GB，本机实测 26–27 分钟）
+#   bash scripts/demo/demo_all.sh --prove        # 出真证明（每条支路数分钟、峰值 ~10 GB，本机实测 22.6 分钟）
 #   bash scripts/demo/demo_all.sh --out-dir DIR  # 产物与报告落 DIR
 #   bash scripts/demo/demo_all.sh --shots        # 额外把会话渲染成 HTML/SVG/PNG（第 9 步，不在 8 条支路里）
 #   bash scripts/demo/demo_all.sh --list         # 只列支路，不跑

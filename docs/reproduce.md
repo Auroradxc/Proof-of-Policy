@@ -325,7 +325,7 @@ POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic   # 真·端到端一例
 >
 > ```bash
 > bash scripts/demo/demo_all.sh            # fast：宿主校验，约 20 秒
-> bash scripts/demo/demo_all.sh --prove    # 真出证，本机实测 26–27 分钟、峰值 ~10 GB
+> bash scripts/demo/demo_all.sh --prove    # 真出证，本机实测 22.6 分钟、峰值 ~10 GB
 > ```
 >
 > 它把 8 条支路（公开模式 / 私有模式 / 语义规则 / 组合 / 会话聚合 / 多证明者 /

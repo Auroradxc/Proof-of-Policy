@@ -68,7 +68,7 @@
 
 ```bash
 bash scripts/demo/demo_all.sh            # 8 条依次跑一遍 + 合并报告（fast：宿主校验，约半分钟）
-bash scripts/demo/demo_all.sh --prove    # 出真证明（每条数分钟、峰值 ~10 GB，本机实测 26–27 分钟）
+bash scripts/demo/demo_all.sh --prove    # 出真证明（每条数分钟、峰值 ~10 GB，本机实测 22.6 分钟）
 bash scripts/demo/demo_all.sh --list     # 只列支路
 ```
 

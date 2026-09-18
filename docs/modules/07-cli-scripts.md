@@ -11,7 +11,7 @@
 
 | 脚本 | 一句话 | 需要 Rust 二进制？ | 需要 SP1 证明？ | 典型耗时 |
 |---|---|---|---|---|
-| **`demo_all.sh`** | **总入口**：把下面各条支路依次跑一遍 + 汇总成 `REPORT.md` | 视支路 | 视支路（`--prove`） | fast 约 13 秒 / `--prove` 约 26–27 分钟（本机实测） |
+| **`demo_all.sh`** | **总入口**：把下面各条支路依次跑一遍 + 汇总成 `REPORT.md` | 视支路 | 视支路（`--prove`） | fast 约 13 秒 / `--prove` 约 22.6 分钟（本机实测，2026-09-18） |
 | `policydsl/__main__.py` | 编译策略 / 参考判定 | 否 | 否 | 毫秒 |
 | `prove_policy.py` | 单条响应 → 真实证明 + golden 比对 | `pop-script` | 是（可 `--no-prove`） | ~70 s |
 | `cross_validate.py` | 19 条向量 × (host + prove) 与 golden 对拍 | `pop-script` | 是（可 `--no-prove`） | host 秒级；prove 约 2 分钟/条（默认分 4 块，每块峰值 ~10 GB） |
@@ -713,7 +713,7 @@ curl -s -X POST localhost:8787/v1/attest -H 'Content-Type: application/json' \
 
 ```bash
 bash scripts/demo/demo_all.sh              # fast：走宿主校验（--no-prove），约 13 秒
-bash scripts/demo/demo_all.sh --prove      # 出真证明，每条支路数分钟、峰值 ~10 GB，本机实测 26–27 分钟
+bash scripts/demo/demo_all.sh --prove      # 出真证明，每条支路数分钟、峰值 ~10 GB，本机实测 22.6 分钟
 bash scripts/demo/demo_all.sh --out-dir D  # 产物与报告落 D（默认 scripts/examples/out/all）
 bash scripts/demo/demo_all.sh --shots      # 额外跑第 9 步：把会话渲染成 HTML/SVG/PNG
 bash scripts/demo/demo_all.sh --list       # 只列支路，不跑
@@ -860,7 +860,7 @@ bash scripts/anchor/anchor_e2e.sh --keep          # 结束后不关 anvil
 | 什么都没跑过，先看全貌 | `bash scripts/demo/demo_all.sh --list` | 秒（只列 8 条支路） |
 | 想看完整链路，但不想等证明 | `python3 scripts/demo/demo_e2e.py --no-prove` | **~1.2 s**（本机实测） |
 | 要一次跑完 8 条支路 | `bash scripts/demo/demo_all.sh` | **~13 s**（fast 模式） |
-| 同上，但要真证书 | `bash scripts/demo/demo_all.sh --prove` | 26–27 min（本机实测），且期间别跑别的重活 |
+| 同上，但要真证书 | `bash scripts/demo/demo_all.sh --prove` | 22.6 min（本机实测，2026-09-18），且期间别跑别的重活 |
 | 最小的一件事：一条响应 × 一条策略 | `SP1_PROVER=cpu python3 scripts/prove/prove_policy.py --pack <pack>.json --response <resp>.txt` | 数分钟 |
 | 改完规则做回归 | `SP1_PROVER=cpu python3 scripts/prove/cross_validate.py …` | 真出证 ≈45 min；`--no-prove` 秒级 |
 | 核验**一张**证书（第三方视角） | `python3 scripts/verify/verify_cert.py --cert <cert>.json [--response <resp>.txt]` | 秒 |
