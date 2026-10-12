@@ -282,6 +282,7 @@
   <ol>
     <li><a href="#s0">决策锁定</a></li>
     <li><a href="#s03">执行状态总表</a></li>
+    <li><a href="#s04">执行状态总表（2026-10-13 增量）</a></li>
     <li><a href="#s1">命题重定位</a></li>
     <li><a href="#s2">先例对照</a></li>
     <li><a href="#s3">工作包 WP1–WP10</a></li>
@@ -304,6 +305,7 @@
       <li>2026-10-12 <strong>第二版</strong>：<strong>D1 / D2 回改</strong>（合作者到位但证明须独立完成 ⇒ T3 全量不可达，见 §1.6；论文重心随之移到 WP4，见 §3 WP4 与 §5 R4）。</li>
       <li>2026-10-12 <strong>第三版</strong>：<strong>§1.6(e) 的 6 周自检当日执行完毕</strong> ⇒ <strong>D2 再回改</strong>：<strong>T1 的原陈述被证伪</strong>（反例 <code>β = id</code>）⇒ 补上结构性假设后成 <strong>T1-H/T1-L</strong>；<strong>T2 被证为空</strong>（二分法由 <code>k</code> 单独决定）⇒ <strong>停用</strong>；<strong>T3′ 通过</strong>。净结果：<strong>两条定理 + 两条 Remark</strong>。详见 <strong>§1.7</strong>。D1 不需再改（分析半边靠 T1-H 的测量实例，不靠 T2）。另修掉 skeleton 两个<strong>编译级</strong>缺陷（<code>\wp</code> 与 LaTeX 内置符号冲突、Limitations 列表中文留在正文），骨架现可 <code>pdflatex</code> 校验通过（<strong>0 error / 0 undefined ref / 0 overfull</strong>；余 13 条 Underfull 版面噪声，详见 §3 的编译校验条——<strong>早前"0 warning"的说法不准确</strong>）。</li>
       <li>2026-10-12 <strong>第四版</strong>：<strong>英文正文全部落笔</strong>（<code>paper/tdsc-paper.tex</code>，八节 + 两附录，B1–B8 十次提交）。页数问题的答案已定：<strong>不超页</strong>（11 页 / 限 12；未落内容重估 +0.55–0.65 页 ⇒ 终稿 11.6–11.7 页）。新增 <strong>§0.3 执行状态总表</strong>：把"做完了什么 / 还差什么、为什么差"一次讲清。</li>
+      <li>2026-10-13 <strong>第五版</strong>：<strong>fixlist §B 全案结清</strong>——B12/B14/B15 经作者放行后执行完毕，四个受污染 <code>.docx</code> 以<strong>外科式替换</strong>（非重跑生成器）清干净，备份在 <code>01_背景调研/_backup_docx_2026-10-12/</code>。新增 <strong>§0.4</strong>：对全库做一次<strong>口径实证扫描</strong>（不采信文档自述）⇒ <strong>实质错误口径只剩 2 处</strong>，均在"外部在用、未获授权"的两份 HTML 里。§0.3 第 2 类已按实测数字量化。</li>
     </ul>
   </div>
 
@@ -432,8 +434,8 @@
     <table>
       <thead><tr><th>项</th><th>现状</th></tr></thead>
       <tbody>
-        <tr><td><strong>801 vs 783 文档回填</strong></td><td>正文 §2.2 的「801 tests」<strong>经复核是对的</strong>（<code>dev-plan.md:506</code> + 静态清点互证），但 <code>reproduce.md:31,428</code>、<code>security-model.md:829</code>、<code>development.md:93,290</code>、<code>modules/08-tests-bench.md</code>、<code>modules/README.md</code> 仍写 <strong>783</strong>。<strong>附录 B 直接指向 <code>reproduce.md</code></strong> ⇒ 复现者会跑出 801 而以为环境坏了</td></tr>
-        <tr><td><strong>WP7 口径更正的余项</strong></td><td>「低熵 ⇒ 枚举可行」那条错推理已在 <code>73def8f</code> 全库扫除；余项：<code>docs/quadrant.md:36</code>（<strong>2026-10-12 复核确认：该格属 Proof-of-Guardrail 列、表内无 WITNESS 列，故与「闭源」更正无关，无需改</strong>）、<code>02_evidence_table.md:7</code>（「闭源」已删，"未写"状态栏未复核）、VIEWS 门控泛化、<strong>外发文档里错的 VDR URL / <code>IACR 2024/813</code></strong></td></tr>
+        <tr><td><strong>801 vs 783 文档回填</strong></td><td>正文 §2.2 的「801 tests」<strong>经复核是对的</strong>（<code>dev-plan.md:506</code> + 静态清点互证），但 <code>reproduce.md:31,428</code>、<code>security-model.md:829</code>、<code>development.md:93,290</code>、<code>modules/08-tests-bench.md</code>、<code>modules/README.md</code> 仍写 <strong>783</strong>。<strong>附录 B 直接指向 <code>reproduce.md</code></strong> ⇒ 复现者会跑出 801 而以为环境坏了。<strong>2026-10-13 扩查：实为 7 份文档</strong>（多出 <code>dev-plan.md</code>(3 处)、<code>report/advisor-report.md</code>(5 处)），逐份计数见 <strong><a href="#s04">§0.4(3)</a></strong></td></tr>
+        <tr><td><strong>WP7 口径更正的余项</strong></td><td>「低熵 ⇒ 枚举可行」那条错推理已在 <code>73def8f</code> 全库扫除；余项：<code>docs/quadrant.md:36</code>（<strong>2026-10-12 复核确认：该格属 Proof-of-Guardrail 列、表内无 WITNESS 列，故与「闭源」更正无关，无需改</strong>）、<code>02_evidence_table.md:7</code>（「闭源」已删，"未写"状态栏未复核）、VIEWS 门控泛化。<strong>「外发文档里错的 VDR URL / <code>IACR 2024/813</code>」已于 2026-10-13 精确定位</strong>：只剩 <code>02_项目计划/pop-dashboard.html:312</code> 与 <code>05_报告/zk-policy-汇报.html:740</code> 两处，均属"外部在用、<strong>未获授权</strong>"，详见 <strong><a href="#s04">§0.4(2)</a></strong></td></tr>
         <tr><td><strong>骨架标注「已迁入」</strong></td><td>暂缓：仍有 <code>\need{}</code> 直接引用 <code>tdsc-skeleton.tex</code> 行号作素材出处，清零前删骨架会让这些引用失去目标</td></tr>
       </tbody>
     </table>
@@ -460,6 +462,90 @@
     <p><code>paper/tdsc-paper.tex</code> 现有 <strong>23 处 <code>\need{}</code></strong>（另有 1 处是文件头注释、非真标记，<code>grep</code> 会多数 1）与
     <strong>5 处 <code>\fixme{}</code></strong>。<strong>提交前必须全部清零</strong>——
     不要用"感觉差不多了"判断进度，用这个数。</p>
+  </div>
+</section>
+
+<!-- ================= 0.4 执行状态增量 ================= -->
+<section id="s04">
+  <h2><span class="num">0.4</span>执行状态总表（2026-10-13 增量 + 全库口径实证扫描）</h2>
+
+  <div class="note ok">
+    <span class="tag">一句话</span>
+    <p>自 §0.3 起<strong>没有新增未完成项</strong>，只有<strong>结清与量化</strong>——fixlist §B 全案结清
+    （含 B12/B14/B15 与四个 <code>.docx</code>），并把"还有哪些错误口径残留"从<strong>依赖文档自述</strong>
+    变成<strong>一次全库扫描的实测结果</strong>。</p>
+  </div>
+
+  <h3>(1) 本轮（10-12 → 10-13）结清的项</h3>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>项</th><th>结果</th><th>落点</th></tr></thead>
+      <tbody>
+        <tr><td>fixlist <strong>§B</strong>（WITNESS「闭源」）</td><td><span class="pill lo">✅ 全案结清</span> 15 项已清，B4 经复核系<strong>指错对象</strong>（该表内无 WITNESS 列）</td><td><code>tdsc-fixlist.md</code> §B</td></tr>
+        <tr><td><strong>B12 / B14 / B15</strong></td><td><span class="pill lo">✅ 已执行</span> 作者放行后<strong>执行完毕</strong>（原记"外部在用、改前须经作者同意"）</td><td><code>光明实验室开放课题申报内容-草稿.md:43</code>、<code>申报书-严格评审与修改计划.md:102</code>、<code>汇报文案_zk-policy_20260918.md:216</code></td></tr>
+        <tr><td>四个受污染 <strong><code>.docx</code></strong></td><td><span class="pill lo">✅ 已清</span> <strong>外科式清干净</strong>（<strong>不是</strong>重跑生成器）；备份 <code>01_背景调研/_backup_docx_2026-10-12/</code>（全部 7 个）</td><td>同 §0.3(3) 陷阱行</td></tr>
+        <tr><td>仓库提交</td><td><code>ceec449</code>（分支 <code>tdsc-conversion</code>）</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>(2) 全库口径扫描（2026-10-13 实测，<strong>不采信文档自述</strong>）</h3>
+  <p>扫描范围：<code>/home/dong/Proof-of-Policy</code> 全树（跳过 <code>.git</code> / <code>target</code> /
+  <code>node_modules</code> / <code>out</code> / <code>__pycache__</code> 等）。
+  <strong>"命中文档 ≠ 仍是错误"</strong>——本仓库里 <code>tdsc-plan.md</code> / <code>tdsc-fixlist.md</code> / 骨架
+  本身就在<strong>讨论</strong>这些错误，下表只统计<strong>实质残留</strong>。</p>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>原错误口径</th><th>实质残留</th><th>判据</th></tr></thead>
+      <tbody>
+        <tr><td><strong>VDR / <code>IACR 2024/813</code></strong></td><td><span class="pill hi">仅 1 处</span> <code>02_项目计划/pop-dashboard.html:312</code>（<code>VDR · IACR 2024/813</code> <strong>+ 错链</strong> <code>eprint.iacr.org/2024/813</code>）</td><td>其余命中全部落在<strong>已显式标注</strong>的位置，共三类：①<strong>就地更正记录</strong>（<code>01_research_canon.md:10</code>、<code>proposal_final.md:154</code>、<code>proof_of_policy_report.tex:73</code>）；②<strong>整份标注作废、顶部逐条列出错误</strong>（<code>drafts/proposal_v0.md:7–14</code>，明写"保留原样作为版本记录，<strong>不再就地修改</strong>"）；③"<strong>绝不能再引</strong> <code>2024/813</code>"的<strong>纪律声明</strong>（骨架 <code>:150</code>、写作计划 <code>:278</code>）</td></tr>
+        <tr><td><strong>WITNESS「闭源」</strong></td><td><span class="pill hi">仅 1 处</span> <code>05_报告/zk-policy-汇报.html:740</code>（「仅两类策略；<strong>专有闭源</strong>；绑定单一链」）</td><td><code>proof_of_policy_report.tex:30</code> 现为「按 Devpost 页声明为 Apache-2.0，<strong>并非闭源</strong>——此处修正早期"专有闭源"的说法」</td></tr>
+        <tr><td>「比 Proof-of-Guardrail <strong>更强</strong>」</td><td><span class="pill lo">0 处</span></td><td><code>tdsc-paper.tex:197</code> 与 skeleton <code>:123</code> 是 <code>\fixme{}</code> <strong>禁令</strong>；<code>proof_of_policy_report.tex:36</code> 已改「<strong>正交、可组合</strong>」并留更正注</td></tr>
+        <tr><td>「低熵 ⇒ <strong>枚举可行</strong>」</td><td><span class="pill lo">0 处未被否定</span>的断言</td><td>命中全属显式否定 / fixlist 诊断 / <code>\fixme{}</code> 禁令</td></tr>
+        <tr><td>「<strong>绑定不到送达字节</strong>」</td><td><span class="pill lo">0 处</span>（正文）</td><td>仅存于本文件 §1.5 与 fixlist §H 的<strong>作废说明</strong>里</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note warn">
+    <span class="tag">⇒ 结论</span>
+    <p><strong>除两份 HTML 外，全库已无未修正的错误口径。</strong> 这两份
+    （<code>02_项目计划/pop-dashboard.html</code>、<code>05_报告/zk-policy-汇报.html</code>）属
+    "<strong>外部在用、改前须经作者同意</strong>"，<strong>仍未获授权</strong>。</p>
+  </div>
+
+  <h3>(3) 仍未完成 · 三类（2026-10-13 复核：分类与 §0.3 一致，仅把第 2 类量化）</h3>
+  <ul>
+    <li><strong>第 1 类（被外部资源阻塞，不得开工）</strong>：与 §0.3 逐项<strong>未变</strong>——WP1 内存墙 + groth16 档（≥64 GB / ≥32 核云机）、§5.6 实测 <code>k</code>、WP3 组合成本 / DeepProve 对照臂、WP4 子问题②、WP8 / T0-3 引文核实 10 条。</li>
+    <li><strong>第 3 类（待你拍板）</strong>：§0.3 的 7 项中 <strong>#1（超页）已定</strong>（不超页），其余 6 项未变。</li>
+    <li><strong>第 2 类（零成本、现在就能做）</strong>——本轮把它从"文字描述"换成实测数字：</li>
+  </ul>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>项</th><th>2026-10-13 实测</th></tr></thead>
+      <tbody>
+        <tr><td><strong>801 vs 783 回填</strong></td><td>仍写 783 的<strong>文档 7 份</strong>：<code>reproduce.md</code>(2 处)、<code>security-model.md</code>(1)、<code>development.md</code>(2)、<code>modules/08-tests-bench.md</code>(9)、<code>modules/README.md</code>(3)、<code>dev-plan.md</code>(3)、<code>report/advisor-report.md</code>(5)。正文 §2.2 的「801 tests / 15 skipped」<strong>经复核是对的</strong>。<strong>附录 B 直接指向 <code>reproduce.md</code></strong> ⇒ 复现者会跑出 801 而以为环境坏了</td></tr>
+        <tr><td><strong>VIEWS 防漂移闸门泛化</strong></td><td>入库结果<strong>7 份在闸门之外</strong>：<code>baseline</code> / <code>verify</code> / <code>streaming</code> / <code>compose</code> / <code>semantic</code> / <code>cycles</code> / <code>ablation</code>（闸门按 <code>d["rows"]</code> 形状写，而这 7 份 JSON 是 <code>metrics</code> 字典、无 <code>rows</code> 键）。<strong>属测试基建改动</strong></td></tr>
+        <tr><td><strong>外发 HTML 口径</strong></td><td>2 份，见上表，<strong>未获授权</strong></td></tr>
+        <tr><td><strong>骨架标注「已迁入」</strong></td><td>暂缓：仍有 <code>\need{}</code> 直接引用 <code>tdsc-skeleton.tex</code> 行号作素材出处，清零前删骨架会让引用失去目标</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>(4) 本轮扫出、<strong>尚未处理</strong>的新发现（两条，均未改）</h3>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th style="width:2.5rem">#</th><th>发现</th><th>位置</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1</strong></td><td><strong>最新版反而更旧</strong>：<code>…_20260817.docx</code>（最新）写「<code>DeepProve[19]</code>关注模型计算层而非策略合规层」，而 <code>0815</code> / <code>0816</code> / <code>填写稿</code> 三份都写「<code>DeepProve</code><strong>已开源</strong>，但关注模型计算层…」⇒ <strong>阶段 C-7 的时效性改写没进 0817</strong></td><td><code>01_背景调研/</code></td></tr>
+        <tr><td><strong>2</strong></td><td><strong>表格会错列</strong>（<span class="pill lo">✅ 已修</span>）：单元格内联代码含<strong>未转义的 ASCII 竖线</strong>（<code>2^{−f}·|S|</code>、<code>2^{−f}·|对手预置集|</code>）⇒ Markdown 渲染时断列。<strong>全库共 3 处，本轮一并改为 GFM 的 <code>\|</code> 转义</strong>（其中 1 处是本行自己在初稿里复刻出来的）</td><td><code>docs/tdsc-plan.md:328</code>（§1.6 表）、<code>:510</code>（§1.7 表）——<strong>本页镜像不受影响</strong>（<code>&lt;code&gt;</code> 内的竖线无需转义）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note accent">
+    <span class="tag">📌 收口判据（未变）</span>
+    <p><code>paper/tdsc-paper.tex</code>：<strong>23 处 <code>\need{}</code> + 5 处 <code>\fixme{}</code></strong>
+    （另有 1 处文件头注释同时提及二者，<code>grep</code> 会多数 1）。<strong>提交前必须全部清零。</strong></p>
   </div>
 </section>
 
@@ -1222,7 +1308,7 @@
 </section>
 
 <footer>
-  <p>本页由 <code>docs/tdsc-plan.md</code> 渲染（<strong>第四版，2026-10-12</strong>）：第三版的内容（T1 补结构性假设后成 T1-H/T1-L、T2 停用、T3 → T3′、三分法降为分类、D1/D2 回改、WP4 升级为承重墙）之上，第四版补入 <a href="#s03"><strong>§0.3 执行状态总表</strong></a>——英文正文已全部落笔（<code>paper/tdsc-paper.tex</code>，八节 + 两附录，B1–B8 十次提交，11 页编译全绿），页数问题结论为<strong>不超页</strong>。自包含，无外部依赖。</p>
+  <p>本页由 <code>docs/tdsc-plan.md</code> 渲染（<strong>第五版，2026-10-13</strong>）：第三版的内容（T1 补结构性假设后成 T1-H/T1-L、T2 停用、T3 → T3′、三分法降为分类、D1/D2 回改、WP4 升级为承重墙）之上，第四版补入 <a href="#s03"><strong>§0.3 执行状态总表</strong></a>——英文正文已全部落笔（<code>paper/tdsc-paper.tex</code>，八节 + 两附录，B1–B8 十次提交，11 页编译全绿），页数问题结论为<strong>不超页</strong>；第五版补入 <a href="#s04"><strong>§0.4</strong></a>——fixlist §B 全案结清（含 B12/B14/B15 与四个 <code>.docx</code>），并对全库做一次<strong>口径实证扫描</strong>，确认实质错误口径只剩 2 处（均在未获授权的两份 HTML 里）。自包含，无外部依赖。</p>
 </footer>
 
 </div>
