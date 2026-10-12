@@ -88,15 +88,83 @@ accountability
 \section{Introduction}
 \label{sec:intro}
 
-\need{引言四段：
- (1) 缺口 —— LLM 智能体在跑敏感动作，合规只能「听信」运营方；四派现状
-     （TEE 执行证明 / TEE 治理栈 / 形式化验证 / ZK 原语积木），源：旧稿
-     proof-of-policy.tex:104--142 的「四派」；
- (2) 「What we do \emph{not} claim」三条（骨架 :91--113，必须保留）；
- (3) 贡献三条：(i) 幸存缺口是 divergent delivery（Prop \ref{thm:gap}）；
-     (ii) 定量界 + 结构性假设及其必要性（Thm \ref{thm:t1}, Rem \ref{rem:betanecessary}）；
-     (iii) 补缺口的代价（Thm \ref{thm:t3}）；
- (4) 「One spine, two sides」（骨架 :116--121）—— 全文理论骨架，必须在此点出。}
+LLM agents increasingly take actions that carry consequences---customer-facing
+replies, tool invocations, financial and medical content. Regulation such as the
+EU AI Act (Articles~12 and~13) and enterprise governance both require that
+compliance be auditable. In practice it can only be taken on trust: logs can be
+forged, guardrail claims cannot be checked, and content privacy forbids retaining
+the plaintext that would settle the question.
+
+Four lines of work each occupy one corner of this problem without spanning it.
+\emph{TEE execution proofs}---Proof-of-Guardrail and its relatives---show that
+guardrail code was executed and that inputs and outputs were signed; as that work
+itself observes, \emph{execution is not compliance}, and the approach carries
+roughly $34\%$ latency overhead together with a hardware dependency.
+\emph{TEE governance stacks} (Agentrust, cMCP, cA2A) inherit both the hardware
+and the vendor facility. \emph{Formal verification} (Lean-Agent and similar)
+requires the entire policy to be formalised by hand, and does not apply to
+black-box responses. \emph{ZK regex and PII primitives} (zk-regex~V2, verifiable
+document redaction \cite{vdr}, ZK Email) are building blocks; none of them is a
+policy-level system.
+
+The nearest work, WITNESS, supports two policy primitives, has no peer-reviewed
+paper, and---by its own project page---ships an Apache-2.0 reference
+implementation, so ``open source'' is not a differentiator; it also offers no
+content privacy. \texttt{@brivora/verify} is not zero-knowledge, and DeepProve
+proves the \emph{model computation} layer rather than the \emph{policy
+compliance} layer. The combination of a general policy DSL compiled to ZK
+constraints, \emph{without} a TEE, with selective disclosure of response content
+and a formal security model, is an explicit vacancy. This paper occupies it with
+PoP---but the system is not the contribution we lead with. Leading with a system
+invites the objection that a signature would do; leading with the analysis is
+what makes the system necessary, and it is the analysis that this paper is
+organised around.
+
+\need{⚠️ 上面点名的 Proof-of-Guardrail / Agentrust,cMCP,cA2A / Lean-Agent /
+zk-regex V2 / ZK Email / WITNESS / \texttt{@brivora/verify} / DeepProve，
+以及 EU AI Act Art.~12/13，\emph{均未给 \cite{}}：条目尚未逐条核实
+（docs/tdsc-fixlist.md \S2、WP8）。核实前不得凭空写 bibitem，故此处只留名。}
+
+\smallskip
+\noindent\textbf{What we do \emph{not} claim.} We do not claim that policy proofs
+bind nothing: our own system already binds the response through a verifier-issued
+nonce (Definition~\ref{def:system}). We do not claim to be the first to observe
+that a proof can fail to bind the artifact it purports to describe: the
+\emph{effort gap} for ZK inference proofs is formalised by Hollow-LLM
+\cite{hollowllm}, and the \emph{source-integrity gap} for predicate proofs is
+named by zk-attach \cite{zkattach}. And we do not claim the separation theorem
+that our designated-verifier interface makes tempting (``public verification is
+impossible when $k$ is small''); Remark~\ref{rem:designated} gives the reason,
+and Corollary~\ref{cor:reexec} is the short version of it.
+
+\smallskip
+\noindent\textbf{Contributions.}
+\begin{enumerate}
+  \item We isolate the gap that survives in every design we surveyed---\emph{divergent
+  delivery}---and show that neither hardware nor any proof closes it, while having
+  the receiver contribute to the proven statement does
+  (Proposition~\ref{thm:gap}).
+  \item We give a quantitative bound on what a public binding reveals, together
+  with the \emph{structural hypothesis} that bound needs, and a demonstration
+  that the hypothesis is necessary: our own two public values sit on opposite
+  sides of it (Theorem~\ref{thm:t1}, Remark~\ref{rem:betanecessary}). The
+  governing quantity $k$ is measurable rather than assumed.
+  \item We price the fix. A certificate is replayable without limit unless the
+  receiver contributes fresh randomness, and with an empty nonce the adversary's
+  advantage is $1$ regardless of every other parameter of the system
+  (Theorem~\ref{thm:t3}).
+  \item We describe PoP, a system that realises this design without a TEE
+  (\S\ref{sec:system}), and we report what its certificates leak about the policy
+  they certify (\S\ref{sec:private-policy}).
+\end{enumerate}
+
+\smallskip
+\noindent\textbf{One spine, two sides.} Theorems~\ref{thm:t1} and~\ref{thm:t3}
+state the same fact about two different inputs: \emph{a proof binds only as much
+as the committed, adversary-non-selectable quantity has bits for}. The response
+side is governed by entropy, $k = -\log_2 \mathsf{Guess}(T \mid Z)$
+(Definition~\ref{def:k}); the request side by freshness, $f$. Neither can be
+bought with more computation.
 
 \fixme{全文禁止出现"比 Proof-of-Guardrail 更强"或任何强弱对比。
 Proof-of-Guardrail 与本文正交：它证"计算发生过"，本文证"性质成立"。}
@@ -728,18 +796,110 @@ $\times$ 模式 {transparent, private, private-policy} $\times$ 证明档 {core,
 \section{Related Work}
 \label{sec:related}
 
-\need{约 0.75 页。五条线表（骨架 :132--148）：Policy$\to$circuit /
-Agent-LLM compliance / Model computation / Attacks \& negative results /
-Non-ZK industry baseline。}
+We position PoP against five lineages. For each, Table~\ref{tab:related} records
+the slot it occupies---which is also, read the other way, what this paper does
+not have to claim.
 
-\need{zkAgent 正交性（骨架不自带，源在旧稿 proof-of-policy.tex:154--190，
-含完整对标表与 M1 进展口径）：zkAgent 证推理完整性、PoP 证策略合规，
-二者正交可组合；对标显示 PoP 在低一个数量级的硬件上达到同量级证明时间。}
+\begin{table}[t]
+\centering
+\caption{Positioning against the five prior-art lineages. The right-hand column
+names what each lineage already occupies, and therefore what we do not claim.}
+\label{tab:related}
+\tabfont
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.26\columnwidth}L{0.42\columnwidth}L{0.26\columnwidth}@{}}
+\toprule
+Lineage & Representative work & Slot already occupied \\
+\midrule
+Policy $\to$ circuit & zkGen \cite{zkgen}, Circuitree, Prezta & DSL-to-circuit
+translation \\
+Agent/LLM compliance & NiyamAI, Zaguk, PCO \cite{pco}, WITNESS & policy-level
+private-mode kernel \\
+Model computation & DeepProve, zkGPT, zkAgent \cite{zkagent} & inference
+integrity \\
+Attacks / negative results & Hollow-LLM \cite{hollowllm}, zk-attach
+\cite{zkattach} & naming the gaps \\
+Non-ZK industry baseline & \texttt{@brivora/verify}, VAOL & signed audit logs \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\fixme{引文纪律（骨架 :150--152）：除 Hollow-LLM / zkGen / NiyamAI / zkAgent /
-ePrint 2024/813 五条外，其余引文必须逐条打开原文核实后再进 bibliography。
-见 docs/tdsc-fixlist.md \S2 的注记。
-⚠️ 口径：WITNESS 参考实现为 Apache-2.0（并非闭源），故"开源"不构成差异化。}
+One of the five is the lineage this paper is actually in dialogue with. The
+attacks-and-negative-results row names two gaps---Hollow-LLM's \emph{effort gap}
+and zk-attach's \emph{source-integrity gap}---and both concern \emph{what the
+proof system was asked to prove}. Proposition~\ref{thm:gap} concerns a third
+gap on a different axis, \emph{where the proved string is delivered}, and we are
+not aware of prior work that quantifies the binding/hiding tradeoff in the terms
+of \S\ref{sec:binding}. That is why we state it as a bound with a stated
+hypothesis rather than cite it.
+
+\paragraph{zkAgent: orthogonal, not competing.} zkAgent \cite{zkagent} is the
+closest contemporaneous system, and the comparison is easy to get wrong in both
+directions. It proves that a provider executed the declared model and tools; PoP
+proves that a response satisfies a public policy. PoP proves nothing about model
+computation, and zkAgent proves nothing about policy compliance, so the two
+compose: their conjunction covers ``inference was executed \emph{and} the policy
+held''. Table~\ref{tab:zkagent} places the reported figures side by side.
+
+\begin{table}[t]
+\centering
+\caption{PoP against zkAgent. The two prove different obligations, so the rows
+are a statement of orthogonality, not a race.}
+\label{tab:zkagent}
+\tabfont
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.22\columnwidth}L{0.38\columnwidth}L{0.30\columnwidth}@{}}
+\toprule
+& \textbf{zkAgent} \cite{zkagent} & \textbf{PoP} \\
+\midrule
+Obligation & provider executed the declared model and tools (inference integrity)
+& response/trace satisfies policy $\pi$ (compliance) \\
+Depends on the model & yes (weights, arithmetisation) & \textbf{no} \\
+Cost grows with & model size, sequence length & response length $\times$ rule
+count \\
+Content privacy & none & committed, selective disclosure \\
+Hardware reported & 32 cores / 512\,GB & 24 cores / 12\,GB \\
+Proving & 194.4\,s (Shout, $T{=}512$) & 118.9--172.5\,s (200--10k chars) \\
+Proof size & 96\,MiB (Shout); 3.1\,MiB (LogUp) & $\approx$2.7\,MiB \\
+Verification & 0.42\,s (Shout); 0.038\,s (LogUp) & $\approx$0.090\,s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We deliberately do not claim that PoP is faster, and the temptation to do so is
+worth naming because the raw numbers invite it. The correct statement is
+narrower, and we make only it: \emph{for the compliance obligation}, PoP
+completes in a proving time of the same order as zkAgent's, with a smaller memory
+footprint and a comparable proof size, without touching the model---and it adds
+committed content privacy that zkAgent does not provide. Two caveats must travel
+with those figures. The hardware is not matched (24 cores and 12\,GB against 32
+cores and 512\,GB), and PoP's ceiling is memory-bound rather than cycle-bound, so
+its feasible region is a two-step staircase rather than a curve.
+\S\ref{sec:eval} reports the measurements and their limits.
+
+\need{⚠️ tab:zkagent 里 PoP 那一列全部取自 SP1 \texttt{core}（非零知识）档，
+机器为 24 核 / 12\,GB WSL2；zkAgent 一列为 ePrint 2026/199 的报告值（32 核 / 512\,GB）。
+数据源：\texttt{bench/comparison\_zkagent.md}。该文件自身警告：
+\emph{不得}宣称「PoP 比 zkAgent 快」——正确口径是「对『合规』这一义务…
+同量级证明时间 / 更小内存」。groth16 档（WP1）未打通前，本表不得出现 ZK 档数字。}
+
+The one influence we should name plainly, rather than leave to resemblance:
+zk-regex's ``match offline, verify the path in circuit'' pattern is the shape of
+our NFA contract, and verifiable document redaction \cite{vdr} inspired the bit
+selector behind \texttt{mask\_covered}. The borrowing stops at the circuit
+technique and does not carry the security argument across: VDR assumes a
+\emph{signed original document} exists, whereas in PoP's private mode both the
+original and the redacted version are produced by the operator, so there is no
+trusted original to appeal to. We use the mechanism, not the proof.
+
+\fixme{引文纪律：除 Hollow-LLM \cite{hollowllm} / zkGen \cite{zkgen} /
+zkAgent \cite{zkagent} / PCO \cite{pco} 四条外，其余引文必须逐条打开原文
+核实后再进 bibliography（docs/tdsc-fixlist.md \S2、WP8）。
+\textbf{骨架原先把「ePrint 2024/813」列进已核实四条，那是错的}，已剔除：
+\textbf{绝不能再引 IACR ePrint 2024/813 作为 VDR}——那是
+Kiraz/Larraia/Vaughan, ``How to Redact the Bitcoin Backbone Protocol''，
+与 Verifiable Document Redacting 无关。见 fixlist \S A。
+⚠️ 口径：WITNESS 参考实现为 Apache-2.0（并非闭源），故「开源」不构成差异化。}
 
 % =====================================================================
 \section{Discussion and Limitations}
