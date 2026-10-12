@@ -673,7 +673,8 @@ SP1_PROVER=cpu ./circuits/target/release/pop-script --job session --vectors …
   **同时只能有一个证明器**，且证明器内存在同一进程内**逐份累积**（所以按 `--chunk` 切进程）。
   别在请求链路里调它 —— 出证只能**异步**，见 [`../../bench/results/proofs.md`](../../bench/results/proofs.md)。
 - **⚠️ core / compressed 证明不是零知识**：能主张的是**策略零知识**；
-  响应内容隐藏对低熵 `T` 有上界。见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md) §4。
+  响应内容隐藏对猜测熵 `k = −log₂ Guess(T ∣ Z)` 不足的 `T` 有上界（**重执行**模型即可还原）。
+  见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md) §4。
 - **改了 `types` 就得重建三个 guest**（§8 第 9 条）：ELF 变 ⇒ vkey 变 ⇒
   `scripts/examples/out/` 下所有旧证明与证书**全部失效**。
 

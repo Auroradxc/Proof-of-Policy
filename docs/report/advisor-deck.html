@@ -293,7 +293,7 @@ html:not([data-mode="present"]) .hint{display:none}
       <div class="card">
         <div class="card__t">最大的自我限制</div>
         <div class="card__d">「零知识」只到<strong>策略零知识</strong>：私有模式保证「公开值不含明文」，
-          <strong>不保证响应内容不可恢复</strong> —— 低熵文本可枚举猜测-验证，且 SP1 的 <code>core</code>/<code>compressed</code>
+          <strong>不保证响应内容不可恢复</strong> —— 猜测熵 <code>k = −log₂ Guess(T ∣ Z)</code> 不足的文本可<strong>重执行</strong>还原，且 SP1 的 <code>core</code>/<code>compressed</code>
           证明本身非零知识。<strong>这条是自己查出来并写进标题的</strong>。</div>
       </div>
     </div>
@@ -1055,7 +1055,7 @@ python3 scripts/ops/proof_service.py \
         <tbody>
           <tr>
             <td><strong>① 私有模式的隐私上界</strong><br><span class="chip chip--warn">上界明确</span></td>
-            <td>只保证「公开值不含明文」。两个<strong>独立</strong>理由：SP1 <code>core</code>/<code>compressed</code> 证明<strong>非零知识</strong>（官方安全模型明文 + 本机源码审计）；更根本地，「响应绑定」与「内容隐藏」对<strong>低熵 <code>T</code> 互斥</strong> —— 公开值里的承诺可离线枚举猜测-验证，<strong>与证明系统无关</strong></td>
+            <td>只保证「公开值不含明文」。两个<strong>独立</strong>理由：SP1 <code>core</code>/<code>compressed</code> 证明<strong>非零知识</strong>（官方安全模型明文 + 本机源码审计）；更根本地，当猜测熵 <code>k = −log₂ Guess(T ∣ Z)</code> 不足（<code>k &lt; log q + log(1/ε)</code>）时「响应绑定」与「内容隐藏」<strong>互斥</strong> —— 公开值里的承诺可<strong>重执行</strong>还原，<strong>与证明系统无关</strong></td>
             <td>要「不可恢复」须换零知识证明系统（groth16/plonk 隐藏见证）：<strong>本机内存不够，仅设计上可行、未实测</strong></td>
           </tr>
           <tr>
@@ -1108,7 +1108,7 @@ python3 scripts/ops/proof_service.py \
       <div class="card">
         <div class="card__t"><span class="chip chip--acc">研究方向</span> 需要新的工作线</div>
         <div class="rows">
-          <div class="rowitem"><div class="rowitem__k">隐私上界</div><div class="rowitem__v">换零知识证明系统（隐藏见证）解掉「低熵可枚举」—— 设计上可行，未实测</div></div>
+          <div class="rowitem"><div class="rowitem__k">隐私上界</div><div class="rowitem__v">换零知识证明系统（隐藏见证）解掉「猜测熵不足下的重执行还原」—— 设计上可行，未实测</div></div>
           <div class="rowitem"><div class="rowitem__k">真实推理证明</div><div class="rowitem__v">用真实 LLM 的推理证明替掉 <code>pop-infer</code> 的代理 MLP</div></div>
           <div class="rowitem"><div class="rowitem__k">递归聚合</div><div class="rowitem__v">把多证明者的验证成本从 O(N) 降到 O(1)</div></div>
           <div class="rowitem"><div class="rowitem__k">网关身份</div><div class="rowitem__v">让电路内/链上有可用的网关身份，把截尾拦截点从链下推进链上</div></div>

@@ -94,9 +94,6 @@ class CheckResult: passed: bool; violations: list[Violation]; notes: list[str]
 class Transcript:  response: str|None; receipts: list[ToolReceipt]   # P1-5：无可自填的 token 数
 ```
 
-> **旧字段已删除**：`Transcript.tool_calls` / `token_count` 与 `model.ToolCall` 在 P1-5 中被移除，
-> 传它们会直接 `TypeError`（而不是"传了但被忽略"——后者会让人误以为还生效）。`ToolReceipt`
-> 定义在 `policydsl/evidence/trace.py`（`model` 里只有 `TYPE_CHECKING` 下的类型标注，避免循环导入）。
 
 `Violation.evidence_kind` 与 `evidence` 的对应（**跨层证据字符串的参考定义**）：
 

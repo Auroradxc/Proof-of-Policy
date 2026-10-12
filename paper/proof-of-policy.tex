@@ -94,7 +94,8 @@ $\sim$10.15 GiB 的固定地板，本机 12 GB 上的可行域因此是\textbf{�
 \textbf{标题口径说明（2026-09-11 核查后收紧）}：「Zero-Knowledge」在本系统中限定为
 \textbf{策略零知识（policy-zero-knowledge）}——合规性可被证明而\textbf{违规内容不泄露}
 （违规只以证据承诺披露，证据开示为选择性）。\textbf{这不等于响应内容不可恢复}：
-私有模式保证「公开值不含明文」，但公开的响应承诺可被离线枚举猜测--验证；
+私有模式保证「公开值不含明文」，但公开的响应承诺构成\textbf{猜测--验证 oracle}
+（对贪心/低温解码的响应，\textbf{重执行}即可恢复）；
 且底层 SP1 \code{core}/\code{compressed} 证明本身并非零知识。
 完整核查见 \S\ref{sec:privacy-scope} 与仓库 \code{docs/sp1-zk-audit.md}。
 \end{minipage}}
@@ -114,18 +115,21 @@ Art.12/13）与企业治理要求「合规可审计」，但现实中合规性�
         输入输出被签名——\textbf{执行 $\neq$ 合规}（作者自述），且约 34\% 延迟、依赖硬件；
   \item \textbf{TEE 治理栈}（Agentrust/cMCP/cA2A）同样依赖 TEE 与厂商设施；
   \item \textbf{形式化验证}（Lean-Agent 等）需人工形式化整个政策，且对黑盒响应不适用；
-  \item \textbf{ZK 正则/PII 原语}（zk-regex V2、VDR/IACR 2024/813、ZK Email）是\textbf{积木}，
+  \item \textbf{ZK 正则/PII 原语}（zk-regex V2、Verifiable Document Redacting
+        [Springer, DOI 10.1007/978-3-319-66402-6\_20]、ZK Email）是\textbf{积木}，
         无「策略级」系统。
 \end{itemize}
 
-最接近的 WITNESS（Midnight）仅支持 2 类策略且闭源、无内容隐私；\code{@brivora/verify} 非 ZK；
+最接近的 WITNESS（Midnight）仅支持 2 类策略原语、无同行评审论文，其参考实现按 Devpost 页声明为
+\code{Apache-2.0}（\textbf{并非闭源}——早期稿写「专有闭源」已修正），因此 \textbf{「开源」不构成差异化}；
+它亦无内容隐私；\code{@brivora/verify} 非 ZK；
 DeepProve 证的是\textbf{模型计算}层而非\textbf{策略合规}层。
-\textbf{「通用策略 DSL $\to$ ZK 约束编译 + 无 TEE + 响应隐私选择性披露 + 形式化安全模型 + 开源」
+\textbf{「通用策略 DSL $\to$ ZK 约束编译 + 无 TEE + 响应隐私选择性披露 + 形式化安全模型」
 的组合是明确空位。}
 
 \paragraph{本文贡献。}
 \begin{enumerate}[leftmargin=1.6em,itemsep=2pt]
-  \item \textbf{PoP 系统}：首个通用策略 DSL $\to$ ZK 判定 $\to$ 双隐私模式 $\to$ 合规证书的
+  \item \textbf{PoP 系统}：通用策略 DSL $\to$ ZK 判定 $\to$ 双隐私模式 $\to$ 合规证书的
         开源实现（\S\ref{sec:system}）；
   \item \textbf{可序列化 NFA 契约}：正则子集编译为跨层（Python 参考 $\leftrightarrow$ zkVM）
         一致的 NFA，含 fail-fast 语法子集与 Pike VM 判定（\S\ref{sec:dsl}）；
@@ -142,7 +146,10 @@ DeepProve 证的是\textbf{模型计算}层而非\textbf{策略合规}层。
 （见 \S\ref{sec:intro} 四派；补充）ZK 在 agent 侧的相邻工作：zkML（证明推理）、可验证 DP
 （Noisette）、zkAgent（整轨迹证明）。PoP 与它们\textbf{正交且可组合}：PoP 证的是
 「输出/轨迹满足\textbf{策略}」，不证模型计算。zk-regex 的「离线匹配 + 电路内验证路径」
-启发了我们的 NFA 契约；VDR 的位选择器启发了 \code{mask_covered} 的脱敏证明。
+启发了我们的 NFA 契约；Verifiable Document Redacting 的位选择器启发了
+\code{mask_covered} 的脱敏证明（注意：VDR 假设存在\textbf{已签名的原文档}，
+PoP 的私有模式下「原版/脱敏版」都由服务商产出，\textbf{无可信原始件}，
+故只借用其电路技巧，不继承其安全论证）。
 
 \subsection{与 zkAgent 的关系（最贴近的同期工作）}
 \label{sec:zkagent}
@@ -196,7 +203,8 @@ DeepProve 证的是\textbf{模型计算}层而非\textbf{策略合规}层。
 \begin{description}[leftmargin=1.4em,itemsep=2pt]
   \item[(G1)] 健全性——违反 $\pi$ 的 $T$ 无法产出被接受的证明；
   \item[(G2)] \textbf{承诺式隐私}——私有模式下公开值不含 $T$ 的明文
-        （\textbf{注意}：这不是「$T$ 不可恢复」；对低熵 $T$，公开可重算的绑定与内容隐藏互斥，
+        （\textbf{注意}：这不是「$T$ 不可恢复」；当猜测熵 $k = -\log_2 \mathsf{Guess}(T\mid Z)$
+        低于阈值 $k < \log q + \log(1/\epsilon)$ 时，公开可重算的绑定与内容隐藏互斥，
         见 \S\ref{sec:privacy-scope}）；
   \item[(G3)] 可溯源绑定——策略版本、电路与证明工件绑定；
   \item[(G4)] 选择性披露——可证明的带脱敏与证据开示；
@@ -317,8 +325,8 @@ White\_Space：该定义随 Unicode 版本漂移，而两端必须永远给出�
         \textbf{电路内验证为真实完整匹配}的见证 span 内）。证据开示为链下核验
         （\code{SHA256(fragment) = commitment}）。
   \item \textbf{口径提醒}：私有模式保证的是「\textbf{公开值不含明文}」。承诺是 $T$ 的公开函数，
-        第三方可枚举猜测--验证；且 \code{response_binding}（\S\ref{sec:cert}）\textbf{必须}
-        公开可重算才能让验证者独立核对送达的 $T'$——二者对低熵 $T$ 互斥。
+        第三方可对其做猜测--验证；且 \code{response_binding}（\S\ref{sec:cert}）\textbf{必须}
+        公开可重算才能让验证者独立核对送达的 $T'$——二者在猜测熵 $k$ 不足时互斥。
         详见 \S\ref{sec:privacy-scope}。
 \end{itemize}
 
@@ -362,7 +370,7 @@ $J(\pi, T)$；第 8 类 \code{semantic_bound} 不在电路内判定，电路只�
 \textbf{只验 SP1 一侧不等于合规}。伪造需攻破 zkVM 或哈希（或陪伴证明系统）。
 
 \paragraph{Privacy（承诺式）。} 验证者视图仅含承诺；Leak 实验验证无明文泄露。
-\textbf{上界见 \S\ref{sec:privacy-scope}}——公开可重算的承诺对低熵 $T$ 构成猜测--验证 oracle，
+\textbf{上界见 \S\ref{sec:privacy-scope}}——公开可重算的承诺构成猜测--验证 oracle，
 且底层 SP1 \code{core} 证明并非零知识。
 
 \paragraph{Other properties。} \textbf{Redaction soundness}：\code{redaction_ok} $\wedge$
@@ -736,9 +744,14 @@ Python 参考判定（golden）与 SP1 宿主/证明两条路径，逐条比对 
   \item \textbf{设计层面（更根本，与证明系统无关）}：公开值中的 \code{response_binding} /
         \code{response_commitment} 均为\textbf{公开且可离线重算}的 $T$ 的函数。
         \code{response_binding} 必须公开可重算，这正是验证者能独立核对「送达的 $T'$ 即被证明的 $T$」
-        的原因（本文的换响应防御，\assump{6}）；而该性质本身即构成一个\textbf{猜测--验证 oracle}：
-        自然语言响应的熵远低于 SHA-256 的 256 bit，枚举可行。换言之，在「验证者独立重算绑定」的前提下，
-        \textbf{响应绑定与响应内容隐藏在低熵 $T$ 上互斥}。\S\ref{sec:threat} 的 (G2) 应据此重述为：
+        的原因（本文的换响应防御，\assump{6}）；而该性质本身即构成一个\textbf{猜测--验证 oracle}。
+        但须注意：「熵远低于 256 bit」\textbf{推不出}「枚举可行」——一句话 $T$ 的信息量在
+        $\sim\!10^2$--$10^3$ bit 量级，$2^{100}$ 与 $2^{256}$ 一样枚举不了。真正的攻击是\textbf{重执行}：
+        对手的已知信息不是「响应空间」而是 $(\text{prompt}, \text{模型}, \text{解码参数})$，
+        贪心/低温解码下响应近乎确定，猜测熵 $k = -\log_2 \mathsf{Guess}(T\mid Z) \approx 0$，
+        攻击成本 $=$ 一次推理，与响应长度无关。换言之，在「验证者独立重算绑定」且
+        $k < \log q + \log(1/\epsilon)$ 的前提下，\textbf{响应绑定与响应内容隐藏互斥}。
+        \S\ref{sec:threat} 的 (G2) 应据此重述为：
         \emph{私有模式下公开值不含 $T$ 的明文}（已由 Leak 实验验证）。
 \end{enumerate}
 

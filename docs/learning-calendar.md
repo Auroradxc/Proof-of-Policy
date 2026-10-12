@@ -180,7 +180,7 @@
 **本周目标**：响应私有化（承诺）；违规理由选择性披露；（尽力）redaction-with-proof。**允许降级**。
 
 **Day 1（Mon）—— 承诺方案**
-- 阅读：Petkus 第 1 章 HH 复习；VDR（IACR 2024/813）摘要 + 位选择器结论。
+- 阅读：Petkus 第 1 章 HH 复习；VDR（Verifiable Document Redacting）摘要 + 位选择器结论。
 - 练习：在 `policydsl` 实现 `commit_response()`：`sha256(response || nonce)`。
 - 产出：commit 函数 + 测试。
 

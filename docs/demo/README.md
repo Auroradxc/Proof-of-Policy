@@ -200,8 +200,8 @@ count, isAnchored`，没有 `anchorWithProof` / `verifyProof`。链上得到的�
 
 - **出证的内存地板 ~10.15 GiB、一份 core 证明数分钟** → 出证只能**异步**，
   不能放进请求链路。见 [`../../bench/results/proofs.md`](../../bench/results/proofs.md)。
-- **core 证明不是零知识**，响应内容隐藏对低熵 `T` 有上界（可被猜测—验证还原）。
-  能主张的是「**策略**零知识」。见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md) §4。
+- **core 证明不是零知识**，响应内容隐藏对猜测熵 `k = −log₂ Guess(T ∣ Z)` 不足的 `T` 有上界
+  （可**重执行**模型还原）。能主张的是「**策略**零知识」。见 [`../sp1-zk-audit.md`](../sp1-zk-audit.md) §4。
 
 ---
 

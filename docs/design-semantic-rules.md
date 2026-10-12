@@ -196,10 +196,10 @@ ezkl 验证器判（出证方伪造不了）；绑定由验证方拿 `T′` 重�
 而语义规则根本没被判定**的私有证书 —— 那正是 P0-1 的形态换了个位置。
 `test_private_mode_fails_closed` 断言的就是这个 panic 与它的原因。
 
-这也是 [`security-model.md`](security-model.md) §5.2 那条"响应绑定与响应内容隐藏对
-低熵 `T` 互斥"的**第二个实例**（第一个是 SP1 侧的 `response_binding`）：语义规则把
-`encode(T)` 直接放进公开值，把这个互斥推到更强的形式 —— 不再需要"低熵枚举"，
-反查字符表就够了。
+这也是 [`security-model.md`](security-model.md) §5.2 那条"响应绑定与响应内容隐藏在
+猜测熵 `k = −log₂ Guess(T ∣ Z)` 不足时互斥"的**第二个实例**（第一个是 SP1 侧的
+`response_binding`）：语义规则把 `encode(T)` 直接放进公开值，把这个互斥推到更强的形式
+—— 不再需要猜测熵不足这一前提，反查字符表就够了。
 
 ---
 
