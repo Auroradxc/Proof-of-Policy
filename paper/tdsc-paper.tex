@@ -9,6 +9,9 @@
 %      pdflatex "\def\SKELQUIET{}\input{tdsc-paper.tex}"   % 两遍，第二遍收交叉引用
 %  \SKELQUIET 让所有中文标记宏吞掉参数；不带它则需要能排版中文的引擎
 %  （xelatex + CJK 字体）。正文本身全英文，标记里才有中文。
+%
+%  ⚠️ IEEEtran.cls 需要装在 TeX 发行版里。WSL 侧已装进
+%     /home/dong/texlive/texmf-local/tex/latex/ieeetran/（2026-10-12）。
 % =====================================================================
 \documentclass[journal]{IEEEtran}
 
@@ -151,8 +154,14 @@ non-trivial}: under greedy decoding, $k \approx 0$.
 \section{Binding of Policy Proofs}
 \label{sec:binding}
 
-\need{★ 全文核心（骨架 :165 自注"这是论文的核心"；docs/tdsc-plan.md:42 称承重墙）。
-约 3.75 页。四个子节，全部由骨架 :163--434 迁入，基本可直接用。}
+A policy proof is meant to bind a response: a verifier who accepts a
+certificate should conclude that \emph{this} string was checked against the
+policy. This section asks what that binding is actually worth. We first isolate
+the gap that survives in every design we surveyed (\S\ref{sec:gap}), then give
+a quantitative bound on what a public value reveals, together with the
+structural hypothesis that bound needs (\S\ref{sec:tradeoff}), and finally
+state the same fact on the request side, where the governing resource is
+freshness rather than entropy (\S\ref{sec:t3}).
 
 \subsection{The gap}
 \label{sec:gap}
@@ -169,16 +178,28 @@ $b$ is a function of $(n,T)$ only; the delivery channel to the end user carries
 no authenticated term. One line.
 \end{proof}
 
-\need{This is the \emph{residual} gap, not ``proofs bind nothing''. Prior work
-must be cited here (Hollow-LLM \cite{hollowllm}, zk-attach \cite{zkattach}), and
-we state plainly that the naive claim would be false against our own system.}
+Two remarks scope this proposition. First, it describes a \emph{residual} gap,
+not the claim that policy proofs bind nothing. Our own system already binds $T$
+through the verifier-issued nonce $n$ of Definition \ref{def:system}, and a
+verifier who receives $T'$ and recomputes $b$ does learn that $T'$ was the
+proved string; the gap is that the binding is anchored to the
+\emph{verifying party's} copy. Second, we do not claim to be the first to
+observe that a proof can fail to bind the artifact it purports to describe. The
+\emph{effort gap} for zero-knowledge inference proofs is formalized by
+Hollow-LLM \cite{hollowllm}, and the \emph{source-integrity gap} for predicate
+proofs is named by zk-attach \cite{zkattach}; both concern what the proof system
+was asked to prove, whereas Proposition \ref{thm:gap} concerns where the proved
+string is delivered. We state the naive version of our own claim because it
+would be false against our own system.
 
 \subsection{A quantitative binding--hiding tradeoff}
 \label{sec:tradeoff}
 
-\need{Def \ref{def:k}（猜测熵，平均形式）、Rem \ref{rem:kmeas}、
-Thm \ref{thm:t1} 的 (H)+(L) 及其证明、Rem \ref{rem:betanecessary}、
-Cor \ref{cor:reexec}、Rem \ref{rem:designated}。全部迁自骨架 :210--340。}
+The certificate must publish \emph{something} tying it to $T$; otherwise it
+binds nothing at all. We therefore ask how much that public value leaks. The
+answer depends on one measurable quantity --- the guessing entropy of the
+response given everything the adversary already knows --- and on one structural
+property of the public value itself.
 
 \begin{definition}[Guessing entropy of a response]
 \label{def:k}
@@ -232,9 +253,20 @@ evaluates $\beta$ at most $q$ times.
 \end{enumerate}
 \end{theorem}
 
-\need{Thm \ref{thm:t1} 的证明：正文留一行版，完整 ROM 论证移附录
-\ref{app:proofs}。⚠️ 骨架 :712--715：SHA-256 只给计算意义下的近似，
-正文措辞必须写 \emph{heuristic}，不得写成信息论界。}
+\begin{proof}[Proof sketch]
+Part (L) is immediate after conditioning on $\beta(T)$; no hypothesis on
+$\beta$ is used. For (H), fix $z$ and decompose the adversary's success by the
+first query that hits $T$. The oracle answers it has already seen are uniform
+and independent of $T$, so each query is itself independent of $T$ and succeeds
+with probability at most $2^{-k_z}$. Taking the expectation over $z$ and
+applying Definition \ref{def:k} yields $q \cdot 2^{-k}$; the term
+$q \cdot 2^{-\lambda}$ charges a query that hits the uniform value $\beta(T)$
+by chance. Appendix~\ref{app:proofs} gives the full argument.
+\end{proof}
+
+\fixme{$\lambda$ 比特随机与随机预言机只给 \emph{heuristic} 保证：实践中的 SHA-256
+不是真的随机预言机（骨架 :712--715）。正文措辞必须写成 heuristic，
+\textbf{不得}写成信息论界。}
 
 \begin{remark}[The hypothesis in (H) is necessary, and our two instances straddle it]
 \label{rem:betanecessary}
@@ -280,16 +312,25 @@ $T$, which is an informational remark rather than a theorem. We record the
 demotion here because an earlier draft asserted the separation as a theorem.
 \end{remark}
 
-\need{\textbf{This is retrospective justification, not a novel construction.}
-The system publishes $b = H(\mathsf{dom}\|n\|T)$ with a verifier-issued nonce
-$n$, and Remark \ref{rem:designated} explains the shape of that choice. The
-security model does not pin down whether $n$ is public; making it public
-forfeits hiding, and making it verifier-held is what makes verification
-designated.}
+We stress that the designated-verifier shape is a \emph{retrospective
+justification, not a novel construction}. The system publishes
+$b = H(\mathsf{dom}\|n\|T)$ with a verifier-issued nonce $n$, and
+Remark \ref{rem:designated} explains the shape of that choice after the fact.
+The security model does not pin down whether $n$ is public: making it public
+forfeits hiding, while holding it at the verifier is what makes verification
+designated.
 
-\need{\textbf{实验内容}：实测 $k$。对一组真实 prompt、同一模型多次采样，
-估 $\mathsf{Guess}(T\mid Z)$（Def \ref{def:k}），代入 Thm \ref{thm:t1}(H) 得阈值。
-据先例扫查，\emph{没有人测过这个量}——它本身是一块贡献。⚠️ 需真实模型采样。}
+\begin{remark}[A hypothesis that can be settled by experiment]
+\label{rem:kexp}
+Theorem \ref{thm:t1} is only as useful as the number put into it. Because
+Definition \ref{def:k} is operational, $k$ can be measured rather than assumed:
+sampling one model on one prompt many times estimates
+$\mathsf{Guess}(T \mid Z)$ directly, and the estimate substitutes into the
+threshold $k \ge \log q + \log(1/\varepsilon)$. To our knowledge no prior work
+measures this quantity for agent responses, which makes the measurement a
+contribution in its own right; \S\ref{sec:eval} describes the protocol and
+reports the result.
+\end{remark}
 
 \begin{proposition}[The lossy instance of Theorem \ref{thm:t1}(L)]
 \label{prop:semantic}
@@ -309,11 +350,12 @@ Immediate. The measurement is direct: publish $\mathsf{encode}(T)$ for real
 responses and measure how much of $T$ is recoverable.
 \end{proof}
 
-\need{This proposition is the paper's cheapest experiment and its strongest
-anchor for Theorem \ref{thm:t1}---it is measurable in a day, and it makes the
-bound concrete rather than cited. Source: \texttt{docs/design-semantic-rules.md}
-lines 195--201, where the repository itself already names it as a second
-instance.}
+Proposition \ref{prop:semantic} is the cheapest experiment in this paper and
+the strongest anchor for Theorem \ref{thm:t1}: it is measurable in a day, and it
+makes the bound concrete rather than cited. It also shows that the relevant
+asymmetry is not entropy at all --- for the semantic rule class there is no
+entropy argument available, because $\mathsf{encode}(T)$ simply \emph{is} a
+content-preserving function of the response.
 
 \subsection{Quantitative request binding}
 \label{sec:t3}
@@ -332,21 +374,27 @@ empty nonce), the advantage is $1$, and \emph{does not decay in any parameter
 of the system}.
 \end{theorem}
 \begin{proof}
-\need{主论证：$r$ 进入 $b = H(\text{dom} \| r \| T)$，故 $S$ 里任何一个
-预先算好的证书，只有在 $r$ 恰好落进它已覆盖的挑战集合时才被接受；
-$f$ 个新鲜均匀比特给出 $2^{-f}$ 的对撞上界，再对 $S$ 取并界。
-$f = 0$ 时 $S$ 中每个元素都是永久有效的重放。}
+The receiver's freshness $r$ enters the proven statement through
+$b = H(\mathsf{dom} \,\|\, r \,\|\, T)$. For a certificate in $S$ to be accepted
+on $r$, the value $r$ must fall inside the challenge set that certificate
+already covers --- an event of probability at most $2^{-f}$ for $f$ fresh
+uniform bits --- and a union bound over $S$ gives $|S| \cdot 2^{-f}$. When
+$f = 0$ every element of $S$ is a permanently valid replay, so the advantage is
+$1$ and does not decay in any parameter of the system.
 
-\need{\textbf{代码依据}：\texttt{circuits/types/src/lib.rs}:950--995 已写明
-“nonce 为空是合法的……不提供任何重放防护”。定理的 $f = 0$ 分支不是假想，
-是本系统当前 API 的\emph{合法输入}。}
+The $f = 0$ branch is not hypothetical. \texttt{circuits/types/src/lib.rs}
+(lines 950--995) documents an empty nonce as a legal input that ``provides no
+replay protection''; it is therefore a \emph{valid input to the current API},
+not a straw man.
 \end{proof}
 
-\need{这条定理与 Theorem \ref{thm:t1} \textbf{同构}，而正是这一点使它值得写：
-两条说的是同一件事——\emph{一个证明只能绑住提交进去的、对手无法预先选择的
-那部分比特所能支撑的量}。Thm \ref{thm:t1} 管响应侧（$k$），
-Thm \ref{thm:t3} 管请求侧（新鲜度 $f$）。这条统一主线写在 \S\ref{sec:intro}
-的贡献列表里，是全文的理论骨架。}
+Theorem \ref{thm:t3} is \emph{isomorphic} to Theorem \ref{thm:t1}, and that is
+what earns it a place here. Both state the same fact about different inputs: a
+proof binds only as much as the committed quantity the adversary cannot select
+in advance has bits for. On the response side that quantity is the response and
+the resource is entropy $k$; on the request side it is freshness $f$. Neither
+can be bought with more computation. This is the spine announced in
+\S\ref{sec:intro}, and the two theorems are its two sides.
 
 \begin{remark}[A taxonomy, not a trichotomy]
 \label{rem:taxonomy}
@@ -362,13 +410,14 @@ disjoint. zk-attach \cite{zkattach} walks (a); NiyamAI and ZKAP walk (c); PoP
 walks (b).
 \end{remark}
 
-\need{\textbf{Posture, stated plainly.} Our system already carries
+\paragraph{Posture, stated plainly.} Our system already carries
 \texttt{response\_binding}, but $n$ is issued by the \emph{verifier}. Moving it
-to the \emph{end user}---making $f > 0$ the receiver's contribution---closes
-the divergent-delivery branch of Proposition \ref{thm:gap}. This is a small
-protocol amendment, not a new system, and the paper must say exactly that. What
+to the \emph{end user}, so that $f > 0$ becomes the receiver's contribution,
+closes the divergent-delivery branch of Proposition \ref{thm:gap}. We are
+explicit that this is a small protocol amendment rather than a new system: the
+mechanism is already implemented, and only the issuer of the nonce changes. What
 Theorem \ref{thm:t3} buys is the \emph{price}: with $f = 0$ there is no closure
-at any cost.}
+at any cost.
 
 % =====================================================================
 \section{Policy-Private Compliance}
@@ -437,8 +486,8 @@ $\times$ 模式 {transparent, private, private-policy} $\times$ 证明档 {core,
 本臂的核心结论是那条机器校验的不对称：一份 $passed=\mathrm{False}$ 的假声明证书
 能骗过公开核验路径，只有重执行 $J(\pi,T)$ 才抓得住。}
 
-\need{实测 $k$ 的实验（承接 \S\ref{sec:tradeoff} 的 Rem \ref{rem:kmeas}）：
-对一组真实 prompt、同一模型多次采样，估 $\mathsf{Guess}(T\mid Z)$。
+\need{实测 $k$ 的实验（承接 Rem \ref{rem:kexp}）：对一组真实 prompt、
+同一模型多次采样，估 $\mathsf{Guess}(T\mid Z)$。
 ⚠️ 需真实模型采样，当前阻塞。}
 
 % =====================================================================
@@ -502,8 +551,35 @@ $M(x) = T \wedge \pi(T)$ 才真的闭合"送错字节"——而那恰好是 Thm 
 \section{Proofs}
 \label{app:proofs}
 
-\need{Thm \ref{thm:t1}(H) 的完整 ROM 论证（骨架 :269--295 已有全文，迁此）；
-Thm \ref{thm:t1}(L) 无闭式，只给测量口径（\S\ref{sec:eval}）。
+\begin{proof}[Proof of Theorem \ref{thm:t1}]
+\emph{(H).} Fix $z$ and let the adversary's query set be
+$Q = \{q_1, \dots, q_q\}$. Decompose by first hit,
+\[
+\Pr[\exists i : q_i = T] \;=\; \sum_i \Pr\!\left[q_i = T \wedge \neg E_{<i}\right],
+\]
+where $E_{<i} \triangleq \{\exists j < i : q_j = T\}$.
+Conditioned on $\neg E_{<i}$, every oracle answer $a_1,\dots,a_{i-1}$ already
+revealed is uniform and independent of $T$ (no queried point equals $T$, and $H$
+is a fresh random function), and $\beta(T)$ itself is uniform and independent of
+$T$. Hence $q_i$---a deterministic function of $(z, \beta(T), a_{<i})$---is
+\emph{independent of $T$}, so
+\begin{multline*}
+\Pr[q_i = T \mid Z = z]
+= \sum_t \Pr[q_i = t]\,\Pr[T = t \mid Z = z] \\
+\le \max_t \Pr[T = t \mid Z = z] = 2^{-k_z},
+\end{multline*}
+giving $\Pr[\exists i : q_i = T \mid z] \le q\,2^{-k_z}$. Taking the expectation
+over $z$ and using $\mathbb{E}_z[2^{-k_z}] = \mathsf{Guess}(T \mid Z) = 2^{-k}$
+from Definition \ref{def:k} yields $q \cdot 2^{-k}$. An adversary that outputs
+an unqueried value wins with probability at most $2^{-k_z} \le q\,2^{-k_z}$,
+which the same bound absorbs. The term $q \cdot 2^{-\lambda}$ charges the
+probability that a query hits the uniform value $\beta(T)$ by chance.
+
+\emph{(L).} Immediate from Definition \ref{def:k} after conditioning on
+$\beta(T)$; no hypothesis on $\beta$ is used.
+\end{proof}
+
+\need{Thm \ref{thm:t1}(L) 无闭式界，只给测量口径（\S\ref{sec:eval}）。
 三分法已降级为分类 Rem \ref{rem:taxonomy}，无需证明。
 原 T2「分离定理」已\emph{停用}（见 Rem \ref{rem:designated}）—— 不要为它写附录。}
 
