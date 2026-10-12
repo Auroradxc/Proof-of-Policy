@@ -305,7 +305,7 @@
       <li>2026-10-12 <strong>第二版</strong>：<strong>D1 / D2 回改</strong>（合作者到位但证明须独立完成 ⇒ T3 全量不可达，见 §1.6；论文重心随之移到 WP4，见 §3 WP4 与 §5 R4）。</li>
       <li>2026-10-12 <strong>第三版</strong>：<strong>§1.6(e) 的 6 周自检当日执行完毕</strong> ⇒ <strong>D2 再回改</strong>：<strong>T1 的原陈述被证伪</strong>（反例 <code>β = id</code>）⇒ 补上结构性假设后成 <strong>T1-H/T1-L</strong>；<strong>T2 被证为空</strong>（二分法由 <code>k</code> 单独决定）⇒ <strong>停用</strong>；<strong>T3′ 通过</strong>。净结果：<strong>两条定理 + 两条 Remark</strong>。详见 <strong>§1.7</strong>。D1 不需再改（分析半边靠 T1-H 的测量实例，不靠 T2）。另修掉 skeleton 两个<strong>编译级</strong>缺陷（<code>\wp</code> 与 LaTeX 内置符号冲突、Limitations 列表中文留在正文），骨架现可 <code>pdflatex</code> 校验通过（<strong>0 error / 0 undefined ref / 0 overfull</strong>；余 13 条 Underfull 版面噪声，详见 §3 的编译校验条——<strong>早前"0 warning"的说法不准确</strong>）。</li>
       <li>2026-10-12 <strong>第四版</strong>：<strong>英文正文全部落笔</strong>（<code>paper/tdsc-paper.tex</code>，八节 + 两附录，B1–B8 十次提交）。页数问题的答案已定：<strong>不超页</strong>（11 页 / 限 12；未落内容重估 +0.55–0.65 页 ⇒ 终稿 11.6–11.7 页）。新增 <strong>§0.3 执行状态总表</strong>：把"做完了什么 / 还差什么、为什么差"一次讲清。</li>
-      <li>2026-10-13 <strong>第五版</strong>：<strong>fixlist §B 全案结清</strong>——B12/B14/B15 经作者放行后执行完毕，四个受污染 <code>.docx</code> 以<strong>外科式替换</strong>（非重跑生成器）清干净，备份在 <code>01_背景调研/_backup_docx_2026-10-12/</code>。新增 <strong>§0.4</strong>：对全库做一次<strong>口径实证扫描</strong>（不采信文档自述）⇒ <strong>实质错误口径只剩 2 处</strong>，均在"外部在用、未获授权"的两份 HTML 里。§0.3 第 2 类已按实测数字量化。</li>
+      <li>2026-10-13 <strong>第五版</strong>：<strong>fixlist §B 全案结清</strong>——B12/B14/B15 经作者放行后执行完毕，四个受污染 <code>.docx</code> 以<strong>外科式替换</strong>（非重跑生成器）清干净，备份在 <code>01_背景调研/_backup_docx_2026-10-12/</code>。新增 <strong>§0.4</strong>：对全库做一次<strong>口径实证扫描</strong>（不采信文档自述）⇒ <strong>实质错误口径只剩 2 处</strong>，均在"外部在用、未获授权"的两份 HTML 里。§0.3 第 2 类已按实测数字量化。<strong>同轮收尾</strong>：这 2 处经作者放行后各改 1 行（改前备份 <code>_backup_2026-10-13/</code>）⇒ <strong>全库口径归零</strong>。</li>
     </ul>
   </div>
 
@@ -498,8 +498,8 @@
     <table>
       <thead><tr><th>原错误口径</th><th>实质残留</th><th>判据</th></tr></thead>
       <tbody>
-        <tr><td><strong>VDR / <code>IACR 2024/813</code></strong></td><td><span class="pill hi">仅 1 处</span> <code>02_项目计划/pop-dashboard.html:312</code>（<code>VDR · IACR 2024/813</code> <strong>+ 错链</strong> <code>eprint.iacr.org/2024/813</code>）</td><td>其余命中全部落在<strong>已显式标注</strong>的位置，共三类：①<strong>就地更正记录</strong>（<code>01_research_canon.md:10</code>、<code>proposal_final.md:154</code>、<code>proof_of_policy_report.tex:73</code>）；②<strong>整份标注作废、顶部逐条列出错误</strong>（<code>drafts/proposal_v0.md:7–14</code>，明写"保留原样作为版本记录，<strong>不再就地修改</strong>"）；③"<strong>绝不能再引</strong> <code>2024/813</code>"的<strong>纪律声明</strong>（骨架 <code>:150</code>、写作计划 <code>:278</code>）</td></tr>
-        <tr><td><strong>WITNESS「闭源」</strong></td><td><span class="pill hi">仅 1 处</span> <code>05_报告/zk-policy-汇报.html:740</code>（「仅两类策略；<strong>专有闭源</strong>；绑定单一链」）</td><td><code>proof_of_policy_report.tex:30</code> 现为「按 Devpost 页声明为 Apache-2.0，<strong>并非闭源</strong>——此处修正早期"专有闭源"的说法」</td></tr>
+        <tr><td><strong>VDR / <code>IACR 2024/813</code></strong></td><td><span class="pill lo">0 处</span>（<strong>2026-10-13 已清</strong>）：原 1 处 <code>02_项目计划/pop-dashboard.html:312</code>，已改为 <code>VDR · Verifiable Document Redacting (ESORICS 2017)</code> + 正确链 <code>https://doi.org/10.1007/978-3-319-66402-6_20</code></td><td>其余命中全部落在<strong>已显式标注</strong>的位置，共三类：①<strong>就地更正记录</strong>（<code>01_research_canon.md:10</code>、<code>proposal_final.md:154</code>、<code>proof_of_policy_report.tex:73</code>）；②<strong>整份标注作废、顶部逐条列出错误</strong>（<code>drafts/proposal_v0.md:7–14</code>，明写"保留原样作为版本记录，<strong>不再就地修改</strong>"）；③"<strong>绝不能再引</strong> <code>2024/813</code>"的<strong>纪律声明</strong>（骨架 <code>:150</code>、写作计划 <code>:278</code>）</td></tr>
+        <tr><td><strong>WITNESS「闭源」</strong></td><td><span class="pill lo">0 处</span>（<strong>2026-10-13 已清</strong>）：原 1 处 <code>05_报告/zk-policy-汇报.html:740</code>，已改为「仅数值阈值+关键词缺失两类；<strong>无公开论文</strong>；<strong>无形式化模型</strong>；绑定单一链」（与 fixlist §B15 逐字一致）</td><td><code>proof_of_policy_report.tex:30</code> 现为「按 Devpost 页声明为 Apache-2.0，<strong>并非闭源</strong>——此处修正早期"专有闭源"的说法」</td></tr>
         <tr><td>「比 Proof-of-Guardrail <strong>更强</strong>」</td><td><span class="pill lo">0 处</span></td><td><code>tdsc-paper.tex:197</code> 与 skeleton <code>:123</code> 是 <code>\fixme{}</code> <strong>禁令</strong>；<code>proof_of_policy_report.tex:36</code> 已改「<strong>正交、可组合</strong>」并留更正注</td></tr>
         <tr><td>「低熵 ⇒ <strong>枚举可行</strong>」</td><td><span class="pill lo">0 处未被否定</span>的断言</td><td>命中全属显式否定 / fixlist 诊断 / <code>\fixme{}</code> 禁令</td></tr>
         <tr><td>「<strong>绑定不到送达字节</strong>」</td><td><span class="pill lo">0 处</span>（正文）</td><td>仅存于本文件 §1.5 与 fixlist §H 的<strong>作废说明</strong>里</td></tr>
@@ -508,9 +508,18 @@
   </div>
   <div class="note warn">
     <span class="tag">⇒ 结论</span>
-    <p><strong>除两份 HTML 外，全库已无未修正的错误口径。</strong> 这两份
-    （<code>02_项目计划/pop-dashboard.html</code>、<code>05_报告/zk-policy-汇报.html</code>）属
-    "<strong>外部在用、改前须经作者同意</strong>"，<strong>仍未获授权</strong>。</p>
+    <p><strong>全库已无未修正的错误口径（2026-10-13 归零）。</strong> 最后两份
+    （<code>02_项目计划/pop-dashboard.html</code>、<code>05_报告/zk-policy-汇报.html</code>）经作者放行后
+    <strong>各改 1 行</strong>；改前已备份至同目录 <code>_backup_2026-10-13/</code>（这两个目录不在版本控制下，
+    故按 docx 同样的规矩先备份）。复核：两份文件<strong>与备份只差目标串</strong>，其余字节未动。</p>
+  </div>
+  <div class="note">
+    <span class="tag">边界说明</span>
+    <p><strong>一条边界说明（复核过，非漏改）</strong>：<code>04_开题报告/drafts/proposal_v0.md:162</code>
+    的参考文献 6 仍是「…IACR ePrint 2024/813」裸条目、无就地标记。该文件第 7 行已明写
+    「<strong>本文件已作废</strong>…保留原样作为版本记录，<strong>不再就地修改</strong>」，第 9–12 行并逐条点名该错误。
+    ⇒ 属<strong>该文件自己声明的冻结策略</strong>，按既定改法（同 B14：保留原错记录）<strong>有意不动</strong>。
+    若希望连冻结稿也在正文处补一行指向文首的提示，那要覆盖掉它「不再就地修改」的声明，需<strong>单独拍板</strong>。</p>
   </div>
 
   <h3>(3) 仍未完成 · 三类（2026-10-13 复核：分类与 §0.3 一致，仅把第 2 类量化）</h3>
@@ -525,7 +534,7 @@
       <tbody>
         <tr><td><strong>801 vs 783 回填</strong></td><td>仍写 783 的<strong>文档 7 份</strong>：<code>reproduce.md</code>(2 处)、<code>security-model.md</code>(1)、<code>development.md</code>(2)、<code>modules/08-tests-bench.md</code>(9)、<code>modules/README.md</code>(3)、<code>dev-plan.md</code>(3)、<code>report/advisor-report.md</code>(5)。正文 §2.2 的「801 tests / 15 skipped」<strong>经复核是对的</strong>。<strong>附录 B 直接指向 <code>reproduce.md</code></strong> ⇒ 复现者会跑出 801 而以为环境坏了</td></tr>
         <tr><td><strong>VIEWS 防漂移闸门泛化</strong></td><td>入库结果<strong>7 份在闸门之外</strong>：<code>baseline</code> / <code>verify</code> / <code>streaming</code> / <code>compose</code> / <code>semantic</code> / <code>cycles</code> / <code>ablation</code>（闸门按 <code>d["rows"]</code> 形状写，而这 7 份 JSON 是 <code>metrics</code> 字典、无 <code>rows</code> 键）。<strong>属测试基建改动</strong></td></tr>
-        <tr><td><strong>外发 HTML 口径</strong></td><td>2 份，见上表，<strong>未获授权</strong></td></tr>
+        <tr><td><strong>外发 HTML 口径</strong></td><td>✅ <strong>已结（2026-10-13）</strong>：2 份各改 1 行（见上表），改前备份至同目录 <code>_backup_2026-10-13/</code></td></tr>
         <tr><td><strong>骨架标注「已迁入」</strong></td><td>暂缓：仍有 <code>\need{}</code> 直接引用 <code>tdsc-skeleton.tex</code> 行号作素材出处，清零前删骨架会让引用失去目标</td></tr>
       </tbody>
     </table>
