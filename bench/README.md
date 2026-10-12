@@ -1,8 +1,9 @@
 # bench/ — 评测
 
-八个脚本：前四个覆盖「成本 vs（响应长度 × 规则数 × 匹配模式）」，接着两个覆盖
-P2-9 的语义规则与 P1-6 的组合证明，最后两个是**流式路径的二次代价**与
-**SP1 prover 旋钮矩阵**：
+九个脚本：前四个覆盖「成本 vs（响应长度 × 规则数 × 匹配模式）」，接着两个覆盖
+P2-9 的语义规则与 P1-6 的组合证明，再两个是**流式路径的二次代价**与
+**SP1 prover 旋钮矩阵**，最后一个是 WP9 的**非 ZK 基线臂**（签名 Merkle 日志，
+不出证、不碰 SP1）：
 
 | 脚本 | 测什么 | 用时 | 说明 |
 |---|---|---|---|
@@ -14,6 +15,7 @@ P2-9 的语义规则与 P1-6 的组合证明，最后两个是**流式路径的�
 | `bench_compose.py` | **组合证明的成本**（`pop-program` / `pop-infer` 两半各自 prove/verify + 组合层开销） | 真出两份 SP1 证明 | **两半分进程**跑；逐条检验「成本 ≈ 两者之和、由推理主导」这句假设 |
 | `bench_streaming.py` | **流式路径的二次代价**：逐字符采样 ⇒ 总代价 `Θ(L²)` | 几秒–几十秒（**不出证**） | 走**真实**回调 `on_llm_new_token` 逐字符喂，不自己模拟采样循环；是「~0.07 ms/字符」那句**线性外推**的取证工具（0.07 ms 是 `L≈200` 的瞬时值，被当常数用了）。`semantic_demo_v1` **流不了**（委托给 ezkl 的那类直接 `NotImplementedError`）——这条边界**当断言跑**并写进结果，不静默跳过 |
 | `bench_prover_knobs.py` | **SP1 prover 旋钮矩阵**（R11）：`SP1_WORKER_*` 一族能不能把那条 ~10.15 GiB 的地板压低 | 每个配置一次真证明 | 旋钮**没有 CLI**，全在环境变量里（读 `sp1-prover` 源码确认在本仓路径上）；实测 `NUM_CORE_WORKERS` 4→1 省 **1.14 GiB**，而只压通道容量**一点没省** —— 占内存的是 worker 数。另有一组**悬崖 A/B**（`prover_knobs_cliff.*`）|
+| `bench_baseline.py` | **非 ZK 基线臂（WP9）**：签名 Merkle 日志（brivora/VAOL 风格）的签名 / 追加 / 包含证明 / 核验成本 | 秒级（**不出证**、纯 Python） | 复用仓库真件：`policydsl.check` 判定、`privacy/commit` 承诺、`evidence/cert` 的 Ed25519 + DSSE 信封、`proofs/session` 的 Merkle、`privacy/challenge` 的 nonce。**机器校验的不对称**：公开数据只能验签 + 验包含，**确认 `passed` 必须重跑 `J(π,T)`（需 π 与 T 明文）** —— `verify_by_reexecution()` 是真实测过的那条路，且实测「签名有效但内容为假」的证书公开路径照样全绿。ZK 成本列**留空（见 WP1）**，本文件不含任何 ZK/SP1 数字 |
 
 运行（需先构建 `circuits`，见 `docs/reproduce.md` §2）：
 
@@ -30,6 +32,8 @@ python3 bench/bench_compose.py --render-only                    # 不出证：�
 python3 bench/bench_streaming.py                                # → bench/results/streaming.{json,md}
 SP1_PROVER=cpu python3 bench/bench_prover_knobs.py              # → bench/results/prover_knobs.{json,md}
 python3 bench/bench_prover_knobs.py --render-only               # 不出证：由已有 JSON 重渲染 .md
+python3 bench/bench_baseline.py                                 # → bench/results/baseline.{json,md}
+python3 bench/bench_baseline.py --render-only                   # 不重采数据：由已有 JSON 重渲染 .md
 ```
 
 结果写入 `bench/results/`（**已入库**，供论文/文档引用）；中间产物 `bench/work/` 被忽略。
@@ -59,3 +63,11 @@ python3 bench/bench_prover_knobs.py --render-only               # 不出证：�
   云机 runbook 见 [`../docs/reproduce.md`](../docs/reproduce.md) §4½。
 - **多采样点要用引号包住整体**：`--points "200,1 2000,1"`（`--points` 只吃一个参数）。
 - naive 仅测较小长度（>2000 时 O(n²) 在 zkVM 内过慢）。
+- **基线臂只用仓库里已有的件，且不含任何 ZK/SP1 数字**：`baseline.*` 的 ZK 成本列
+  一律写作「见 WP1 / `proofs.md`」—— 交叉点数据在 WP1 的云机落地前**缺一半**，
+  本机那张表又受 ~10.15 GiB prover 内存地板限制（见 `comparison_zkagent.md` 一侧的口径）。
+  设计说明见 [`../docs/design-baseline-merkle.md`](../docs/design-baseline-merkle.md)。
+  该文件**不在** `tests/test_bench_views.py` 的 `VIEWS` 里：闸门那两条通用不变量
+  （`rows[].ok` / `rows[].peak_rss_mb`）是 proofs 表的形状，本臂没有内存采样；
+  `verify`/`streaming`/`compose`/`semantic`/`cycles`/`ablation` 同样是入库但未申报。
+  它自己也提供 `--render-only`，保证 `.md` 随时可由 `.json` 重渲染。

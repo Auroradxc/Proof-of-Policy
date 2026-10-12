@@ -1,0 +1,158 @@
+{
+  "arm": "signed-merkle-baseline",
+  "host": {
+    "hostname": "dxq",
+    "cpu_model": "Intel(R) Core(TM) i7-14650HX",
+    "cpu_count": 24,
+    "mem_total_mb": 11960,
+    "platform": "x86_64",
+    "python": "3.10.12",
+    "os": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35"
+  },
+  "pack": {
+    "path": "policy_packs/eu_ai_act_v1.json",
+    "id": "eu-ai-act-v1",
+    "version": "0.1.0",
+    "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55"
+  },
+  "response": {
+    "chars": 103,
+    "commitment": "309c3b150c4031d43c586bcd76e900621bbcb908871b266ff3bc77cc01691fb5",
+    "binding": "84f98ba86e9b8ec9053306e58b0ffd56886b3cbfacbde6a4429ff587efe4cef5",
+    "passed": true
+  },
+  "nonce": "dfbbed6d6b7e23ca51784c161865705fc3e239d1ecfa5a3bb7659891dba21fc9",
+  "ts": "2026-10-12T12:49:44Z",
+  "reps": 500,
+  "log_size": 1024,
+  "leaf_index": 1023,
+  "log_root": "54cd850dc1d5cab8e3c2e7b88c4dab2133158fbec99b68f78736b29d9fa28259",
+  "certificate": {
+    "bytes": 648,
+    "keyid": "ed25519:cfcaefe1d0d74faf4f758321250a6e942271539df1e7fbb273135b3d7c682de7",
+    "cert_digest": "ef72d3c10c9e0599c23dfb7dbf8350b499dcd4c60acaa5682f82410484805ea9"
+  },
+  "inclusion_proof": {
+    "siblings": 10,
+    "bytes": 761
+  },
+  "metrics": [
+    {
+      "metric": "签名 `cert.sign_payload`（Ed25519 + DSSE 信封）",
+      "median": 0.132,
+      "unit": "ms",
+      "n": 500
+    },
+    {
+      "metric": "Merkle 追加（追加一叶 + 重算根）",
+      "median": 2.131,
+      "unit": "ms",
+      "n": 500
+    },
+    {
+      "metric": "公开核验（验签 + 验包含）",
+      "median": 0.322,
+      "unit": "ms",
+      "n": 500
+    },
+    {
+      "metric": "重跑核验（验签 + 验包含 + `J(π,T)`）",
+      "median": 0.772,
+      "unit": "ms",
+      "n": 500
+    },
+    {
+      "metric": "证书大小",
+      "median": 648,
+      "unit": "B",
+      "n": 1
+    },
+    {
+      "metric": "包含证明大小",
+      "median": 761,
+      "unit": "B",
+      "n": 1
+    }
+  ],
+  "asymmetry": [
+    {
+      "check": "公开路径验签 + 验包含都通过",
+      "ok": true,
+      "note": "公开数据不是废的：签名与日志包含都由它核"
+    },
+    {
+      "check": "公开路径回答不了 passed（None / honest=False）",
+      "ok": true,
+      "note": "签名不担保内容为真，只担保『谁说了』"
+    },
+    {
+      "check": "拿公开结果当诚实核验 ⇒ 抛 BaselineError",
+      "ok": true,
+      "note": "require_honest() 把这个误用变成异常"
+    },
+    {
+      "check": "缺 π 或 T ⇒ 重跑路径拒绝（fail loud）",
+      "ok": true,
+      "note": "不静默降级成『只验签』"
+    },
+    {
+      "check": "签名有效但内容为假 ⇒ 公开路径全绿、重跑才抓住",
+      "ok": true,
+      "note": "公开路径看到的是一份『合格』证书；真值只有重跑 J(π,T) 才知道"
+    },
+    {
+      "check": "给了 π 与 T ⇒ 重跑确认 passed=True",
+      "ok": true,
+      "note": "这一步是 ZK 从验证者手里**拿走**的那一步"
+    }
+  ],
+  "asymmetry_detail": {
+    "public_ok": true,
+    "public_passed": null,
+    "public_honest": false,
+    "require_honest_raised": true,
+    "missing_plaintext_rejected": true,
+    "false_claim_passed_public": true,
+    "false_claim_caught_by_reexecution": true,
+    "reexecution_honest": true,
+    "reexecution_passed": true,
+    "all_checks_ok": true
+  },
+  "properties": [
+    {
+      "property": "trust root（信任根基）",
+      "baseline": "Ed25519 网关密钥 —— 信任落在**持钥的网关**上（密钥泄了就没有不可否认性）",
+      "pop": "密码学 / 无硬件信任：只需 vkey，无需信任某台机器或某把钥不泄"
+    },
+    {
+      "property": "验证者需要 `T` 明文？",
+      "baseline": "**需要** —— 不重跑 `J(π,T)` 就无法确认 `passed`（本表量到的那条路）",
+      "pop": "不需要 —— 判定在电路内，响应可只以承诺出现"
+    },
+    {
+      "property": "验证者需要 `π` 明文？",
+      "baseline": "**需要** —— 重跑要用同一份策略；签名要求签名者公开判定依据",
+      "pop": "不需要 —— 只需 `policy_hash` 与 vkey"
+    },
+    {
+      "property": "响应隐私",
+      "baseline": "无 —— `T` 要交到验证者手里",
+      "pop": "有（私有模式：证书里只有 `response_commitment` / `response_binding`）"
+    },
+    {
+      "property": "策略隐私",
+      "baseline": "无 —— 策略保密下签名范式直接失效（验证者无从重算）",
+      "pop": "有 —— 策略进电路作私有见证"
+    },
+    {
+      "property": "不可否认性",
+      "baseline": "**相同** —— Ed25519 与 ZK 路径同源，这条基线**不更弱**（诚实的一行）",
+      "pop": "**相同** —— 同样是 Ed25519 签名 / vkey 绑定，本行不为 ZK 记分"
+    },
+    {
+      "property": "成本",
+      "baseline": "本表实测：签名 0.132 ms · 公开核验 0.322 ms · 重跑核验 0.772 ms · 证书 648 B · 证明 761 B（n=500）",
+      "pop": "**n/a — 见 WP1 / `bench/results/proofs.md`（ZK 成本待 WP1 的云机重跑后补）**"
+    }
+  ]
+}
