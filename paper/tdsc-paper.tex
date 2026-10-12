@@ -22,6 +22,20 @@
 \usepackage{xcolor}
 \usepackage{hyperref}
 
+% 正文用 Times（ptm，窄），\texttt 用 Courier（pcr，等宽且宽）。
+% 一行里只要有一个长 Courier 标识符（\texttt{normalized\_keyword\_block}
+% 这类）就几乎没有可拉伸的胶，TeX 只能拉出 badness 10000 的大空隙。
+% emergencystretch 允许第三遍在这些行上额外拉伸，把最坏情况吸收掉；
+% 代价是那些行略松，远好于一道 10000 的豁口。
+% （2026-10-12：装上真正的 Times 后此类行从 3 涨到 12 才暴露。）
+\setlength{\emergencystretch}{2em}
+
+% microtype：字形微伸缩（pdftex 下 ±2%）+ 标点悬挂。
+% emergencystretch 只能吸收「可拉伸胶不足」，但 badness 在 10000 处封顶，
+% 段首被后面长片段（consequences---customer-facing、normalized\_keyword\_block）
+% 挤空的行照样报 10000。microtype 从字形宽度上补，是这一类的标准解法。
+\usepackage{microtype}
+
 % 窄栏里用 p{} 会因两端对齐产生大片字距（编译时刷一堆 Underfull \hbox）。
 % 表格正文列一律用 L{}：左对齐、允许自然参差。
 \newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
@@ -88,8 +102,8 @@ accountability
 \section{Introduction}
 \label{sec:intro}
 
-LLM agents increasingly take actions that carry consequences---customer-facing
-replies, tool invocations, financial and medical content. Regulation such as the
+LLM agents increasingly take actions that carry con\-se\-quences---\allowbreak{}
+customer-facing replies, tool invocations, financial and medical content. Regulation such as the
 EU AI Act (Articles~12 and~13) and enterprise governance both require that
 compliance be auditable. In practice it can only be taken on trust: logs can be
 forged, guardrail claims cannot be checked, and content privacy forbids retaining
@@ -189,9 +203,11 @@ implementation and the Rust/zkVM guest consume the same bytes, so cross-layer
 drift is structurally impossible rather than merely tested against. The guest
 runs a deterministic evaluator and commits its outcome. Of eight rule classes,
 seven are decided \emph{inside} the circuit
-(\texttt{keyword\_block}, \texttt{normalized\_keyword\_block},
-\texttt{length\_bound}, \texttt{pattern\_block}, \texttt{format\_check},
-\texttt{tool\_arg\_guard}, \texttt{budget\_bound}). The eighth,
+(\texttt{keyword\_\allowbreak block},
+\texttt{normalized\_\allowbreak keyword\_\allowbreak block},
+\texttt{length\_\allowbreak bound}, \texttt{pattern\_\allowbreak block},
+\texttt{format\_\allowbreak check}, \texttt{tool\_\allowbreak arg\_\allowbreak guard},
+\texttt{budget\_\allowbreak bound}). The eighth,
 \texttt{semantic\_bound}---a rule of the form ``harm probability $\le$
 threshold''---is precisely the kind for which no formal proof can be learned, and
 the circuit does not decide it. The circuit registers only \emph{that the rule
@@ -540,7 +556,8 @@ uniform bits --- and a union bound over $S$ gives $|S| \cdot 2^{-f}$. When
 $f = 0$ every element of $S$ is a permanently valid replay, so the advantage is
 $1$ and does not decay in any parameter of the system.
 
-The $f = 0$ branch is not hypothetical. \texttt{circuits/types/src/lib.rs}
+The $f = 0$ branch is not hypothetical.
+\texttt{circuits/\allowbreak types/\allowbreak src/\allowbreak lib.rs}
 (lines 950--995) documents an empty nonce as a legal input that ``provides no
 replay protection''; it is therefore a \emph{valid input to the current API},
 not a straw man.
@@ -770,27 +787,266 @@ accountability tension of this subsection.
 \section{Evaluation}
 \label{sec:eval}
 
-\need{约 1.75 页。素材主源是旧稿 proof-of-policy.tex:521--727 的六个子节（中文，需译）。
-骨架 :665--668 给了矩阵规格：规则 {1,2,3,4,6,8} $\times$ 长度 {200, 2k, 10k, 50k}
-$\times$ 模式 {transparent, private, private-policy} $\times$ 证明档 {core, groth16}；
-骨架见 \texttt{bench/bench\_scale.py}。⚠️ groth16 档与 ZK/非 ZK 交叉点属 WP1，
-未打通前留 \need{}。}
+\subsection{Cycle count: length versus rule count}
+\label{sec:eval-cycles}
 
-\need{六个子节：zkVM 周期数（长度 $\times$ 规则数）/ NFA 匹配器消融 /
-真实证明时间・大小・内存与天花板 / 对标 zkAgent / 信任-成本四象限 / 端到端与审计。}
+Response length was pushed from 200 to 100{,}000 characters and the rule count
+from 1 to 6, giving 40 measurement points (\texttt{bench/bench\_cycles.py}; the
+full matrix is in \texttt{bench/results/cycles.md}). The response text comes from
+an evaluation artefact the repository's own end-to-end demo produced (372
+characters, three segments deduplicated by content); longer points are tiled from
+it. What is measured is therefore the \emph{curve} of scanning cost, not ``a real
+100{,}000-character document''. Every point was first confirmed to match no rule:
+a matching rule short-circuits, and the cost of a short-circuit says nothing.
 
-\need{\textbf{并入 WP9 签名 Merkle 非 ZK 基线}（\texttt{bench/results/baseline.md}，
-配套说明 \texttt{docs/design-baseline-merkle.md}；此前无归属）。
-已测：出证 0.132 ms；日志追加一叶 + 重算根 2.131 ms；公开核验 0.322 ms；
-重跑核验 0.772 ms；证书 648 B；包含证明 761 B / 10 个兄弟（n=500 中位数，机器 dxq）。
-⚠️ 引用时必须写明 2.131 ms 是 \texttt{proofs/session.py} 的\emph{静态树重算} $\Theta(n)$，
-\emph{不是} RFC-6962 增量日志的摊销 $\Theta(\log n)$；⚠️ 共享机器有 $\pm 20\%$ 漂移。
-本臂的核心结论是那条机器校验的不对称：一份 $passed=\mathrm{False}$ 的假声明证书
-能骗过公开核验路径，只有重执行 $J(\pi,T)$ 才抓得住。}
+\begin{table}[t]
+\centering
+\caption{Cycle count against length, per rule set. Five rule sets, six length
+points each; $R^2 \approx 1.0000$ throughout.}
+\label{tab:cycles}
+\tabfont
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+Rules & \texttt{keyword} & \texttt{pattern} & Slope (cyc/char) & Intercept \\
+\midrule
+1 & 0 & 0 & 73.9      & 50{,}137 \\
+2 & 1 & 0 & 105.3     & 65{,}942 \\
+3 & 1 & 1 & 4{,}289.8 & 387{,}501 \\
+4 & 2 & 1 & 4{,}048.8 & 405{,}785 \\
+6 & 3 & 2 & 5{,}403.5 & 993{,}257 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-\need{实测 $k$ 的实验（承接 Rem \ref{rem:kexp}）：对一组真实 prompt、
-同一模型多次采样，估 $\mathsf{Guess}(T\mid Z)$。
-⚠️ 需真实模型采样，当前阻塞。}
+Three findings, in decreasing order of how much they change what may be claimed.
+
+\emph{(1) With the rule set fixed, cycle count is exactly linear in length.}
+Five rule sets, six length points each, $R^2 \approx 1.0000$ throughout
+(Table~\ref{tab:cycles}).
+
+\emph{(2) Scanning cost is dominated by the NFA, not by the rule count.} One
+keyword rule costs about $+31.6$ cycles per character at the margin; one NFA
+regular expression (an email pattern) costs about $+3{,}634$---roughly
+$115\times$ more. Equivalently, a rule set containing a regular expression has a
+per-character slope ($4{,}289.8$) $58\times$ that of a rule set with only string
+rules ($73.9$).
+
+\emph{(3) Unit prices are not additive: a unit price is a property of a rule
+\emph{in context}, not of the rule.} Fitting the slopes as
+$(\text{keyword},\text{pattern})$ unit prices gives $R^2 = 0.9169$ and a
+\emph{negative} keyword unit price ($-477.2$ cycles per character). This is not
+noise; two probes give the mechanism directly:
+
+\begin{itemize}
+  \item \textbf{Ordering probe} (same rules, same text, $L = 10^5$): declared
+  order costs $541{,}342{,}069$ cycles against $570{,}736{,}989$ in reverse,
+  a difference of $+5.43\%$, while \texttt{passed} is identical in both. \emph{The
+  semantics of the decision do not depend on order; the cost does.}
+  \item \textbf{Marginal probe} ($L = 10^5$, filling the one matrix cell the
+  sweep could not reach---regular expressions with no keyword rule):
+  $[\text{len},\text{pat}]$ over $[\text{len}]$ has a marginal unit price of
+  $3{,}633.7$, whereas ``add one more keyword rule'' has two different answers:
+  $+31.6$ alone, $+585.6$ in a policy that already contains a regular expression
+  ($-153.7$ if inserted before it). The same action changes sign between
+  $-154$ and $+586$.
+\end{itemize}
+
+The mechanism lies in zkVM memory allocation: every \texttt{ascii\_lower} and
+every Pike VM match allocates, and allocator state depends on previous
+allocations. We therefore quote \emph{per-rule-set slopes} (the table above,
+directly citable) rather than any ``unit price $\times$ count'' expression. The
+simple model $\text{cycles} \approx a\cdot|T|\cdot\text{rules} + b$ that this
+work anticipated is refuted by the data ($R^2 = 0.872$, negative intercept), and
+we report that too: \emph{a model refuted by its own data is itself an evaluation
+result.}
+
+\subsection{Matcher ablation: quadratic degradation on a pathological input}
+\label{sec:eval-ablation}
+
+\emph{Construction.} Pattern \texttt{a+b} against input
+\texttt{a}$^{\times n}$ containing no \texttt{b}, so the match is necessarily
+absent and both implementations must scan to the end. The naive implementation
+reinvents and restarts at every start position, giving $\Theta(n^2)$; the Pike VM
+decides in a single linear pass (\texttt{bench/bench\_ablation.py}).
+
+\begin{table}[t]
+\centering
+\caption{Matcher ablation. Both paths decide identically; only the cost differs.}
+\label{tab:ablation}
+\tabfont
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+$n$ & Pike (cycles) & Naive (cycles) & Ratio & Naive growth/char \\
+\midrule
+100 & 643{,}894   & 12{,}382{,}720  & 19.2$\times$ & --- \\
+200 & 1{,}145{,}209 & 48{,}638{,}946 & 42.5$\times$ & $+96.4\%$ \\
+400 & 2{,}143{,}617 & 193{,}207{,}130 & 90.1$\times$ & $+98.6\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Read per-character cost rather than absolute figures. Doubling $n$ leaves the
+Pike VM's per-character cost essentially unchanged ($-11.1\%$, $-6.4\%$) while
+the naive path's nearly doubles ($+96.4\%$, $+98.6\%$). At $n = 400$ the naive
+path is already $90\times$ slower, and that ratio doubles again with each
+doubling of $n$. \emph{This is an attack surface}: the input length for policy
+compliance is chosen externally---an agent's reply, a concatenated session---so
+an adversary who needs only to write a long reply drives a naive implementation's
+cost quadratically. The comparison is meaningful only because the two paths
+decide identically, which \texttt{tests/test\_ablation.py} pins down (Python and
+Rust \texttt{match\_search} $\equiv$ \texttt{match\_search\_naive}). To our
+knowledge this is the first ablation evidence specific to policy-compliance
+matching.
+
+\subsection{Real proofs: time, size, memory---and the ceiling}
+\label{sec:eval-proofs}
+
+Sampling points share the corpus of \S\ref{sec:eval-cycles}. Each point runs in
+its own subprocess (SP1's memory accumulates within a process, so two proofs in
+one process do not price one proof), and failures are reported in the table
+rather than omitted. Rows marked OOM are a \emph{result}, not a malfunction: they
+measure where this machine cannot go.
+
+\begin{table}[t]
+\centering
+\caption{Real proofs on a 24-core / 12\,GB CPU machine. ``Config'' is
+characters $\times$ rules; $k$ abbreviates $10^3$. Every succeeded
+point is at the \texttt{core} (non-zero-knowledge) tier.}
+\label{tab:proofs}
+\tabfont
+\begin{tabular}{@{}lrrrl@{}}
+\toprule
+Config & Time & Size & Peak RSS & Result \\
+\midrule
+$200 \times 1$  & 123.5\,s & 2716.4\,KiB & 10{,}389\,MB & \checkmark \\
+$200 \times 2$  & 118.9\,s & 2716.9\,KiB & 10{,}438\,MB & \checkmark \\
+$2k \times 1$   & 138.1\,s & 2718.6\,KiB & 10{,}449\,MB & \checkmark \\
+$10k \times 1$  & 172.5\,s & 2726.6\,KiB & 10{,}506\,MB & \checkmark \\
+$200 \times 3$  & ---      & ---          & ---          & OOM \\
+$20k \times 1$  & ---      & ---          & ---          & OOM \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{itemize}
+  \item \textbf{A fixed floor of $\approx$10.15\,GiB.} The smallest
+  configuration---200 characters, one rule---already peaks at 10{,}389\,MB: the
+  prover's own overhead (the trace and permutation structures of a \texttt{core}
+  proof) is almost independent of the trace. All four successes fall inside the
+  narrow band 10{,}389--10{,}506\,MB. Length and rule count have little marginal
+  effect on memory---\emph{but the headroom is too thin for that to help}.
+  \item \textbf{A two-step staircase, not a slope.} One rule is provable up to
+  10k characters; two rules at about 200 characters; \textbf{three or more do not
+  come out at all}. The third rule in the sweep is a \texttt{pattern\_block}: a
+  regular-expression match activates another family of AIR chips and lifts the
+  trace area in one step, so the cliff is at $2 \to 3$ rules; in length it is at
+  $10\text{k} \to 20\text{k}$.
+  \item \textbf{Memory binds, not CPU.} The cycle sweep of
+  \S\ref{sec:eval-cycles} reaches 100k characters with 6 rules because it only
+  executes in the zkVM and produces no proof; at 100k characters the cycle count
+  is still on the order of $10^7$, which any CPU handles. \emph{The proving-side
+  ceiling and the execution-side ceiling are in different places.} ``How large a
+  policy can be proved'' is, on this machine, a fixed floor plus two steps rather
+  than a cost curve.
+  \item \textbf{Artefact size is nearly independent of configuration}: from 200
+  to 10{,}000 characters the proof grows only from 2716.4 to 2726.6\,KiB. Pure
+  verification takes $\approx$90\,ms (the \texttt{vkey} setup is 1.5\,s, once).
+  \item \textbf{Reproducibility, stated precisely.} The \emph{position} of the
+  wall reproduces (each failing point failed twice); the \emph{timings} at the
+  wall do not. Re-running one group in isolation shows $\pm 10\%$ jitter in time
+  and $\pm 1\%$ in memory, so we quote time only to an order of magnitude.
+  \item \textbf{Session and multiparty.} The session aggregation proof (three
+  certificates) measured 152.5\,s; multiparty verification needs one proof
+  \emph{per non-empty slice}, so its cost grows linearly in the number of slices
+  (a two-proof example policy). Neither introduces a new proving system---a slice
+  and a session are ordinary inputs to the guest---but both are subject to the
+  same floor: every additional proof adds another $\approx$10\,GiB peak, so
+  multiparty proving must run in separate processes, serially.
+\end{itemize}
+
+\need{⚠️ 本节的 groth16 档与 ZK/非 ZK 交叉点属 WP1，尚未打通。骨架 :665--668 的
+矩阵规格为规则 $\{1,2,3,4,6,8\}$ $\times$ 长度 $\{200,2k,10k,50k\}$ $\times$
+模式 $\{$transparent, private, private-policy$\}$ $\times$ 证明档 $\{$core, groth16$\}$
+（\texttt{bench/bench\_scale.py}）。表 \ref{tab:proofs} 只覆盖 core 档。
+groth16 列落地前不得填入任何 ZK 数字。}
+
+\subsection{The non-ZK baseline: what a signature cannot do}
+\label{sec:eval-baseline}
+
+A signed Merkle log is the obvious alternative to a proof, and on cost it is not
+close: everything is milliseconds. We measured it so that the comparison is not
+rhetorical. Policy package \texttt{eu\_ai\_act\_v1.json}, 103-character response,
+one challenge nonce, a 1024-leaf log; each timing is the median of $n = 500$
+repetitions.
+
+\begin{table}[t]
+\centering
+\caption{Signed-Merkle baseline (WP9). No proofs, no zkVM: this arm is pure
+Python, which is why the figures are milliseconds.}
+\label{tab:baseline}
+\tabfont
+\begin{tabular}{@{}lrl@{}}
+\toprule
+Metric & Median & Note \\
+\midrule
+Sign certificate (Ed25519 + DSSE) & 0.132\,ms & $n=500$ \\
+Merkle append (leaf + root recompute) & 2.131\,ms & $n=500$ \\
+Public verification (sig + inclusion) & 0.322\,ms & $n=500$ \\
+Re-run verification ($+J(\pi,T)$) & 0.772\,ms & $n=500$ \\
+Certificate size & 648\,B & \\
+Inclusion proof (10 siblings) & 761\,B & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\need{⚠️ 引用 2.131 ms 时必须写明它是 \texttt{proofs/session.py} 的\emph{静态树重算}
+$\Theta(n)$，\emph{不是} RFC-6962 增量日志的摊销 $\Theta(\log n)$。
+⚠️ 共享机器有 $\pm 20\%$ 漂移。数据源 \texttt{bench/results/baseline.md}。}
+
+The asymmetry is the point, and it is what this arm contributes. The verification
+chain is \emph{verify signature} $\to$ \emph{verify log inclusion} $\to$
+\emph{re-run $J(\pi,T)$}. The first two steps need only public data; the third
+needs the plaintext of both $\pi$ and $T$. That is not an implementation defect
+but a structural consequence of the signature paradigm: a signature binds
+\emph{who said it} to the bytes, never \emph{whether it is true}. We measured the
+consequence rather than asserting it---\textbf{the same key signs a certificate
+whose declared content is false, and the public path passes green}, because what
+it sees is a certificate with a valid signature and a valid inclusion proof. Only
+re-executing $J(\pi,T)$ recovers the truth, and taking that step away from the
+verifier is exactly what the zero-knowledge design buys. The machine-checked
+assertions are enumerated in \texttt{bench/results/baseline.md}; one row of that
+file is worth repeating because it is the honest one: on
+\emph{unforgeability} the baseline is \emph{not weaker} than the proof path, both
+being Ed25519 and vkey binding, and we do not score a point for ZK there.
+
+\subsection{End-to-end and auditing}
+\label{sec:eval-e2e}
+
+The end-to-end demo produces 14 certificates (streaming chain with early stop,
+MCP argument and response checks, one zk proof) and anchors them; a third party
+verifies with public artefacts alone, and the ledger chain, signature,
+\texttt{policy\_hash}, anchoring, stream chains and zk proof all pass. In the
+on-chain variant (a local Anvil node, \texttt{Anchor.sol} deployed, 14
+certificate digests registered) the verifier reads back each certificate's
+\texttt{anchoredAt} and cross-checks the local ledger, passing 14/14; the
+negative control (an unregistered digest reads back as zero) confirms the check
+is not vacuously true. Cross-validation submits 19 vectors to the Python
+reference decision and to both the SP1 host and proving paths, comparing
+\texttt{passed} and the violated rule set row by row; a full re-run with real
+\texttt{core} proofs gave 19/19 on both paths.
+
+\subsection{Measuring \texorpdfstring{$k$}{k}}
+\label{sec:eval-k}
+
+\need{对一组真实 prompt、同一模型多次采样，估 $\mathsf{Guess}(T\mid Z)$，
+代入 Thm \ref{thm:t1}(H) 的阈值 $k \ge \log q + \log(1/\varepsilon)$（承接
+Rem \ref{rem:kexp}）。据先例扫查无人测过这个量，本身是一块贡献；
+同时它也是 Prop \ref{prop:semantic} 的测量（发布 $\mathsf{encode}(T)$ 后
+$T$ 的可恢复比例）。\textbf{⚠️ 需真实模型多次采样，当前阻塞（外部资源）。}}
+
+\need{⚠️ 「Why zero-knowledge?」决策图（骨架 :670--675）\emph{未}放入本节：
+它讲的是设计结论（ZK 只在 $\{$私有响应, 私有策略$\}$ 两角有正收益），是结论不是测量，
+按 docs/tdsc-writing-plan.md 的建议移至 §7 Discussion。与骨架现状不同，\textbf{待作者认可}。}
 
 % =====================================================================
 \section{Related Work}
