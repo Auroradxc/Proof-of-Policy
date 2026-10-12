@@ -395,7 +395,7 @@
     </table>
   </div>
 
-  <p><strong>(3) 本轮附带修掉的四个真缺陷</strong>——都不是"顺手改"，是各自都会单独误导读者：</p>
+  <p><strong>(3) 本轮附带修掉的五个真缺陷</strong>——都不是"顺手改"，是各自都会单独误导读者：</p>
   <div class="tscroll">
     <table>
       <thead><tr><th>缺陷</th><th>为什么危险</th></tr></thead>
@@ -404,6 +404,7 @@
         <tr><td>WSL TeX Live 缺 Times/Courier，此前的页数<strong>全部是 Computer Modern 排的</strong></td><td>页数结论的<strong>推理</strong>是错的（实测恰好同为 9 页，所以错得没被发现）</td></tr>
         <tr><td><code>\need{}</code>/<code>\fixme{}</code> 在 <code>\def\SKELQUIET{}</code> 下不占版面</td><td>决定了压页的基本盘：11 页是<strong>干净正文</strong>，不是含标记的草稿</td></tr>
         <tr><td><code>tab:wp4-parties</code> / <code>tab:ablation</code> / <code>tab:baseline</code> 三张表<strong>正文零引用</strong>（9 张里 3 张漂流表）</td><td>方向与悬空引用<strong>相反</strong>：「标签已定义但从未被引用」。审稿人会问"表 II 你在哪里讨论过"</td></tr>
+        <tr><td><strong>重注入陷阱</strong>：<code>_refs_trim.py</code> / <code>_refs_edit.py</code> / <code>_fill_shenbao.py</code> 硬编码「…仅覆盖两类策略且闭源绑定」，重跑即把已证伪的结论写回申报书 <code>.docx</code></td><td>与上一格同类：<strong>改文字不够</strong>——错误藏在「生成器」里，重跑就复活；且 <code>01_背景调研/</code> 无版本控制、脚本 <code>doc.save(SRC)</code>/<code>shutil.copy</code> 覆写不可恢复 ⇒ 三处字符串已改，并各加<strong>安全闸</strong>（默认拒绝运行，须 <code>POP_ALLOW_DOCX_WRITE=1</code>）。<strong>四个受污染的 <code>.docx</code> 已于 2026-10-12 备份后外科式清干净</strong>：重跑生成器<strong>不是</strong>正确清法（<code>_refs_edit.py</code> 会用 0816 盖掉已编号的 0817；<code>_fill_shenbao.py</code> 会先抹掉填写稿再按脚本当前的带空格排版全文重写，而现存填写稿是无空格的更早版本）⇒ 改为仅对 <code>word/document.xml</code> 做整串替换（该串在四个文件里都落在单个 <code>&lt;w:t&gt;</code> 内），备份在 <code>01_背景调研/_backup_docx_2026-10-12/</code>（全部 7 个 docx）</td></tr>
       </tbody>
     </table>
   </div>
@@ -432,8 +433,7 @@
       <thead><tr><th>项</th><th>现状</th></tr></thead>
       <tbody>
         <tr><td><strong>801 vs 783 文档回填</strong></td><td>正文 §2.2 的「801 tests」<strong>经复核是对的</strong>（<code>dev-plan.md:506</code> + 静态清点互证），但 <code>reproduce.md:31,428</code>、<code>security-model.md:829</code>、<code>development.md:93,290</code>、<code>modules/08-tests-bench.md</code>、<code>modules/README.md</code> 仍写 <strong>783</strong>。<strong>附录 B 直接指向 <code>reproduce.md</code></strong> ⇒ 复现者会跑出 801 而以为环境坏了</td></tr>
-        <tr><td><strong>WP7 口径更正的余项</strong></td><td>「低熵 ⇒ 枚举可行」那条错推理已在 <code>73def8f</code> 全库扫除；余项：<code>docs/quadrant.md:36</code>（fixlist 前提写错）、<code>02_evidence_table.md:7</code>、VIEWS 门控泛化、<strong>外发文档里错的 VDR URL / <code>IACR 2024/813</code></strong></td></tr>
-        <tr><td><strong>重注入陷阱</strong></td><td><code>01_背景调研/_refs_trim.py:65</code>、<code>_refs_edit.py:67</code>、<code>_fill_shenbao.py:103</code> <strong>一旦重跑会重新注入「WITNESS 闭源」的错误结论</strong></td></tr>
+        <tr><td><strong>WP7 口径更正的余项</strong></td><td>「低熵 ⇒ 枚举可行」那条错推理已在 <code>73def8f</code> 全库扫除；余项：<code>docs/quadrant.md:36</code>（<strong>2026-10-12 复核确认：该格属 Proof-of-Guardrail 列、表内无 WITNESS 列，故与「闭源」更正无关，无需改</strong>）、<code>02_evidence_table.md:7</code>（「闭源」已删，"未写"状态栏未复核）、VIEWS 门控泛化、<strong>外发文档里错的 VDR URL / <code>IACR 2024/813</code></strong></td></tr>
         <tr><td><strong>骨架标注「已迁入」</strong></td><td>暂缓：仍有 <code>\need{}</code> 直接引用 <code>tdsc-skeleton.tex</code> 行号作素材出处，清零前删骨架会让这些引用失去目标</td></tr>
       </tbody>
     </table>
