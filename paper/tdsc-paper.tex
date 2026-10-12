@@ -105,15 +105,74 @@ Proof-of-Guardrail 与本文正交：它证"计算发生过"，本文证"性质�
 \section{System and Threat Model}
 \label{sec:system}
 
-\need{本节由骨架的 System Overview（:155--160）与旧稿的 §3 Threat Model（仅 7 行，
-太薄，不能用）合并而成，共约 2 页。}
+The object of study is a \emph{policy-proof system}: a pipeline that compiles a
+policy written in a small DSL into a circuit, evaluates an agent's response
+against that circuit inside a zkVM, and emits a certificate binding the verdict
+to the response. This section fixes the object and its adversary before any
+theorem is stated.
 
 \subsection{The system}
 \label{sec:system-overview}
 
-\need{四件事，各一小段：DSL $\to$ ConstraintSpec $\to$ circuit；双隐私模式；
-证书 + 锚定；框架集成。源：旧稿 proof-of-policy.tex:216--501 的五个子节（中文，需译）。
-可保留一句工件陈述：801 测试 / 15 skip。}
+\paragraph{Pipeline and the cross-layer contract.} A policy package is compiled
+to a \texttt{ConstraintSpec}---a JSON artefact carrying the compiled NFA---which
+is the \emph{only} object crossing the layer boundary: the Python reference
+implementation and the Rust/zkVM guest consume the same bytes, so cross-layer
+drift is structurally impossible rather than merely tested against. The guest
+runs a deterministic evaluator and commits its outcome. Of eight rule classes,
+seven are decided \emph{inside} the circuit
+(\texttt{keyword\_block}, \texttt{normalized\_keyword\_block},
+\texttt{length\_bound}, \texttt{pattern\_block}, \texttt{format\_check},
+\texttt{tool\_arg\_guard}, \texttt{budget\_bound}). The eighth,
+\texttt{semantic\_bound}---a rule of the form ``harm probability $\le$
+threshold''---is precisely the kind for which no formal proof can be learned, and
+the circuit does not decide it. The circuit registers only \emph{that the rule
+was delegated}, in the public value \texttt{delegated}, and a verifier must
+\emph{conjunctively} check a companion \texttt{ezkl}/halo2 proof. Verifying the
+zkVM side alone does not establish compliance, and we say so here because it is
+the most likely misreading of the certificate.
+
+\paragraph{What the verdict is bound to.} Rules that reason about the agent's
+\emph{tool calls} cannot be judged against a list the prover fills in itself.
+Receipts are therefore issued by a tool gateway after each call and chained
+(\texttt{seq}, \texttt{prev}, signature); the circuit checks the chain's
+\emph{structure}---entries consecutive, mutually consistent, each digest
+recomputed from its own content---and fails closed to \texttt{trace\_unbound}
+otherwise. Signature verification happens \emph{off circuit} (Ed25519 inside the
+zkVM is prohibitively expensive), a boundary we state rather than gloss: the
+circuit is blind to a forgery in the chain's final element, and two independent
+off-circuit gates---digest comparison and signature verification---carry that
+obligation, neither substituting for the other. Truncating the chain's tail is a
+separate and weaker opening, closed by a session-end \texttt{ToolSeal}
+commitment from the gateway, and it remains conditional on the verifier holding
+the gateway's public key. \S\ref{sec:discussion} develops these residual
+boundaries; they are not incidental to the design.
+
+\paragraph{Dual privacy modes.} In \emph{transparent} mode the response and the
+verdict are public. In \emph{private} mode the certificate publishes a response
+commitment, a commitment per violation, and a redaction proof
+(\texttt{redaction\_ok} together with \texttt{mask\_covered}, the latter
+requiring the masked positions to fall inside a span the circuit verified to be a
+genuine complete match). The guarantee is that \emph{public values contain no
+plaintext}---not that $T$ cannot be recovered. A commitment is a public function
+of $T$ against which anyone can guess and check, while the response binding must
+be publicly recomputable for a verifier to check the string it was delivered.
+Those two requirements are in direct tension, and \S\ref{sec:binding} quantifies
+exactly when.
+
+\paragraph{Certificates and anchoring.} A certificate is signed with a DSSE
+envelope under Ed25519 with the key held by the issuing party, and its digest is
+appended to a hash-chain anchor ledger. Two backends share one interface: a file
+ledger, verifiable offline, and an on-chain registration storing only a 32-byte
+digest. The transaction hash and on-chain timestamp are written back into the
+local entry, so the offline chain and the public timestamp cross-check each
+other and tampering with either is detectable.
+
+\paragraph{Framework integration.} One gateway serves LangChain callbacks,
+LangGraph (\texttt{guard\_node} plus full event streams), and MCP tool argument
+and response checks, so trace certificates and proofs share a single chain of
+evidence. The implementation passes 801 tests with 15 skipped; the skipped set is
+enumerated in Appendix~\ref{app:repro}.
 
 \begin{definition}[Policy-proof system]
 \label{def:system}
@@ -137,8 +196,13 @@ $T'$ 现场重算（\texttt{circuits/types/src/lib.rs:444}、
 \subsection{Threat model}
 \label{sec:threat}
 
-\need{三方模型（骨架 :520--545 的表）+ 前置条件 (P-PP)（骨架 :508--518）
-+ 目标 G1--G5 / 非目标。旧稿 §3 只有 G1--G5 的文字，需扩。}
+The adversary is the \emph{agent operator}: the party that holds the policy, runs
+the model, and produces the certificate. The verifier is a regulator, auditor, or
+third party holding only public values. The policy author issues $\pi$; in this
+section we treat it as honest, and \S\ref{sec:wp4-tension} makes that assumption
+explicit and scopes it, because in policy-private mode its honesty is doing real
+work and cannot be waved through. We state the goals, and more importantly the
+non-goals, before the theorems.
 
 \begin{assumption}[Adversary side information]
 \label{as:Z}
@@ -147,8 +211,34 @@ decoding parameters. \emph{This is the assumption that makes the theorem
 non-trivial}: under greedy decoding, $k \approx 0$.
 \end{assumption}
 
-\need{验证者能力表（骨架 :562--591）。骨架 :556--560 称它"是贡献本体，
-密码学是其下游，且必须原样出现在论文里"。}
+\paragraph{Goals.}
+\begin{description}
+  \item[(G1)] \emph{Soundness}---a response $T$ violating $\pi$ cannot yield an
+  accepted certificate.
+  \item[(G2)] \emph{Committed privacy}---in private mode the public values
+  contain no plaintext of $T$. This is explicitly \emph{not} the claim that $T$
+  is unrecoverable: once the guessing entropy $k$ of Definition~\ref{def:k} falls
+  below $\log q + \log(1/\varepsilon)$, a publicly recomputable binding and
+  content hiding are mutually exclusive (Theorem~\ref{thm:t1}).
+  \item[(G3)] \emph{Traceable binding}---policy version, circuit, and proof
+  artefact are bound to one another and recomputed at verification.
+  \item[(G4)] \emph{Selective disclosure}---redaction and evidence opening are
+  themselves provable.
+  \item[(G5)] \emph{Record integrity}---tampering with, or reordering, the audit
+  ledger is detectable.
+\end{description}
+
+\paragraph{Non-goals.} We do not prove the model's inference, and we do not cover
+training data or model cards. (G1) is modulo the soundness of the zkVM and of the
+hash function; we use those primitives and do not re-derive them.
+
+\paragraph{Where the policy-private case is developed.} The three-party model,
+the issuing prerequisite (P-PP), and the table of what each verifier may and may
+not conclude are specific to policy-private mode, where the policy itself is
+secret. They are stated once, in \S\ref{sec:wp4-tension}, and are deliberately
+\emph{not} duplicated here---at a twelve-page limit they cannot be. The general
+adversary of this section is the same operator, viewed without the
+policy-secrecy refinement.
 
 % =====================================================================
 \section{Binding of Policy Proofs}
@@ -691,7 +781,13 @@ $M(x) = T \wedge \pi(T)$ 才真的闭合"送错字节"——而那恰好是 Thm 
 对手无法预先选择的那部分比特"），不引入新主张。旧稿结论只有 4 行，需扩。}
 
 % =====================================================================
-\appendix
+% ⚠️ IEEEtran 的 \appendix 是「单个附录」命令：它把 \section 重定义成
+% \@IEEEdestroythesectionargument，直接丢弃 \section{...} 的参数（只打 warning）。
+% 多个附录必须用 \appendices（复数），它把 section 计数器置 -1，
+% 之后每个 \section{X} 才依次成为 A、B、……  （2026-10-12 实测：
+% 用 \appendix 时 A/B 两个附录的 \ref 都解析成 "A"，且 title 字段退化成 \appendixname，
+% 锚点退化成 section*.1；「0 undefined ref」检查抓不到这种错。）
+\appendices
 \section{Proofs}
 \label{app:proofs}
 
