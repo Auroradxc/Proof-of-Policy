@@ -1161,33 +1161,187 @@ Kiraz/Larraia/Vaughan, ``How to Redact the Bitcoin Backbone Protocol''，
 \section{Discussion and Limitations}
 \label{sec:discussion}
 
-\need{约 1 页。本节由四处合并（写作规格见 docs/tdsc-writing-plan.md \S3 的 §7）。
-\emph{每一条都要展开，不是罗列}。}
+Everything above was kept deliberately narrow, and this section says how narrow.
+It covers the four places where a reader is most likely to round our claims up:
+the caliber of the privacy statement (\S\ref{sec:disc-privacy}), where
+zero-knowledge actually pays (\S\ref{sec:disc-zkmap}), availability against an
+adversarial response (\S\ref{sec:disc-dos}), coverage
+(\S\ref{sec:disc-coverage}), and composition with an inference proof
+(\S\ref{sec:disc-composition}). It closes with the engineering limitations that
+remain (\S\ref{sec:disc-rest}).
 
-\need{(1) 五条限制（骨架 :678--697），每条都要展开成一段：
-  [a] 内容隐私是\emph{承诺}隐私，不是内容不可恢复（Cor \ref{cor:reexec}）；
-  [b] 默认证明档的零知识性质 —— SP1 公开安全模型明文承认其 STARK 证明当前
-      不满足零知识（决策 D5：若 groth16 不成为交付档，"zero-knowledge" 必须离开标题）；
-  [c] 组合的输入绑定要求用户在线（或持有密钥）—— 这是 Rem \ref{rem:taxonomy}(b)
-      的代价，也是 Thm \ref{thm:t3} 中 $f > 0$ 的具体形式；
-  [d] 覆盖率问题（原 WP5）在无可信硬件下可能无解；
-  [e] 三方共谋在签名层不可检测（\texttt{docs/security-model.md}）。}
+\subsection{The caliber of the privacy claims}
+\label{sec:disc-privacy}
 
-\need{(2) 可用性：未锚定模式的正则成本攻击（原 WP6，骨架 :645--654）。
-对含未锚定模式的正则，控制响应的对手可强制 $\Omega(n^2)$ 证明工作量；
-缓解是 Pike VM（已有）+ 响应长度承诺 + 分块匹配。⚠️ 骨架 :649--651 的定理陈述
-目前仍是 \need{}，尚未写出——需作者定：写成定理，还是降为观察。}
+\textbf{``Content privacy'' means \emph{no plaintext of $T$ in the public
+values}, not \emph{content is unrecoverable}.} Two independent reasons force
+this reading---one at the proof-system level, one at the design level---and the
+weaker reading is the one our own measurements support.
 
-\need{(3) 覆盖率（原 WP5，骨架 :657--659）：诚实预期是无可信硬件时可能无解，
-那就写成 open problem。}
+\emph{Proof-system level.} The default proving tier is SP1's \texttt{core}, and
+SP1's published security model states explicitly that individual STARK proofs do
+not currently satisfy the zero-knowledge property; the source agrees, with no
+blinding anywhere in the proof stack and the shard proof carrying the trace
+Merkle root and trace openings in the clear.%
+\need{⚠️ 引文债：「SP1 公开安全模型承认其 STARK 证明当前不满足零知识」是
+\emph{外部}断言，出处（SP1 官方安全模型文档的具体章节/URL）尚未核实到可引的
+一级来源，故此处只陈述、不给 \cite{}（WP8）。若核不到原文，须撤回该句，
+只保留我们自己的源码审计结论那半句。}
+Soundness (G1) therefore holds
+while the proof artefact itself does not hide the witness. The
+\texttt{gr\-oth16} and \texttt{plonk} tiers wrap the inner STARK proof as a
+private witness---the only mode in which hiding is even possible---but that is a
+wrapper-level claim, it is not post-quantum, it needs $\ge 16$\,GB, and we did
+not measure it (\S\ref{sec:eval-proofs}).
 
-\need{(4) 组合（骨架 :633--642）。⚠️ 骨架 :637--639 的 \fixme 是硬纠正：
-\emph{组合本身不闭合缺口}。只有当模型证明绑定到\emph{用户提交的输入} $x$ 时，
-$M(x) = T \wedge \pi(T)$ 才真的闭合"送错字节"——而那恰好是 Thm \ref{thm:t3}
-要求的 $f > 0$：用户提交的 $x$ 就是那 $f$ 个新鲜比特。}
+\emph{Design level, and the more fundamental one.} The public values
+\texttt{response\_binding} and \texttt{response\_commitment} are both
+\emph{public, offline-recomputable functions of $T$}. This is not an oversight:
+\texttt{response\_binding} \emph{must} be publicly recomputable, because that is
+how a verifier independently checks that the delivered $T'$ is the $T$ that was
+proved---the swap-response defence. But the same property is a guess-and-verify
+oracle for $T$.
 
-\need{(5) 内容隐私的准确口径（旧稿 proof-of-policy.tex:731--760 的 §8.1）。
-⚠️ 摘要里已有同款声明，此处是\emph{展开}而非首次披露。}
+It is worth being precise about the attack, because the obvious version of the
+argument is wrong. ``A one-line response carries only $10^2$--$10^3$ bits of
+entropy, far below 256, so enumeration is feasible'' does \emph{not} follow:
+$2^{100}$ is as unenumerable as $2^{256}$. The real attack is
+\emph{re-execution} (Corollary \ref{cor:reexec}). The adversary's side
+information is not the response space but the tuple (prompt, model, decoding
+parameters) (Assumption \ref{as:Z}); under greedy or low-temperature decoding
+the response is nearly determined, so $k = -\log_2 \mathsf{Guess}(T \mid Z)
+\approx 0$ (Definition \ref{def:k}) and the attack costs \emph{one inference},
+independent of $|T|$. Under the two premises that a verifier independently
+recomputes the binding and that $k < \log q + \log(1/\varepsilon)$, response
+binding and response-content hiding are mutually exclusive.
+
+We therefore restate (G2) as what is actually established: \emph{in private mode
+the public values contain no plaintext of $T$}---which the leak experiment
+confirms directly---and not as content irrecoverability. The consequence for the
+comparison in \S\ref{sec:related} is that the ``content privacy'' cells on
+\emph{both} sides must not be read as ``content is unrecoverable.'' This is a
+bound on our own system first.
+
+\subsection{Where zero-knowledge pays, and where it does not}
+\label{sec:disc-zkmap}
+
+Section \ref{sec:eval-baseline} measured the non-ZK alternative---a signed
+Merkle log---and everything in it is milliseconds. A proof therefore has to earn
+its cost against what a signature cannot do, and our measurements locate that
+boundary instead of asserting it.
+
+The map has two axes: is the response secret, and is the policy secret?
+Zero-knowledge has positive value only in the corners where at least one of them
+is unknown to the verifier. In the transparent corner---public response, public
+policy---a signed log certifies exactly the same thing at three to four orders
+of magnitude less cost, and adding a proof is redundancy rather than rigour. The
+familiar criticism that ``a signature would have done'' is correct in that one
+corner and wrong in the other three; the decision map is what turns the
+criticism into a measured design conclusion.
+
+One dependency belongs in the open. The zero-knowledge property of a certificate
+is a property of the \emph{wrapper}, not of the system as a whole, and the
+default tier does not have it (\S\ref{sec:disc-privacy}). If \texttt{gr\-oth16}
+does not become a delivery tier, we do not claim the artefact is
+zero-knowledge, and the word must leave the title.
+
+\subsection{Availability: the unanchored-pattern cost attack}
+\label{sec:disc-dos}
+
+A regular expression with an unanchored pattern---one with no left anchor, such
+as \texttt{.*foo}---gives the matcher no way to reject a prefix of the response
+early: every position stays a live start position until the whole string has
+been read. The prover's work therefore scales with the response, and a party who
+\emph{chooses} the response can drive it quadratically. In the agent setting
+that party is often the agent itself, or whoever controls its output.
+
+Two things are worth separating. This is a denial of service against the
+\emph{prover}, not an attack on soundness: no false certificate is produced, and
+the cost is simply borne by the honest side. And it is specific to proving
+rather than to matching, because the trace---not merely the verdict---is what
+gets proved. Mitigations exist and are partly in place: a Pike VM (already
+implemented) simulates the NFA in linear time, committing to the response length
+up front removes the adversary's freedom to inflate it, and chunked matching
+bounds the per-chunk work. Prior work on zero-knowledge regular expressions
+imposes the DFA restriction but does not analyse denial of service in a zkVM
+setting, which is where this differs.
+
+\need{⚠️ 作者决策未定：骨架 :649--651 把这条写成一条定理（$\Omega(n^2)$ 证明
+工作量），但证明没写。需定：写成定理（并补证明），还是降为观察（Observation）。
+本稿先按观察陈述、不给定量断言，以免留下一条无证明的定理。}
+
+\subsection{Coverage: a provider can simply withhold certificates}
+\label{sec:disc-coverage}
+
+Nothing in the cryptographic layer can compel a provider to issue a certificate
+at all. A provider that never produces one is indistinguishable, from the
+verifier's side, from a provider with nothing to certify. We treat this as an
+open problem rather than a defect of the construction: without trusted hardware
+there is no anchor that forces issuance, and the mechanisms that could---%
+sampling audits, economic penalties, disclosure obligations---live above the
+cryptographic layer and outside the scope of this paper. Naming it as an open
+problem is more useful than proposing a mitigation we cannot evaluate.
+
+\subsection{Why composition alone does not close the gap}
+\label{sec:disc-composition}
+
+The natural next step is to compose: prove that the inference produced $T$ from
+the request, conjoin that with a proof that $\pi(T)$ holds, and conclude that
+the agent \emph{sent} a compliant response. We describe the mechanism, and we
+record why the conclusion does not follow for free.
+
+\emph{Composition by itself does not close the gap.} A model proof bound to
+\emph{some} input shows only that \emph{some} input yields a compliant output;
+the divergent-delivery gap of Proposition \ref{thm:gap} closes only when the
+model proof is bound to the \emph{input the user submitted}, $x$, so that
+$M(x) = T \wedge \pi(T)$ becomes a statement about the bytes actually sent. That
+requirement is not an extra condition bolted on: it is exactly $f > 0$ in
+Theorem \ref{thm:t3}, with the user-submitted $x$ playing the role of the $f$
+fresh bits. The two halves of this paper meet here---the request-side theorem
+names the condition the composition would have to satisfy, and the response-side
+theorem is what makes that condition non-vacuous.
+
+The composition contract is correspondingly short to state: the inference proof
+must expose $T$ in its public values, and it must be bound to $x$.
+
+\need{⚠️ 阻塞：真模型规模（$\ge 10^6$ 参数）与组合成本数据属 WP4 子问题② /
+WP3 的 DeepProve 对照臂，需外部资源。代理规模下「组合成本由推理证明主导」
+\emph{未被验证}（\texttt{bench/results/compose.md}），不得写入。
+骨架 :641--642 的组合契约定义可在此处补。}
+
+\subsection{Remaining limitations}
+\label{sec:disc-rest}
+
+\begin{itemize}
+  \item \textbf{Three-party collusion is undetectable at the signature layer.}
+    If the policy author, the operator, and the prover all collude, the
+    certificate is indistinguishable from an honest one. The multi-prover
+    construction partitions responsibility; it does not prevent agreement
+    (\texttt{docs/security-model.md}).
+  \item \textbf{Signing and key custody are not production-grade.} The on-chain
+    path currently takes plaintext private-key parameters, the demo uses a
+    public Anvil test key, and deployment is a local Anvil instance. Production
+    signing (Ed25519/HSM) and key custody remain future work.
+  \item \textbf{Semantic-rule model quality.} The delegated semantic rule works
+    end to end, but the bundled model is a small demonstration proxy rather than
+    a usable learned guardrail: ``$P(\text{harmful})$ is low'' is a statement
+    about \emph{this} model. The companion proof's public instance also contains
+    $\mathsf{encode}(T)$, so semantic rules are \emph{public-mode only}.
+  \item \textbf{The inference proof is faithful, not good.} The inference half
+    is a deterministic fixed-point MLP proxy whose weights are generated from a
+    compile-time seed and baked into the program, hence committed by the
+    verification key. It proves that \emph{this} graph computed \emph{this}
+    output on \emph{this} response---not that the graph is any good. Swapping the
+    proxy for a real prover touches only the prover; the composition layer does
+    not move.
+  \item \textbf{Verification remains $O(N)$.} There is no recursive aggregation,
+    so a verifier pays per certificate. The supported regex subset and its ASCII
+    semantics are bounded in the same way, and proof-cost optimisation (lookup
+    arguments, parallelism, precomputation) is unexplored.
+  \item \textbf{Slices share one guest.} Multiple provers hold distinct keys,
+    but that is a division of responsibility rather than a per-role circuit: the
+    repository does not build one circuit per role.
+\end{itemize}
 
 % =====================================================================
 \section{Conclusion}
