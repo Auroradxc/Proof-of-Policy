@@ -79,8 +79,22 @@
 % ---------------------------------------------------------------------
 \begin{abstract}
 % 决策 E2：内容隐私上界必须出现在摘要，不能埋进 §Limitations。
-\need{一句完整的贡献陈述（对应 D1 的"分析 x 系统各半"）：PoP 证「LLM 智能体的
-响应 $T$ 满足公开策略 $\pi$」，无 TEE；本文的贡献是给出定量界与它所需要的结构性假设。}
+% 决策 D1：贡献陈述按"分析 x 系统各半"写 —— 分析在前，系统是分析所需的那一实例。
+Proof-of-Policy (PoP) lets an auditor check that an LLM agent's response satisfies
+a published policy, without trusted hardware and without the operator disclosing
+the response in the clear. Our contribution is analytical before it is
+constructive. We give a quantitative bound on what such a certificate binds---a
+guessing-entropy term that no additional computation can improve---together with
+the structural assumption the bound requires, and a proof that the assumption is
+necessary rather than convenient. The same accounting governs the request side,
+where a certificate without receiver-supplied freshness is replayable without
+limit. PoP is then presented as the instance these bounds require---a policy
+compiler, a
+% 决策 D5 条件措辞：若 groth16 未成为交付档，把下行的 "zero-knowledge" 换成 "succinct"，
+% 并同步改标题与 §8。
+zero-knowledge circuit, and a signed certificate layer---measured end to end
+rather than asserted, with the leak profile of the certificate reported as a
+result in its own right.
 
 \smallskip
 \noindent\textbf{Scope of privacy.} PoP provides \emph{policy}-zero-knowledge:
@@ -1347,8 +1361,31 @@ WP3 的 DeepProve 对照臂，需外部资源。代理规模下「组合成本�
 \section{Conclusion}
 \label{sec:conclusion}
 
-\need{约 0.25 页。重述\emph{一条主线}（"一个证明只绑得住提交进去的、
-对手无法预先选择的那部分比特"），不引入新主张。旧稿结论只有 4 行，需扩。}
+This paper began from a small question---what does a compliance certificate
+actually bind?---and the answer came out the same on both sides of the
+interaction. A proof binds only the bits that were submitted into it \emph{and}
+that the adversary could not select in advance. On the response side those bits
+are the entropy $k$ of $T$ given everything the adversary already knows, and no
+amount of computation buys more of them; on the request side they are the $f$
+bits of freshness the receiver contributes, and a certificate without them is
+replayable without limit. Theorem \ref{thm:t1} and Theorem \ref{thm:t3} are two
+faces of that one statement, and Proposition \ref{thm:gap}---a gap we state
+against our own design---is what makes it bite.
+
+PoP is the constructive instance of that analysis, not a claim to have invented
+a new proof system. It composes an existing zkVM, an existing policy compiler,
+and a signature layer into a certificate that a verifier holding only public
+values can check without trusting hardware, and it is explicit about what such a
+certificate does not do: it does not make the response unrecoverable, it does not
+hide the witness at the default proving tier, and it cannot compel a reluctant
+provider to issue anything at all. Those are limits of the problem, stated as
+limits, rather than of one implementation.
+
+The design conclusions are accordingly modest, and we hope reusable: publish the
+leak profile of a certificate and audit it like a disclosure policy; let a
+privacy claim be only as strong as its arithmetic supports; and put the
+freshness where the binding is. A certificate is worth exactly as much as the
+bits that went into it.
 
 % =====================================================================
 % ⚠️ IEEEtran 的 \appendix 是「单个附录」命令：它把 \section 重定义成
@@ -1401,8 +1438,54 @@ $\beta(T)$; no hypothesis on $\beta$ is used.
 \section{Reproduction}
 \label{app:repro}
 
-\need{旧稿 proof-of-policy.tex:791--798 的附录 A（中文，需译）+ WP10 的工件与可复现。
-指向 \texttt{docs/reproduce.md} 与仓库。}
+The full walkthrough---environment, a single compliance proof, cross-checking
+against the reference layer, private mode, certificate issuance, the one-command
+demo, and third-party verification---is maintained in \texttt{docs/reproduce.md}
+together with the exact commands and their expected output. This appendix records
+only what a reader needs in order to judge the claims of \S\ref{sec:eval}.
+
+\paragraph{Environment.} Ubuntu or WSL2 on x86-64, no GPU. The Rust/SP1 side
+needs Rust stable, \texttt{cargo-prove}~v6.7.0, Go $\ge$\,1.24, and the usual
+native toolchain; the reference layer is pure Python~3.10+ and runs on its own.
+Memory, not time, is the binding constraint: the CPU prover carries a fixed
+floor of approximately 10.15\,GiB regardless of the trace
+(\S\ref{sec:eval-proofs}), and 12\,GB suffices only for small policies.
+
+\paragraph{What reproduces without the prover.} The reference layer, the policy
+compiler, and the whole test suite run in seconds and need no Rust. This is
+enough to reproduce the non-ZK baseline of \S\ref{sec:eval-baseline}, to inspect
+the certificate and inclusion proofs, and to check the cross-layer contract---%
+that the Python reference implementation and the zkVM guest consume the same
+compiled policy bytes.
+
+\paragraph{What needs the prover.} Every timing, size, and memory figure in
+\S\ref{sec:eval-cycles}--\S\ref{sec:eval-proofs}, and the end-to-end result of
+\S\ref{sec:eval-e2e}, requires a real proof. The measurements were taken on a
+24-core CPU machine with 12\,GB of RAM, which is what places the ceiling reported
+there: the successes and the two out-of-memory configurations in
+Table~\ref{tab:proofs} are both properties of that machine.
+
+\paragraph{Where each number comes from.} Every measurement in \S\ref{sec:eval}
+is the content of a checked-in result file with a machine-readable companion:
+\texttt{bench/results/} holds \texttt{cycles}, \texttt{ablation},
+\texttt{proofs}, \texttt{baseline}, \texttt{verify}, \texttt{semantic},
+\texttt{streaming}, \texttt{compose}, and \texttt{prover\_knobs}, each as a
+\texttt{.json} alongside its \texttt{.md}. The reproduction guide records the
+commit, the hardware, and the prover binary digest for each run, so that a
+reported figure can be traced to one specific execution rather than to a state
+of the tree.
+
+\need{⚠️ 数字漂移（本轮实测发现，需作者定夺）：正文 §2.2 写「801 tests / 15 skipped」，
+其依据是实测（\texttt{docs/dev-plan.md:506} 的落地记录）\emph{以及}本轮对
+\texttt{tests/} 的静态清点（\texttt{def test\_} 计 801 个）——\textbf{801 是对的}。
+但 \texttt{docs/reproduce.md:31,428}、\texttt{docs/security-model.md:829}、
+\texttt{docs/development.md:93,290}、\texttt{docs/modules/08-tests-bench.md:11,58,504,526}、
+\texttt{docs/modules/README.md:94,161,201} 仍写 \textbf{783}（陈旧值，
+\texttt{docs/report/advisor-report.md:586} 已把这条「文档数字漂移」登记在案）。
+本附录既然指向 \texttt{reproduce.md}，照抄就会让复现者跑出 801 却以为环境坏了——
+\textbf{这是真实的复现缺陷}。按仓库自己的「过期就标注、不静默改」纪律，
+本稿不擅自改那些文档，只在此记债。作者需定：把五处文档回填为 801
+（\texttt{advisor-report.md:599} 的建议），还是在附录里并列两套口径。}
 
 % =====================================================================
 \begin{thebibliography}{99}
