@@ -374,6 +374,7 @@
         <tr><td><strong>T2</strong></td><td><strong>停用</strong>——不是难证，是<strong>空的</strong>（二分法无内容）</td><td>同上</td></tr>
         <tr><td><strong>T3</strong></td><td>换目标 ⇒ <strong>T3′（定量版请求绑定，选择性出示优势）</strong>，含游戏 <code>G_SelPres</code></td><td>同上</td></tr>
         <tr><td><strong>§1.6(e) 六周自检</strong></td><td><strong>已跑完结案</strong>（1 修 + 1 过 + 1 停），且<strong>未用满 6 周</strong></td><td>本页 §1.6(e)</td></tr>
+        <tr><td><strong>3</strong></td><td><strong>「发表目标」档次在 4 份 docx 里自相矛盾</strong>（<span class="pill hi">⚠️ 未改，属内容决策</span>）：<code>0815</code> / <code>0816</code> 两处均「CCF B类/中科院二区」；<code>填写稿</code> 只在「论文层面」处升为「CCF A类/中科院一区」；<code>0817</code> 只在「目标」处升为「CCF A类/中科院一区」——<strong>两份文件各改一处、且改的不是同一处</strong>。另 <code>杭州电子科技大学+付兴兵.docx</code> 写「<strong>至少发表一篇中科院一区SCI TOP期刊论文</strong>」⇒ 若那是任务要求，则「B类/二区」<strong>不达标</strong>。要承诺哪一档须作者定（TDSC = CCF-A，但其<strong>中科院分区口径仍未确认</strong>）</td><td><code>01_背景调研/</code></td></tr>
       </tbody>
     </table>
   </div>
@@ -540,12 +541,12 @@
     </table>
   </div>
 
-  <h3>(4) 本轮扫出、<strong>尚未处理</strong>的新发现（两条，均未改）</h3>
+  <h3>(4) 本轮扫出、<strong>尚未处理</strong>的新发现（三条）</h3>
   <div class="tscroll">
     <table>
       <thead><tr><th style="width:2.5rem">#</th><th>发现</th><th>位置</th></tr></thead>
       <tbody>
-        <tr><td><strong>1</strong></td><td><strong>最新版反而更旧</strong>：<code>…_20260817.docx</code>（最新）写「<code>DeepProve[19]</code>关注模型计算层而非策略合规层」，而 <code>0815</code> / <code>0816</code> / <code>填写稿</code> 三份都写「<code>DeepProve</code><strong>已开源</strong>，但关注模型计算层…」⇒ <strong>阶段 C-7 的时效性改写没进 0817</strong></td><td><code>01_背景调研/</code></td></tr>
+        <tr><td><strong>1</strong></td><td><strong>最新版反而更旧</strong>（<span class="pill lo">✅ 2026-10-13 已修</span>）：<code>…_20260817.docx</code>（最新）原写「<code>DeepProve[19]</code>关注模型计算层而非策略合规层」，而 <code>0815</code> / <code>0816</code> / <code>填写稿</code> 三份都写「<code>DeepProve</code><strong>已开源</strong>，但关注模型计算层…」⇒ <strong>阶段 C-7 的时效性改写没进 0817</strong>。作者放行后按同一套外科式方法补齐（备份 <code>_backup_docx_2026-10-13/</code>，仅改单个 <code>&lt;w:t&gt;</code>，Δ+15 B；zip / XML / 条目顺序 /「已开源」1 次 /「闭源」0 次 全绿）。<strong>重注入风险已核：无</strong>——<code>_refs_trim.py</code> / <code>_refs_edit.py</code> 的硬编码串到「DeepProve」即截断，<code>_fill_shenbao.py</code> 与 md 源本就是这个正确版本</td><td><code>01_背景调研/</code></td></tr>
         <tr><td><strong>2</strong></td><td><strong>表格会错列</strong>（<span class="pill lo">✅ 已修</span>）：单元格内联代码含<strong>未转义的 ASCII 竖线</strong>（<code>2^{−f}·|S|</code>、<code>2^{−f}·|对手预置集|</code>）⇒ Markdown 渲染时断列。<strong>全库共 3 处，本轮一并改为 GFM 的 <code>\|</code> 转义</strong>（其中 1 处是本行自己在初稿里复刻出来的）</td><td><code>docs/tdsc-plan.md:328</code>（§1.6 表）、<code>:510</code>（§1.7 表）——<strong>本页镜像不受影响</strong>（<code>&lt;code&gt;</code> 内的竖线无需转义）</td></tr>
       </tbody>
     </table>
