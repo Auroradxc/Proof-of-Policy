@@ -1,0 +1,1106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoP → TDSC 改造计划</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --surface:#ffffff; --surface-2:#f0efec;
+    --fg:#1b1b19; --fg-muted:#5c5b56; --fg-faint:#8a8880;
+    --border:#dedcd5; --border-strong:#c4c1b7;
+    --accent:#8a5a00; --accent-soft:#fdf3dd;
+    --danger:#9b2226; --danger-soft:#fbeaea;
+    --ok:#2f6b3f; --ok-soft:#e8f2ea;
+    --info:#1f4e79; --info-soft:#e7eff7;
+    --p0:#9b2226; --p1:#8a5a00; --p2:#2f6b3f;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    --radius:8px;
+    --maxw:1140px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#141412; --surface:#1d1d1a; --surface-2:#26251f;
+      --fg:#eceae2; --fg-muted:#a8a59a; --fg-faint:#7d7a70;
+      --border:#33322c; --border-strong:#4a4940;
+      --accent:#e0b155; --accent-soft:#332916;
+      --danger:#f08a8a; --danger-soft:#351d1d;
+      --ok:#8ecfa0; --ok-soft:#1d2f22;
+      --info:#8fbde8; --info-soft:#1a2836;
+      --p0:#f08a8a; --p1:#e0b155; --p2:#8ecfa0;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#141412; --surface:#1d1d1a; --surface-2:#26251f;
+    --fg:#eceae2; --fg-muted:#a8a59a; --fg-faint:#7d7a70;
+    --border:#33322c; --border-strong:#4a4940;
+    --accent:#e0b155; --accent-soft:#332916;
+    --danger:#f08a8a; --danger-soft:#351d1d;
+    --ok:#8ecfa0; --ok-soft:#1d2f22;
+    --info:#8fbde8; --info-soft:#1a2836;
+    --p0:#f08a8a; --p1:#e0b155; --p2:#8ecfa0;
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth; scroll-padding-top:1.5rem}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:var(--sans); font-size:16px; line-height:1.72;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  .wrap{max-width:var(--maxw); margin:0 auto; padding:0 16px 6rem}
+
+  /* ---------- header ---------- */
+  header.top{
+    background:var(--surface); border-bottom:1px solid var(--border);
+    padding:2.4rem 0 1.8rem; margin-bottom:2rem;
+  }
+  header.top .wrap{padding-bottom:0}
+  .eyebrow{
+    font-size:.75rem; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--fg-faint); font-weight:600; margin-bottom:.6rem;
+  }
+  h1{
+    font-size:clamp(1.5rem,4vw,2.15rem); line-height:1.25; margin:0 0 .8rem;
+    letter-spacing:-.015em; font-weight:700;
+  }
+  .meta{display:flex; flex-wrap:wrap; gap:.4rem .55rem; margin:0}
+  .chip{
+    display:inline-block; font-size:.78rem; line-height:1.5;
+    padding:.2rem .6rem; border-radius:999px;
+    background:var(--surface-2); color:var(--fg-muted);
+    border:1px solid var(--border); white-space:nowrap;
+  }
+  .chip b{color:var(--fg); font-weight:600}
+  .chip.accent{background:var(--accent-soft); color:var(--accent); border-color:transparent; font-weight:600}
+  .chip.danger{background:var(--danger-soft); color:var(--danger); border-color:transparent; font-weight:600}
+
+  /* ---------- toc ---------- */
+  nav.toc{
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); padding:1rem 1.15rem; margin:0 0 2.4rem;
+  }
+  nav.toc .toc-title{
+    font-size:.74rem; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--fg-faint); font-weight:700; margin-bottom:.55rem;
+  }
+  nav.toc ol{margin:0; padding-left:1.3rem; columns:2; column-gap:2rem}
+  nav.toc li{margin:.12rem 0; break-inside:avoid}
+  nav.toc a{color:var(--fg-muted); text-decoration:none; font-size:.9rem}
+  nav.toc a:hover{color:var(--accent); text-decoration:underline}
+
+  /* ---------- sections ---------- */
+  section{margin:0 0 3rem; scroll-margin-top:1rem}
+  h2{
+    font-size:1.3rem; margin:2.6rem 0 1rem; padding-bottom:.5rem;
+    border-bottom:2px solid var(--border-strong); font-weight:700;
+    letter-spacing:-.01em;
+  }
+  h2 .num{color:var(--fg-faint); font-weight:600; margin-right:.5rem}
+  h3{
+    font-size:1.06rem; margin:2rem 0 .7rem; font-weight:650;
+    color:var(--fg);
+  }
+  h3 .wp{
+    font-family:var(--mono); font-size:.8rem; font-weight:700;
+    padding:.12rem .45rem; border-radius:4px; margin-left:.5rem;
+    vertical-align:.12em;
+  }
+  .wp.p0{background:var(--danger-soft); color:var(--p0)}
+  .wp.p1{background:var(--accent-soft); color:var(--p1)}
+  .wp.p2{background:var(--ok-soft); color:var(--p2)}
+  h4{
+    font-size:.95rem; margin:1.6rem 0 .5rem; font-weight:650;
+    color:var(--fg-muted);
+  }
+  p{margin:.75rem 0}
+  ul,ol{padding-left:1.5rem}
+  li{margin:.3rem 0}
+
+  /* ---------- tables ---------- */
+  .tscroll{overflow-x:auto; margin:1.1rem 0; border:1px solid var(--border); border-radius:var(--radius)}
+  table{border-collapse:collapse; width:100%; font-size:.88rem; background:var(--surface)}
+  th,td{padding:.55rem .75rem; text-align:left; vertical-align:top; border-bottom:1px solid var(--border)}
+  thead th{
+    background:var(--surface-2); font-weight:650; font-size:.8rem;
+    letter-spacing:.02em; color:var(--fg-muted); white-space:nowrap;
+    border-bottom:1px solid var(--border-strong);
+  }
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--surface-2)}
+  td.num,th.num{text-align:right; font-family:var(--mono); font-size:.84rem; white-space:nowrap}
+  code{
+    font-family:var(--mono); font-size:.855em;
+    background:var(--surface-2); padding:.08em .34em; border-radius:4px;
+    border:1px solid var(--border); word-break:break-word;
+  }
+  pre{
+    background:var(--surface-2); border:1px solid var(--border);
+    border-radius:var(--radius); padding:.85rem 1rem; overflow-x:auto;
+    font-family:var(--mono); font-size:.83rem; line-height:1.6; margin:1rem 0;
+  }
+  pre code{background:none; border:none; padding:0}
+
+  /* ---------- callouts ---------- */
+  .note{
+    border-radius:var(--radius); padding:.9rem 1.1rem; margin:1.2rem 0;
+    border:1px solid var(--border); border-left-width:4px;
+    background:var(--surface); font-size:.93rem;
+  }
+  .note p:first-child{margin-top:0}
+  .note p:last-child{margin-bottom:0}
+  .note .tag{
+    display:block; font-size:.72rem; letter-spacing:.1em; text-transform:uppercase;
+    font-weight:700; margin-bottom:.35rem;
+  }
+  .note.warn{border-left-color:var(--danger); background:var(--danger-soft)}
+  .note.warn .tag{color:var(--danger)}
+  .note.info{border-left-color:var(--info); background:var(--info-soft)}
+  .note.info .tag{color:var(--info)}
+  .note.ok{border-left-color:var(--ok); background:var(--ok-soft)}
+  .note.ok .tag{color:var(--ok)}
+  .note.accent{border-left-color:var(--accent); background:var(--accent-soft)}
+  .note.accent .tag{color:var(--accent)}
+
+  blockquote{
+    margin:1.1rem 0; padding:.7rem 1.1rem; border-left:4px solid var(--border-strong);
+    background:var(--surface); border-radius:0 var(--radius) var(--radius) 0;
+    color:var(--fg-muted);
+  }
+  blockquote strong{color:var(--fg)}
+  blockquote p{margin:.35rem 0}
+
+  /* ---------- decision grid ---------- */
+  .decisions{
+    display:grid; gap:.7rem; margin:1.3rem 0;
+    grid-template-columns:repeat(auto-fill,minmax(300px,1fr));
+  }
+  .dec{
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); padding:.8rem .95rem;
+  }
+  .dec.rev{border-color:var(--accent); border-left-width:4px}
+  .dec .id{
+    font-family:var(--mono); font-size:.75rem; font-weight:700;
+    color:var(--accent); letter-spacing:.03em;
+  }
+  .dec .k{font-size:.82rem; color:var(--fg-muted); margin-left:.4rem}
+  .dec .v{font-weight:650; font-size:.95rem; margin:.35rem 0 .2rem; line-height:1.45}
+  .dec .w{font-size:.8rem; color:var(--fg-faint); line-height:1.5}
+  .dec .rev-tag{
+    display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.06em;
+    background:var(--accent-soft); color:var(--accent);
+    border-radius:4px; padding:.05rem .35rem; margin-left:.35rem; vertical-align:.1em;
+  }
+
+  /* ---------- risk pills ---------- */
+  .pill{
+    display:inline-block; font-size:.75rem; font-weight:700; padding:.1rem .5rem;
+    border-radius:999px; white-space:nowrap;
+  }
+  .pill.hi{background:var(--danger-soft); color:var(--danger)}
+  .pill.mid{background:var(--accent-soft); color:var(--accent)}
+  .pill.lo{background:var(--ok-soft); color:var(--ok)}
+  .strike{text-decoration:line-through; color:var(--fg-faint)}
+
+  /* ---------- milestones ---------- */
+  .ms{display:flex; flex-direction:column; gap:.55rem; margin:1.2rem 0}
+  .msrow{
+    display:grid; grid-template-columns:5rem 1fr auto; gap:.8rem; align-items:start;
+    background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--radius); padding:.7rem .9rem; font-size:.9rem;
+  }
+  .msrow.crit{border-left:4px solid var(--danger)}
+  .msrow .id{font-family:var(--mono); font-weight:700; font-size:.82rem; color:var(--accent)}
+  .msrow .wk{font-family:var(--mono); font-size:.78rem; color:var(--fg-faint); white-space:nowrap}
+  .msrow .body .exit{color:var(--fg-muted); font-size:.84rem; margin-top:.2rem}
+
+  /* ---------- spine ---------- */
+  .spine{
+    background:var(--surface); border:1px solid var(--border-strong);
+    border-radius:var(--radius); padding:1.1rem 1.3rem; margin:1.4rem 0;
+    border-top:4px solid var(--accent);
+  }
+  .spine .tag{
+    display:block; font-size:.72rem; letter-spacing:.12em; text-transform:uppercase;
+    font-weight:700; color:var(--accent); margin-bottom:.45rem;
+  }
+  .spine p{margin:.4rem 0; font-size:.95rem}
+
+  footer{
+    border-top:1px solid var(--border); margin-top:4rem; padding-top:1.5rem;
+    font-size:.84rem; color:var(--fg-faint);
+  }
+  a{color:var(--info)}
+  a:hover{text-decoration:underline}
+
+  @media (max-width:720px){
+    nav.toc ol{columns:1}
+    .msrow{grid-template-columns:1fr; gap:.25rem}
+    body{font-size:15px}
+  }
+  @media print{
+    nav.toc{break-inside:avoid}
+    section{break-inside:auto}
+    h2{break-after:avoid}
+    body{background:#fff}
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <div class="eyebrow">改造计划 · 第三版 · 决策已锁定</div>
+    <h1>PoP → IEEE TDSC</h1>
+    <div class="meta">
+      <span class="chip"><b>日期</b> 2026-10-12</span>
+      <span class="chip"><b>目标期刊</b> IEEE TDSC（CCF-A / JCR Q1）</span>
+      <span class="chip"><b>基线</b> zk-policy · 801 passed / 15 skipped</span>
+      <span class="chip accent">D1–D10 已决</span>
+      <span class="chip accent">第三版：D2 再回改 · T1 补假设 · T2 停用</span>
+      <span class="chip accent">最终形态：两条定理 + 两条 Remark</span>
+      <span class="chip danger">承重墙 = WP4</span>
+    </div>
+    <p style="margin-top:1rem;color:var(--fg-muted);font-size:.92rem;max-width:64ch">
+      配套：<code>tdsc-fixlist.md</code>（口径/引文逐条 diff）、
+      <code>paper/tdsc-skeleton.tex</code>（英文骨架）、
+      <code>bench/bench_scale.py</code>（评测骨架）。
+      本页是 <code>docs/tdsc-plan.md</code> 的渲染版。
+    </p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc" aria-label="目录">
+  <div class="toc-title">目录</div>
+  <ol>
+    <li><a href="#s0">决策锁定</a></li>
+    <li><a href="#s1">命题重定位</a></li>
+    <li><a href="#s2">先例对照</a></li>
+    <li><a href="#s3">工作包 WP1–WP10</a></li>
+    <li><a href="#s4">里程碑</a></li>
+    <li><a href="#s5">风险登记册</a></li>
+    <li><a href="#s6">前置阻塞项</a></li>
+    <li><a href="#s7">数据来源</a></li>
+  </ol>
+</nav>
+
+<!-- ================= 0 ================= -->
+<section id="s0">
+  <h2><span class="num">0</span>决策锁定</h2>
+  <p>以下十项已定，<strong>后续所有工作包按此执行；改动需显式回改本表</strong>。</p>
+
+  <div class="note accent">
+    <span class="tag">修订记录</span>
+    <ul style="margin:.2rem 0 0">
+      <li>2026-10-12 <strong>初版</strong>：D1–D10 锁定。</li>
+      <li>2026-10-12 <strong>第二版</strong>：<strong>D1 / D2 回改</strong>（合作者到位但证明须独立完成 ⇒ T3 全量不可达，见 §1.6；论文重心随之移到 WP4，见 §3 WP4 与 §5 R4）。</li>
+      <li>2026-10-12 <strong>第三版</strong>：<strong>§1.6(e) 的 6 周自检当日执行完毕</strong> ⇒ <strong>D2 再回改</strong>：<strong>T1 的原陈述被证伪</strong>（反例 <code>β = id</code>）⇒ 补上结构性假设后成 <strong>T1-H/T1-L</strong>；<strong>T2 被证为空</strong>（二分法由 <code>k</code> 单独决定）⇒ <strong>停用</strong>；<strong>T3′ 通过</strong>。净结果：<strong>两条定理 + 两条 Remark</strong>。详见 <strong>§1.7</strong>。D1 不需再改（分析半边靠 T1-H 的测量实例，不靠 T2）。另修掉 skeleton 两个<strong>编译级</strong>缺陷（<code>\wp</code> 与 LaTeX 内置符号冲突、Limitations 列表中文留在正文），骨架现可 <code>pdflatex</code> 校验通过（<strong>0 error / 0 undefined ref / 0 overfull</strong>；余 13 条 Underfull 版面噪声，详见 §3 的编译校验条——<strong>早前"0 warning"的说法不准确</strong>）。</li>
+    </ul>
+  </div>
+
+  <div class="decisions">
+    <div class="dec rev"><span class="id">D1</span><span class="k">论文定位</span><span class="rev-tag">回改</span>
+      <div class="v">分析 × 系统各半；分析半边<strong>收敛为「两条定量界」</strong></div>
+      <div class="w">⚠️ 构造性由 <strong>WP4</strong> 承接 ⇒ <strong>WP4 成为论文重心的承重墙</strong>（§5 R4）</div></div>
+    <div class="dec rev"><span class="id">D2</span><span class="k">定理路线</span><span class="rev-tag">再回改</span>
+      <div class="v"><strong>T1-H/T1-L + T3′</strong>（两条定理）+ 两条 Remark；<strong>T2 停用</strong>；三分法降为分类</div>
+      <div class="w">⚠️ 合作者 <strong>付兴兵</strong> 审读、<strong>证明由本人独立完成</strong>；§1.6(e) 的 6 周自检<strong>已于 2026-10-12 执行完毕</strong>（1 修 + 1 过 + 1 停）⇒ 见 §1.6、§1.7</div></div>
+    <div class="dec"><span class="id">D3</span><span class="k">私有策略模式</span>
+      <div class="v">做全套，含零知识违规证据</div>
+      <div class="w">透明模式 ZK 正当性；必须走 groth16</div></div>
+    <div class="dec"><span class="id">D4</span><span class="k">组合载体</span>
+      <div class="v">双载体：ezkl + 真 ONNX（主）／DeepProve（对照）</div>
+      <div class="w">时间线最长的一支</div></div>
+    <div class="dec"><span class="id">D5</span><span class="k">标题口径</span>
+      <div class="v">保留 Zero-Knowledge，groth16 成为交付档</div>
+      <div class="w">与 WP1 绑定；groth16 不通则此项作废</div></div>
+    <div class="dec"><span class="id">D6</span><span class="k">硬件</span>
+      <div class="v">租云 ≥64 GB RAM / ≥32 核，跑满矩阵</div>
+      <div class="w">同时解锁内存墙与 groth16</div></div>
+    <div class="dec"><span class="id">D7</span><span class="k">时间预算</span>
+      <div class="v">9–12 个月</div>
+      <div class="w">唯一能同时兑现 D2+D3+D4 的预算</div></div>
+    <div class="dec"><span class="id">D8</span><span class="k">期刊</span>
+      <div class="v">TDSC 锁定</div>
+      <div class="w">CCF-A 口径已确认满足；期刊阻塞项销案</div></div>
+    <div class="dec"><span class="id">D9</span><span class="k">加分项</span>
+      <div class="v">WP5 / WP6 / WP9 / WP10 全做</div>
+      <div class="w">占用同一条时间线</div></div>
+    <div class="dec"><span class="id">D10</span><span class="k">交付物</span>
+      <div class="v">md + html、paper skeleton、评测骨架、口径/引文清单</div>
+      <div class="w">已随本文件交付</div></div>
+  </div>
+
+  <div class="note accent">
+    <span class="tag">决策一致性检查（第三版重算）</span>
+    <ul style="margin:.2rem 0 0">
+      <li>D3（零知识违规证据）与 D5（保留 ZK）都压在 groth16 上 ⇒ <strong>WP1 仍是关键路径的入口</strong>。</li>
+      <li>✅ <strong>定理瓶颈已解除（第三版）</strong>：初版把瓶颈放在"找不到合作者"，第二版放在"T3 全量的证明能力"。<strong>2026-10-12 自检执行后，定理半边已落盘</strong>（T1-H/T1-L + T3′ 证明齐备）⇒ 瓶颈<strong>只剩 WP4 一个</strong>。</li>
+      <li>⚠️ <strong>承重墙换了</strong>：T3 一降级，论文的重量落到 <strong>WP4</strong>。<strong>WP4 失败 = 论文失败</strong>（不再是"写进 Limitations"），见 §5 R4。</li>
+      <li>⚠️ <strong>新增一条纪律（第三版，来自 R1b）</strong>：定理写定后<strong>先找反例、再找证明</strong>——本次 T1 是假命题、T2 是空命题，两者都是"先写陈述再找证明"的产物。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= 1 ================= -->
+<section id="s1">
+  <h2><span class="num">1</span>命题重定位</h2>
+
+  <h3>1.1 现状的问题</h3>
+  <p>现在的论文定位是「<strong>我们造了一个证明策略合规的系统</strong>」。这一格已被占：</p>
+  <ul>
+    <li><strong>NiyamAI</strong>（arXiv 2608.07167，2026-08）：SHA-256 committed policy contract + Judge 小网 + <strong>ezkl</strong> zk-SNARK + <strong>证明先于执行</strong> —— 与 PoP 的核心机制高度重合，只是守的是工具调用而非响应文本。</li>
+    <li><strong>zkGen</strong>（ICBC 2024, TUM, pp. 620–624, DOI 10.1109/ICBC59979.2024.10634440）：名字就叫 <em>Policy-to-Circuit Transpiler</em>。</li>
+    <li><strong>Zaguk</strong>（JNIC'26）：ezkl 证明 LLM 输出前缀通过 PII/正则过滤，验证者只见 "pass" + SHA-256 承诺 —— 几乎是 PoP 的私有模式。</li>
+    <li><strong>PCO</strong>（ePrint 2026/994，Dolev/Yung 等）：证书 + 追加式账本 + 监管框架 + 四条形式化性质。</li>
+  </ul>
+  <p>继续按"系统公告"投，TDSC 审稿人会判定 incremental。</p>
+
+  <h3>1.2 新命题</h3>
+  <blockquote>
+    <p><strong>Policy-compliance proofs are designated-verifier by construction.</strong></p>
+    <p>把论文从"系统公告"改为"<strong>安全分析 + 修复</strong>"：给出定量的绑定–隐藏权衡（<strong>T1-H/T1-L</strong>，含那条<strong>必需的结构性假设</strong>）与<strong>请求侧</strong>的定量绑定界（<strong>T3′</strong>，取代原三分法），把"送达缺口"收敛为这两条界，<strong>再</strong>用 PoP 作为修复的载体——它落在分类 (b)「用户出题」这一族。<strong>原 T2（公开/指定验证者二分）已停用</strong>（§1.7）。</p>
+  </blockquote>
+
+  <div class="note warn">
+    <span class="tag">⚠️ 2026-10-12 修正</span>
+    早先拟的标题 <em>"bind the wrong thing"</em> 是<strong>错的</strong>，见 §1.5。
+    仓库里 <code>response_binding</code> 已经把"绑定不到送达字节"这半堵上了。新命题按上面这句。
+  </div>
+
+  <p><strong>为什么这样摆（D1 分析×系统各半）</strong>：</p>
+  <ul>
+    <li>分析半边把 Hollow-LLM(S&amp;P'26)、zk-attach、Proof-of-Guardrail 从"抢发者"变成"论据"——它们的存在证明问题重要且未解决。</li>
+    <li>系统半边提供分类 (b)「用户出题」的构造性实例（用户输入绑定 + 私有策略 + 规模化评测）——<strong>也即 T3′ 里那个 <code>f &gt; 0</code> 的 <code>f</code></strong>——避免论文变成纯批判。</li>
+    <li>两边互相支撑：<strong>定理指出缺口，系统占据其中一条闭合路径。</strong></li>
+  </ul>
+
+  <h3>1.3 必须守住的三条底线</h3>
+  <ol>
+    <li><strong>不声称首次发现绑定缺口</strong>。Hollow-LLM 已形式化 "effort gap"，zk-attach 已命名 "source-integrity gap"。PoP 的 delta 是<strong>定量下界（T1-H/T1-L，附那条必需假设的必要性证明）+ 定量请求绑定（T3′）</strong>——<strong>不是</strong>"我们发现了绑不上"（那句话本身已被 §1.5 推翻），<strong>也不是</strong>"公开可验证不可能"（那句已被 §1.7 证伪为空的）。</li>
+    <li><strong>不声称"比 Proof-of-Guardrail 更强"</strong>。二者正交：PoG 证真实计算发生过，PoP 证性质成立。删掉一切强弱对比。</li>
+    <li><strong>摘要里必须写明"内容隐私 ≠ 响应不可恢复"</strong>。见 <code>docs/sp1-zk-audit.md</code> §4。</li>
+  </ol>
+
+  <h3>1.4 ⚠️ 一处必须修正的推理（影响 T1 怎么证）</h3>
+  <p><code>docs/sp1-zk-audit.md</code> §4 目前写：</p>
+  <blockquote>「自然语言响应的熵远低于 SHA-256 的 256 bit（一句话 T 的信息量通常在 ~10²–10³ bit 量级，且高度受上下文约束），<strong>因此枚举是可行的</strong>。」</blockquote>
+  <div class="note warn">
+    <span class="tag">非因果推论</span>
+    <p><strong>2¹⁰⁰ 与 2²⁵⁶ 一样枚举不了</strong>；按文档自己给的 10²–10³ bit，字典攻击<strong>恰恰不可行</strong>。若照此写进论文，审稿人一句就拆掉。</p>
+  </div>
+  <p><strong>正确的推理（也是 T1 的正确模型）</strong>：真正的攻击不是遍历字符串空间，而是<strong>重执行</strong>。</p>
+  <ul>
+    <li>对手的已知信息不是"响应空间"，而是 <strong>(prompt, 模型, 解码参数)</strong>。</li>
+    <li>给定这三者，贪心/temperature≈0 解码下的响应<strong>近乎确定</strong> ⇒ 猜测熵 <code>k = −log₂ Guess(T ∣ prompt, M, decode) ≈ 0</code>。这里 <code>Guess</code> 取<strong>平均</strong>条件猜测概率（定义见 §1.7），<code>k</code> 是<strong>测量值</strong>而非假设值。</li>
+    <li>因此攻击是"<strong>把同一个模型在同一个 prompt 上再跑一遍</strong>"，成本 = 一次推理，与响应长度无关。</li>
+    <li>只有当 <code>k</code> 真的较大时（高温采样、长自由文本、prompt 本身保密），隐藏才成立。</li>
+  </ul>
+  <p><strong>对 T1 的三个直接后果</strong>：</p>
+  <ol>
+    <li><strong><code>k</code> 必须实测，不能引困惑度文献</strong>。做法：对一组真实 prompt，用同一模型多次采样，估条件分布的<strong>猜测熵</strong> <code>−log₂ Guess(T ∣ Z)</code>（碰撞熵可作交叉校验）。这是一个<strong>可做的实验</strong>，而且据扫查<strong>没人测过</strong>——它本身就是 T1 的实验内容。</li>
+    <li><strong>T1 变成两区间定理</strong>：<code>k ≈ 0</code> 区（重执行即可攻破）与 <code>k</code> 较大区（隐藏成立）。两区之间的阈值由 <code>k ≥ log q + log(1/ε)</code> 给出。</li>
+    <li><strong>它与 T3 同源</strong>：让"重执行"可行的那个能力，正是让"送达字节 ≠ 被证字节"可行的能力。两条定理共享同一个对手模型，这不是巧合，是论文可以主张的结构性联系。</li>
+  </ol>
+  <p>⇒ <strong><code>docs/sp1-zk-audit.md</code> §4 与 <code>bench/comparison_zkagent.md</code> §4.4 的对应段落都要按此改写</strong>（已登记在 <a href="tdsc-fixlist.md">tdsc-fixlist.md</a> §G）。</p>
+
+  <div class="note ok">
+    <span class="tag">同一互斥性的第二个实例 —— 更强、更好量</span>
+    <p>仓库自己也点出来了（<code>docs/design-semantic-rules.md:195–201</code>），只是当时归到了同一条错推理下面：</p>
+    <p>语义规则（<code>semantic_bound</code>）把 <strong><code>encode(T)</code> 直接放进公开值</strong>。于是攻击者<strong>不需要</strong>"低熵枚举"这一步——公开值本身就是响应的一个<strong>保内容的特征向量</strong>，把候选空间的规模从"整个字符串空间"压到"该特征向量的原像"，<strong>反查字符表就够了</strong>。</p>
+    <p>这对 T1 是<strong>好消息</strong>：它给了 T1 一个<strong>可当天量出来的实例</strong>。做法：</p>
+    <ol style="margin:.3rem 0 0">
+      <li>取一条真实响应 <code>T</code>，按 <code>semantic_bound</code> 的管线算出公开的 <code>encode(T)</code>；</li>
+      <li>度量"给定 <code>encode(T)</code> 能恢复多少 <code>T</code>"（原像规模 / 逐字符可辨识比例）；</li>
+      <li>得到的不是引用来的熵估计，而是<strong>这个系统真实泄露了多少</strong>。</li>
+    </ol>
+  </div>
+  <p>⇒ 于是 T1 有两个实例，一个需要实测、一个当场可测（见 §1.6 的统一表述）。</p>
+
+  <h3>1.5 ⚠️ 第二处必须修正：「绑定不到送达字节」这句话本身是错的</h3>
+  <p>写 §1.4 时顺手核了一遍电路与安全模型，发现<strong>先前那句命题站不住</strong>，必须当场改掉。</p>
+  <p><strong>事实</strong>（<code>circuits/types/src/lib.rs:444–447</code>、<code>docs/security-model.md:36, 46, 232</code>）：</p>
+  <ul>
+    <li>公开值里<strong>已经有</strong> <code>response_binding = SHA256("pop-bind-v1" ‖ u32be(len(n)) ‖ n ‖ T)</code>；</li>
+    <li><code>n</code> 是<strong>验证者现场签发的 nonce</strong>，不是证明者选的；</li>
+    <li>验证流程第 6 步由<strong>送达的 <code>T′</code> 现场重算</strong> <code>response_binding</code> 并与公开值比对；</li>
+    <li>安全模型里有专门的对抗游戏 <strong><code>G_Bind_resp</code></strong>，含「换 <code>T′</code> / 换 <code>n</code> / 域分离 / 空 nonce」四组反例。</li>
+  </ul>
+  <div class="note warn">
+    <span class="tag">结论</span>
+    <strong>"证明者证 <code>T</code>、却把 <code>T′</code> 送给用户"这个攻击，现在就会被第 6 步抓住。</strong>
+    早先那版 T1/Definition 1（"关系里没有任何一项指涉送达字节"）<strong>是对着旧版本写的，不成立</strong>。凡照抄该措辞的段落一律作废。
+  </div>
+
+  <p><strong>修正后剩下的真实缺口</strong>（这才是论文能主张的东西）：</p>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th style="width:2.5rem">#</th><th>残余缺口</th><th>现状</th><th>归属</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>A</strong></td>
+          <td><strong>验证者 ≠ 收件人</strong>：审计方拿着<strong>自己收到的那份</strong> <code>T′</code> 重算绑定，通过；而证明者送给<strong>终端用户</strong>的可以是另一串。缺口从"绑不上"挪到了"<strong>两路分叉投递</strong>"</td>
+          <td>未处理。<code>response_binding</code> 绑的是<strong>验证者手上</strong>的那串</td>
+          <td><strong>T3′</strong>：nonce 必须由<strong>终端用户</strong>出（<code>f &gt; 0</code>），而非由验证者出；分类上属 (b)「用户出题」</td>
+        </tr>
+        <tr>
+          <td><strong>B</strong></td>
+          <td><strong>nonce 住在哪一层，安全模型没定</strong>。<code>n</code> 公开 ⇒ <code>b</code> 人人可重算 ⇒ 无隐藏；<code>n</code> 仅验证者持有 ⇒ 指定验证者绑定 + 对第三方隐藏。<strong>同一个系统，两种安全等级，取决于一个文档里没写死的参数</strong></td>
+          <td>未定</td>
+          <td><strong>不再是定理问题</strong>：公开/指定<strong>不构成二分</strong>（原 T2 已停用，§1.7(c)）。<code>n</code> 公开 ⇒ 落进 T1-H 的实例、<code>k→0</code>；<code>n</code> 仅验证者持有 ⇒ 只有验证者能绑。属<strong>设计权衡</strong>，写进 discussion</td>
+        </tr>
+        <tr>
+          <td><strong>C</strong></td>
+          <td><strong>不强制投递后校验</strong>：用户须自愿比对，下游 agent 不比对就没人发现</td>
+          <td>未处理</td>
+          <td>§1.6(b) 那份 taxonomy 的 (c) 释放门控（<strong>分类，非定理</strong>）</td>
+        </tr>
+        <tr>
+          <td><strong>D</strong></td>
+          <td><strong>模型未被绑定</strong>（<code>pop-infer</code> 是代理 MLP）</td>
+          <td>已知</td>
+          <td>WP3；对应 Hollow-LLM 的 effort gap</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p><strong>这对论文的影响（三条，都是加强）</strong>：</p>
+  <ol>
+    <li><strong>"指定验证者"形状改由设计观察解释，不走定理</strong>：原 T2 声称"指定验证者"是<strong>唯一可能</strong>的选择——该二分法已被证为空（§1.7(c)），不能这么主张。改为 skeleton 里的 <code>Remark rem:designated</code>：本系统验证接口呈指定验证者形状，那是<strong>设计选择</strong>；能否隐藏由 <code>k</code> 单独决定，与"公开 vs 指定"无关。<strong>审稿人会更认这一版</strong>，因为"由不可能性逼出来"本来就不是事实。</li>
+    <li><strong>T1 找到落点</strong>：§1.4 说"隐藏需要 <code>k ≥ log q + log(1/ε)</code>"。而 <code>b</code> 恰恰是一个<strong>公开、确定、可高效计算</strong>的 <code>β(T)</code> —— §1.4 里 T1 的前提条件<strong>就是</strong> <code>response_binding</code>。两处严丝合缝。</li>
+    <li><strong>缺口 A 是可构造的</strong>：修复方式明确（nonce 改由终端用户签发、随请求上行），正落在 <strong>T3′ 的 <code>f &gt; 0</code></strong>（分类 (b)），与 WP3 的"绑用户输入"是<strong>同一件事的两面</strong>。这比原先那句空泛的"绑不上"强得多。</li>
+  </ol>
+  <p>⇒ 同步改写点登记在 <a href="tdsc-fixlist.md">tdsc-fixlist.md</a> <strong>§H</strong>。</p>
+
+  <h3>1.6 ⚠️ 第三处必须修正：T3 现在还不是定理，而且独立证明不可行（D2 回改依据）</h3>
+  <p>合作者已到位（付兴兵，杭电副研究员，ABE/格基可搜索加密/模糊谓词加密方向），但<strong>证明要本人独立完成</strong>。据此重估三条定理，结论如下。<strong>⚠️ 本节写于自检之前；(e) 已给出 2026-10-12 当日执行完毕的实际结果，其中 T1/T2 的结论比本节初稿更严——最终以 §1.7 为准。</strong></p>
+
+  <h4>(a) 逐条可行性</h4>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th></th><th>内容</th><th>独立可做？</th><th>学+做</th><th>风险</th></tr></thead>
+      <tbody>
+        <tr><td><strong>T1-H</strong></td><td>哈希制式的最小熵猜测界 <code>≤ q·2^&#123;−k&#125; + q·2^&#123;−λ&#125;</code></td><td><span class="pill lo">✅ 已证</span>（需补结构性假设，见 §1.7）</td><td>3 天</td><td>低</td></tr>
+        <tr><td><strong>T1-L</strong></td><td>有损制式：界落在<strong>原像类</strong>猜测概率上</td><td><span class="pill lo">✅ 已给</span>（无闭式，只给测量口径）</td><td>1 天</td><td>低</td></tr>
+        <tr><td class="strike"><strong>T2</strong></td><td class="strike">公开可验证 ⇒ 无隐藏；指定验证者 ⇒ 二者兼得</td><td><span class="pill hi">❌ 证伪：该二分法在 <code>k</code> 这一维上是空的</span>（见 §1.7）</td><td class="strike">——</td><td class="strike">——</td></tr>
+        <tr><td class="strike"><strong>T3</strong></td><td class="strike">闭合三分法（穷举协议空间）</td><td><span class="pill hi">❌ 不可行</span></td><td>3–6 个月且可能不收敛</td><td><span class="pill hi">高</span></td></tr>
+        <tr><td><strong>T3′</strong></td><td>选择性呈现优势 <code>≤ 2^&#123;−f&#125;·|S|</code>（<strong>取代 T3</strong>）</td><td><span class="pill lo">✅ 已证——与 T1 同构</span></td><td>2 天</td><td>低</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>T1 的风险从来不在不等式（那是 Dodis–Smith 一族的 folklore），而在两处：<strong>把 <code>Z</code> 定对</strong>（测量问题），以及<strong>把假设写全</strong>——原陈述缺一条结构性假设，因此<strong>是假的</strong>（§1.7）。</p>
+
+  <h4>(b) T3 为什么现在不是定理：要么假，要么空</h4>
+  <p>设目标 <strong>G1</strong>：收件人 R 收到的字节 <code>T″</code> 就是被证明的那串 <code>T</code>。</p>
+  <p>证书公开值里<strong>已经有</strong>响应承诺（<code>response_binding</code>，见 §1.5）。于是 R 拿到证书 + <code>T″</code> 后<strong>自己重算比对</strong>即可发现掉包——<strong>不需要任何一方持有秘密，不需要可信硬件</strong>。于是二选一：</p>
+  <ul>
+    <li>(c) 严格指"<strong>交付前</strong>门控" ⇒ 上述协议三条都不需要 ⇒ <strong>T3 是假的</strong>；</li>
+    <li>把 (c) 放宽成"收件人<strong>先校验再采用</strong>" ⇒ (c) 近乎"你检查就能抓到" ⇒ <strong>T3 是空话</strong>。</li>
+  </ul>
+  <p><strong>"模型太弱所以不可能性平凡，或太强所以它是假的"——这是第一次做不可能性结果最典型的翻车方式。</strong> 现在的 T3 正卡在这条缝上。把口号变成定理的那一步，恰恰最需要密码学经验，而这正是被排除掉的外部输入。</p>
+
+  <h4>(c) 换目标：T3 → T3′（定量版请求绑定）</h4>
+  <p>根子在<strong>目标选错</strong>。G1 容易；真正难、且真正是本系统缺口的，是 <strong>G2</strong>：</p>
+  <blockquote><strong>G2</strong>：被证明的 <code>T</code>，是<strong>对"我这次这个请求"的回应</strong>。</blockquote>
+  <p>G1 挡不住<strong>回放/回溯</strong>：证明者可以拿一份<strong>早先</strong>合规响应的证书交给你，每项自洽，但它答的不是你这次的问。仓库自己已经承认这一格：<code>circuits/types/src/lib.rs:969</code> 的注释写明 <strong>"nonce 为空是合法的……不提供任何重放防护"</strong>。</p>
+  <div class="note warn">
+    <span class="tag">⚠️ T3′ 自身的同义反复风险</span>
+    T3′ 若只写成"没有用户新鲜量就不行"，它自己也有同义反复风险（"陈述没提到你的请求，当然绑不住你的请求"）。
+    <strong>要非平凡必须定量</strong>：对手预置一批合规响应、可择一呈现（lookback / 选择性披露）时，收件人的优势如何随其贡献的新鲜比特数衰减。
+  </div>
+  <div class="spine">
+    <span class="tag">T3′</span>
+    <p>设收件人贡献 <code>f</code> 比特新鲜挑战。则选择性呈现攻击的成功率 <code>≤ 2^&#123;−f&#125;·(对手预置集大小)</code>；反之，<strong>不贡献新鲜量的协议下，该优势不随任何参数衰减</strong>。</p>
+  </div>
+  <p><strong>三分法降为分类</strong>：(a) 硬件根 / (b) 用户出题 / (c) 释放门控 写成一份 <strong>taxonomy</strong>——"业界实际用来闭合分叉投递缺口的三种做法"——作为 <strong>discussion</strong>，<strong>不再作为 theorem，也不声称穷举</strong>（用理想功能模型可以构造出第四条路，且三条并不互斥）。</p>
+
+  <h4>(d) 修正后的理论脊梁（比三分法窄，但立得住）</h4>
+  <p>T1 与 T3′ <strong>同构</strong>——都是"公开值里被承诺的那个量有多少比特，决定了对手能反推多少"：</p>
+  <div class="spine">
+    <span class="tag">全文唯一理论主张</span>
+    <p><strong>一个证明能绑定什么，取决于陈述里被承诺的、对手无法自选的那个量有多少比特。</strong></p>
+    <p>T1 管<strong>响应侧</strong>（<code>k = −log Guess(T∣Z)</code>，见 §1.7 的定义），T3′ 管<strong>请求侧</strong>（新鲜度 <code>f</code>）。</p>
+  </div>
+  <p>这句话可以当论文的理论主张，而且它把 T1 的两个实例（<code>response_binding</code>、语义规则的 <code>encode(T)</code>）和 T3′ 缝成一条线，不散——<strong>§1.7 证完之后，两个实例正好分居 T1 那条假设的两侧</strong>，这条线因此比原先更硬。</p>
+
+  <h4>(e) 独立完成的可行性判据（可证伪，别用感觉判断）—— ✅ 已执行，已结案</h4>
+  <ul>
+    <li><strong>第 1 周</strong>：读一个标准最小熵猜测引理，把 <strong>q 次自适应查询</strong>的界自己推一遍写出来。</li>
+    <li><strong>第 2–3 周</strong>：把「投递绑定」写成一个<strong>形式化游戏</strong>（写不出游戏就是没想清楚），再证 T3′。</li>
+    <li><strong>判据（事前登记）</strong>：两件在 <strong>6 周内</strong>做完 ⇒ 独立走定理路线可行；<strong>超过 6 周</strong> ⇒ 当场把 T3 降为分类，<strong>不要拖到第 6 个月</strong>。（原文写作"独立走 T1+T2+T3′ 可行"。<strong>事后 T2 停用、T1 改为 H/L 两段式</strong>，见下方执行结果与 §1.7；判据本身按原样保留，作为"事前承诺"的证据。）</li>
+  </ul>
+
+  <div class="note ok">
+    <span class="tag">执行结果（2026-10-12，同日完成，未用满 6 周）</span>
+    <p>判据的两件事<strong>都做完了</strong>，但结果不是"三票通过"，是 <strong>1 修 + 1 过 + 1 停</strong>：</p>
+    <ul style="margin:.2rem 0 0">
+      <li><strong>T1 —— 改了才能立</strong>：原陈述<strong>是假的</strong>（反例 <code>β = id</code>）。补上结构性假设后成为 T1-H，<strong>证明已写全</strong>（含一处易错点：<code>k</code> 必须用<strong>猜测熵</strong>定义，否则证明里取期望那一步 Jensen 方向反了）。<strong>另加 T1-L 覆盖有损制式。</strong></li>
+      <li><strong>T3′ —— 通过</strong>：形式化游戏 <code>G_SelPres</code> 写出来了，证明 10 行。<strong>它就是 §1.6(c) 判"要非平凡必须定量"的那条定量界</strong>，不是同义反复。</li>
+      <li><strong>T2 —— 停用</strong>：<strong>不是难证，是空的</strong>（证明见 §1.7）。</li>
+    </ul>
+    <p>⇒ 净效果：三条定理变成两条（T1-H/T1-L、T3′）<strong>加一条设计观察</strong>。数量少了，<strong>但两条都是能站住的</strong>。这正是判据想要的结果——<strong>该倒的在第 1 天倒，不会拖到第 6 个月</strong>。</p>
+  </div>
+
+  <h4>(f) 合作者的真实定位（按公开信息）</h4>
+  <p>付兴兵的公开方向是 ABE / 格基可搜索加密 / <strong>模糊谓词加密</strong>（<a href="https://www.x-mol.com/paper/1768103669275082752">IEEE TSC 2024 attribute-hiding fuzzy encryption</a>，与 Susilo 合作）：</p>
+  <ul>
+    <li><strong>高度对口的是 WP4，不是 T3</strong>。"属性隐藏"与「私有策略 + 隐藏规则」<strong>同族</strong>；他 2024 那篇正是"隐藏谓词本身"。</li>
+    <li><strong>他能守住 WP4 的先例纪律</strong>（hidden credentials / secret handshake / XACML 隐私早有）——但那也正是"别当首创"风险最高的地方。</li>
+    <li><strong>T3 不是他的发表领域</strong>（公开记录无不可能性/协议下界）⇒ 大概率能<strong>审读</strong>，未必能<strong>救</strong>。</li>
+    <li><strong>ZK / zkVM / LLM 不是他的领域</strong> ⇒ WP1、WP3 帮不上。</li>
+  </ul>
+  <p>⇒ <strong>分工写死为：他审读，本人证明；他深度参与 WP4。</strong> 这同时是 T0-1 的销案判据（见 §6）与 R1 的新触发条件（见 §5）。</p>
+
+  <h3>1.7 ⚠️ 第四处必须修正：T1 的原陈述是假的（自检第一天的产出）</h3>
+  <p>§1.6(e) 的自检第一天就开火：<strong>T1 原来那句写错了，而且不是"证明没写"，是"命题为假"。</strong></p>
+
+  <h4>(a) 反例</h4>
+  <p>原文（<code>paper/tdsc-skeleton.tex</code> 初版 T1）：</p>
+  <blockquote>设 <code>β</code> 公开确定可算、证书公开 <code>β(T)</code>。<code>A</code> 被给 <code>Z</code>，可评估 <code>β</code> 至多 <code>q</code> 次 ⇒ <code>Pr[A(β(T),Z) = T] ≤ q·2^&#123;−k&#125;</code>。</blockquote>
+  <div class="note warn">
+    <span class="tag">反例</span>
+    <p><strong>取 <code>β = id</code>（或在本文里取 <code>β = encode(T)</code>，即 §1.4 第二实例）：<code>A</code> 直接输出 <code>β(T)</code>，成功率 = 1，与 <code>q</code>、<code>k</code> 全无关。</strong> ⇒ 该陈述对任意公开 <code>β</code> 为假。</p>
+  </div>
+  <p><strong>要害不在"我漏了一个条件"，而在本文自己的两个实例正好分居这条假设的两侧</strong>：<code>response_binding</code> 满足它，<code>encode(T)</code> 不满足。补上这条假设，反而把 §1.4 那两个实例收进了一条定理；不补，论文会带着一条假命题投出去。</p>
+
+  <h4>(b) 补上假设后的两条制式</h4>
+  <p><code>k</code> 的定义也要换：<strong>必须用猜测熵</strong> <code>k ≜ −log₂ Guess(T∣Z)</code>，<code>Guess(T∣Z) ≜ max_A Pr[A(Z)=T] = E_z[max_t Pr[T=t∣Z=z]]</code>（即 Dodis–Smith 的<strong>平均</strong>条件最小熵，且<strong>可测</strong>）。若用逐点最坏 <code>k_z</code> 再取 <code>max_z</code>，证明里取期望那一步 Jensen 方向反了，界不成立——<strong>这是本次最容易写错的一处</strong>。</p>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th></th><th>假设</th><th>界</th></tr></thead>
+      <tbody>
+        <tr><td><strong>T1-H</strong></td><td><code>β(T) = H(dom‖u32be(len(n))‖n‖T)</code>，<code>H</code> 为 RO，<code>n</code> 与 <code>T</code> 独立</td><td><code>q·2^&#123;−k&#125; + q·2^&#123;−λ&#125;</code> ✅ <strong>已证</strong>，含完整并界与首次命中的论证</td></tr>
+        <tr><td><strong>T1-L</strong></td><td>任意公开确定 <code>β</code></td><td><code>Guess(T ∣ Z, β(T))</code>，即<strong>原像类</strong>上的猜测概率；<code>β</code> 有损时约 <code>1/N</code> 量级 ✅ <strong>已给</strong>（无闭式，只能测量）</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul>
+    <li><strong>推论（重执行，不是枚举）</strong>：<code>k</code> 由 <code>Z</code> 决定、与 <code>β</code> 无关。贪心解码下 <code>k ≈ 0</code> ⇒ 界退化 ⇒ <strong>无隐藏</strong>，且实现该攻击<strong>不需要任何 <code>β</code> 询问</strong>：把模型再跑一遍即可。<strong>证书层面的任何技巧都救不了 <code>k ≈ 0</code>。</strong></li>
+    <li><strong>诚实边界</strong>：T1-H 在 <strong>ROM</strong> 下成立；SHA-256 实践只给计算意义下的近似 ⇒ 论文措辞必须是 <strong>heuristic</strong>，不得写成信息论界。已写进 <code>paper/tdsc-skeleton.tex</code> 附录的待补事项。</li>
+  </ul>
+
+  <h4>(c) T2 为什么被停用：不是难证，是空的</h4>
+  <p>原 T2：<em>"存在同时取得绑定与隐藏的方案当且仅当验证是指定验证者的。"</em> 两个方向都不成立：</p>
+  <ul>
+    <li><strong><code>⇐</code>（指定验证者 ⇒ 可隐藏）为假</strong>：由上面的推论，<code>k ≈ 0</code> 时<strong>任何</strong>方案（含指定验证者）都无隐藏——对手重执行模型即可，<strong>根本不需要看证书</strong>。</li>
+    <li><strong><code>⇒</code>（公开可验证 ⇒ 无隐藏）为真，但理由与"公开可验证"无关</strong>：同样只用到 <code>k</code>。</li>
+    <li>∴ <strong>该二分法由 <code>k</code> 单独决定，没有独立内容</strong>，整个塌进 T1。</li>
+  </ul>
+  <p><strong>残留的真问题（本次不主张）</strong>：真张力在<strong>投递可审计性 vs 隐藏</strong>——第三方要能核对"终端用户收到的那串就是被证的那串"，就得拿到 <code>T</code>。但那已接近"要隐藏就不能让人知道"，即 §1.6(b) 给 T3 判的<strong>"要么假、要么空"</strong>形态。<strong>按同一标准一并停用，不写进论文。</strong> T2 在 skeleton 里降为 <code>Remark</code>（"本系统验证接口是指定验证者形状——这是设计选择，不是由不可能性逼出来的"）。</p>
+
+  <h4>(d) 落地位置（已全部落盘）</h4>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>文件</th><th>落点</th></tr></thead>
+      <tbody>
+        <tr><td><code>docs/security-model.md</code></td><td><strong>新增 §4.5「绑定定理（T1 / T3′）」</strong>：定义表、反例、T1-H 完整证明（含 ★ 那一步）、T3′ 游戏与证明、T2 停用理由、统一脊梁表、诚实边界</td></tr>
+        <tr><td><code>paper/tdsc-skeleton.tex</code></td><td>T1 改为 <code>(H)/(L)</code> 两段式 + 完整证明；新增 <code>Definition def:k</code>（猜测熵）、<code>Remark rem:kmeas</code>、<code>Remark rem:betanecessary</code>（反例）；<code>thm:t2</code> 删除并改为 <code>Remark rem:designated</code>；intro 增补"我们不主张的分离"一段；<code>prop:semantic</code> 改写为 T1(L) 的实例</td></tr>
+        <tr><td><code>docs/tdsc-fixlist.md</code></td><td><strong>新增 §I 组</strong>（I1–I11）：T1 补假设、T2 停用、<code>\wp</code> 冲突、Limitations 中文化、<code>\SKELQUIET</code> 开关、以及"先找反例再找证明"的流程固化</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note ok">
+    <span class="tag">顺带修掉的两个编译级缺陷</span>
+    <p>原 skeleton <strong>根本编译不过</strong>：① <code>\newcommand&#123;\wp&#125;</code> 与 LaTeX 内置的 Weierstrass ℘ 冲突 ⇒ 报错并使后文级联出错，已改名 <code>\wpmark</code>；② <code>\need&#123;&#125;</code> 之外有 5 条中文 <code>\item</code>（Limitations 列表）留在正文里 ⇒ pdfTeX 无法排版，已改写为英文正文。</p>
+    <p><strong>编译校验（2026-10-12 实测，三遍）</strong>：<code>pdflatex "\def\SKELQUIET{}\input{tdsc-skeleton.tex}"</code> ⇒ <strong>0 error / 0 undefined ref / 0 overfull hbox</strong>；余 <strong>13 条 Underfull</strong>（窄表列两端对齐所致的版面噪声，非缺陷）。⚠️ <strong>早前一处"0 warning"的说法不准确</strong>——当时确有 3–7 条 Overfull（最宽 33pt）：<code>\texttt&#123;&#125;</code> 串不可断行（<code>policydsl/privacy/commit.py</code>、<code>docs/sp1-zk-audit.md</code>、<code>PrivateViolation&#123;rule,kind&#125;</code>）已用 <code>\allowbreak</code> 修掉；两张新表的列宽分数未计 <code>\tabcolsep</code> 导致超出 <code>(n−1)×2×\tabcolsep</code>，已按 <code>\setlength&#123;\tabcolsep&#125;&#123;3pt&#125;</code> 重算；表正文列改 <code>L&#123;&#125;</code>（<code>&gt;&#123;\raggedright\arraybackslash&#125;p&#123;&#125;</code>）后 Underfull 由 50 条降至 13 条；另修掉 Definition 里 <code>\texttt&#123;"pop-bind-v1"&#125;</code> 多出的引号——<strong>域分隔符字面量是 <code>pop-bind-v1</code>，不含引号</strong>（<code>circuits/types/src/lib.rs:401</code> 的 <code>BIND_DOMAIN</code>）。</p>
+  </div>
+</section>
+
+<!-- ================= 2 ================= -->
+<section id="s2">
+  <h2><span class="num">2</span>先例对照</h2>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>线</th><th>作品</th><th>它占的位</th><th>PoP 必须做的区分</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>策略→电路</td>
+          <td><strong>zkGen</strong> (ICBC'24)、Circuitree (IEEE Access'22)、Prezta (arXiv 2607.11466)、CirC、ZKPDL/Zo/ZQL/zkay</td>
+          <td>"策略 DSL → 电路"这件事本身</td>
+          <td>PoP 的不在"编译"，在<strong>策略级语义 + 违规证据 + 绑定分析</strong></td>
+        </tr>
+        <tr>
+          <td>Agent/LLM 合规</td>
+          <td><strong>NiyamAI</strong>、Zaguk、<strong>PCO</strong>、ZADKIEL (ICBC'26)、WITNESS</td>
+          <td>机制、私有模式、证书、产品形态</td>
+          <td>PoP 的 delta：<strong>私有策略模式</strong> + <strong>形式化绑定/隐私模型</strong></td>
+        </tr>
+        <tr>
+          <td>模型层</td>
+          <td>DeepProve (CCS'26)、zkGPT (USENIX'25)、zkLLM、<strong>zkAgent</strong> (ePrint 2026/199)、VeriLoRA (NDSS'26)</td>
+          <td>推理/执行完整性</td>
+          <td>正交层；PoP 仅需<strong>组合契约</strong></td>
+        </tr>
+        <tr>
+          <td>攻击/负面结果</td>
+          <td><strong>Hollow-LLM</strong> (S&amp;P'26, pp. 4339–4355, DOI 10.1109/SP63933.2026.00258)、zk-attach (arXiv 2608.30083)、Proof-of-Guardrail (arXiv 2603.05786)</td>
+          <td>绑定缺口的命名与形式化</td>
+          <td><strong>主要论据</strong>；delta 见 §1.3 底线 1</td>
+        </tr>
+        <tr>
+          <td>非 ZK 工业基线</td>
+          <td>@brivora/verify (ML-DSA-65)、VAOL (DSSE+RFC 6962)、ZeroClaw tool receipts</td>
+          <td>透明模式的行业默认做法</td>
+          <td>WP9 的对照臂；也是"为什么要 ZK"的证伪对象</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note warn">
+    <span class="tag">⚠️ 引文纪律</span>
+    上表除我亲验的五条（Hollow-LLM / zkGen / NiyamAI / zkAgent / ePrint 2024/813）外，其余需<strong>逐条打开原文核实</strong>再进 bibliography。2026 该领域 preprint 密度极高且质量参差（部分 Zenodo/白皮书有 LLM 生成合规文档的特征）。
+  </div>
+</section>
+
+<!-- ================= 3 ================= -->
+<section id="s3">
+  <h2><span class="num">3</span>工作包</h2>
+  <p>优先级：<span class="pill hi">P0</span> = 不做就投不出去；<span class="pill mid">P1</span> = 决定能不能过审；<span class="pill lo">P2</span> = 加分。</p>
+
+  <h3>WP1 — 内存墙 + 规模化评测 <span class="wp p0">P0</span> <span style="font-size:.8rem;color:var(--fg-faint)">决定项 D5 / D6</span></h3>
+  <p><strong>目标</strong>：把"只能证 200 字符 × 2 规则"变成"能证 8 规则 × 50k 字符"，并<strong>同时打通 groth16</strong>（从而让标题里的 Zero-Knowledge 成立，D5）。</p>
+  <p><strong>现状证据</strong>（<code>bench/results/proofs.md</code>、<code>prover_knobs*.md</code>，机器 24 核 / 11.7 GiB）：</p>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>配置</th><th class="num">峰值 RSS</th><th>结果</th></tr></thead>
+      <tbody>
+        <tr><td>200 字符 × 1 规则</td><td class="num">10,389 MiB</td><td>✅ 123.5 s</td></tr>
+        <tr><td>200 字符 × 2 规则</td><td class="num">10,438 MiB</td><td>✅ 118.9 s</td></tr>
+        <tr><td>2,000 字符 × 1 规则</td><td class="num">10,449 MiB</td><td>✅ 138.1 s</td></tr>
+        <tr><td>10,000 字符 × 1 规则</td><td class="num">10,506 MiB</td><td>✅ 172.5 s</td></tr>
+        <tr><td>200 字符 × 3 规则（默认旋钮）</td><td class="num">—</td><td>❌ OOM @57 s</td></tr>
+        <tr><td>200 字符 × 3 规则（<code>NUM_CORE_WORKERS=1 CORE_BUFFER_SIZE=1</code>）</td><td class="num">10,764 MiB</td><td>✅ 160.1 s</td></tr>
+        <tr><td>20,000 字符 × 1 规则（两臂）</td><td class="num">—</td><td>❌ OOM</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>关键推论</strong>：边际成本极小（<strong>每规则 +49 MiB，每 9,800 字符 +117 MiB</strong>），墙的 ~98% 是证明器的<strong>固定开销</strong>（~10.15–10.4 GiB）。旋钮最好只买到 <strong>−10.9%</strong>（10,454 → 9,302 MiB）。⇒ 换 ≥64 GB 机器，墙基本消失。</p>
+  <p><strong>动作</strong>：</p>
+  <ol>
+    <li>租云 ≥64 GB / ≥32 核；打通 <code>groth16</code>（Go + native-gnark）。</li>
+    <li><strong>先测 10k→20k→50k 这一段</strong>，定位 <code>(20000,1)</code> 两臂皆 OOM 的原因。若为超线性（嫌疑：Pike VM 状态集 / shard 切分 / tracing 缓冲），则加内存无用，必须改算法（分块匹配 / 流式 / 限制 NFA 状态数）。<strong>这是本计划最大的技术不确定性，必须在 M1 内销案。</strong></li>
+    <li>跑满矩阵：规则 &#123;1,2,3,4,6,8&#125; × 长度 &#123;200, 2k, 10k, 50k&#125; × 模式 &#123;transparent, private, private-policy&#125; × 证明档 &#123;core, groth16&#125;。
+      <div class="note warn" style="margin:.6rem 0 0">
+        <span class="tag">⚠️ 矩阵里"模式"这一维现在量不到</span>
+        <code>pop-script</code> 只有 <code>--vectors/--out/--proof-out/--proof-mode/--verify/--check</code>，<strong>没有 <code>--mode</code></strong>；公私之别住在会话层（<code>AgentMonitor(mode=…)</code>、<code>demo_e2e.py --mode</code>），不进 zkVM。所以 <a href="../bench/bench_scale.py">bench_scale.py</a> 只量 <strong>prover 侧</strong>（规则 × 长度 × 证明档）——内存墙就在这一侧。隐私模式要么在会话层单独量（归 WP4 的评测轴），要么先把 <code>--mode</code> 真的接进 <code>pop-script</code> 再加这一维。<strong>在矩阵里摆一个量不到的维度，就是在给一张假表留位置。</strong>
+      </div>
+    </li>
+    <li>实现 <strong>verifier-only 二进制</strong>。现在 <code>--verify</code> 冷启动 22.8 s 是因为构造了 ~10 GB 证明器；纯验证 89.84 ms、vkey setup 1.616 s。<strong>不做这一步，"纯验证 90 ms" 在审稿人眼里不可信。</strong></li>
+  </ol>
+  <p><strong>验收</strong>：<code>bench/results/proofs_scale.md</code>；<strong>至少 6–8 规则 × 2k+ 字符在 groth16 下出证并验证通过</strong>。</p>
+  <p><strong>依赖</strong>：云机器（D6）。<strong>被依赖</strong>：D5（标题）、D3（私有策略需 groth16）、WP4、WP9。</p>
+  <p><strong>骨架</strong>：<a href="../bench/bench_scale.py">bench_scale.py</a> 已给出（矩阵定义 + 容错 + CSV/MD 输出）。</p>
+
+  <h3>WP2 — 定理：T1 / T2 / T3′ <span class="wp p1">P1</span> <span style="font-size:.8rem;color:var(--fg-faint)">决定项 D2</span></h3>
+  <p><strong>目标</strong>：把 <code>docs/sp1-zk-audit.md</code> §4 那段 5 行的观察，升级为<strong>两条完整定理（T1-H/T1-L、T3′）加两条 Remark</strong>（分类、指定验证者设计观察）。</p>
+  <p><strong>为什么必须重做而不是加长</strong>：现有命题（"公开可重算绑定 + 内容隐藏对低熵 T 互斥"）与"密码不该无盐存储"同族，接近 folklore；且 Hollow-LLM 已在 S&amp;P'26 形式化了更难的版本。</p>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>定理</th><th>陈述</th><th>让它不 folklore 的关键</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>T1-H</strong> 哈希制式</td>
+          <td>令 <code>k = −log₂ Guess(T∣Z)</code>（猜测熵，<strong>可测</strong>），公开值含 <code>β(T) = H(dom‖len(n)‖n‖T)</code>，<code>H</code> 为 RO、<code>n</code> 与 <code>T</code> 独立。则 q 次查询的成功率 <code>≤ q·2^&#123;−k&#125; + q·2^&#123;−λ&#125;</code>；隐藏成立需 <code>k ≥ log q + log(1/ε)</code>。<strong>成败全在"对手已知信息 Z"怎么定</strong>（见 §1.4）与<strong>这条结构性假设不能省</strong>（见 §1.7）</td>
+          <td><strong>不是查困惑度文献，是必须实测</strong>。对手已知 prompt + 模型时，贪心解码下响应近乎确定 ⇒ <code>k ≈ 0</code>，攻击是<strong>重执行</strong>而非枚举</td>
+          <td>✅ <strong>证明已写全</strong>（<code>security-model.md</code> §4.5.3 + skeleton 正文）</td>
+        </tr>
+        <tr>
+          <td><strong>T1-L</strong> 有损制式</td>
+          <td>对任意公开确定 <code>β</code>，界落在<strong>原像类</strong>猜测概率 <code>Guess(T∣Z,β(T))</code> 上；<code>β = encode(T)</code> 时约 <code>1/N</code> 量级</td>
+          <td><strong>本文两个实例分居假设两侧</strong>——补上假设反而把 §1.4 第二实例收进同一条定理</td>
+          <td>✅ <strong>已给</strong>（无闭式，给测量口径）</td>
+        </tr>
+        <tr>
+          <td class="strike"><strong>T2</strong> 可区分性</td>
+          <td class="strike">公开可验证 + 隐藏不可能；指定验证者 + 隐藏可构造且最优</td>
+          <td class="strike">——</td>
+          <td>❌ <strong>停用：不是难证，是空的</strong>。两个方向都由 <code>k</code> 单独决定，与"公开 vs 指定"无关（§1.7(c)）。skeleton 里降为 <code>Remark rem:designated</code></td>
+        </tr>
+        <tr>
+          <td><strong>T3′</strong> 定量请求绑定（<strong>取代原 T3</strong>）</td>
+          <td>设收件人贡献 <code>f</code> 比特新鲜挑战，则选择性呈现/回放的攻击优势 <code>≤ 2^&#123;−f&#125;·|对手预置集|</code>；不贡献新鲜量的协议下该优势<strong>不随任何参数衰减</strong>。<strong>不证明</strong>"只有三条路"</td>
+          <td>非平凡点<strong>在定量</strong>：诚实但可回放的一批合规响应 + 择一呈现。仓库自陈 <code>nonce</code> 为空时"<strong>不提供任何重放防护</strong>"（<code>circuits/types/src/lib.rs:969</code>）—— 该定理给这条自陈一个界</td>
+          <td>✅ <strong>已证</strong>（游戏 <code>G_SelPres</code> + 10 行证明）</td>
+        </tr>
+        <tr>
+          <td class="strike">T3 闭合三分法</td>
+          <td class="strike">要绑定送达字节 + 第三方可审计 + 无可信硬件，必须至少满足其一：硬件根 / 用户持有秘密 / 释放门控</td>
+          <td>❌ <strong>降为分类</strong>（discussion，不作 theorem）。理由见 §1.6(b)：现写法<strong>要么假、要么空</strong>；且穷举协议空间的证明本人独立做不可行</td>
+          <td>❌ 降为分类</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note accent">
+    <span class="tag">⚠️ D2 已两度回改（2026-10-12）</span>
+    <p>第一版把 T3（三分法）降为分类、换成 T3′；第二版经 §1.6(e) 自检后，<strong>把 T1 改成 (H)/(L) 两段式并补上必需假设、把 T2 整体停用</strong>。⇒ 最终形态：<strong>两条定理（T1-H/T1-L、T3′）+ 两条 Remark（分类、指定验证者设计观察）</strong>。可行性判据与替换理由见 <strong>§1.6</strong>，T1/T2 的具体改动见 <strong>§1.7</strong>。</p>
+  </div>
+  <p><strong>验收</strong>：<code>paper/tdsc-skeleton.tex</code> 中的定理陈述填成正式版；附录含完整证明；<code>docs/security-model.md</code> 增补 §"Binding of Policy Proofs"（与现有 L1–L9 并列，不替换）。</p>
+  <div class="note ok">
+    <span class="tag">验收进度（2026-10-12）</span>
+    <p>T1-H / T3′ 的<strong>完整证明已落盘</strong>（<code>docs/security-model.md</code> <strong>§4.5</strong>；skeleton 正文同步）；T1-L 与"T1-H 是 heuristic 而非信息论界"两条诚实边界已写入；<code>prop:semantic</code> 已改写为 T1-L 的实例。<strong>剩余</strong>：把 ROM 换成标准模型或明确只在 ROM 下主张（已登记在 skeleton 附录待补项）。</p>
+  </div>
+  <p><strong>依赖</strong>：无（可与 WP1 并行启动）。<strong>被依赖</strong>：D1 的分析半边、论文 §1/§3。</p>
+
+  <h3>WP3 — 组合：双载体 + 输入绑定 <span class="wp p1">P1</span> <span style="font-size:.8rem;color:var(--fg-faint)">决定项 D4</span></h3>
+  <p><strong>现状</strong>：<code>bench/results/compose.md</code> 自陈——代理 MLP 仅 <strong>640 个定点权重 / 83,492 周期</strong>，两半都被 zkVM 固定开销主导（策略 127.3 s / 643,610 周期 vs 推理 110.8 s / 83,492 周期），<strong>"这份实验验证的是组合机制，不是成本结构"</strong>。</p>
+  <p><strong>两个更正</strong>：</p>
+  <ol>
+    <li><strong>zkAgent 无公开代码</strong>（ePrint 2026/199，SJTU，CCS 2026 major revision；标题/作者/数据我已核，仓库搜不到）⇒ 不能"换上真 zkAgent"。改用 <strong>D4 的双载体</strong>：
+      <ul>
+        <li><strong>主臂</strong>：ezkl + 真 ONNX。你已在用 ezkl 做 <code>semantic_bound</code>，复用现成管线，把 640 权重换成 <strong>≥10⁶ 参数</strong>的真模型，诚实标注规模。</li>
+        <li><strong>对照臂</strong>：<strong>DeepProve</strong>（开源，CCS'26，github.com/Lagrange-Labs/deep-prove）。证明完整 LLM 推理，分量最足；集成风险与硬件成本未知，<strong>若超期则降级为引用对照</strong>（见 §5 R6）。</li>
+      </ul>
+    </li>
+    <li><strong>组合本身不闭合缺口</strong>。只有当模型证明绑定到<strong>用户提交的输入 x</strong>（用户承诺 prompt），<code>M(x)=T ∧ π(T)</code> 才真的闭合"送错字节"。<strong>这正是 T3′ 里 <code>f &gt; 0</code> 的具体形式</strong>：用户提交的 <code>x</code> 就是那 <code>f</code> 个新鲜比特——此处的口径必须与 <code>paper/tdsc-skeleton.tex</code> §Composition 保持一致。</li>
+  </ol>
+  <p><strong>动作</strong>：定义组合契约（模型证明须暴露什么，策略证明才能绑上）→ 用一个真模型实例化 → 报规模与成本。</p>
+  <p><strong>验收</strong>：<code>bench/results/compose_real.md</code>；论文 §"Composition: the constructive half of the end-user-secret family"（对应 <code>paper/tdsc-skeleton.tex</code> §Composition，标记 <strong>Remark taxonomy (b)</strong> 而非已作废的 <code>T3(b)</code>）。</p>
+  <p><strong>骨架</strong>：<code>paper/tdsc-skeleton.tex</code> 中已留 §Composition 占位。</p>
+
+  <h3>WP4 — 私有策略模式 + 零知识违规证据 <span class="wp p0">P0</span> <span style="font-size:.8rem;color:var(--fg-faint)">决定项 D3</span></h3>
+  <div class="note warn">
+    <span class="tag">承重墙</span>
+    这是"透明模式 ZK 冗余"这个致命批评的<strong>唯一硬解</strong>；按 D1 第二版，它同时是<strong>论文重心的承重墙</strong>（§5 R4）。
+  </div>
+  <p><strong>论证链</strong>：对确定性规则 + 公开响应，签名哈希链就够了——行业正是这么做的（<code>@brivora/verify</code> 用 ML-DSA-65 + Ed25519 签 Merkle 根，<strong>不是 ZK</strong>；EU AI Act Art.12 实际接受的证据是签名 + eIDAS/RFC 3161 时间戳，<strong>不要求 ZK</strong>）。<strong>唯一无法用签名替代的场景是策略本身要保密</strong>：专有反欺诈规则簿、安全检测规则、不想被逆向的合规规则。</p>
+
+  <h4>WP4.1 可行性评估（2026-10-12 核过代码后重写）</h4>
+  <p>原计划第 1 条写的是「<strong>先确认 <code>ConstraintSpec</code> 在电路里是 witness 还是 public input</strong>」——<strong>已核，答案是好消息</strong>：</p>
+  <blockquote><code>spec_canonical</code> 是 guest 的<strong>输入（证人）</strong>，公开值里<strong>只有</strong> <code>policy_hash = SHA256(spec_canonical)</code>。</blockquote>
+  <p>依据：<code>circuits/types/src/lib.rs:1–16</code>（设计头注释）、<code>:415–416</code>（<code>spec_canonical</code> 是"唯一真相源，既用于派生 <code>policy_hash</code>，也用于解析要判定的约束"）、<code>:918</code>（<code>ProofOutput</code> 只带 <code>policy_hash</code>）、<code>:1003–1004</code>（<code>PrivateRequest.spec_canonical</code> 为证人侧字段）。</p>
+  <div class="note ok">
+    <span class="tag">⇒ 性质变了</span>
+    <strong>"策略文本不进公开值"这件事，架构上已经成立。</strong> WP4 不是"从零造一个隐私模式"，而是<strong>把已有的形状补齐、并把泄露口堵上</strong>。这显著改变了它的成本估计——它是<strong>披露策略重构</strong>，不是新证明系统。
+  </div>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th style="width:2rem">#</th><th>子问题</th><th>难度</th><th>依据 / 现状</th></tr></thead>
+      <tbody>
+        <tr><td><strong>①</strong></td><td>策略文本不进公开值</td><td><span class="pill lo">✅ 已完成</span></td><td><code>spec_canonical</code> 为证人输入；公开值只有 <code>policy_hash</code></td></tr>
+        <tr><td><strong>②</strong></td><td>但 <code>core</code> 是 STARK，<strong>轨迹会泄露</strong> ⇒ 必须 groth16</td><td><span class="pill mid">⚠️ 中</span>（压在 WP1）</td><td><code>docs/sp1-zk-audit.md</code>：core/compressed 非零知识</td></tr>
+        <tr><td><strong>③</strong></td><td>违规证据<strong>现在会泄露 <code>rule</code> + <code>kind</code></strong></td><td><span class="pill mid">⚠️ 中，可做</span></td><td><code>PrivateViolation&#123;rule, kind, evidence_commitment&#125;</code>（<code>:984</code>）</td></tr>
+        <tr><td><strong>④</strong></td><td>证据开示路径已存在，但<strong>开示即泄露规则</strong></td><td><span class="pill mid">⚠️ 中</span></td><td><code>policydsl/privacy/commit.py:319</code>「证据开示（对审计者选择性披露）」</td></tr>
+        <tr><td><strong>⑤</strong></td><td><code>delegated</code> 列表泄露策略<strong>结构</strong>（哪些规则被外包）</td><td><span class="pill mid">⚠️ 中，最易漏</span></td><td><code>:465–473</code>、<code>:892</code>：<code>passed=true</code> 且 <code>delegated</code> 非空<strong>不等于</strong>策略被满足</td></tr>
+        <tr><td><strong>⑥</strong></td><td>语义规则把 <code>encode(T)</code> 放进公开值</td><td><span class="pill hi">❌ 不建议在 WP4 里"修"</span></td><td><code>docs/design-semantic-rules.md:195–201</code> 仓库自陈。这是<strong>响应侧</strong>泄露，只能界定其边界，或私有策略模式下<strong>禁用语义规则</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>关键判断</strong>：①②③④⑤ 都落在<strong>"改写 guest 里往公开值推什么"</strong>这一件事上——那是<strong>披露策略重构</strong>，不是新证明系统。你们的策略判定本来就整个跑在 Rust guest 里，改动面可控。<strong>真正的困难不在密码学，在"披露粒度怎么定"。</strong></p>
+
+  <h4>WP4.2 真正的科学张力：策略保密 vs 策略问责</h4>
+  <p>这才是 WP4 里唯一够格当贡献的东西，也是最容易被审稿人一句话打死的点：</p>
+  <blockquote><strong>策略一旦保密，第三方监管者就无法核实运营方在执行的<em>是不是</em>它声称的那条规范。</strong> <code>policy_hash</code> 只说明"某个哈希为 H 的策略通过了"——它不说明 H 就是你规定的那条。</blockquote>
+  <p>所以私有策略模式<strong>只有在"策略作者可信"时才成立</strong>：监管方<strong>签发</strong> π，运营方对<strong>第三方</strong>（竞品、公众、终端用户）保密，被审计方持有开示权。你们的安全模型 §0.2 已经写着「<strong>策略作者 | 诚实</strong>」——<strong>前提是有的，但从没被写明为 WP4 的适用范围</strong>。不写，审稿人会用上面那句杀掉整个模式。</p>
+  <p><strong>动作</strong>：把这条<strong>显式写成三方模型 + 能力表</strong>，并把"验证者能/不能得出什么结论"逐条列出来。这是<strong>定义性贡献</strong>，且它比机制本身更站得住。</p>
+
+  <h4>WP4.3 结果预期（这是判断，不是承诺）</h4>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>交付物</th><th>成功概率</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>① + ②（私有策略模式本体 + groth16）</td><td><span class="pill lo">~80%</span></td><td>架构已就绪，主要成本在 WP1 的 groth16</td></tr>
+        <tr><td>③ + ④ + ⑤（违规证据/开示/delegated 的披露策略重构）</td><td><span class="pill mid">~70%</span></td><td>guest 内数据流改写；⑤ 最容易漏，漏了审稿人会抓</td></tr>
+        <tr><td>⑥ 语义规则在私有策略下的边界（或禁用）</td><td><span class="pill lo">~85%</span></td><td>诚实界定即可，别承诺"修好"</td></tr>
+        <tr><td><strong>完整"零知识违规证据"</strong>（证"存在违规"而不暴露规则身份）</td><td><span class="pill hi">~50–60%</span></td><td>见下</td></tr>
+        <tr><td>WP4.2 的三方模型 + 能力表</td><td><span class="pill lo">✅ 已落盘</span></td><td>纯定义工作，价值高、风险低。落点：<code>docs/security-model.md</code> <strong>§4.6</strong>（前提 P-PP、三方表、验证者能力表、两个泄露口 ③⑤ 的诚实标注、先例纪律）+ <code>paper/tdsc-skeleton.tex</code> <code>sec:wp4-tension</code>（<code>tab:wp4-parties</code> / <code>tab:wp4-capability</code>）。剩余：与付兴兵确认 P-PP 措辞、定其落地形态（链上登记 vs 签名清单）、补隐藏谓词那一条线的引文</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><strong>"完整零知识违规证据"为什么只给 50–60%</strong>：布尔部分（"存在违规"而不说是哪条）在电路里是<strong>容易</strong>的——把违规向量归约成一个 bool + 一个承诺就行。真正难的是<strong>披露粒度</strong>：</p>
+  <ul>
+    <li>若只输出"不合规"三个字，审计方<strong>没法修</strong>——它不知道该改什么。EU AI Act Art.13 的用法要求<strong>可操作</strong>。</li>
+    <li>要给出<strong>类别级</strong>披露（"某类规则被违反"），这个类别必须由<strong>策略作者事先定义</strong>——于是它变成设计选择，而不是定理。</li>
+    <li>而当策略规模小（3–8 条规则，正是你们的典型值）时，<strong>粗化后的类别本身就足以认出规则</strong>。这一步很可能证不出"不泄露"，只能给出<strong>泄露的界</strong>。</li>
+  </ul>
+  <p>⇒ <strong>预期的最优结果不是"完全隐藏"，而是"披露粒度 / 可操作性 / 泄露量"三者的权衡曲线。</strong> 那其实更好写：它有刻度、可测量、不吹。</p>
+  <p><strong>失败兜底（R4）维持</strong>：退化为"违规时揭示规则身份"，作为已知权衡写进 Limitations。但注意 §5 R4 的<strong>严重性已升级</strong>——那不再是"少一个特性"，而是论文少一条腿。</p>
+  <div class="note warn">
+    <span class="tag">⚠️ 先例纪律（风险最高处，且付兴兵正是这一行的专家）</span>
+    策略隐藏<strong>不是新原语</strong>——访问控制里的 hidden credentials / secret handshake / XACML 隐私早有；付兴兵自己的 attribute-hiding / fuzzy predicate encryption 就是"隐藏谓词本身"。<strong>必须引这条线，别当首创。</strong> 新的是"<strong>LLM 输出合规 + 违规类型/位置的选择性披露</strong>"这个应用与形式化，加上 WP4.2 那条<strong>问责张力</strong>。
+  </div>
+  <p><strong>验收</strong>：新模式的威胁模型（含三方模型与验证者能力表）+ 实现 + 评测轴（<strong>披露粒度 vs 成本 vs 泄露量</strong>）；论文 §"Policy-Private Compliance"。</p>
+
+  <h3>WP5 — 漏报 / 覆盖率安全目标 <span class="wp p2">P2</span> <span style="font-size:.8rem;color:var(--fg-faint)">D9 已选做</span></h3>
+  <p><strong>问题</strong>：现在 L8 只管"一个 run 内、且只有链上证书"。<strong>服务商可以对违规响应干脆不出证</strong>，产物上与"没发生过"无法区分。论文的健全性工作几乎全花在伪造上，而伪造是密码学上最难的那条路。</p>
+  <p><strong>动作</strong>：提升为正式安全目标（coverage/completeness）；构造机制（用户侧不可伪造的调用计数 + 序列号绑进证书 + gossip）；引 Certificate Transparency / 篡改 evident log 那条线。</p>
+  <p><strong>诚实预期</strong>：无可信硬件时可能无解。<strong>那就写成 open problem</strong>，或作为 §1.6(b) 那份 taxonomy 的一个条目（原"T3 的第四条轴"的说法随 T3 降为分类一并作废）。TDSC 接受诚实的 open problem，不接受悄悄绕过。</p>
+
+  <h3>WP6 — NFA DoS：升级为可用性攻击章节 <span class="wp p1">P1</span> <span style="font-size:.8rem;color:var(--fg-faint)">D9 已选做</span></h3>
+  <p><strong>现状</strong>（<code>bench/results/ablation_live.md</code>）：只到 n=100/200，且是 <code>--execute</code><strong>不出证</strong>。pike 19.2× / 42.5×，naive 每字符成本随 n 线性上升 ⇒ <strong>O(n²)</strong>。</p>
+  <p><strong>动作</strong>：</p>
+  <ol>
+    <li>扩到 n = 400 / 1000 / 4000，并且<strong>真的出证</strong>——证明对手能抬高的是<strong>证明成本</strong>，不只是执行成本。</li>
+    <li>形式化为可用性攻击：<em>"对任何含未锚定模式的策略，控制响应的对手可强制 Ω(n²) 证明工作量。"</em></li>
+    <li>缓解：Pike VM（已有）+ <strong>响应长度承诺</strong>（让验证者事先约束成本）+ 分块/流式匹配。</li>
+  </ol>
+  <p><strong>为什么值得</strong>：zk-regex 有 DFA 限制但<strong>没有 zkVM 场景下的 DoS 分析</strong>。小而干净、确实没人发过，TDSC 喜欢这种。</p>
+
+  <h3>WP7 — 口径、标题、引文更正 <span class="wp p0">P0</span> <span style="font-size:.8rem;color:var(--fg-faint)">零成本</span></h3>
+  <p>逐条 diff 见 <a href="tdsc-fixlist.md">tdsc-fixlist.md</a>。要点：</p>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>项</th><th>问题</th><th>状态</th></tr></thead>
+      <tbody>
+        <tr><td>引文</td><td><code>paper/*.md:45/61</code>、<code>*.tex:117/145</code> 引 "VDR/IACR 2024/813"</td><td>❌ <strong>已核实为错</strong>：2024/813 是 Kiraz/Larraia/Vaughan, <em>How to Redact the Bitcoin Backbone Protocol</em></td></tr>
+        <tr><td>README</td><td><code>README.md:15</code> 称 WITNESS "闭源"</td><td>❌ <strong>错</strong>（已核实）：WITNESS 的 Devpost 页明示 <strong>Apache 2.0 / "public from day one"</strong></td></tr>
+        <tr><td>README</td><td>同行"该组合目前无人系统化"</td><td>⚠️ 被 NiyamAI/Zaguk/PCO 削弱，需收窄</td></tr>
+        <tr><td>对比</td><td>"比 Proof-of-Guardrail 更强…证明的是性质而非执行"</td><td>❌ <strong>删</strong>。改"正交、可组合"</td></tr>
+        <tr><td>标题</td><td>"Zero-Knowledge" 在 <code>core</code>/<code>compressed</code> 下不成立</td><td>⏳ 由 D5 解决：<strong>groth16 成为交付档</strong>后标题才诚实</td></tr>
+        <tr><td>摘要</td><td>内容隐私上界现在埋在 §8.1</td><td>❌ <strong>提前到摘要</strong>（审稿人只读摘要）</td></tr>
+        <tr><td>zk-regex</td><td>曾疑"在 SP1 里复用 zk-regex"矛盾</td><td>✅ <strong>已核查，不成立</strong>：<code>paper/…md:60</code> 写的是"<strong>启发了</strong>我们的 NFA 契约"，<code>docs/dev-plan.md:48</code> 记录自研最小 NFA。<strong>措辞正确，无需改</strong></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>WP8 — Related work 大补 <span class="wp p0">P0</span></h3>
+  <p>按 §2 的五条线写。TDSC 高频拒稿原因之一就是相关工作不到位。<strong>每条都要有"它占什么位 / 我们差在哪"两列。</strong></p>
+
+  <h3>WP9 — 非 ZK 基线 + 决策图 <span class="wp p1">P1</span> <span style="font-size:.8rem;color:var(--fg-faint)">D9 已选做</span></h3>
+  <p>加一条<strong>签名 Merkle 日志</strong>臂（brivora/VAOL 风格）。预期结果：非否认性相同、成本更低，<strong>但</strong>（i）泄露策略、（ii）验证者必须拿到 T、（iii）无法做策略保密。</p>
+  <p><strong>这不只是补实验</strong>——它把"透明模式 ZK 冗余"这个批评变成<strong>有刻度的设计结论</strong>：<em>"ZK 只在 &#123;私有响应, 私有策略&#125; 两个角上有正收益"</em>。一张决策图 + 交叉点数据。</p>
+
+  <h4>WP9.1 决策图（<strong>这是本节真正的交付物</strong>）</h4>
+  <p>先把判据说清楚，再谈成本。<strong>决定要不要 ZK 的不是"要不要安全"，而是两个可见性问题</strong>：验证者<strong>是否需要看到 <code>T</code> 的明文</strong>？验证者<strong>是否需要看到 <code>π</code> 的明文</strong>？</p>
+  <p>签名 Merkle 日志的核验链是「验签 → 验日志包含 → <strong>重跑 <code>J(π,T)</code> 才能确认 <code>passed</code> 为真</strong>」。最后一步<strong>必须同时持有 <code>π</code> 与 <code>T</code> 的明文</strong>——这不是实现缺陷，是<strong>签名范式的结构性后果</strong>：签名只能担保"某个持有密钥的人说了这句话"，担保不了"这句话是真的"，所以"真"只能靠<strong>验证者自己重算</strong>。ZK 换来的恰恰是<strong>把这一步从验证者手里拿走</strong>。</p>
+  <p><strong>签名侧已测（2026-10-12，<code>bench/results/baseline.md</code>，n=500 取中位数，机器 <code>dxq</code>）</strong>：出证 <code>cert.sign_payload</code> <strong>0.132 ms</strong>；日志追加一叶 + 重算根 <strong>2.131 ms</strong>（⚠️ 是 <code>proofs/session.py</code> 的<strong>静态树重算 <code>Θ(n)</code></strong>，<strong>不是</strong> RFC-6962 增量日志的摊销 <code>Θ(log n)</code>，别当摊销值引用）；公开核验（验签 + 验包含）<strong>0.322 ms</strong>；<strong>重跑核验</strong>（验签 + 验包含 + <code>J(π,T)</code>）<strong>0.772 ms</strong>；证书 648 B；包含证明 761 B / 10 个兄弟。数字在共享机器上<strong>有 ±20% 漂移</strong>。</p>
+  <p><strong>而且那条不对称是机器校验过的，不是文字</strong>：本臂 6 条断言全绿才允许入库（<code>bench_baseline.py</code> 否则 <code>SystemExit("…别入库这份结果")</code>）。其中最硬的一条<strong>反例已实测</strong>：一份<strong>用同一把钥签的、<code>passed=False</code>（真值为 <code>True</code>）</strong>的证书，<strong>公开路径照样全绿</strong>，<strong>只有重跑 <code>J(π,T)</code> 才抓得住</strong>。这正是格 1 里 ZK 的"正收益"到底买什么的量化答案：<strong>买的是消掉那 0.772 ms、并免于把 <code>π</code> 与 <code>T</code> 交出去</strong>——两样都只在格 2–4 才值钱。</p>
+  <p>⚠️ <strong>基线并非处处更弱，必须照实写</strong>：<code>properties</code> 表里"<strong>不可否认性</strong>"一行，签名臂与 PoP <strong>相同</strong>（都根植于 Ed25519）——格 1 的论点是"<strong>同样好但更便宜</strong>"，<strong>不是</strong>"签名更弱"。把它写成"签名不安全"会被一句话拆掉。</p>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>#</th><th>响应 <code>T</code></th><th>策略 <code>π</code></th><th>ZK 有正收益？</th><th>谁承担核验</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1</strong></td><td>公开</td><td>公开</td><td>❌ <strong>没有</strong></td><td>验证者重跑 <code>J(π,T)</code></td><td><strong>"透明模式 ZK 冗余"这个批评在这一格上是对的</strong>——签名日志以更低成本给出同样的不可否认性。别辩护，写进论文</td></tr>
+        <tr><td><strong>2</strong></td><td>公开</td><td><strong>保密</strong></td><td>✅ 有（唯一手段）</td><td>证明者（电路内）</td><td>验证者拿到 <code>T</code> 也不能核验：<strong>没有 <code>π</code> 就无从重算</strong>。签名要求签名者公开判定依据 ⇒ 策略保密下签名范式直接失效</td></tr>
+        <tr><td><strong>3</strong></td><td><strong>保密</strong></td><td>公开</td><td>✅ 有（唯一手段）</td><td>证明者（电路内）</td><td>验证者拿到 <code>π</code> 也不能核验：<strong>没有 <code>T</code> 就无从重算</strong>；而 TEE 能给这条，代价是硬件信任</td></tr>
+        <tr><td><strong>4</strong></td><td><strong>保密</strong></td><td><strong>保密</strong></td><td>✅ 有（最大）</td><td>证明者（电路内）</td><td>两者都要。收益最大，<strong>也最难</strong>——撞上 §4.6 的问责张力（<code>policy_hash</code> 惰性）与 WP4.3 的披露粒度问题</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>⇒ <strong>决策规则（本文的设计结论）</strong>：<strong>ZK 只在"验证者不得看到 <code>T</code>"或"验证者不得看到 <code>π</code>"至少一条成立时才有正收益。</strong>两条都不成立（格 1）时，<strong>签名 Merkle 日志以更低成本给出相同的不可否认性</strong>——此时上 ZK 是纯粹的工程冗余。<strong>建议的默认档：格 1 用签名日志，格 2–4 用 ZK。</strong></p>
+  <p>⚠️ <strong>必须自己先承认的一条后果</strong>：<strong>仓库当前能端到端跑通的那个模式（透明模式 + 公开策略）正落在格 1</strong>——也就是本图判定"ZK 无正收益"的那一格。这不是要藏的事：它是<strong>同一个结论的第二个独立来源</strong>（第一个是 §5 R4 说 WP4 是承重墙）。两个来源指向同一件事——<strong>论文的分量押在格 2–4，而格 1 只能作为基线出现，不能作为卖点出现。</strong>审稿人若先自己看出这一点而论文没写，杀伤力远大于论文主动写。</p>
+  <p><strong>诚实边界</strong>：这张图只回答"<strong>有没有</strong>正收益"，不回答"<strong>值不值</strong>"。值不值要等 WP1 的 groth16 成本——<strong>交叉点数据在 WP1 落地前缺一半</strong>（本机签名侧已测，见 <code>bench/results/baseline.md</code>；ZK 侧见 <code>bench/results/proofs.md</code> 且<strong>受 10.15 GiB 内存地板限制</strong>）。在拿到交叉点之前，<strong>不要把这张图写成"ZK 更便宜"或"ZK 更贵"</strong>——两个方向都还没有数据。</p>
+  <p><strong>与既有四象限的关系</strong>：<code>docs/quadrant.md</code> 那张是「ZK / TEE / 形式验证 / hash-chain」按<strong>信任根基 × 成本</strong>分的；本节这张是按<strong>可见性要求</strong>分的，<strong>更细且更可操作</strong>——它解释了为什么格 1 的 ZK 是冗余，而四象限图只指出"它们在同一个格"。投稿时两图<strong>并列</strong>：四象限图放在评测节，决策图放在讨论/设计结论节。</p>
+  <p><strong>验收进度（2026-10-12）</strong>：非 ZK 基线臂<strong>已落盘</strong>——<code>bench/bench_baseline.py</code> + <code>bench/results/baseline.&#123;json,md&#125;</code> + <code>docs/design-baseline-merkle.md</code> + <code>bench/README.md</code> 一行；<code>tests/test_bench_views.py</code> 6 测试仍全绿。<strong>决策图（本节的交付物）已成文</strong>。⚠️ <strong>剩余的是数据，不是文字</strong>：交叉点/成本对比<strong>缺 ZK 一侧</strong>，WP1 落地前本节的定量结论<strong>只能出一半</strong>。</p>
+  <p>另记一条<strong>闸门缺口（既有，非本臂引入）</strong>：<code>baseline.*</code> <strong>进不了 <code>VIEWS</code></strong>——该闸门的通用不变量按 <code>d["rows"]</code> 的形状写（要求 <code>rows[].ok</code> / <code>rows[].peak_rss_mb</code>），而本臂的 JSON 是 <strong><code>metrics</code> 字典、没有 <code>rows</code> 键</strong>。本臂以 <code>--render-only</code> + 手工核 <code>render_md(json) == baseline.md</code> 替代（<strong>已复核为 MATCH</strong>），但这意味着<strong>这份结果不在防漂移闸门内</strong>——与仓库里 <code>verify</code> / <code>streaming</code> / <code>compose</code> / <code>semantic</code> / <code>cycles</code> / <code>ablation</code> 六份<strong>同样不在</strong>的情形一致，是<strong>既有缺口的延续</strong>。要真正堵上，得把闸门泛化成"每份入库结果都注册一个 (json→md) 渲染器"，而不是只认 <code>rows</code> 形状——<strong>属于测试基建改动，留给作者定</strong>。</p>
+
+  <h3>WP10 — 工件与可复现 <span class="wp p2">P2</span> <span style="font-size:.8rem;color:var(--fg-faint)">D9 已选做</span></h3>
+  <p>verifier-only 二进制（同 WP1）；一键复现脚本；<strong>显式写明硬件前提 ≥64 GB</strong>（否则别人复现不了大矩阵）；一个脚本重生成所有表。TDSC 审稿人对"复现不了"零容忍。</p>
+</section>
+
+<!-- ================= 4 ================= -->
+<section id="s4">
+  <h2><span class="num">4</span>里程碑（D7：9–12 个月）</h2>
+  <div class="ms">
+    <div class="msrow"><span class="id">M0</span><span class="wk">0–2 周</span>
+      <div class="body"><strong>前置</strong>：锁定密码学合作者（T0）；租云机器；复核 §2 引文
+        <div class="exit">出口：合作者到位 + 机器可出证</div></div></div>
+    <div class="msrow"><span class="id">M1</span><span class="wk">1–6 周</span>
+      <div class="body"><strong>地基</strong>：WP1 全矩阵 + groth16 + 定位 10k–50k 异常；WP7 口径/引文
+        <div class="exit">出口：<code>proofs_scale.md</code>；6–8 规则 × 2k 字符 groth16 通过</div></div></div>
+    <div class="msrow crit"><span class="id">M2</span><span class="wk">4–10 周</span>
+      <div class="body"><strong>系统新增</strong>：WP4 私有策略 + 零知识违规证据（<strong>承重墙</strong>，见 §5 R4）
+        <div class="exit">出口：新模式端到端出证</div></div></div>
+    <div class="msrow"><span class="id">M3</span><span class="wk">6–16 周</span>
+      <div class="body"><strong>理论</strong>：WP2 T1-H/T1-L + T3′（<strong>T2 已停用、三分法已降为分类</strong>，§1.6/§1.7）
+        <div class="exit">出口：✅ <strong>证明已提前落盘</strong>（2026-10-12）：<code>security-model.md</code> §4.5 + skeleton 正文。剩余仅"ROM → 标准模型或限定措辞"与写作</div></div></div>
+    <div class="msrow"><span class="id">M4</span><span class="wk">10–18 周</span>
+      <div class="body"><strong>组合</strong>：WP3 双载体 + 输入绑定
+        <div class="exit">出口：<code>compose_real.md</code></div></div></div>
+    <div class="msrow"><span class="id">M5</span><span class="wk">14–22 周</span>
+      <div class="body"><strong>安全章节</strong>：WP5 覆盖率 + WP6 NFA DoS + WP9 非 ZK 基线
+        <div class="exit">出口：三节可独立成文</div></div></div>
+    <div class="msrow"><span class="id">M6</span><span class="wk">20–30 周</span>
+      <div class="body"><strong>收口</strong>：WP10 工件；评测定稿
+        <div class="exit">出口：一键复现通过</div></div></div>
+    <div class="msrow"><span class="id">M7</span><span class="wk">28–40 周</span>
+      <div class="body"><strong>写作</strong>：论文全文 + 内部评审 + 投稿
+        <div class="exit">出口：投出</div></div></div>
+    <div class="msrow"><span class="id">M8</span><span class="wk">40+ 周</span>
+      <div class="body"><strong>审稿</strong>：TDSC 首轮 3–6 个月，大修再 2–6 个月
+        <div class="exit">—</div></div></div>
+  </div>
+
+  <div class="note accent">
+    <span class="tag">关键路径（2026-10-12 第三次重算）</span>
+    <p><code>M2 的 WP4 → M7 投稿</code></p>
+    <ul style="margin:.3rem 0 0">
+      <li><strong>§1.6(e) 的 6 周自检已从关键路径上撤下</strong>（已跑完，见 §1.6(e) 执行结果）：它原来的作用是"T1/T2/T3′ 能不能独立拿下"的唯一判据，现在结论已定（1 修 + 1 过 + 1 停），且<strong>证明已落盘</strong> ⇒ 不再是里程碑，也不再是 WP4 的前置阻塞项。</li>
+      <li>初版写的 <code>M0 合作者 → M3 定理</code> <strong>不再成立</strong>：合作者已到位，但证明要本人做，且 T3 已换成可证的 T3′。</li>
+      <li><strong>现在唯一能拖垮整个计划的是 WP4</strong>（见 R4），不是定理。</li>
+      <li>§1.6(e) 那 6 周自检<strong>已于 2026-10-12 执行完毕</strong>（T0-1b 销案，见 §6）：结论 <strong>1 修 + 1 过 + 1 停</strong> ⇒ 定理半边按 D2 的第二版走，<strong>D1 不需要再改</strong>（分析半边保住，因为它靠的是 T1-H 的测量实例，不靠被停用的 T2）。</li>
+      <li><strong>里程碑 M3 的"6 周自检已过"不再是待办</strong>：证明已落盘（<code>docs/security-model.md</code> §4.5 + skeleton 正文）。M3 剩余工作量因此只剩"把 ROM 换成标准模型 / 明确限定在 ROM"与写作。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= 5 ================= -->
+<section id="s5">
+  <h2><span class="num">5</span>风险登记册</h2>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th style="width:3rem">#</th><th>风险</th><th>概率</th><th>影响</th><th>触发条件</th><th>救援方案</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>R1</strong></td>
+          <td><strong>定理半边独立做不下来</strong>（初版是"找不到合作者"）</td>
+          <td><span class="pill hi">高</span>（曾兑现）</td>
+          <td>低（<strong>已销案</strong>）</td>
+          <td>—— <strong>已触发并已处置</strong></td>
+          <td>✅ <strong>已处置（2026-10-12 结案）</strong>：①合作者到位但只审读 ⇒ 命题换成 <strong>T3′</strong>，三分法降为分类（§1.6）；②<strong>§1.6(e) 的 6 周自检已跑完</strong>：T1（改成 H/L 两段并补假设后）<strong>已证</strong>、T3′ <strong>已证</strong>、T2 <strong>停用</strong>（§1.7）⇒ 定理半边<strong>不再构成风险</strong>。<strong>新残留</strong>：T1-H 只在 ROM 下成立，标准模型化是写作期事项，不是未知</td>
+        </tr>
+        <tr>
+          <td><strong>R1b</strong></td>
+          <td><strong>Theorem 陈述本身写错却一路带到投稿</strong>（本次实测出的新风险类别）</td>
+          <td><span class="pill mid">中</span></td>
+          <td><span class="pill hi">🔴 高</span>（假命题比缺证明更致命）</td>
+          <td>—— <strong>已触发一次</strong></td>
+          <td>✅ <strong>已处置</strong>：T1 原陈述<strong>是假的</strong>（反例 <code>β = id</code>，§1.7）；T2 原陈述<strong>是空的</strong>（§1.7(c)）。<strong>对策</strong>：定理一经写定，先找反例再找证明，反例搜不到才投证明——本次把这条当成流程固化</td>
+        </tr>
+        <tr>
+          <td><strong>R4</strong></td>
+          <td><strong>私有策略的"零知识违规证据"做不出来</strong></td>
+          <td><span class="pill mid">中</span></td>
+          <td><span class="pill hi">🔴 高（已升级）</span></td>
+          <td>M2 结束</td>
+          <td><strong>这不再是"写进 Limitations"就能过的事</strong>——按 D1 第二版，WP4 是论文重心的承重墙。分档兜底：① 退到"类别级披露"（预期形态，见 §3 WP4.3）；② 再退到"揭示规则身份 + 把权衡曲线当结果报"；③ 全退 ⇒ 论文只剩测量 + 工程 + 弱理论，<strong>够不上 TDSC</strong></td>
+        </tr>
+        <tr>
+          <td>R2</td>
+          <td>10k→20k 之间超线性，加内存压不平</td>
+          <td><span class="pill mid">中</span></td>
+          <td>高</td>
+          <td>M1 的 10k–50k 测量</td>
+          <td>改算法：分块匹配 / 流式 / 限 NFA 状态数；并在论文中把它作为一条独立发现报告</td>
+        </tr>
+        <tr>
+          <td>R3</td>
+          <td>groth16 在 SP1 上成本爆炸（zkAgent 的 LogUp 档 ~1069 s）</td>
+          <td><span class="pill mid">中</span></td>
+          <td>中</td>
+          <td>M1 groth16 打通</td>
+          <td>只对"私有响应 / 私有策略"档用 groth16，其余仍 core，<strong>报两档数据</strong>；D5 标题随之调整</td>
+        </tr>
+        <tr>
+          <td>R5</td>
+          <td>2026 该领域继续出新 preprint</td>
+          <td><span class="pill hi">高</span></td>
+          <td>中</td>
+          <td>持续</td>
+          <td><strong>T3′ 是不可能性结果——先例越多越支撑它，不削弱</strong></td>
+        </tr>
+        <tr>
+          <td>R6</td>
+          <td>DeepProve 集成超期（D4 对照臂）</td>
+          <td><span class="pill mid">中</span></td>
+          <td>低–中</td>
+          <td>M4 中期</td>
+          <td>降级为引用对照，只保留 ezkl 主臂；在论文中说明</td>
+        </tr>
+        <tr>
+          <td>R7</td>
+          <td>云机器成本超预算</td>
+          <td><span class="pill lo">低</span></td>
+          <td>低</td>
+          <td>M1 前</td>
+          <td>只在需要 groth16 / 大矩阵时开机；小矩阵留本机</td>
+        </tr>
+        <tr>
+          <td class="strike">R8</td>
+          <td class="strike">TDSC 中科院分区口径</td>
+          <td class="strike">—</td>
+          <td class="strike">—</td>
+          <td class="strike">—</td>
+          <td>✅ <strong>D8 已销案</strong>（CCF-A 口径已确认满足）</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= 6 ================= -->
+<section id="s6">
+  <h2><span class="num">6</span>前置阻塞项（T0）</h2>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th style="width:4rem">#</th><th>阻塞项</th><th>期限</th><th>销案判据</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>T0-1</td>
+          <td><strong>锁定密码学合作者 + 写死分工</strong>（D2 的前提）</td>
+          <td>M0 结束前（第 2 周）</td>
+          <td>✅ <strong>人已到位（付兴兵）</strong>；分工写死为「<strong>他审读，本人证明；他深度参与 WP4</strong>」（§1.6(f)）</td>
+        </tr>
+        <tr>
+          <td class="strike">T0-1b</td>
+          <td class="strike"><strong>跑 §1.6(e) 的 6 周自检</strong>（T1 的 q 次自适应界 + T3′ 的形式化游戏）</td>
+          <td>WP4 启动前</td>
+          <td>✅ <strong>已销案（2026-10-12，同日完成）</strong>：T1-H <strong>已证</strong>（含并界与首次命中论证）、T3′ <strong>已证</strong>（游戏 <code>G_SelPres</code> + 10 行证明）、T2 <strong>停用</strong>。落点：<code>docs/security-model.md</code> §4.5 + <code>paper/tdsc-skeleton.tex</code>。⇒ 按 D2 第二版走，<strong>D1 不需要再改</strong></td>
+        </tr>
+        <tr>
+          <td>T0-2</td>
+          <td>租定云机器（≥64 GB / ≥32 核）并能编 native-gnark</td>
+          <td>M0 结束前</td>
+          <td><code>groth16</code> 出证成功一次</td>
+        </tr>
+        <tr>
+          <td>T0-3</td>
+          <td>抽样复核 §2 与 WP8 的引文（至少 10 条）</td>
+          <td>M1 结束前</td>
+          <td>每条都打开过原文</td>
+        </tr>
+        <tr>
+          <td class="strike">T0-4</td>
+          <td class="strike">确认 TDSC 认定口径</td>
+          <td class="strike">—</td>
+          <td>✅ D8 已销案</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ================= 7 ================= -->
+<section id="s7">
+  <h2><span class="num">7</span>数据来源</h2>
+  <p>本文件中所有 PoP 侧数字均取自仓库实测文件，未做二次估算：</p>
+  <ul>
+    <li><code>bench/results/proofs.md</code> — 默认旋钮下的完整采样矩阵与内存地板</li>
+    <li><code>bench/results/prover_knobs.md</code> / <code>prover_knobs_cliff.md</code> — 旋钮 A/B 与悬崖点</li>
+    <li><code>bench/results/compose.md</code> — 组合证明成本（代理 MLP 口径）</li>
+    <li><code>bench/results/ablation_live.md</code> — Pike vs 朴素匹配</li>
+    <li><code>bench/results/verify.md</code> — 纯验证 89.84 ms / vkey setup 1.616 s / 冷启动 22.799 s</li>
+    <li><code>bench/comparison_zkagent.md</code> — zkAgent 对照数据</li>
+    <li><code>docs/sp1-zk-audit.md</code> — 健全性/零知识性核查与 §4 的互斥性观察</li>
+    <li><code>docs/security-model.md</code> v2 — L1–L9 与主定理</li>
+  </ul>
+
+  <h4>§1.5 / §1.6 / WP4.1 的代码级依据</h4>
+  <p>这三节是 2026-10-12 直接读代码得出的，不是转述文档：</p>
+  <ul>
+    <li><code>circuits/types/src/lib.rs:1–16</code> — 设计头注释：<code>spec_canonical</code> 传入 guest，<code>policy_hash</code> 进公开值</li>
+    <li><code>circuits/types/src/lib.rs:415–416</code> — <code>spec_canonical</code> 是"唯一真相源"（证人侧）</li>
+    <li><code>circuits/types/src/lib.rs:444–447, 950–995</code> — <code>response_binding</code> 的定义与<strong>它要解决的正是"证明里的 T 与客户端收到的 T′ 无联系"</strong></li>
+    <li><code>circuits/types/src/lib.rs:969</code> — <strong><code>nonce</code> 为空是合法的，"不提供任何重放防护"</strong>（T3′ 的现实依据）</li>
+    <li><code>circuits/types/src/lib.rs:984</code> — <code>PrivateViolation&#123;rule, kind, evidence_commitment&#125;</code>（WP4 ③ 的泄露口）</li>
+    <li><code>circuits/types/src/lib.rs:465–473, 892</code> — <code>delegated</code> 语义（WP4 ⑤ 的泄露口）</li>
+    <li><code>docs/security-model.md:36, 46, 232</code> — <code>nonce</code> 由<strong>验证者</strong>签发 + 第 6 步现场重算（§1.5 缺口 A/B 的依据）</li>
+    <li><code>docs/design-semantic-rules.md:195–201</code> — 互斥性的<strong>第二个实例</strong>：语义规则把 <code>encode(T)</code> 放进公开值</li>
+    <li><code>policydsl/privacy/commit.py:319</code> — 证据开示（对审计者选择性披露）</li>
+  </ul>
+  <p>外部先例的具体引用与核验状态见 <a href="tdsc-fixlist.md">tdsc-fixlist.md</a> §3。</p>
+</section>
+
+<footer>
+  <p>本页由 <code>docs/tdsc-plan.md</code> 渲染（第三版，2026-10-12）：T1 补结构性假设后成 T1-H/T1-L、T2 停用（二分法为空）、T3 → T3′、三分法降为分类、D1/D2 回改、WP4 升级为承重墙。自包含，无外部依赖。</p>
+</footer>
+
+</div>
+</body>
+</html>

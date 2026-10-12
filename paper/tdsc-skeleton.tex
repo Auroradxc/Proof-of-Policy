@@ -1,0 +1,748 @@
+% =====================================================================
+%  PoP -> IEEE TDSC : 英文论文骨架
+%  生成日期 2026-10-12 · 配套 docs/tdsc-plan.md
+%
+%  用法：这是 SKELETON，不是成稿。所有 \need{} 与 \wpmark{} 处都要填。
+%  决策锁定：见 docs/tdsc-plan.md §0（D1–D10）。
+%
+%  编译校验（本机已验通）：
+%      pdflatex "\def\SKELQUIET{}\input{tdsc-skeleton.tex}"   % 两次，第二遍收交叉引用
+%  \SKELQUIET 让所有中文标记宏吞掉参数；不带它则需要能排版中文的引擎
+%  （xelatex + CJK 字体），本骨架未配置。
+% =====================================================================
+\documentclass[journal]{IEEEtran}
+
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+% 窄栏里用 p{} 会因两端对齐产生大片字距（编译时刷一堆 Underfull \hbox）。
+% 表格正文列一律用 L{}：左对齐、允许自然参差。
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcommand{\tabfont}{\footnotesize}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+\newtheorem{remark}[theorem]{Remark}
+
+% --- 工作标记：提交前全部清掉 ---
+% 注意：宏名不能叫 \wp —— \wp 已是 LaTeX/amssymb 的 Weierstrass ℘，
+% \newcommand{\wp} 会直接报 "Command \wp already defined" 并使后文级联报错。
+\ifdefined\SKELQUIET
+  \newcommand{\wpmark}[1]{}
+  \newcommand{\need}[1]{}
+  \newcommand{\fixme}[1]{}
+\else
+  \newcommand{\wpmark}[1]{\textcolor{red}{\textsuperscript{[WP#1]}}}
+  \newcommand{\need}[1]{\textcolor{blue}{[[ NEED: #1 ]]}}
+  \newcommand{\fixme}[1]{\textcolor{orange}{[[ FIX: #1 ]]}}
+\fi
+
+\begin{document}
+
+% ---------------------------------------------------------------------
+% 标题：决策 D5 —— 保留 "Zero-Knowledge" 的前提是 groth16 成为交付档 (WP1)。
+%       若 WP1 未打通 groth16，必须删掉标题与摘要里的 zero-knowledge。
+% ---------------------------------------------------------------------
+\title{Proof-of-Policy: Zero-Knowledge Compliance Certificates\\ for LLM Agent Outputs}
+% 备选标题（若 groth16 未打通）："Proof-of-Policy: Succinct Compliance
+% Certificates for LLM Agent Outputs"
+
+\author{\need{authors}}
+\maketitle
+
+% ---------------------------------------------------------------------
+\begin{abstract}
+% 决策 E2：内容隐私上界必须出现在摘要，不能埋进 §8.1。
+We present \emph{Proof-of-Policy} (PoP), a system that proves an LLM agent's
+response $T$ satisfies a publicly declared policy $\pi$, without a trusted
+execution environment...
+\need{一句完整的贡献陈述（对应 D1 的"分析 x 系统各半"）}
+
+\smallskip
+\noindent\textbf{Scope of privacy.} PoP provides \emph{policy}-zero-knowledge:
+the certificate reveals neither the policy evaluation trace nor, in
+policy-private mode, the policy itself. It does \emph{not} guarantee that $T$
+is unrecoverable: as we show in \S\ref{sec:binding}, any publicly recomputable
+binding to $T$ admits a re-execution attack whenever the adversary knows the
+prompt and the model. The same bit-budget governs the request side: a
+certificate is replayable without limit unless the receiver contributes fresh
+randomness (Theorem \ref{thm:t3}).
+\end{abstract}
+
+\begin{IEEEkeywords}
+zero-knowledge proofs, LLM agents, policy compliance, verifiable computation,
+accountability
+\end{IEEEkeywords}
+
+% =====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+\need{Contribution list. 必须包含下面这条"不主张"声明：}
+
+\noindent\textbf{What we do \emph{not} claim.}
+We do not claim that policy proofs bind nothing: our own system already binds
+the response via a verifier-issued nonce (Definition 1). We do not claim to be
+the first to observe that a proof can fail to bind the artifact it purports to
+describe: the \emph{effort gap} for ZK inference proofs is formalised by
+Hollow-LLM \cite{hollowllm}, and the \emph{source-integrity gap} for predicate
+proofs is named by zk-attach \cite{zkattach}. Our contribution is to
+(i) show that the surviving gap is the \emph{divergent-delivery} one
+(Proposition \ref{thm:gap}), (ii) give a quantitative bound on what a public
+value reveals, together with the \emph{structural hypothesis} under which that
+bound holds---and a demonstration that the hypothesis is necessary, since our
+own two public values sit on opposite sides of it (Theorem \ref{thm:t1} and
+Remark \ref{rem:betanecessary}), and (iii) give a quantitative price for
+closing the gap (Theorem \ref{thm:t3}).
+
+\smallskip
+\noindent\textbf{A separation we deliberately do \emph{not} claim.} It is
+tempting to promote our designated-verifier interface into a theorem
+(``public verification is impossible when $k$ is small''). We give the reason
+we do not in Remark \ref{rem:designated}: in the low-$k$ regime hiding fails
+for every scheme, designated or not, and the dichotomy has no content of its
+own. We state this explicitly because the negated claim is the more attractive
+one to write.
+
+\smallskip
+\noindent\textbf{One spine, two sides.} Theorems \ref{thm:t1} and
+\ref{thm:t3} state the same fact about two different inputs: \emph{a proof
+binds only as much as the committed, adversary-non-selectable quantity has bits
+for}. The response side is governed by entropy,
+$k = -\log \mathsf{Guess}(T \mid Z)$ (Definition \ref{def:k}); the request side
+by freshness, $f$. Neither can be bought with more computation.
+
+\fixme{全文禁止出现"比 Proof-of-Guardrail 更强"或任何强弱对比。
+Proof-of-Guardrail 与本文正交：它证"计算发生过"，本文证"性质成立"。}
+
+% =====================================================================
+\section{Background and Related Work}
+\label{sec:related}
+
+\need{五条线，每条都要"它占什么位 / 我们差在哪"两列。见 docs/tdsc-plan.md \S2。}
+
+\begin{table}[t]
+\centering
+\caption{Positioning against the five prior-art lineages.}
+\label{tab:related}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.26\columnwidth}L{0.42\columnwidth}L{0.26\columnwidth}@{}}
+\toprule
+Lineage & Representative work & Occupied slot \\
+\midrule
+Policy $\to$ circuit      & zkGen \cite{zkgen}, Circuitree, Prezta & DSL-to-circuit \\
+Agent/LLM compliance      & NiyamAI, Zaguk, PCO \cite{pco}, WITNESS & private-mode kernel \\
+Model computation         & DeepProve, zkGPT, zkAgent \cite{zkagent} & inference integrity \\
+Attacks / negative results& Hollow-LLM \cite{hollowllm}, zk-attach \cite{zkattach} & naming the gap \\
+Non-ZK industry baseline  & @brivora/verify, VAOL & signed audit logs \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\fixme{引文纪律：除 Hollow-LLM / zkGen / NiyamAI / zkAgent / ePrint 2024/813
+五条外，其余引文必须逐条打开原文核实后再进 bibliography。
+见 docs/tdsc-fixlist.md \S2 的注记。}
+
+% =====================================================================
+\section{System Overview}
+\label{sec:system}
+% 决策 D1 的"系统半边"：这一节压缩到 ~1.5 页，是 T3(b) 的载体，不是主角。
+
+\need{DSL $\to$ ConstraintSpec $\to$ circuit；双模式；证书 + 锚定；
+工具回执链；801 测试 / 15 skip 的工件陈述。}
+
+% =====================================================================
+\section{Binding of Policy Proofs}
+\label{sec:binding}
+% 决策 D1 的"分析半边"：这是论文的核心。
+
+\subsection{The gap}
+
+\begin{definition}[Policy-proof system]
+A policy-proof system is a tuple $(\mathsf{Prove}, \mathsf{Ver}, \pi, \mathcal{M})$.
+On challenge $n$ from a verifier, $\mathsf{Prove}(\pi, T, n)$ outputs a
+certificate $c$ whose public values include
+\begin{multline*}
+b \;=\; H(\texttt{pop-bind-v1} \,\|\, \mathsf{u32be}(|n|) \,\|\, n \,\|\, T),\\
+C = H(T).
+\end{multline*}
+$\mathsf{Ver}(c, n, T')$ accepts iff the policy relation holds \emph{and}
+$b$ recomputed from the received $T'$ matches.
+\end{definition}
+
+\fixme{\textbf{H3/H4}：早先写的 ``the relation contains no term referring to the
+delivered bytes'' 与仓库事实冲突——公开值里\emph{已有} $b$，验证时由送达的
+$T'$ 现场重算（\texttt{circuits/types/src/lib.rs:444}、
+\texttt{docs/security-model.md:232}）。命题已按上面的定义改写。见
+\texttt{docs/tdsc-fixlist.md} \S H。}
+
+\begin{proposition}[Divergent delivery]
+\label{thm:gap}
+Definition 1 binds $T'$ \emph{as received by the verifying party}. If the
+provider delivers a different string $T'' \ne T'$ to the end user, verification
+still succeeds on $T'$. Neither hardware nor a proof can prevent this; only the
+end user holding $n$ and recomputing $b$ can.
+\end{proposition}
+\begin{proof}
+$b$ is a function of $(n,T)$ only; the delivery channel to the end user carries
+no authenticated term. One line.
+\end{proof}
+
+\need{This is the \emph{residual} gap, not ``proofs bind nothing''. Prior work
+must be cited here (Hollow-LLM \cite{hollowllm}, zk-attach \cite{zkattach}), and
+we state plainly that the naive claim would be false against our own system.}
+
+\subsection{A quantitative binding--hiding tradeoff}
+\label{sec:tradeoff}
+
+% ---------------------------------------------------------------------
+% T1 : 关键是把"对手已知信息 Z"定对。
+%      docs/tdsc-plan.md §1.4 已修正原 §4 的非因果推理。
+% ---------------------------------------------------------------------
+\begin{definition}[Guessing entropy of a response]
+\label{def:k}
+For a response distribution $\mathcal{D}$ and adversary side information $Z$,
+let
+\[
+\mathsf{Guess}(T \mid Z) \;\triangleq\; \max_{\mathcal{A}} \Pr[\mathcal{A}(Z) = T],
+\]
+which equals $\mathbb{E}_z[\max_t \Pr[T = t \mid Z = z]]$, and
+\[
+k \;\triangleq\; -\log_2 \mathsf{Guess}(T \mid Z),
+\]
+the maximum ranging over all time-unbounded adversaries.
+\end{definition}
+
+\begin{remark}[The definition is operational, and it is the average]
+\label{rem:kmeas}
+$k$ is \emph{measured}, not assumed: sampling one model on one prompt many
+times estimates $\mathsf{Guess}(T \mid Z)$ directly
+(\S\ref{sec:eval}), so Theorem \ref{thm:t1} is instantiated with a
+number we obtain rather than a number we posit. The definition must average
+over $z$ rather than take the pointwise worst case
+$k_z = -\log \max_t \Pr[T = t \mid Z = z]$: the proof takes an expectation over
+$z$, and $\mathbb{E}_z[2^{-k_z}] = 2^{-k}$ holds only for the average form.
+\end{remark}
+
+\begin{assumption}[Adversary side information]
+\label{as:Z}
+The adversary knows the prompt, the model (possibly its weights), and the
+decoding parameters. \emph{This is the assumption that makes the theorem
+non-trivial}: under greedy decoding, $k \approx 0$.
+\end{assumption}
+
+\begin{theorem}[Binding, and the hypothesis it needs]
+\label{thm:t1}
+Let $\beta : \mathcal{M} \to \{0,1\}^\lambda$ be public, deterministic and
+efficiently computable, and let the certificate publish $\beta(T)$. Let
+$\mathcal{A}$ be any adversary, unbounded in time, that is given $Z$ and
+evaluates $\beta$ at most $q$ times.
+\begin{enumerate}
+\item[(H)] \emph{(Randomised public value.)} Suppose
+  $\beta(T) = H(\mathsf{dom} \,\|\, \mathsf{u32be}(|n|) \,\|\, n \,\|\, T)$ for a
+  random oracle $H$ and a nonce $n$ drawn uniformly and \emph{independently of
+  $T$}. Then
+  \[
+  \Pr\!\left[\mathcal{A}^\beta\!\left(Z, \beta(T)\right) = T\right]
+  \;\le\; q \cdot 2^{-k} \;+\; q \cdot 2^{-\lambda}.
+  \]
+  Consequently hiding with advantage $\varepsilon$ requires
+  $k \ge \log q + \log(1/\varepsilon)$.
+\item[(L)] \emph{(Lossy public value.)} For an arbitrary deterministic public
+  $\beta$ the correct bound is over the \emph{preimage class}:
+  \begin{multline*}
+  \Pr\!\left[\mathcal{A}^\beta\!\left(Z, \beta(T)\right) = T\right]
+  \;\le\; \mathsf{Guess}\!\left(T \mid Z, \beta(T)\right) \\
+  \triangleq\; \mathbb{E}_y\!\left[\max_t \Pr[T = t \mid Z, \beta(T) = y]\right].
+  \end{multline*}
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+\emph{(H).} Fix $z$ and let the adversary's query set be
+$Q = \{q_1, \dots, q_q\}$. Decompose by first hit,
+\[
+\Pr[\exists i : q_i = T] \;=\; \sum_i \Pr\!\left[q_i = T \wedge \neg E_{<i}\right],
+\]
+where $E_{<i} \triangleq \{\exists j < i : q_j = T\}$.
+Conditioned on $\neg E_{<i}$, every oracle answer $a_1,\dots,a_{i-1}$ already
+revealed is uniform and independent of $T$ (no queried point equals $T$, and $H$
+is a fresh random function), and $\beta(T)$ itself is uniform and independent of
+$T$. Hence $q_i$---a deterministic function of $(z, \beta(T), a_{<i})$---is
+\emph{independent of $T$}, so
+\begin{multline*}
+\Pr[q_i = T \mid Z = z]
+= \sum_t \Pr[q_i = t]\,\Pr[T = t \mid Z = z] \\
+\le \max_t \Pr[T = t \mid Z = z] = 2^{-k_z},
+\end{multline*}
+giving $\Pr[\exists i : q_i = T \mid z] \le q\,2^{-k_z}$. Taking the expectation
+over $z$ and using $\mathbb{E}_z[2^{-k_z}] = \mathsf{Guess}(T \mid Z) = 2^{-k}$
+from Definition \ref{def:k} yields $q \cdot 2^{-k}$. An adversary that outputs
+an unqueried value wins with probability at most $2^{-k_z} \le q\,2^{-k_z}$,
+which the same bound absorbs. The term $q \cdot 2^{-\lambda}$ charges the
+probability that a query hits the uniform value $\beta(T)$ by chance.
+
+\emph{(L).} Immediate from Definition \ref{def:k} after conditioning on
+$\beta(T)$; no hypothesis on $\beta$ is used.
+\end{proof}
+
+\begin{remark}[The hypothesis in (H) is necessary, and our two instances straddle it]
+\label{rem:betanecessary}
+Without the hypothesis, part (H) is not merely unproven but \emph{false}: take
+$\beta = \mathrm{id}$, or $\beta = \mathsf{encode}$ as in
+Proposition \ref{prop:semantic}. The adversary outputs $\beta(T)$ and succeeds
+with probability $1$, independently of $q$ and $k$. Our own two public values
+therefore sit on opposite sides of the hypothesis---$b =
+H(\mathsf{dom}\|n\|T)$ satisfies it, $\mathsf{encode}(T)$ does not---and this is
+what makes the pair a theorem about \emph{our design} rather than a citation of
+a standard bound. An earlier draft of this work stated (H) without its
+hypothesis; the counterexample above is why the hypothesis is now explicit.
+\end{remark}
+
+\begin{corollary}[Re-execution, not enumeration]
+\label{cor:reexec}
+Under Assumption \ref{as:Z}, when the decoding is greedy or low-temperature,
+$k \approx 0$ and the attack of Theorem \ref{thm:t1} is realised by
+\emph{re-running the model}, at the cost of one inference---independent of
+$|T|$ and requiring \emph{no} evaluation of $\beta$. Enumeration over the string
+space is \emph{not} the relevant attack.
+\end{corollary}
+
+\fixme{原 docs/sp1-zk-audit.md §4 写的是"熵(~10^2--10^3 bit)远低于 256 bit，
+因此枚举可行"——这是非因果推论（2^100 与 2^256 一样枚举不了；真正的攻击是\textbf{重执行}，
+对手的已知信息是 (prompt, 模型, 解码参数)）。
+2026-10-12 已全库改正，docs/tdsc-fixlist.md §G 的 G1--G6 逐条结案。}
+
+\begin{remark}[A design observation, not a separation]
+\label{rem:designated}
+Our verification interface is \emph{designated}: binding is checked against a
+value $b = H(\mathsf{dom}\|n\|T)$ in which a verifier-issued nonce $n$ appears.
+It is tempting to promote this into a separation (``public verification is
+impossible when $k$ is small''). \textbf{We claim no such theorem, and
+Corollary \ref{cor:reexec} is why.} When $k \approx 0$, hiding fails for
+\emph{every} scheme, designated or not, because the adversary re-runs the
+model; when $k$ is large, a zero-knowledge proof of ``$\exists\, T : b =
+H(\mathsf{dom}\|n\|T) \wedge J(\pi, T) = 1$'' is simultaneously publicly
+verifiable and hiding. The dichotomy is thus governed by $k$ alone and carries
+no independent content. What does survive---and what
+\S\ref{sec:wp4-tension}
+develops---is that \emph{third-party auditing of delivery} forces disclosure of
+$T$, which is an informational remark rather than a theorem. We record the
+demotion here because an earlier draft asserted the separation as a theorem.
+\end{remark}
+
+\need{\textbf{This is retrospective justification, not a novel construction.}
+The system publishes $b = H(\mathsf{dom}\|n\|T)$ with a verifier-issued nonce
+$n$, and Remark \ref{rem:designated} explains the shape of that choice. The
+security model does not pin down whether $n$ is public; making it public
+forfeits hiding, and making it verifier-held is what makes verification
+designated.}
+
+\need{\textbf{实验内容}：实测 $k$。对一组真实 prompt、同一模型多次采样，
+估 $\mathsf{Guess}(T\mid Z)$（Definition \ref{def:k}），代入
+Theorem \ref{thm:t1}(H) 得阈值。
+据先例扫查，\emph{没有人测过这个量}——它本身是一块贡献。}
+
+\begin{proposition}[The lossy instance of Theorem \ref{thm:t1}(L)]
+\label{prop:semantic}
+For the semantic rule class, the public values contain $\beta(T) =
+\mathsf{encode}(T)$, a content-preserving feature vector of the response. This
+$\beta$ is deterministic and injective on the features but not on strings, so
+it violates the hypothesis of Theorem \ref{thm:t1}(H) and instantiates part
+(L): the binding force is exactly
+$\mathsf{Guess}(T \mid Z, \mathsf{encode}(T))$, i.e.\ the guessing probability
+\emph{within the preimage class} of the published vector. Here $k$ need not be
+argued from perplexity at all: the adversary's search space is that preimage,
+which is dramatically smaller than the string space. The relevant asymmetry is
+not ``low entropy'' but a \emph{lossy public encoding}.
+\end{proposition}
+\begin{proof}
+Immediate. The measurement is direct: publish $\mathsf{encode}(T)$ for real
+responses and measure how much of $T$ is recoverable.
+\end{proof}
+
+\need{This proposition is the paper's cheapest experiment and its strongest
+anchor for Theorem \ref{thm:t1}---it is measurable in a day, and it makes the
+bound concrete rather than cited. Source: \texttt{docs/design-semantic-rules.md}
+lines 195--201, where the repository itself already names it as a second
+instance.}
+
+\subsection{Quantitative request binding}
+\label{sec:t3}
+% 决策 D2（第二版，2026-10-12）：原「闭合三分法」定理降级为 Remark（分类），
+% 取代它的是下面的定量界 T3′。理由见 docs/tdsc-plan.md §1.6(b)：
+% 三分法要么假（理想功能模型下能构造出第四条路），要么琐碎（把三条路写成定义）。
+
+\begin{theorem}[Selective-presentation advantage]
+\label{thm:t3}
+Fix a policy $\pi$ and a request distribution. A selective-presentation
+adversary $\mathcal{B}$ may, \emph{before} seeing the receiver's challenge,
+compute a set $S$ of accepted transcripts. The receiver then contributes $f$
+fresh, uniformly random bits $r$ that enter the proven statement. Then
+\[
+\Pr\!\left[\mathcal{B}\ \text{is accepted on } r\right] \;\le\; |S| \cdot 2^{-f}.
+\]
+If instead the receiver contributes no fresh randomness ($f = 0$; e.g.\ an
+empty nonce), the advantage is $1$, and \emph{does not decay in any parameter
+of the system}.
+\end{theorem}
+\begin{proof}
+\need{主论证：$r$ 进入 $b = H(\text{dom} \| r \| T)$，故 $S$ 里任何一个
+预先算好的证书，只有在 $r$ 恰好落进它已覆盖的挑战集合时才被接受；
+$f$ 个新鲜均匀比特给出 $2^{-f}$ 的对撞上界，再对 $S$ 取并界。
+$f = 0$ 时 $S$ 中每个元素都是永久有效的重放。}
+
+\need{\textbf{代码依据}：\texttt{circuits/types/src/lib.rs}:950--995 已写明
+“nonce 为空是合法的……不提供任何重放防护”。定理的 $f = 0$ 分支不是假想，
+是本系统当前 API 的\emph{合法输入}。}
+\end{proof}
+
+\need{这条定理与 Theorem \ref{thm:t1} \textbf{同构}，而正是这一点使它值得写：
+两条说的是同一件事——\emph{一个证明只能绑住提交进去的、对手无法预先选择的
+那部分比特所能支撑的量}。Theorem \ref{thm:t1} 管响应侧
+（$k = -\log_2 \mathsf{Guess}(T \mid Z)$，见 Definition \ref{def:k}），Theorem \ref{thm:t3} 管请求侧（新鲜度 $f$）。
+这条统一主线写在 \S\ref{sec:intro} 的贡献列表里，是全文的理论骨架。}
+
+\begin{remark}[A taxonomy, not a trichotomy]
+\label{rem:taxonomy}
+Every policy-proof deployment we surveyed closes the divergent-delivery gap of
+Proposition \ref{thm:gap} in one of three ways:
+(a) root trust in hardware (attested enclaves);
+(b) have the \emph{end user} contribute a secret to the proven statement (the
+user issues the nonce); or
+(c) gate delivery on successful verification (\emph{prove-before-deliver}).
+\textbf{We offer this as a classification, not as an exhaustiveness theorem}:
+we neither prove that a fourth family cannot exist, nor that the three are
+disjoint. zk-attach \cite{zkattach} walks (a); NiyamAI and ZKAP walk (c); PoP
+walks (b).
+\end{remark}
+
+\need{\textbf{Posture, stated plainly.} Our system already carries
+\texttt{response\_binding}, but $n$ is issued by the \emph{verifier}. Moving it
+to the \emph{end user}---making $f > 0$ the receiver's contribution---closes
+the divergent-delivery branch of Proposition \ref{thm:gap}. This is a small
+protocol amendment, not a new system, and the paper must say exactly that. What
+Theorem \ref{thm:t3} buys is the \emph{price}: with $f = 0$ there is no closure
+at any cost.}
+
+% =====================================================================
+\section{Policy-Private Compliance}
+\label{sec:private-policy}
+% 决策 D3：这是"透明模式 ZK 冗余"这个批评的唯一硬解。
+% 2026-10-12 读代码后的定性：这不是"造一个新证明系统"，是一次\emph{披露策略}
+% 的重构——策略文本在架构上已经是证人。见 docs/tdsc-plan.md WP4.1。
+
+\need{动机：对确定性规则 + 公开响应，签名哈希链就够了。唯一无法用签名
+替代的场景是策略本身要保密。}
+
+\subsection{The observation that reframes this work package}
+\label{sec:wp4-finding}
+
+\texttt{spec\_canonical} is already a \emph{guest input}---a witness---not a
+public value: only
+$\mathsf{policy\_hash} = \mathsf{SHA256}(\texttt{spec\_canonical})$
+enters the public values (\texttt{circuits/types/src/lib.rs}:1--16, 415--416,
+918, 1003--1004). So ``do not reveal the policy text'' is
+\emph{architecturally already true}; what leaks is everything \emph{derived}
+from the policy. WP4 is accordingly a \emph{disclosure-policy refactor}, not a
+new proof system, and must be written that way---as a systematic account of
+what a certificate leaks about the policy it certifies.
+
+\begin{table}[t]
+\centering
+\caption{What a policy-private certificate leaks today, and what closing each
+leak costs.}
+\label{tab:wp4}
+\begin{tabular}{@{}L{0.04\linewidth}L{0.46\linewidth}L{0.36\linewidth}@{}}
+\toprule
+\# & Leak & Difficulty / dependency \\
+\midrule
+1 & The policy text itself & \textbf{Already closed} (it is a witness). \\
+2 & Witness hiding in the proof system & Medium; \emph{inherited from WP1}:
+    only \texttt{groth16}/\texttt{plonk} is witness-hiding, per
+    \texttt{docs/\allowbreak sp1-zk-audit.md}. \\
+3 & \texttt{PrivateViolation}\allowbreak\{\texttt{rule},\allowbreak\texttt{kind}\} names the rule that
+    fired & Medium; needs a coarsened violation class plus a commitment to it. \\
+4 & Evidence opening reveals the rule
+    (\texttt{policydsl/\allowbreak privacy/\allowbreak commit.py}:319) & Medium; disclose the
+    \emph{existence} of a violation, not its identity. \\
+5 & The \texttt{delegated} flag exposes policy structure (which rules were
+    routed to the ezkl path) & Medium; easiest to overlook, cheapest to fix. \\
+6 & Semantic rules publish $\beta(T)=\mathsf{encode}(T)$
+    (Proposition \ref{prop:semantic}) & Medium--high; either bound the
+    preimage, or disable this rule class in policy-private mode. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\need{Honest structure of the table, and it should be stated as such:
+sub-problem 1 is a one-paragraph re-reading of the existing code, \emph{not} a
+contribution; 2 is inherited wholesale from WP1; 3--5 are engineering with one
+real formal core (disclosure granularity); 6 is where the work is---and it
+collides with Theorem \ref{thm:t1}, because one cannot hide the policy while
+publishing a lossy encoding of the response that the semantic rules require.}
+
+\subsection{The tension worth writing up: policy privacy vs.\ accountability}
+\label{sec:wp4-tension}
+
+Lead the section with the tension, not with the cryptography: it determines
+whether the mode means anything at all.
+
+\paragraph{The prerequisite, stated as a prerequisite.} Let
+$H = \mathsf{SHA256}(\pi)$. On its own $H$ is \emph{inert}. A prover can always
+emit a self-consistent certificate for any policy $\pi'$ it prefers, simply by
+placing $H' = \mathsf{SHA256}(\pi')$ in that certificate. \emph{Secrecy of
+$\pi$ is what creates the gap}, and no cryptographic mechanism can close it:
+closing it would require showing $\pi$ to the verifier, which is precisely what
+the mode exists to avoid. What closes it is an \emph{issuing act}, so we state
+it as an explicit prerequisite of the mode:
+
+\begin{description}
+  \item[(P-PP)] An \emph{issuing authority} signs $\pi$ and registers $H$ in a
+  record readable by third parties. A policy is \emph{accountable} iff its
+  \texttt{policy\_hash} can be traced to such a record.
+\end{description}
+
+Without (P-PP) the mode is not merely weaker---the verifier's conclusion is
+empty. This is the same assumption as ``honest policy author'' in
+\texttt{docs/security-model.md}~\S0.2; what is new here is scoping it to the
+verification interface, which had not been done, and which a referee will
+otherwise use to dismiss the whole mode in one sentence.
+
+\paragraph{Three parties.} ``Three'' means \emph{authority / operator / third
+party}; an auditor is a named instance of the third party, not a fourth trust
+anchor.
+
+\begin{table}[t]
+\centering
+\caption{The three-party model of policy-private mode.}
+\label{tab:wp4-parties}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.15\columnwidth}L{0.13\columnwidth}L{0.64\columnwidth}@{}}
+\toprule
+Party & Honest? & Holds; wants \\
+\midrule
+Authority $R$ & \textbf{Yes}, by (P-PP) & Holds $\pi$ and the issuing record;
+wants $\pi$ actually enforced, and wants to be able to check that it was. \\
+Operator $O$ & \textbf{No} (the adversary) & Holds $\pi$, $T$, the proving key;
+wants $\pi$ hidden from third parties while still being able to certify. \\
+Third party $V$ & Yes & Holds only public values---\texttt{policy\_\allowbreak hash},
+\texttt{circuit\_\allowbreak hash}, \texttt{response\_\allowbreak commitment}, \texttt{passed}, the
+proof; wants to confirm that \emph{some issued} policy passed, and must
+\emph{not} learn $\pi$. \\
+\emph{(Auditor $V^{*}$)} & Yes & As $V$, plus $\pi$ once $O$ discloses it;
+wants ex-post accountability. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two boundaries must be stated with the model. First, secrecy of $\pi$ comes
+from a \emph{data-flow fact}---$\pi$ never enters the public values---not from
+zero-knowledge; any rule that writes a fragment of $\pi$ into the public values
+(the leaks in Table~\ref{tab:wp4}, items~3 and~5) breaks it on that fragment.
+Second, accountability for $V^{*}$ is \emph{voluntary}: $V^{*}$ can check only
+when $O$ chooses to disclose $\pi$. The mode offers no forced disclosure; that
+would need the release-gating family discussed in
+\texttt{docs/tdsc-plan.md}~\S1.6(b), which we do not claim.
+
+\paragraph{Verifier capability table.} This table is the contribution; the
+cryptography is downstream of it, and the table survives even if the
+cryptography only partially lands. \emph{It must appear in the paper as
+written}, because it is what stops \texttt{policy\_hash} from being read as
+``compliance was proved''.
+
+\begin{table}[t]
+\centering
+\caption{What each verifier may and may not conclude in policy-private mode.}
+\label{tab:wp4-capability}
+\footnotesize
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.14\columnwidth}L{0.31\columnwidth}L{0.30\columnwidth}L{0.17\columnwidth}@{}}
+\toprule
+Verifier & \textbf{May} conclude & \textbf{May not} conclude & Rests on \\
+\midrule
+Third party $V$ & (i) the commitment binds $T$
+(Definition~\ref{def:k}); (ii) \emph{some} policy with hash $H$ passed;
+(iii) $H$ appears in the issuing record & (iv) the \emph{content} of $\pi$;
+(v) how many rules $\pi$ has, or of which classes; (vi) ``the operator
+enforces the regulation \emph{I} care about''---only ``some issued
+regulation'' & (P-PP); A2; the $k$ of T1 \\
+End user (also receiver) & As $V$, and additionally: the proved $T$ is the
+string it received, since its nonce is bound (T3$'$, requires $f>0$) & Only
+the string it received; \emph{not} what was delivered to another downstream
+agent & $f>0$ \\
+Authority $R$ & Everything; it holds $\pi$ and can recompute $H$ & --- & --- \\
+Auditor $V^{*}$ (after disclosure) & (vii) $\mathsf{SHA256}(\pi) =
+\texttt{policy\_\allowbreak hash}$, i.e.\ what ran was the issued $\pi$;
+(viii) the disclosed violation record is consistent & (ix) the undisclosed
+part of $T$ & voluntary disclosure \\
+On-chain verifier & (i)--(iii) only; it hashes and verifies signatures, and
+does not interpret policy semantics & (iv)--(ix) & (P-PP) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $V$ row is the whole reason this subsection exists: $V$ does not obtain
+``compliance'', it obtains ``some issued policy was satisfied''. Conflating the
+two is the sentence a referee would use to kill the mode.
+
+\need{Remaining work on this subsection: (a) confirm the (P-PP) framing with
+the collaborator, and choose its instantiation (an on-chain registry of issued
+policy hashes vs.\ a signed manifest); (b) add the prior-art citations below;
+(c) decide whether the capability table merges with Table~\ref{tab:wp4} in the
+submission, or stays separate (currently separate, on the grounds that one
+table is about leakage and the other about verifier conclusions).}
+
+\subsection{Expected results, stated in advance}
+\label{sec:wp4-expect}
+
+\need{Calibrated expectations, so that a partial outcome is a publishable
+result rather than a failure:}
+\begin{itemize}
+  \item Sub-problems 1, 2, 6: high confidence ($\gtrsim 80\%$). 1 is already
+        true of the code; 2 follows from WP1; 6 is a design restriction.
+  \item Sub-problems 3, 4, 5: likely ($\sim 70\%$).
+  \item ``\emph{Zero}-knowledge violation evidence'' in the strong sense:
+        only $50$--$60\%$. The boolean ``some violation occurred'' is easy; the
+        hard part is \emph{granularity}---with $3$--$8$ rules, a coarsened
+        violation class can itself identify the rule. \textbf{The likely best
+        result is a granularity/actionability/leakage tradeoff curve, not full
+        hiding}---and that curve is a contribution in its own right.
+  \item \S\ref{sec:wp4-tension}, the tension and the capability table:
+        $\sim 90\%$. This is precisely why the section leads with it.
+\end{itemize}
+
+\need{Prior-art discipline, and this is the highest-risk place in the paper ---
+the collaborator's own field. \emph{Policy hiding is not a new primitive}:
+hidden credentials, secret handshake, and XACML privacy in access control, and
+attribute-hiding / fuzzy predicate encryption, are all the same family. Cite
+that line explicitly and do not claim primacy. What is new is narrow: (a) the
+\emph{application} to LLM output compliance together with selective disclosure
+of violation type and location, and (b) the accountability tension of
+\S\ref{sec:wp4-tension}.}
+
+% =====================================================================
+\section{Composition: The Constructive Half of the End-User-Secret Family}
+\label{sec:composition}
+% 决策 D4：双载体（ezkl + 真 ONNX 主臂；DeepProve 对照臂）。
+
+\fixme{关键更正：组合本身不闭合缺口。只有当模型证明绑定到\emph{用户提交的
+输入} $x$ 时，$M(x) = T \wedge \pi(T)$ 才真的闭合"送错字节"——而那恰好是
+Theorem \ref{thm:t3} 要求的 $f > 0$：用户提交的 $x$ 就是那 $f$ 个新鲜比特。}
+
+\need{组合契约的定义（模型证明须暴露什么，策略证明才能绑上）；
+真模型规模（$\ge 10^6$ 参数）；成本数据。}
+
+% =====================================================================
+\section{Availability: The Unanchored-Pattern Cost Attack}
+\label{sec:dos}
+% WP6。
+
+\begin{theorem}[Quadratic cost inflation]
+\need{对含未锚定模式的正则，控制响应的对手可强制 $\Omega(n^2)$ 证明工作量。}
+\end{theorem}
+
+\need{缓解：Pike VM（已有）+ 响应长度承诺 + 分块匹配。
+zk-regex 有 DFA 限制但没有 zkVM 场景下的 DoS 分析——这是新的。}
+
+% =====================================================================
+\section{Coverage: Can a Provider Simply Withhold Certificates?}
+\label{sec:coverage}
+% WP5。诚实预期：无可信硬件时可能无解 —— 那就写成 open problem。
+
+% =====================================================================
+\section{Evaluation}
+\label{sec:eval}
+
+\need{矩阵：规则 \{1,2,3,4,6,8\} $\times$ 长度 \{200, 2k, 10k, 50k\}
+$\times$ 模式 \{transparent, private, private-policy\}
+$\times$ 证明档 \{core, groth16\}。
+骨架见 bench/bench_scale.py。}
+
+\subsection{Why zero-knowledge? A decision map}
+% WP9：非 ZK 基线 + 决策图。
+
+\need{签名 Merkle 日志对照臂（brivora/VAOL 风格）。
+结论：ZK 只在 \{私有响应, 私有策略\} 两个角上有正收益。
+把"透明模式 ZK 冗余"从批评变成有刻度的设计结论。}
+
+% =====================================================================
+\section{Limitations}
+\label{sec:limitations}
+
+\need{必须写进去的：下列五条。每条都要在正文里展开，不是罗列。}
+\begin{itemize}
+  \item Content privacy here is \emph{commitment} privacy, not
+        irrecoverability of content (Corollary \ref{cor:reexec}).
+  \item The zero-knowledge property of the default proof mode:
+        \fixme{SP1's published security model states explicitly that
+        individual STARK proofs do not currently satisfy the
+        zero-knowledge property. If groth16 does not become the delivery
+        mode, the word ``zero-knowledge'' must leave the title.}
+  \item Binding the composition's input requires the user to be online (or to
+        hold a key). This is the price of Remark \ref{rem:taxonomy}(b), and
+        the concrete form of $f > 0$ in Theorem \ref{thm:t3}.
+  \item The coverage problem (\S\ref{sec:coverage}) may be unsolvable without
+        trusted hardware.
+  \item Three-party collusion is undetectable at the signature layer
+        (\texttt{docs/security-model.md}).
+\end{itemize}
+
+% =====================================================================
+\section{Conclusion}
+
+% =====================================================================
+\appendix
+\section{Proofs}
+\need{\textbf{状态（2026-10-12 自检后）}：
+Theorem \ref{thm:t1}(H) 与 Theorem \ref{thm:t3} 的证明\textbf{已写在正文}，
+此处不再重复。三分法已降级为分类 Remark \ref{rem:taxonomy}，无需证明。
+Theorem \ref{thm:t1}(L) 无闭式，只给测量口径（\S\ref{sec:eval}）。
+原 T2「分离定理」已\textbf{停用}（见 Remark \ref{rem:designated}）——
+本节因此只剩一条待补事项，见下。}
+
+\need{\textbf{待补}：把 Theorem \ref{thm:t1}(H) 的随机预言机模型换成
+标准模型（或明确声明本文只在 ROM 下主张）。当前证明依赖 $H$ 是新鲜随机函数
+这一条；实践中的 SHA-256 只给计算意义下的近似，故正文措辞必须写成
+\emph{heuristic}，不得写成信息论界。}
+
+% =====================================================================
+\begin{thebibliography}{99}
+
+\bibitem{hollowllm}
+C.~Gong, B.~Liu, and M.~Li, ``Hollow-LLM Attack: Computationally Trivial
+Weights in Zero-Knowledge Verification of LLM Inference,'' in \emph{IEEE S\&P},
+2026, pp.~4339--4355, DOI 10.1109/SP63933.2026.00258.
+
+\bibitem{zkattach}
+\need{zk-attach, arXiv:2608.30083 --- 打开原文核实作者后再引}
+
+\bibitem{zkgen}
+J.~Lauinger, J.~Ernstberger, and S.~Steinhorst, ``zkGen: Policy-to-Circuit
+Transpiler,'' in \emph{IEEE ICBC}, 2024, pp.~620--624,
+DOI 10.1109/ICBC59979.2024.10634440.
+
+\bibitem{pco}
+\need{PCO, IACR ePrint 2026/994 --- 打开原文核实作者（Dolev/Yung 等）后再引}
+
+\bibitem{zkagent}
+L.~Wang, H.~Lou, C.~Li, Y.~Yu, and Y.~Hu, ``zkAgent: Verifiable LLM Agent
+Execution via One-Shot Transcript Proofs,'' IACR ePrint 2026/199.
+
+\bibitem{vdr}
+\need{Verifiable Document Redacting, Springer, DOI 10.1007/978-3-319-66402-6_20
+--- 核实作者与年份。\textbf{绝不能再引 IACR ePrint 2024/813}（那是
+Kiraz/Larraia/Vaughan, "How to Redact the Bitcoin Backbone Protocol"）。
+见 docs/tdsc-fixlist.md \S A。}
+
+\end{thebibliography}
+
+\end{document}
