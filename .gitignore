@@ -51,3 +51,10 @@ semantic/model.resmoke.onnx
 *.pub.hex
 .DS_Store
 *.log
+
+# 论文构建产物：paper/proof-of-policy.tex 是权威源、.md 是 GitHub 镜像；
+# .pdf/.aux/.out/.toc 由 xelatex 从 .tex 再生成，不入库（*.log 已由上面的通配覆盖）
+paper/*.pdf
+paper/*.aux
+paper/*.out
+paper/*.toc
