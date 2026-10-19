@@ -359,13 +359,12 @@ def mode_contrast(out_dir: Path, response: str, vkey: str, prove: bool,
                   signer, proof_mode: str):
     """同一个挑战值喂给两种模式，各出一张证书 —— 这才是控制变量的对比。
 
-    ``prove`` 缺省 **False**（`--contrast-prove` 才打开），原因不是省时间而是**证不了**：
-    拿本 demo 的 `agent_content_v1`（3 条规则、含 `pattern_block`）出证，
-    **公开模式**能过，**私有模式**在本机（11.9 GB）实测被内核 OOM-kill
-    （`anon-rss` 10.391 GiB，而本机的可用天花板约 10.385 GiB —— 见 README
-    「公私模式对比」一节）。私有模式的真证明由支路② `private_demo.py` 承担，
-    那条策略更小、实测峰值 10.383 GiB 能过。所以这里默认只做**宿主校验**，
-    两张证书如实标注 `proof_mode: unproven`。
+    ``prove`` 缺省 **False**（`--contrast-prove` 才打开）。拿本 demo 的
+    `agent_content_v1`（3 条规则、含 `pattern_block`）出证，**公开模式**能过、
+    **私有模式**峰值 `anon-rss` 10.391 GiB（在 11.9 GB 的旧机器上被 OOM-kill，
+    见 README「公私模式对比」一节）。私有模式的真证明由支路② `private_demo.py`
+    承担，那条策略更小、实测峰值 10.383 GiB 能过。所以这里默认只做**宿主校验**，
+    两张证书如实标注 `proof_mode: unproven`（内存更大的机器可 `--contrast-prove` 出真证明）。
     """
     spec = compile_policy(ic.load_policy(REPO / CONTENT_PACK))
     nonce = challenge.new_nonce()
@@ -666,7 +665,7 @@ def print_summary(r: dict) -> None:
         # 别让「对比演示通过」被读成「两种模式都出证了」。
         print(f"mode contrast: 公开/私有各一张证书已入会话 "
               f"(passed={contrast['public']['passed']}) —— 上面那张表是现读的")
-        print(f"             证据档位: {'core（--contrast-prove）' if contrast['proved'] else 'unproven（宿主校验；本机 12 GB 证不了这条策略的私有模式，见 README）'}")
+        print(f"             证据档位: {'core（--contrast-prove）' if contrast['proved'] else 'unproven（宿主校验；默认不出证，--contrast-prove 才出真证明，见 README）'}")
     print(f"ledger      : {ledger} chain={reason}")
     if on_chain["n"]:
         print(f"on-chain    : {on_chain['n']}/{r['n_entries']} anchored on "
