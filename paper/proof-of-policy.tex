@@ -654,6 +654,7 @@ $n$ & pike (cycles) & naive (cycles) & 比值 & naive 每字符涨幅 \\
   \item \textbf{可复现性口径}：墙的\emph{位置}可复现（两个失败点各失败两次），
         墙上的\emph{耗时}不可复现 —— 同一组点单跑复核，时间有 $\pm 10\%$ 抖动，
         内存只有 $\pm 1\%$。故本文引用时间只给量级。
+  \item \textbf{换证明模式（\code{compressed}）已本机交付}：把 WSL2 内存上限从 12 GB 提到 14 GiB 后 \code{compressed} 真出证——峰值 $\sim$13.7 GiB / 302 s / 1.24 MiB，\code{pop-verify} 与 \code{verify_cert.py} 独立复验通过（此前文档写「峰值 11.0 GB」是 12 GB 下 OOM 的截断值、非真峰值）；\code{groth16}/\code{plonk} 仍受 $\ge$32--64 GB 内存墙，留作后续工作。
   \item \textbf{跨证书与多证明者}：会话聚合证明（3 张证书，\lem{8}）实测 \textbf{152.5 s}；
         多证明者（\lem{9}）要出\textbf{每段一份}证明，故成本随非空切片数线性增长——
         示例策略（模型方 + 网关各一段、部署方空切片）为两份证明。
@@ -740,7 +741,7 @@ Python 参考判定（golden）与 SP1 宿主/证明两条路径，逐条比对 
         zero-knowledge property''}；源码侧独立印证（SLOP 证明栈无任何盲化；\code{ShardProof}
         明文携带轨迹 Merkle 根与轨迹开值）。即 (G1) 健全性成立，但\textbf{证明工件本身不隐藏见证}。
         \code{groth16}/\code{plonk} 把内部 STARK 证明作为私有见证（公开输入仅 5 个），
-        是唯一可能隐藏见证的模式——但属包装器层面声明、非后量子，且需 $\ge$16 GB 内存，本文未实测。
+        是唯一可能隐藏见证的模式——但属包装器层面声明、非后量子，且需 $\ge$32--64 GB 内存（16 GB 物理内存装不下），本文未实测。
   \item \textbf{设计层面（更根本，与证明系统无关）}：公开值中的 \code{response_binding} /
         \code{response_commitment} 均为\textbf{公开且可离线重算}的 $T$ 的函数。
         \code{response_binding} 必须公开可重算，这正是验证者能独立核对「送达的 $T'$ 即被证明的 $T$」
