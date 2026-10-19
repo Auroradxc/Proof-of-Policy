@@ -533,7 +533,7 @@ pop-verify --meta <proof>.verify.json [--out result.json]
 |---|---|---|
 | `SP1_PROVER=native` | `unreachable` 崩溃 | 用 `SP1_PROVER=cpu`（合法值：cpu/cuda/mock/light/network） |
 | `SP1_PROVER=light` | “light prover cannot prove” | light 只能执行/验证 |
-| 内存不足 | 进程被 OOM killer 杀、无输出 | Core 需 ~10 GB（本机上限定 12 GB）；compressed/groth16 需 ≥16 GB |
+| 内存不足 | 进程被 OOM killer 杀、无输出 | Core 需 ~10 GB；compressed 需 ≥14 GiB（本机 WSL2 上限 12→14 GiB 后实测通过，见 `bench/results/compressed.md`）；groth16 需 ≥32–64 GB |
 | **一个进程连出多证** | 前面几个都成功、第 6~7 个被 `SIGKILL 9` 杀，峰值 10.65→10.82 GB | 每个证明后内存**缓慢累加**（不回落），单进程跑不完全部向量（当时 14 条）；`cross_validate.py` 因此默认 `--chunk 4`（每块一个干净进程，结果按原序合并） |
 | `no method named keep` | `sp1-prover` 编译失败 | 上游 `tempfile` 3.x 无 `TempDir::keep()` → 保留 `circuits/patches/tempfile` 与 `[patch.crates-io]` |
 | 缺 `libsp1gnark.a` | 构建失败 | 需 Go ≥1.24 + `GOPROXY=https://goproxy.cn,direct` |

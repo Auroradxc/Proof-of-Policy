@@ -32,7 +32,7 @@
 | `deploy_anchor.py` | 部署 `Anchor.sol`（字节码来自入库 artifact） | 否 | 否 | 秒级 |
 | `make_shots.py` | 从会话产物生成截图/HTML/SVG | 否 | 否 | 秒级 |
 | `anchor_e2e.sh` | 起 anvil → 部署 → demo → `--rpc` 核对 + 反例 | 可选 | 可 `--prove` | **~7 s** / **3:10**（带真证明，2026-09-12 本机实测） |
-| `make_audit_proof.sh` | 生成 compressed 审计 fixture | `pop-script` | 是（需 ≥16 GB） | 若干分钟 |
+| `make_audit_proof.sh` | 生成 compressed 审计 fixture | `pop-script` | 是（需 ≥14 GiB） | 若干分钟 |
 | `install_ezkl.sh` | 装 ezkl 栈（`ezkl==23.0.5 / onnx / torch`）到独立 venv，装前核版本、装后冒烟 `ezkl_prove.py info` | 否 | 否 | 取决于网络 |
 | `install_frameworks.sh` | 装 langchain/langgraph/mcp 到独立 venv | 否 | 否 | 取决于网络 |
 | `retry_install_frameworks.sh` | 上述网络的镜像回退版 | 否 | 否 | 同上 |
@@ -779,7 +779,7 @@ bash scripts/anchor/anchor_e2e.sh --keep          # 结束后不关 anvil
 并把边车里的路径**重写成相对名**（避免把本机绝对路径带进仓库）。
 
 有了 fixture，`tests/test_verifier_only.py` 的 2 个用例会自动启用（否则 skip）。
-**本机 12 GB 内存下 compressed 会 OOM**，需 ≥16 GB 机器。
+**本机 12 GB 内存下 compressed 会 OOM**（⚠️ 2026-10-19 更正：把 WSL2 内存上限提到 14 GiB 后 compressed 已可出证、真峰值 ~13.7 GiB，见 `bench/results/compressed.md`；groth16 仍需 ≥32–64 GB）。
 
 ### 四个安装脚本
 

@@ -32,7 +32,9 @@
 → **采用选项 B**：审计 fixture 交**≥16 GB** 机器/CI 生成；本仓库保留 `scripts/ops/make_audit_proof.sh` 与自动跳过的 fixture 用例；
 Core 证明路径不受影响（~10 GB，回归 PASS）。
 
-**验收（当前状态）**：`pop-verify` 构建/模式处理/快路径选择已测；**端到端（真实 compressed 证明 + pop-verify 验证）待 ≥16 GB 环境**。
+**验收（当前状态，2026-10-19 更新）**：`pop-verify` 构建/模式处理/快路径选择已测；**端到端（真实 compressed 证明 + pop-verify 验证）已在本机完成** —— 把 WSL2 内存上限 12→14 GiB 后出证（峰值 ~13.7 GiB / 5:02 / 1.24 MiB），`pop-verify` `verified:true` + `verify_cert.py` `RESULT: PASS`，见 [`bench/results/compressed.md`](../bench/results/compressed.md)。
+
+> ⚠️ **口径更正（2026-10-19）**：上段「峰值 11.0 GB」是 12 GB 下 OOM 的**截断值**（进程没爬到真峰值就被杀），非真峰值；compressed 真峰值 **~13.7 GiB**，**≥14 GiB 即可出证**（原「≥16 GB」方向对、数字略保守）。groth16 的「11.07 GB」同样是截断值，其真需求仍 **≥32–64 GB**，本机 16 GB 物理装不下，**该项仍属 T1**。
 
 ## B. format / budget / tool 规则入电路 —— 已实现
 

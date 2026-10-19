@@ -82,7 +82,7 @@ SP1_PROVER=cpu python3 scripts/prove/cross_validate.py      # 期望 host 19/19 
 >
 > 卡的是**内存不是 CPU**：周期表（[`bench/results/cycles.md`](../bench/results/cycles.md)）
 > 能扫到 100k 字符 × 6 规则，因为那只跑 zkVM 执行不出证。想证更大的策略要么加内存，
-> 要么换证明模式（`compressed` 需 ≥16 GB，见 §11）。
+> 要么换证明模式（`compressed` 需 ≥14 GiB，见 §11）。
 >
 > **换机器就能把这张表拉长** —— 具体怎么跑见下面 §4½。
 
@@ -121,7 +121,7 @@ python3 scripts/prove/regression_prove.py --print                         # 历�
 
 | 用途 | 内存 | 性质 |
 |---|---|---|
-| **P1-7** groth16 出证 + 验证合约测通 | **≥64 GB** | **硬需求、实测**（本机 12 GB 上 compressed/groth16 分别峰值 11.0 / 11.07 GB 被 OOM 杀，递归包装的固定开销就超了） |
+| **P1-7** groth16 出证 + 验证合约测通 | **≥64 GB** | **硬需求、实测**（groth16 真需求 ≥32–64 GB，本机 16 GB 物理装不下；本机 12 GB 上 groth16 峰值 11.07 GB 被 OOM 杀。⚠️ compressed 已本机 14 GiB 交付，见 [`bench/results/compressed.md`](../bench/results/compressed.md)，不再是本项的一部分） |
 | **P2-12** core 全矩阵 | ~16 GB（**粗估，未实测**） | **顺带**，不阻塞任何东西；做不完不影响 P1 段收尾 |
 
 **到机后按此顺序做**（前一件做完再做后一件）：
@@ -372,7 +372,7 @@ python3 scripts/verify/verify_cert.py --cert .../cert.json --pack policy_packs/e
   --ledger .../ledger.jsonl --proof .../proof.bin
 ```
 
-> ⚠️ **内存**：`compressed` 证明需 **≥16 GB**（本机 12 GB 实测 OOM，峰值 anon-RSS 11.0 GB；Core 仍需 ~10 GB）。
+> ⚠️ **内存**：`compressed` 证明**真峰值 ~13.7 GiB**（本机把 WSL2 内存上限 12→14 GiB 后实测通过：5:02 / 1.24 MiB / `verify_cert.py` RESULT PASS，见 [`bench/results/compressed.md`](../bench/results/compressed.md)）；Core 仍需 ~10 GB。⚠️ **口径更正（2026-10-19）**：旧写的「峰值 11.0 GB」是 12 GB 下 OOM 的截断值，非真峰值。
 > 需要 fixture 时运行 `SP1_PROVER=cpu bash scripts/ops/make_audit_proof.sh`（生成后 `tests/test_verifier_only.py` 的用例自动启用）。
 
 ## 12.（可选）链上锚定：真跑本地 Anvil
