@@ -1,0 +1,142 @@
+[
+  {
+    "query": "account deletion policy",
+    "doc": "doc-01",
+    "relevance": "95",
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "refund eligibility",
+    "doc": "doc-02",
+    "relevance": "88",
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "GDPR data subject rights",
+    "doc": "doc-03",
+    "relevance": "91",
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "password reset steps",
+    "doc": "doc-04",
+    "relevance": "76",
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "annual report filing",
+    "doc": "doc-05",
+    "relevance": "82",
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "unrelated marketing blurb",
+    "doc": "doc-06",
+    "relevance": "33",
+    "gt": "violation",
+    "predicted": "violation"
+  },
+  {
+    "query": "unrelated lunch menu",
+    "doc": "doc-07",
+    "relevance": "12",
+    "gt": "violation",
+    "predicted": "violation"
+  },
+  {
+    "query": "unrelated sports scores",
+    "doc": "doc-08",
+    "relevance": "41",
+    "gt": "violation",
+    "predicted": "violation"
+  },
+  {
+    "query": "boundary: exactly 70",
+    "doc": "doc-09",
+    "relevance": "70",
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "boundary: 69 just below",
+    "doc": "doc-10",
+    "relevance": "69",
+    "gt": "violation",
+    "predicted": "violation"
+  },
+  {
+    "query": "non-numeric score",
+    "doc": "doc-11",
+    "relevance": "high",
+    "gt": "violation",
+    "predicted": "violation"
+  },
+  {
+    "query": "missing score field",
+    "doc": "doc-12",
+    "relevance": null,
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "data breach notification",
+    "doc": "doc-13",
+    "relevance": "97",
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "unrelated weather",
+    "doc": "doc-14",
+    "relevance": "5",
+    "gt": "violation",
+    "predicted": "violation"
+  },
+  {
+    "query": "KYC verification",
+    "doc": "doc-15",
+    "relevance": "84",
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "unrelated recipe",
+    "doc": "doc-16",
+    "relevance": "18",
+    "gt": "violation",
+    "predicted": "violation"
+  },
+  {
+    "query": "complaint escalation",
+    "doc": "doc-17",
+    "relevance": "79",
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "unrelated celebrity gossip",
+    "doc": "doc-18",
+    "relevance": "22",
+    "gt": "violation",
+    "predicted": "violation"
+  },
+  {
+    "query": "terms of service",
+    "doc": "doc-19",
+    "relevance": "86",
+    "gt": "pass",
+    "predicted": "pass"
+  },
+  {
+    "query": "unrelated stock tips",
+    "doc": "doc-20",
+    "relevance": "37",
+    "gt": "violation",
+    "predicted": "violation"
+  }
+]

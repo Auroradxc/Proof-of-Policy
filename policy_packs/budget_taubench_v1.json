@@ -1,0 +1,15 @@
+{
+  "id": "budget-taubench-v1",
+  "version": "0.1.0",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "budget_bound",
+      "name": "call_budget",
+      "params": {
+        "budget": 3,
+        "unit": "calls"
+      }
+    }
+  ]
+}

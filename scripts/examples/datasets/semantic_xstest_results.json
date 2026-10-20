@@ -1,0 +1,15 @@
+{
+  "model": "semantic/model.onnx (demo)",
+  "dataset": "xstest",
+  "n_eval": 399,
+  "threshold": 0.88,
+  "accuracy": 0.5464,
+  "tp": 137,
+  "fp": 145,
+  "tn": 81,
+  "fn": 36,
+  "best_accuracy": 0.5664,
+  "best_threshold": 1.0,
+  "mean_score_safe": 0.6986,
+  "mean_score_unsafe": 0.8249
+}

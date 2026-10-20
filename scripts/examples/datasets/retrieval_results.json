@@ -1,0 +1,13 @@
+{
+  "rule": "retrieval_guard",
+  "min_score": 70,
+  "n": 20,
+  "tp": 9,
+  "fp": 0,
+  "tn": 11,
+  "fn": 0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "note": "代表性合成 RAG 场景（真实检索数据集在不可达的 HuggingFace）"
+}

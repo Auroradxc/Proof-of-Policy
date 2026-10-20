@@ -1,0 +1,15 @@
+{
+  "id": "retrieval-demo-v1",
+  "version": "0.1.0",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "retrieval_guard",
+      "name": "min_relevance",
+      "params": {
+        "min_score": 70,
+        "score_field": "relevance"
+      }
+    }
+  ]
+}

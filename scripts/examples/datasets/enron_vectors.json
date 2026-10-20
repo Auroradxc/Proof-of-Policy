@@ -1,0 +1,1202 @@
+[
+  {
+    "id": 0,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <8012132.1075853083164.JavaMail.evans@thyme>\r\nDate: Fri, 14 Sep 2001 14:05:43 -0700 (PDT)\r\nFrom: fran.fagan@enron.com\r\nTo: lynn.blair@enron.com\r\nSubject: FW: Promotions and Transfers- Gas "
+  },
+  {
+    "id": 1,
+    "has_pii": true,
+    "pii_count": {
+      "email": 73,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <17487060.1075858859914.JavaMail.evans@thyme>\r\nDate: Mon, 22 Oct 2001 12:31:23 -0700 (PDT)\r\nFrom: connie.hook@enron.com\r\nTo: doug.aschwege@enron.com, l..johnson@enron.com, becki.sans@enron"
+  },
+  {
+    "id": 2,
+    "has_pii": true,
+    "pii_count": {
+      "email": 4,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <6228320.1075853133229.JavaMail.evans@thyme>\r\nDate: Sun, 28 Oct 2001 07:55:38 -0800 (PST)\r\nFrom: fmackin@aol.com\r\nSubject: Amendment Issues\r\nMime-Version: 1.0\r\nContent-Type: text/plain; ch"
+  },
+  {
+    "id": 3,
+    "has_pii": true,
+    "pii_count": {
+      "email": 4,
+      "phone": 4,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <7165924.1075860473649.JavaMail.evans@thyme>\r\nDate: Wed, 7 Mar 2001 13:31:00 -0800 (PST)\r\nFrom: mary.hain@enron.com\r\nTo: james.steffes@enron.com, richard.sanders@enron.com\r\nSubject: PG&E C"
+  },
+  {
+    "id": 4,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 23,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <4442546.1075857945465.JavaMail.evans@thyme>\r\nDate: Thu, 10 May 2001 09:02:00 -0700 (PDT)\r\nFrom: enron.announcements@enron.com\r\nTo: houston.report@enron.com\r\nSubject: Weekend Outage Report"
+  },
+  {
+    "id": 5,
+    "has_pii": true,
+    "pii_count": {
+      "email": 8,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <13555426.1075840234025.JavaMail.evans@thyme>\r\nDate: Fri, 8 Sep 2000 07:02:00 -0700 (PDT)\r\nFrom: rosalee.fleming@enron.com\r\nTo: walker@missouri.edu\r\nSubject: Re: P. Walker professorship an"
+  },
+  {
+    "id": 6,
+    "has_pii": true,
+    "pii_count": {
+      "email": 3,
+      "phone": 5,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <13140415.1075854924636.JavaMail.evans@thyme>\r\nDate: Wed, 22 Aug 2001 07:02:45 -0700 (PDT)\r\nFrom: marie.heard@enron.com\r\nTo: carol.st.@enron.com\r\nSubject: RE: List of ISDA's\r\nMime-Version:"
+  },
+  {
+    "id": 7,
+    "has_pii": true,
+    "pii_count": {
+      "email": 28,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <4365337.1075840007696.JavaMail.evans@thyme>\r\nDate: Wed, 3 Oct 2001 20:16:44 -0700 (PDT)\r\nFrom: kysa.alport@enron.com\r\nTo: timothy.coffing@enron.com, shift.dl-portland@enron.com, tom.alons"
+  },
+  {
+    "id": 8,
+    "has_pii": true,
+    "pii_count": {
+      "email": 3,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <16906567.1075849782583.JavaMail.evans@thyme>\r\nDate: Fri, 16 Mar 2001 05:06:00 -0800 (PST)\r\nFrom: matthew.lenhart@enron.com\r\nTo: val.generes@ac.com\r\nSubject: \r\nMime-Version: 1.0\r\nContent-T"
+  },
+  {
+    "id": 9,
+    "has_pii": true,
+    "pii_count": {
+      "email": 6,
+      "phone": 2,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <6173762.1075859886469.JavaMail.evans@thyme>\r\nDate: Thu, 24 Jun 1999 01:48:00 -0700 (PDT)\r\nFrom: mark.taylor@enron.com\r\nTo: tracy.foy@enron.com\r\nSubject: Re: URGENT - Conference Call Onlin"
+  },
+  {
+    "id": 10,
+    "has_pii": true,
+    "pii_count": {
+      "email": 7,
+      "phone": 4,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <7814633.1075860251802.JavaMail.evans@thyme>\r\nDate: Wed, 28 Feb 2001 06:18:00 -0800 (PST)\r\nFrom: sara.shackleton@enron.com\r\nTo: mark.taylor@enron.com\r\nSubject: RE: POA for CARGILL INCORPOR"
+  },
+  {
+    "id": 11,
+    "has_pii": true,
+    "pii_count": {
+      "email": 6,
+      "phone": 2,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <27757441.1075858596813.JavaMail.evans@thyme>\r\nDate: Wed, 24 Oct 2001 14:25:07 -0700 (PDT)\r\nFrom: members@realmoney.com\r\nTo: members@realmoney.com\r\nSubject: Want to find out how risky your"
+  },
+  {
+    "id": 12,
+    "has_pii": true,
+    "pii_count": {
+      "email": 4,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <4328595.1075854493247.JavaMail.evans@thyme>\r\nDate: Thu, 8 Jun 2000 01:58:00 -0700 (PDT)\r\nFrom: david.delainey@enron.com\r\nTo: kay.chapman@enron.com\r\nSubject: Reviewer Approval\r\nMime-Versio"
+  },
+  {
+    "id": 13,
+    "has_pii": true,
+    "pii_count": {
+      "email": 4,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <8090595.1075842961150.JavaMail.evans@thyme>\r\nDate: Tue, 5 Sep 2000 11:32:00 -0700 (PDT)\r\nFrom: jeff.dasovich@enron.com\r\nTo: allison.navin@enron.com\r\nSubject: Re: San Diego\r\nCc: sandra.mcc"
+  },
+  {
+    "id": 14,
+    "has_pii": true,
+    "pii_count": {
+      "email": 71,
+      "phone": 5,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <4780887.1075843765021.JavaMail.evans@thyme>\r\nDate: Wed, 3 Jan 2001 10:48:00 -0800 (PST)\r\nFrom: abb@eslawfirm.com\r\nTo: kaplan@iepa.com, tross@mcnallytemple.com, smara@enron.com, \r\n\tstephan"
+  },
+  {
+    "id": 15,
+    "has_pii": true,
+    "pii_count": {
+      "email": 5,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <18919946.1075859208592.JavaMail.evans@thyme>\r\nDate: Fri, 16 Nov 2001 12:47:39 -0800 (PST)\r\nFrom: deverell@fluid.com\r\nTo: jdasovic@enron.com\r\nSubject: Favor\r\nMime-Version: 1.0\r\nContent-Typ"
+  },
+  {
+    "id": 16,
+    "has_pii": true,
+    "pii_count": {
+      "email": 4,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <11012936.1075859207912.JavaMail.evans@thyme>\r\nDate: Thu, 13 Dec 2001 15:17:58 -0800 (PST)\r\nFrom: jeff.dasovich@enron.com\r\nTo: scofer@llgm.com\r\nSubject: FW: Enron Security Letters\r\nMime-Ve"
+  },
+  {
+    "id": 17,
+    "has_pii": true,
+    "pii_count": {
+      "email": 14,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <32172416.1075852173513.JavaMail.evans@thyme>\r\nDate: Thu, 18 Oct 2001 04:48:29 -0700 (PDT)\r\nFrom: rod.hayslett@enron.com\r\nTo: james.saunders@enron.com, dave.waymire@enron.com, steve.gilber"
+  },
+  {
+    "id": 18,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <1947536.1075857131719.JavaMail.evans@thyme>\r\nDate: Wed, 1 Nov 2000 15:22:00 -0800 (PST)\r\nFrom: enron.announcements@enron.com\r\nTo: all.houston@enron.com\r\nSubject: Harris County - Early Vot"
+  },
+  {
+    "id": 19,
+    "has_pii": true,
+    "pii_count": {
+      "email": 7,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <29730637.1075857248818.JavaMail.evans@thyme>\r\nDate: Fri, 20 Oct 2000 01:30:00 -0700 (PDT)\r\nFrom: benjamin.rogers@enron.com\r\nTo: gus.eghneim@enron.com\r\nSubject: Questions regarding PSD per"
+  },
+  {
+    "id": 20,
+    "has_pii": true,
+    "pii_count": {
+      "email": 193,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <12034503.1075862154214.JavaMail.evans@thyme>\r\nDate: Mon, 19 Nov 2001 08:25:56 -0800 (PST)\r\nFrom: veronica.espinoza@enron.com\r\nTo: r..brackett@enron.com, s..bradford@enron.com, r..conner@e"
+  },
+  {
+    "id": 21,
+    "has_pii": true,
+    "pii_count": {
+      "email": 5,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <2490422.1075849671886.JavaMail.evans@thyme>\r\nDate: Fri, 4 May 2001 04:15:00 -0700 (PDT)\r\nFrom: soblander@carrfut.com\r\nTo: soblander@carrfut.com\r\nSubject: Global Economic & Markets Strateg"
+  },
+  {
+    "id": 22,
+    "has_pii": true,
+    "pii_count": {
+      "email": 3,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <384763.1075857468395.JavaMail.evans@thyme>\r\nDate: Tue, 15 Aug 2000 05:32:00 -0700 (PDT)\r\nFrom: hunter.shively@enron.com\r\nTo: andrew.lewis@enron.com, lewis.h@enron.com\r\nSubject: Nuke\r\nMime"
+  },
+  {
+    "id": 23,
+    "has_pii": true,
+    "pii_count": {
+      "email": 9,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <9525137.1075853687388.JavaMail.evans@thyme>\r\nDate: Thu, 29 Jun 2000 09:05:00 -0700 (PDT)\r\nFrom: chris.germany@enron.com\r\nTo: meredith.mitchell@enron.com, judy.townsend@enron.com, dan.june"
+  },
+  {
+    "id": 24,
+    "has_pii": true,
+    "pii_count": {
+      "email": 6,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <5947924.1075840509429.JavaMail.evans@thyme>\r\nDate: Tue, 18 Jun 2002 06:59:35 -0700 (PDT)\r\nFrom: chris.germany@enron.com\r\nTo: l..kelly@enron.com\r\nSubject: RE:\r\nMime-Version: 1.0\r\nContent-T"
+  },
+  {
+    "id": 25,
+    "has_pii": true,
+    "pii_count": {
+      "email": 68,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <9857470.1075842623668.JavaMail.evans@thyme>\r\nDate: Wed, 1 Nov 2000 02:56:00 -0800 (PST)\r\nFrom: deborah.shahmoradi@enron.com\r\nTo: mark.haedicke@enron.com, alan.aronowitz@enron.com, roger.b"
+  },
+  {
+    "id": 26,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 2,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <12940113.1075852323501.JavaMail.evans@thyme>\r\nDate: Mon, 29 Oct 2001 19:06:37 -0800 (PST)\r\nFrom: no.address@enron.com\r\nSubject: Lexis-Nexis Training: Houston & Worldwide / Dow Jones Train"
+  },
+  {
+    "id": 27,
+    "has_pii": true,
+    "pii_count": {
+      "email": 7,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <6820538.1075852660633.JavaMail.evans@thyme>\r\nDate: Mon, 16 Apr 2001 17:59:00 -0700 (PDT)\r\nFrom: guessingkeep@hotmail.com\r\nTo: office.chairman@enron.com\r\nSubject: Image of Enron in India\r\n"
+  },
+  {
+    "id": 28,
+    "has_pii": true,
+    "pii_count": {
+      "email": 8,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <33407821.1075857977533.JavaMail.evans@thyme>\r\nDate: Fri, 1 Dec 2000 03:46:00 -0800 (PST)\r\nFrom: larry.izzo@enron.com\r\nTo: greg.whalley@enron.com\r\nSubject: PROJECT STATUS REPORT\r\nCc: dave."
+  },
+  {
+    "id": 29,
+    "has_pii": true,
+    "pii_count": {
+      "email": 4,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <13395334.1075842324114.JavaMail.evans@thyme>\r\nDate: Mon, 25 Sep 2000 03:59:00 -0700 (PDT)\r\nFrom: debra.perlingiere@enron.com\r\nTo: roths@orbitworld.net\r\nSubject: RE: Marcie's leaving\r\nMime"
+  },
+  {
+    "id": 30,
+    "has_pii": true,
+    "pii_count": {
+      "email": 3,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <7771235.1075846168436.JavaMail.evans@thyme>\r\nDate: Fri, 18 Aug 2000 07:34:00 -0700 (PDT)\r\nFrom: maureen.mcvicker@enron.com\r\nTo: ghamel@strategos.com\r\nSubject: Enron Advisory Council\r\nMime"
+  },
+  {
+    "id": 31,
+    "has_pii": true,
+    "pii_count": {
+      "email": 22,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <3353568.1075848084967.JavaMail.evans@thyme>\r\nDate: Mon, 26 Jun 2000 03:58:00 -0700 (PDT)\r\nFrom: elizabeth.linnell@enron.com\r\nTo: knowledge.survey@enron.com\r\nSubject: Knowledge Management "
+  },
+  {
+    "id": 32,
+    "has_pii": true,
+    "pii_count": {
+      "email": 7,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <1630140.1075862358560.JavaMail.evans@thyme>\r\nDate: Tue, 20 Nov 2001 16:07:17 -0800 (PST)\r\nFrom: j..kean@enron.com\r\nTo: rkean@starband.net\r\nSubject: RE: Xmas\r\nMime-Version: 1.0\r\nContent-Ty"
+  },
+  {
+    "id": 33,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <13461559.1075851006791.JavaMail.evans@thyme>\r\nDate: Sun, 11 Feb 2001 06:22:00 -0800 (PST)\r\nFrom: steven.kean@enron.com\r\nTo: john.ambler@enron.com\r\nSubject: Re: Envera Release\r\nMime-Versio"
+  },
+  {
+    "id": 34,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <8991425.1075857751792.JavaMail.evans@thyme>\r\nDate: Tue, 15 Aug 2000 08:32:00 -0700 (PDT)\r\nFrom: john.lavorato@enron.com\r\nTo: kevin.presto@enron.com\r\nSubject: Re: resume\r\nMime-Version: 1.0"
+  },
+  {
+    "id": 35,
+    "has_pii": true,
+    "pii_count": {
+      "email": 13,
+      "phone": 2,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <6167486.1075851946799.JavaMail.evans@thyme>\r\nDate: Wed, 28 Feb 2001 12:13:00 -0800 (PST)\r\nFrom: paul.y'barbo@enron.com\r\nTo: jasultan@adgas.co.ae\r\nSubject: DPC Update - January 2001\r\nCc: a"
+  },
+  {
+    "id": 36,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <13332334.1075841098257.JavaMail.evans@thyme>\r\nDate: Tue, 22 Jan 2002 08:12:01 -0800 (PST)\r\nFrom: michelle.nelson@enron.com\r\nTo: mike.maggi@enron.com\r\nSubject: RE:\r\nMime-Version: 1.0\r\nCont"
+  },
+  {
+    "id": 37,
+    "has_pii": true,
+    "pii_count": {
+      "email": 45,
+      "phone": 2,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <13594978.1075854680017.JavaMail.evans@thyme>\r\nDate: Fri, 10 Nov 2000 00:19:00 -0800 (PST)\r\nFrom: shanna.husser@enron.com\r\nTo: eric.bass@enron.com, ccampbel@tosco.com, lildaigs@aol.com, \r\n"
+  },
+  {
+    "id": 38,
+    "has_pii": true,
+    "pii_count": {
+      "email": 29,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <26706120.1075862184129.JavaMail.evans@thyme>\r\nDate: Mon, 19 Nov 2001 12:47:50 -0800 (PST)\r\nFrom: mike.grigsby@enron.com\r\nTo: p..adams@enron.com, k..allen@enron.com, j..brewer@enron.com, \r"
+  },
+  {
+    "id": 39,
+    "has_pii": true,
+    "pii_count": {
+      "email": 5,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <4210208.1075847376475.JavaMail.evans@thyme>\r\nDate: Wed, 16 May 2001 06:53:00 -0700 (PDT)\r\nFrom: mark.greenberg@enron.com\r\nTo: jake.staffel@enron.com\r\nSubject: Cargill NDA\r\nCc: tana.jones@"
+  },
+  {
+    "id": 40,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <9392646.1075846918893.JavaMail.evans@thyme>\r\nDate: Tue, 28 Sep 1999 02:31:00 -0700 (PDT)\r\nFrom: tana.jones@enron.com\r\nTo: suzanne.adams@enron.com\r\nSubject: Re: Smoking/Non-Smoking Rooms\r\n"
+  },
+  {
+    "id": 41,
+    "has_pii": true,
+    "pii_count": {
+      "email": 5,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <11364390.1075847132568.JavaMail.evans@thyme>\r\nDate: Tue, 14 Nov 2000 06:45:00 -0800 (PST)\r\nFrom: lisa.lees@enron.com\r\nTo: tana.jones@enron.com, karen.lambert@enron.com\r\nSubject: US NitTol"
+  },
+  {
+    "id": 42,
+    "has_pii": true,
+    "pii_count": {
+      "email": 1,
+      "phone": 37,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <16329013.1075862315772.JavaMail.evans@thyme>\r\nDate: Wed, 21 Nov 2001 13:08:53 -0800 (PST)\r\nFrom: no.address@enron.com\r\nSubject: Weekend Outage Report for 11-21-01 through 11-25-01\r\nMime-V"
+  },
+  {
+    "id": 43,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <28596963.1075845060036.JavaMail.evans@thyme>\r\nDate: Mon, 29 Jan 2001 03:00:00 -0800 (PST)\r\nFrom: mark.haedicke@enron.com\r\nTo: andrew.edison@enron.com\r\nSubject: Re: Enron Liquid Fuels, Inc"
+  },
+  {
+    "id": 44,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <23064357.1075845336388.JavaMail.evans@thyme>\r\nDate: Wed, 9 May 2001 12:33:08 -0700 (PDT)\r\nFrom: catalina.cardenas@enron.com\r\nTo: matt.smith@enron.com\r\nSubject: historicals\r\nMime-Version: "
+  },
+  {
+    "id": 45,
+    "has_pii": true,
+    "pii_count": {
+      "email": 13,
+      "phone": 4,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <8135558.1075841419408.JavaMail.evans@thyme>\r\nDate: Fri, 7 Dec 2001 10:29:22 -0800 (PST)\r\nFrom: michael.frazier@enron.com\r\nTo: kysa.alport@enron.com, serena.bishop@enron.com, timothy.coffi"
+  },
+  {
+    "id": 46,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <28523789.1075856276912.JavaMail.evans@thyme>\r\nDate: Fri, 13 Oct 2000 08:05:00 -0700 (PDT)\r\nFrom: paulo.issler@enron.com\r\nTo: vince.kaminski@enron.com\r\nSubject: Nelson Nele Interview\r\nMime"
+  },
+  {
+    "id": 47,
+    "has_pii": true,
+    "pii_count": {
+      "email": 5,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <6341461.1075856828776.JavaMail.evans@thyme>\r\nDate: Thu, 25 May 2000 00:47:00 -0700 (PDT)\r\nFrom: shirley.crenshaw@enron.com\r\nTo: vince.kaminski@enron.com, datren.williams@enron.com\r\nSubjec"
+  },
+  {
+    "id": 48,
+    "has_pii": true,
+    "pii_count": {
+      "email": 10,
+      "phone": 2,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <12762838.1075856438824.JavaMail.evans@thyme>\r\nDate: Tue, 24 Apr 2001 10:39:00 -0700 (PDT)\r\nFrom: vince.kaminski@enron.com\r\nTo: castro@rice.edu\r\nSubject: Re: one last reminder and then I w"
+  },
+  {
+    "id": 49,
+    "has_pii": true,
+    "pii_count": {
+      "email": 10,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <16623201.1075856997232.JavaMail.evans@thyme>\r\nDate: Thu, 9 Mar 2000 03:11:00 -0800 (PST)\r\nFrom: vince.kaminski@enron.com\r\nTo: vincek@leland.stanford.edu\r\nSubject: =?ANSI_X3.4-1968?Q?What="
+  },
+  {
+    "id": 50,
+    "has_pii": true,
+    "pii_count": {
+      "email": 39,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <23302811.1075852732983.JavaMail.evans@thyme>\r\nDate: Wed, 17 Oct 2001 16:14:05 -0700 (PDT)\r\nFrom: e..haedicke@enron.com\r\nTo: sheila.tweed@enron.com, elizabeth.sager@enron.com, t..hodge@enr"
+  },
+  {
+    "id": 51,
+    "has_pii": true,
+    "pii_count": {
+      "email": 4,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <8241496.1075854074495.JavaMail.evans@thyme>\r\nDate: Tue, 6 Jun 2000 03:36:00 -0700 (PDT)\r\nFrom: daren.farmer@enron.com\r\nTo: tjfarmer@juno.com\r\nSubject: Doc and Merry Byington's new son\r\nMi"
+  },
+  {
+    "id": 52,
+    "has_pii": true,
+    "pii_count": {
+      "email": 32,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <17692279.1075854142208.JavaMail.evans@thyme>\r\nDate: Fri, 20 Oct 2000 01:16:00 -0700 (PDT)\r\nFrom: mkhenderson@duke-energy.com\r\nTo: dfbane@duke-energy.com, jabretz@duke-energy.com, cwcass@d"
+  },
+  {
+    "id": 53,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <23876757.1075841623034.JavaMail.evans@thyme>\r\nDate: Wed, 6 Dec 2000 08:33:00 -0800 (PST)\r\nFrom: evelyn.metoyer@enron.com\r\nTo: kate.symes@enron.com\r\nSubject: 12-6-00 Checkout\r\nMime-Version"
+  },
+  {
+    "id": 54,
+    "has_pii": true,
+    "pii_count": {
+      "email": 3,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <2652202.1075841899603.JavaMail.evans@thyme>\r\nDate: Fri, 16 Mar 2001 05:57:00 -0800 (PST)\r\nFrom: kate.symes@enron.com\r\nTo: tracy.ngo@enron.com, todd.perry@enron.com\r\nSubject: Re: Subject e"
+  },
+  {
+    "id": 55,
+    "has_pii": true,
+    "pii_count": {
+      "email": 6,
+      "phone": 7,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <4972454.1075862426537.JavaMail.evans@thyme>\r\nDate: Mon, 12 Nov 2001 13:24:09 -0800 (PST)\r\nFrom: ruthann.frausto@enron.com\r\nTo: tracy.geaccone@enron.com\r\nSubject: FW: Set up FAR orders for"
+  },
+  {
+    "id": 56,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <18138243.1075846807449.JavaMail.evans@thyme>\r\nDate: Wed, 26 Apr 2000 06:52:00 -0700 (PDT)\r\nFrom: susan.scott@enron.com\r\nTo: wilson.kriegel@enron.com\r\nSubject: Re: Whaaatttzzz Up?\r\nMime-Ve"
+  },
+  {
+    "id": 57,
+    "has_pii": true,
+    "pii_count": {
+      "email": 1,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <11625907.1075852221175.JavaMail.evans@thyme>\r\nDate: Tue, 16 Oct 2001 15:05:17 -0700 (PDT)\r\nFrom: no.address@enron.com\r\nSubject: Questionable Mail/Suspicious Packages\r\nMime-Version: 1.0\r\nC"
+  },
+  {
+    "id": 58,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <29183971.1075844431098.JavaMail.evans@thyme>\r\nDate: Wed, 15 Nov 2000 09:27:00 -0800 (PST)\r\nFrom: treasa.kirby@enron.com\r\nTo: sara.shackleton@enron.com\r\nSubject: Re: Prepay\r\nMime-Version: "
+  },
+  {
+    "id": 59,
+    "has_pii": true,
+    "pii_count": {
+      "email": 9,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <11462368.1075844420645.JavaMail.evans@thyme>\r\nDate: Wed, 25 Oct 2000 07:13:00 -0700 (PDT)\r\nFrom: sara.shackleton@enron.com\r\nTo: jimdelani@aol.com\r\nSubject: ISDA Master Agreement prepared "
+  },
+  {
+    "id": 60,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <12824940.1075844577482.JavaMail.evans@thyme>\r\nDate: Tue, 28 Nov 2000 02:52:00 -0800 (PST)\r\nFrom: sara.shackleton@enron.com\r\nTo: mark.taylor@enron.com\r\nSubject: \"Enovate\" - 50/50 joint ven"
+  },
+  {
+    "id": 61,
+    "has_pii": true,
+    "pii_count": {
+      "email": 3,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <19512100.1075860947818.JavaMail.evans@thyme>\r\nDate: Tue, 26 Feb 2002 07:53:04 -0800 (PST)\r\nFrom: jan.moore@enron.com\r\nTo: lindy.donoho@enron.com, gina.taylor@enron.com\r\nSubject: RE: TW 20"
+  },
+  {
+    "id": 62,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <33145697.1075855844260.JavaMail.evans@thyme>\r\nDate: Wed, 23 Aug 2000 05:50:00 -0700 (PDT)\r\nFrom: sally.beck@enron.com\r\nTo: cindy.olson@enron.com\r\nSubject: Wellesley and ASE meetings\r\nMime"
+  },
+  {
+    "id": 63,
+    "has_pii": true,
+    "pii_count": {
+      "email": 4,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <14639748.1075841549588.JavaMail.evans@thyme>\r\nDate: Wed, 9 Jan 2002 09:54:56 -0800 (PST)\r\nFrom: expediatraveldeals_034036@expedia.customer-email.com\r\nTo: cara.semperger@enron.com\r\nSubject"
+  },
+  {
+    "id": 64,
+    "has_pii": true,
+    "pii_count": {
+      "email": 8,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <12533295.1075853274749.JavaMail.evans@thyme>\r\nDate: Mon, 26 Mar 2001 05:54:00 -0800 (PST)\r\nFrom: richard.sanders@enron.com\r\nTo: linda.guinn@enron.com\r\nSubject: Outstanding Invoice\r\nMime-V"
+  },
+  {
+    "id": 65,
+    "has_pii": true,
+    "pii_count": {
+      "email": 21,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <568951.1075861520180.JavaMail.evans@thyme>\r\nDate: Mon, 12 Nov 2001 15:52:03 -0800 (PST)\r\nFrom: david.minns@enron.com\r\nTo: jez.peters@enron.com, john.suttle@enron.com, tark.miyai@enron.com"
+  },
+  {
+    "id": 66,
+    "has_pii": true,
+    "pii_count": {
+      "email": 4,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <30340957.1075858760260.JavaMail.evans@thyme>\r\nDate: Thu, 25 Oct 2001 07:26:35 -0700 (PDT)\r\nFrom: tim.carter@enron.com\r\nTo: casey.evans@enron.com, wayne.vinson@enron.com, w..white@enron.co"
+  },
+  {
+    "id": 67,
+    "has_pii": true,
+    "pii_count": {
+      "email": 5,
+      "phone": 2,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <1254792.1075841396761.JavaMail.evans@thyme>\r\nDate: Thu, 28 Mar 2002 12:50:45 -0800 (PST)\r\nFrom: joe.parks@enron.com\r\nTo: 'proctor@enron.com, sproctor@akllp.com\r\nSubject: RE: Fax on the wa"
+  },
+  {
+    "id": 68,
+    "has_pii": true,
+    "pii_count": {
+      "email": 3,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <8909821.1075845733797.JavaMail.evans@thyme>\r\nDate: Thu, 31 May 2001 11:52:00 -0700 (PDT)\r\nFrom: kay.mann@enron.com\r\nTo: steven.krimsky@enron.com, ben.jacoby@enron.com\r\nSubject: Pompano de"
+  },
+  {
+    "id": 69,
+    "has_pii": true,
+    "pii_count": {
+      "email": 7,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <23604080.1075845758108.JavaMail.evans@thyme>\r\nDate: Mon, 24 Jul 2000 01:57:00 -0700 (PDT)\r\nFrom: kay.mann@enron.com\r\nTo: matt.maxwell@enron.com\r\nSubject: Kendall New Century Development,L"
+  },
+  {
+    "id": 70,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <27439281.1075845952247.JavaMail.evans@thyme>\r\nDate: Thu, 9 Nov 2000 02:14:00 -0800 (PST)\r\nFrom: kay.mann@enron.com\r\nTo: kathleen.carnahan@enron.com\r\nSubject: Re: enovate stuff\r\nMime-Versi"
+  },
+  {
+    "id": 71,
+    "has_pii": true,
+    "pii_count": {
+      "email": 4,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <27960782.1075846064645.JavaMail.evans@thyme>\r\nDate: Wed, 28 Feb 2001 23:00:00 -0800 (PST)\r\nFrom: kay.mann@enron.com\r\nTo: ben.jacoby@enron.com, fred.mitro@enron.com, chris.booth@enron.com\r"
+  },
+  {
+    "id": 72,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <17365044.1075842082696.JavaMail.evans@thyme>\r\nDate: Tue, 11 Apr 2000 03:06:00 -0700 (PDT)\r\nFrom: carol.clair@enron.com\r\nTo: suzanne.adams@enron.com\r\nSubject: Upcoming Luncheons\r\nMime-Vers"
+  },
+  {
+    "id": 73,
+    "has_pii": true,
+    "pii_count": {
+      "email": 11,
+      "phone": 2,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <7552622.1075849630746.JavaMail.evans@thyme>\r\nDate: Fri, 8 Dec 2000 01:12:00 -0800 (PST)\r\nFrom: trey.comiskey@enron.com\r\nTo: kenneth.cooper@am.sony.com\r\nSubject: Re: Confidentiality Agreem"
+  },
+  {
+    "id": 74,
+    "has_pii": true,
+    "pii_count": {
+      "email": 6,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <15676368.1075851871838.JavaMail.evans@thyme>\r\nDate: Tue, 20 Mar 2001 22:37:00 -0800 (PST)\r\nFrom: jan_kennedy@ci.mesa.az.us\r\nTo: dave.fuller@enron.com, kim.ward@enron.com\r\nSubject: Friday'"
+  },
+  {
+    "id": 75,
+    "has_pii": true,
+    "pii_count": {
+      "email": 9,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <19566351.1075852287677.JavaMail.evans@thyme>\r\nDate: Mon, 11 Jun 2001 13:06:00 -0700 (PDT)\r\nFrom: elizabeth.sager@enron.com\r\nTo: carol.clair@enron.com\r\nSubject: Fwd: EEI Collateral Annex C"
+  },
+  {
+    "id": 76,
+    "has_pii": true,
+    "pii_count": {
+      "email": 16,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <5023336.1075851678366.JavaMail.evans@thyme>\r\nDate: Mon, 11 Dec 2000 01:55:00 -0800 (PST)\r\nFrom: samira.ravagnani@enron.com\r\nTo: kelli.little@enron.com, justin.cornett@enron.com, jeff.gray"
+  },
+  {
+    "id": 77,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <1236643.1075841225432.JavaMail.evans@thyme>\r\nDate: Mon, 11 Jun 2001 09:52:30 -0700 (PDT)\r\nFrom: kate.joslyn@enron.com\r\nTo: jonathan.mckay@enron.com\r\nSubject: RE: Market Fundamentals &Volu"
+  },
+  {
+    "id": 78,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 3,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <19088000.1075862243994.JavaMail.evans@thyme>\r\nDate: Wed, 21 Nov 2001 10:54:03 -0800 (PST)\r\nFrom: margo.reyna@enron.com\r\nTo: richard.shapiro@enron.com\r\nSubject: RE: Government Affairs Reta"
+  },
+  {
+    "id": 79,
+    "has_pii": true,
+    "pii_count": {
+      "email": 2,
+      "phone": 1,
+      "ssn": 0
+    },
+    "predicted": "violation",
+    "hit_rules": [
+      "no_pii_email",
+      "no_pii_phone"
+    ],
+    "snippet": "Message-ID: <5230892.1075856175979.JavaMail.evans@thyme>\r\nDate: Wed, 4 Apr 2001 02:41:00 -0700 (PDT)\r\nFrom: tori.kuykendall@enron.com\r\nTo: elizabeth.hernandez@enron.com\r\nSubject: Re: Reliant Energy Se"
+  }
+]

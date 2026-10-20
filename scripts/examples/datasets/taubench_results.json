@@ -1,0 +1,20 @@
+{
+  "tool_arg_guard": {
+    "tp": 152,
+    "fp": 0,
+    "tn": 480,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  },
+  "budget_bound": {
+    "tp": 64,
+    "fp": 0,
+    "tn": 136,
+    "fn": 0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0
+  }
+}

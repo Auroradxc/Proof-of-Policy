@@ -51,7 +51,7 @@ class TestEveryScriptImports(unittest.TestCase):
         mods = _script_modules()
         self.assertGreaterEqual(len(mods), 10, f"只发现 {len(mods)} 个脚本，太少了")
         groups = sorted({p.parent.name for p, _ in mods})
-        self.assertEqual(groups, ["anchor", "demo", "ops", "prove", "verify"])
+        self.assertEqual(groups, ["anchor", "datasets", "demo", "ops", "prove", "verify"])
 
     def test_every_script_imports_and_agrees_on_repo_root(self):
         """逐个导入；脚本里若有 ``REPO``，必须等于仓库根。
@@ -188,14 +188,14 @@ class TestGroupsAreCollisionFree(unittest.TestCase):
                                     "sys.path 顺序（见 scripts/_bootstrap.py 的设计说明）")
 
     def test_scripts_root_holds_only_bootstrap_groups_and_examples(self):
-        """``scripts/`` 根上只该有 ``_bootstrap.py`` + 5 个组 + ``examples/``。
+        """``scripts/`` 根上只该有 ``_bootstrap.py`` + 6 个组 + ``examples/``。
 
         ``examples/`` 是**输入样本与 demo 产物**，不是脚本，故意不分组
         （见 docs/dev-plan.md §5.6.2）。多出来的东西要么是误提交的产物，
         要么是新加的东西没想清楚放哪。
         """
-        allowed = {"_bootstrap.py", "__pycache__", "examples", "anchor", "demo",
-                   "ops", "prove", "verify"}
+        allowed = {"_bootstrap.py", "__pycache__", "examples", "anchor", "datasets",
+                   "demo", "ops", "prove", "verify"}
         stray = sorted(p.name for p in SCRIPTS.iterdir()
                        if p.name not in allowed and not p.name.startswith("."))
         self.assertEqual(stray, [], f"scripts/ 根上出现了计划外的东西：{stray}")

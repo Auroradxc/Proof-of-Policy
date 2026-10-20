@@ -1,0 +1,18 @@
+{
+  "id": "toolarg-taubench-v1",
+  "version": "0.1.0",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "tool_arg_guard",
+      "name": "no_sensitive_fields",
+      "params": {
+        "forbidden_fields": [
+          "passengers",
+          "payment_methods",
+          "payment_id"
+        ]
+      }
+    }
+  ]
+}

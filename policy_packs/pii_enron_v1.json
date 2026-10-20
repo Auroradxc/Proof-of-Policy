@@ -1,0 +1,35 @@
+{
+  "id": "pii-enron-v1",
+  "version": "0.1.0",
+  "description": "PII redaction policy over real Enron emails (email / phone / SSN patterns).",
+  "semantic": "and",
+  "rules": [
+    {
+      "kind": "pattern_block",
+      "name": "no_pii_email",
+      "params": {
+        "patterns": [
+          "[\\w.+-]+@[\\w-]+\\.[A-Za-z]{2,}"
+        ]
+      }
+    },
+    {
+      "kind": "pattern_block",
+      "name": "no_pii_phone",
+      "params": {
+        "patterns": [
+          "\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4}"
+        ]
+      }
+    },
+    {
+      "kind": "pattern_block",
+      "name": "no_pii_ssn",
+      "params": {
+        "patterns": [
+          "\\d{3}-\\d{2}-\\d{4}"
+        ]
+      }
+    }
+  ]
+}

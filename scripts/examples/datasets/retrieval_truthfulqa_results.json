@@ -1,0 +1,15 @@
+{
+  "dataset": "truthfulqa",
+  "rule": "retrieval_guard",
+  "min_score": 50,
+  "n_queries": 790,
+  "n_calls": 1580,
+  "tp": 790,
+  "fp": 0,
+  "tn": 790,
+  "fn": 0,
+  "precision": 1.0,
+  "recall": 1.0,
+  "f1": 1.0,
+  "mapping": "检索到正确答案=相关(100)，检索到错误答案=不相关(0)"
+}
