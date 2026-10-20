@@ -177,6 +177,26 @@ def _validate_semantic_bound(rule: "Rule") -> None:
                 f"rule '{rule.name}': optional '{key}' must be a non-empty string")
 
 
+def _validate_retrieval_guard(rule: "Rule") -> None:
+    """检索断言：min_score 必须是非负整数；score_field 必须是字符串；
+    可选的 tools 若存在必须是字符串列表（用于限定只约束哪些检索工具）。
+    """
+    ms = rule.params.get("min_score")
+    if not isinstance(ms, int) or isinstance(ms, bool) or ms < 0:
+        raise PolicyError(
+            f"rule '{rule.name}': retrieval_guard needs non-negative int 'min_score', "
+            f"got {ms!r}")
+    sf = rule.params.get("score_field", "relevance")
+    if not isinstance(sf, str) or not sf:
+        raise PolicyError(
+            f"rule '{rule.name}': 'score_field' must be a non-empty string")
+    tools = rule.params.get("tools")
+    if tools is not None and (
+        not isinstance(tools, list) or not all(isinstance(t, str) for t in tools)
+    ):
+        raise PolicyError(f"rule '{rule.name}': optional 'tools' must be a list of str")
+
+
 # kind → 校验函数。新增 kind 时在这张表里加一行
 # （另需同步 evaluate.check / compile.compile_constraints，
 #  tests/test_rule_kinds.py 会盯着这三处是否漂移）。
@@ -189,6 +209,7 @@ _RULE_VALIDATORS: Dict[str, Callable[["Rule"], None]] = {
     "tool_arg_guard":           _validate_tool_arg_guard,
     "budget_bound":             _validate_budget_bound,
     "semantic_bound":           _validate_semantic_bound,
+    "retrieval_guard":          _validate_retrieval_guard,
 }
 
 

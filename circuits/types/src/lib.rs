@@ -309,6 +309,14 @@ pub enum SpecConstraint {
     },
     /// 累计预算：工具调用次数，或声明的 `token_count`。
     BudgetBound { name: String, budget: u32, unit: BudgetUnit },
+    /// 检索断言：检索工具调用参数里的相关性得分（整数字符串）不得低于 `min_score`。
+    RetrievalGuard {
+        name: String,
+        min_score: u64,
+        score_field: String,
+        #[serde(default)]
+        tools: Vec<String>,
+    },
     /// **语义规则的委托**（P2-9）：这条约束由外部证明系统（ezkl / halo2）承担，
     /// SP1 电路**不判定**它，只在公开值里**如实登记**（见 `DelegatedConstraint`）。
     ///
@@ -876,6 +884,44 @@ pub fn evaluate(
                         kind: "budget_bound".into(),
                         evidence: format!("{}={}/{}", budget_unit_name(*unit), total, budget),
                     });
+                }
+            }
+            SpecConstraint::RetrievalGuard { name, min_score, score_field, tools } => {
+                // 检索断言：检查检索工具调用参数里的相关性得分（整数字符串）。
+                // 链不自洽 ⇒ fail-closed（与 tool_arg_guard 同理）。
+                if let Err(why) = &chain {
+                    violations.push(Violation {
+                        rule: name.clone(),
+                        kind: "trace_unbound".into(),
+                        evidence: why.clone(),
+                    });
+                    continue;
+                }
+                for r in receipts {
+                    if !tools.is_empty() && !tools.contains(&r.tool) {
+                        continue;
+                    }
+                    if let Some(raw) = r.args.get(score_field) {
+                        match raw.parse::<u64>() {
+                            Ok(score) if score >= *min_score => {}
+                            Ok(score) => {
+                                violations.push(Violation {
+                                    rule: name.clone(),
+                                    kind: "retrieval_guard".into(),
+                                    evidence: format!("{}:{}<{}", r.tool, score, min_score),
+                                });
+                                break;
+                            }
+                            Err(_) => {
+                                violations.push(Violation {
+                                    rule: name.clone(),
+                                    kind: "retrieval_guard".into(),
+                                    evidence: format!("{}:{} not numeric", r.tool, raw),
+                                });
+                                break;
+                            }
+                        }
+                    }
                 }
             }
             SpecConstraint::SemanticBound {

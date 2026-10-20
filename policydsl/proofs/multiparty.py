@@ -141,6 +141,7 @@ KIND_OWNER: Dict[str, str] = {
     "length_bound": ROLE_MODEL,
     "tool_arg_guard": ROLE_GATEWAY,
     "budget_bound": ROLE_GATEWAY,
+    "retrieval_guard": ROLE_GATEWAY,
     "semantic_bound": ROLE_DEPLOYER,
 }
 

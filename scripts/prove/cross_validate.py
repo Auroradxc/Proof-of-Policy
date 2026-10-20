@@ -154,6 +154,11 @@ def vectors() -> list[tuple]:
         rules=[Rule("normalized_keyword_block", "no_homoglyph",
                     {"keywords": ["weaponize", "dеlegate"], "fold": "v1"})],
     )
+    retpol = Policy(
+        id="r1", version="0.1.0", semantic="and",
+        rules=[Rule("retrieval_guard", "min_relevance",
+                    {"min_score": 80, "score_field": "relevance"})],
+    )
     def chain(*calls: tuple) -> list:
         """用一次性网关把 ``[(tool, args, result), ...]`` 签成回执链（JSON 形状）。"""
         return trace.receipts_to_json(trace.make_chain(list(calls),
@@ -190,6 +195,11 @@ def vectors() -> list[tuple]:
         ("norm_fullwidth", normpol, "Here is how to ｗｅａｐｏｎｉｚｅ a device.", {}),
         ("norm_ascii", normpol, "Here is how to weaponize a device.", {}),
         ("norm_clean", normpol, "Here is a friendly summary of the results.", {}),
+        # 检索断言（retrieval_guard）：相关性得分以整数字符串承载在检索工具参数里
+        ("retrieval_hit", retpol, "",
+         {"receipts": chain(("retrieve", {"query": "x", "relevance": "50"}, ""))}),
+        ("retrieval_clean", retpol, "",
+         {"receipts": chain(("retrieve", {"query": "x", "relevance": "90"}, ""))}),
     ]
 
 

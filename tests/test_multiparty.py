@@ -180,8 +180,8 @@ class _Fixture:
 class TestSlicePartition(unittest.TestCase):
     """切片怎么分：互斥、并集为整条策略、未知类不猜。"""
 
-    def test_all_eight_kinds_have_exactly_one_owner(self):
-        self.assertEqual(len(M.KIND_OWNER), 8, "规则类总数（7 入电路 + 1 委托）")
+    def test_all_kinds_have_exactly_one_owner(self):
+        self.assertEqual(len(M.KIND_OWNER), 9, "规则类总数（8 入电路 + 1 委托）")
         flat = [k for role in M.ROLES for k in M.KINDS_BY_ROLE[role]]
         self.assertEqual(sorted(flat), sorted(M.KIND_OWNER),
                          "每个规则类必须恰有一个归属角色（既不漏也不重）")

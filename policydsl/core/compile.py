@@ -248,6 +248,17 @@ def compile_constraints(policy: Policy) -> list:
                 "budget": int(rule.params["budget"]),
                 "unit": rule.params.get("unit", "calls"),
             })
+        elif rule.kind == "retrieval_guard":
+            # 检索断言：阈值 + 得分字段名；可选 tools 白名单排序去重
+            c = {
+                "kind": "retrieval_guard",
+                "name": rule.name,
+                "min_score": int(rule.params["min_score"]),
+                "score_field": rule.params.get("score_field", "relevance"),
+            }
+            if rule.params.get("tools"):
+                c["tools"] = sorted(set(rule.params["tools"]))
+            constraints.append(c)
         elif rule.kind == "semantic_bound":
             constraints.append(_semantic_constraint(rule))
         else:

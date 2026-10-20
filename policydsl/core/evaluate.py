@@ -127,6 +127,7 @@ EVIDENCE_KIND_TO_RULE_KIND: Dict[str, str] = {
     "format": "format_check",
     "tool_arg": "tool_arg_guard",
     "budget": "budget_bound",
+    "retrieval": "retrieval_guard",
 }
 
 
@@ -241,6 +242,35 @@ def check(policy: Policy, target: Target) -> CheckResult:
             if total > budget:
                 violations.append(Violation(
                     rule, "budget", {"unit": unit, "total": total, "budget": budget}))
+
+        elif rule.kind == "retrieval_guard":
+            # 检索断言：检索工具调用参数里的相关性得分（整数字符串）不得低于阈值。
+            # 链不自洽 ⇒ fail-closed（与 tool_arg_guard 同理）。
+            if not chain_ok:
+                violations.append(Violation(rule, "trace_unbound", chain_why))
+                continue
+            min_score = int(rule.params["min_score"])
+            score_field = rule.params.get("score_field", "relevance")
+            allowed_tools = rule.params.get("tools")  # None => 约束所有工具
+            for r in tx.receipts:
+                if allowed_tools is not None and r.tool not in allowed_tools:
+                    continue
+                if score_field not in r.args:
+                    continue  # 该调用不带检索得分，不判
+                raw = r.args[score_field]
+                try:
+                    score = int(raw)
+                except (TypeError, ValueError):
+                    violations.append(Violation(
+                        rule, "retrieval",
+                        {"tool": r.tool, "score": raw, "min_score": min_score,
+                         "reason": "non_numeric"}))
+                    break
+                if score < min_score:
+                    violations.append(Violation(
+                        rule, "retrieval",
+                        {"tool": r.tool, "score": score, "min_score": min_score}))
+                    break
 
         elif rule.kind == "semantic_bound":
             # 语义规则：**参考层判不了**，如实登记为「已委托」，而不是猜一个结论。

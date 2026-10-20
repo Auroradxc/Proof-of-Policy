@@ -24,7 +24,7 @@
 
 ---
 
-## 2. 八种规则类型
+## 2. 九种规则类型
 
 规则是 `Rule(kind, name, params)`。`kind` 决定语义与参数 schema，`name` 是**证书与违规记录里的稳定标识**。
 
@@ -37,9 +37,10 @@
 | `format_check` | `format: json\|int\|float` | `response` | ✅ | 响应整体须能按规范子集解析 |
 | `tool_arg_guard` | `forbidden_fields: [str]`（非空），可选 `tools: [str]` | **工具回执链** `receipts` | ✅ | 工具参数不得含被禁字段（`tools` 非空时限定范围） |
 | `budget_bound` | `budget:int ≥ 0`，`unit: calls\|tokens` | `receipts`（calls）/ `response`（tokens，电路内自算） | ✅ | 累计量不得超过 `budget` |
+| `retrieval_guard` | `min_score:int ≥ 0`，`score_field:str`（缺省 `"relevance"`），可选 `tools: [str]` | **工具回执链** `receipts` | ✅ | 检索工具参数里的相关性得分（整数字符串）不得低于 `min_score` |
 | `semantic_bound` | `threshold_bp: int ∈ [0,10000]`，`direction: le\|ge` | `response`（经模型前向） | ❌ **委托**（P2-9） | 模型给出的分数须 `<＝`/`>＝` 阈值；由 ezkl 陪伴证明判定，电路只登记进公开值 `delegated` |
 
-> 上表除 `semantic_bound` 外的**七类全部入电路**（P7-b / P2-9b 之后）；`semantic_bound`（P2-9）
+> 上表除 `semantic_bound` 外的**八类全部入电路**（P7-b / P2-9b 之后）；`semantic_bound`（P2-9）
 > **不在电路内判定**，而是**委托**给 ezkl/halo2 伴侣证明 —— 见
 > [`../design-semantic-rules.md`](../design-semantic-rules.md) 与 [`05`](05-zk-circuits.md) §2.3b。
 > 两条它独有的编译期约束：① 策略必须自带一条 `max ≤ MAX_CHARS` 的 `length_bound`（否则长响应会

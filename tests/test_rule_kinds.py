@@ -117,8 +117,8 @@ class TestRegistryIsAuthoritative(unittest.TestCase):
                 self.assertTrue(kind, "kind 不能是空串")
                 self.assertTrue(callable(fn))
 
-    def test_covers_the_documented_eight(self):
-        """docs/modules/01-policy-dsl.md §7 列的 8 种 kind，一个不少。"""
+    def test_covers_the_documented_kinds(self):
+        """docs/modules/01-policy-dsl.md §2 列的规则 kind，一个不少。"""
         self.assertEqual(_RULE_VALIDATORS.keys(), {
             "keyword_block",
             "normalized_keyword_block",
@@ -128,6 +128,7 @@ class TestRegistryIsAuthoritative(unittest.TestCase):
             "tool_arg_guard",
             "budget_bound",
             "semantic_bound",
+            "retrieval_guard",
         })
 
 

@@ -188,6 +188,31 @@ def canonical_violations(spec: Dict, response: str,
             if total > c["budget"]:
                 out.append({"rule": name, "kind": "budget_bound",
                             "evidence": f"{unit}={total}/{c['budget']}"})
+        elif kind == "retrieval_guard":
+            # 检索断言：检索工具参数里的相关性得分（整数字符串）须 ≥ min_score。
+            # 证据与 Rust 侧逐字符一致（`tool:score<min` / `tool:raw not numeric`）。
+            if not ok:
+                out.append({"rule": name, "kind": "trace_unbound", "evidence": why})
+                continue
+            min_score = c["min_score"]
+            score_field = c.get("score_field", "relevance")
+            allowed = c.get("tools") or []
+            for r in rs:
+                if allowed and r.tool not in allowed:
+                    continue
+                if score_field not in r.args:
+                    continue
+                raw = r.args[score_field]
+                try:
+                    score = int(raw)
+                except (TypeError, ValueError):
+                    out.append({"rule": name, "kind": "retrieval_guard",
+                                "evidence": f"{r.tool}:{raw} not numeric"})
+                    break
+                if score < min_score:
+                    out.append({"rule": name, "kind": "retrieval_guard",
+                                "evidence": f"{r.tool}:{score}<{min_score}"})
+                    break
         else:
             raise NotImplementedError(f"kind '{kind}' not provable in-circuit yet")
     # 兜底：坏链没有被任何工具规则接住时也要记一笔（与 Rust 侧同构）
