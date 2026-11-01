@@ -1,0 +1,25 @@
+{
+  "generated_at": "2026-11-01T07:12:14Z",
+  "xstest": {
+    "source": "local",
+    "url": "https://raw.githubusercontent.com/paul-rottger/xstest/main/xstest_prompts.csv",
+    "license": "CC-BY-4.0",
+    "count": 450,
+    "safe": 250,
+    "unsafe": 200,
+    "csv_sha256": "11783fb294ed017473ee53c207d71f2161c7672c8d0b037501e78387f801cb5a",
+    "jsonl_sha256": "192c010cd7ae43f9e0250947f405b328e62b313b7d99ba1f55634a145cf435a7"
+  },
+  "smoke": {
+    "count": 20,
+    "safe": 10,
+    "unsafe": 10,
+    "jsonl_sha256": "9087fc8cc510860e7825a156cb45ff0e9924a9a60c03b6d85d7c6e548e456a6f"
+  },
+  "notes": [
+    "HuggingFace walledai/XSTest is gated; this script uses the raw GitHub CSV.",
+    "τ-bench / Enron are optional; they are not needed for the k measurement."
+  ],
+  "taubench": null,
+  "enron": null
+}

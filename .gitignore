@@ -52,6 +52,12 @@ semantic/model.resmoke.onnx
 .DS_Store
 *.log
 
+# agent 并行执行的本地 worktree（隔离副本；分支本身在 .git 里）
+.claude/worktrees/
+
+# Wave 2 原始下载（CSV/JSON/tar）；归一化后的 JSONL 与 manifest 入库
+scripts/examples/datasets/wave2/raw/
+
 # 论文构建产物：paper/proof-of-policy.tex 是权威源、.md 是 GitHub 镜像；
 # .pdf/.aux/.out/.toc 由 xelatex 从 .tex 再生成，不入库（*.log 已由上面的通配覆盖）
 paper/*.pdf
