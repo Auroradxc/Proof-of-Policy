@@ -1,0 +1,377 @@
+{
+  "arm": "cross-system-baselines",
+  "host": {
+    "hostname": "dxq",
+    "cpu_model": "Intel(R) Core(TM) i7-14650HX",
+    "cpu_count": 24,
+    "mem_total_mb": 14983,
+    "platform": "x86_64",
+    "python": "3.10.12",
+    "os": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35"
+  },
+  "reps": 300,
+  "systems": [
+    "PoP",
+    "signed-Merkle",
+    "trusted-server / TEE (sim)",
+    "zkAgent",
+    "NiyamAI",
+    "Zaguk",
+    "PCO"
+  ],
+  "dimensions": [
+    "信任根",
+    "延迟（出证 + 验证）",
+    "证明/证书大小",
+    "响应隐私",
+    "策略隐私",
+    "验证者需要 T 明文？",
+    "验证者需要 π 明文？"
+  ],
+  "pop": {
+    "prove_s_min": 118.89,
+    "prove_s_max": 172.5,
+    "proof_bytes_min": 2781619,
+    "proof_bytes_max": 2791995,
+    "peak_rss_mb_max": 10506.4,
+    "verify_ms": 89.84,
+    "host": {
+      "hostname": "dxq",
+      "cpu_model": "Intel(R) Core(TM) i7-14650HX",
+      "cpu_count": 24,
+      "mem_total_mb": 11958,
+      "platform": "x86_64"
+    },
+    "source": [
+      "bench/results/proofs.json",
+      "bench/results/verify.json"
+    ],
+    "status": "measured"
+  },
+  "merkle": {
+    "sign_ms": 0.132,
+    "append_ms": 2.131,
+    "verify_public_ms": 0.322,
+    "verify_reexec_ms": 0.772,
+    "cert_bytes": 648,
+    "inclusion_bytes": 761,
+    "host": {
+      "hostname": "dxq",
+      "cpu_model": "Intel(R) Core(TM) i7-14650HX",
+      "cpu_count": 24,
+      "mem_total_mb": 11960,
+      "platform": "x86_64",
+      "python": "3.10.12",
+      "os": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35"
+    },
+    "source": [
+      "bench/results/baseline.json"
+    ],
+    "status": "measured"
+  },
+  "server": {
+    "server_eval_and_sign_median_ms": 0.139,
+    "verify_median_ms": 0.102,
+    "cert_bytes": 648,
+    "tee_sim_sign_median_ms": 0.04,
+    "tee_sim_bytes": 520,
+    "reps": 300,
+    "status": "measured",
+    "tee_hardware_measured": false,
+    "source": [
+      "本次运行（trusted-server 臂）"
+    ]
+  },
+  "cells": {
+    "信任根": {
+      "PoP": {
+        "value": "vkey + 密码学假设（A1/A2）；无硬件信任、无「信网关」",
+        "status": "measured",
+        "source": "bench/results/proofs.json + verify.json（本仓库实测）"
+      },
+      "signed-Merkle": {
+        "value": "Ed25519 网关钥；信「持钥的网关」",
+        "status": "measured",
+        "source": "bench/results/baseline.json（本仓库实测）"
+      },
+      "trusted-server / TEE (sim)": {
+        "value": "服务器（或 TEE 硬件 attestation）；本模拟只测签名，不含硬件",
+        "status": "measured",
+        "source": "本次运行（bench/bench_baselines.py 的 trusted-server 臂）"
+      },
+      "zkAgent": {
+        "value": "zkVM 证明 + provider 的模型/工具执行承诺",
+        "status": "cited",
+        "source": "IACR ePrint 2026/199；本仓库 bench/comparison_zkagent.md §1"
+      },
+      "NiyamAI": {
+        "value": "zk-SNARK + SHA-256 Intent Contract + 神经 Judge",
+        "status": "cited",
+        "source": "arXiv:2608.07167（abstract，2026-08）"
+      },
+      "Zaguk": {
+        "value": "ezkl zk-SNARK + SHA-256 输出承诺",
+        "status": "cited",
+        "source": "JNIC'26 proceedings: https://www.incibe.es/sites/default/files/eventos/JNIC/JNIC26-Acta-red.pdf（本环境只取到定性描述）"
+      },
+      "PCO": {
+        "value": "命名权威发布的谓词 + 独立 validator + 只追加账本",
+        "status": "cited",
+        "source": "IACR ePrint 2026/994（abstract）"
+      }
+    },
+    "延迟（出证 + 验证）": {
+      "PoP": {
+        "value": "出证 118.89–172.50 s；纯验证 89.84 ms",
+        "status": "measured",
+        "source": "bench/results/proofs.json + verify.json（本仓库实测）"
+      },
+      "signed-Merkle": {
+        "value": "签名 0.132 ms + 追加 2.131 ms；公开核验 0.322 ms；重跑核验 0.772 ms",
+        "status": "measured",
+        "source": "bench/results/baseline.json（本仓库实测）"
+      },
+      "trusted-server / TEE (sim)": {
+        "value": "服务端判定+签 0.139 ms；客户端验签 0.102 ms",
+        "status": "measured",
+        "source": "本次运行（bench/bench_baselines.py 的 trusted-server 臂）"
+      },
+      "zkAgent": {
+        "value": "Shout: 194.40 s / 0.42 s；LogUp: ~1069 s / 0.038 s",
+        "status": "cited",
+        "source": "IACR ePrint 2026/199；本仓库 bench/comparison_zkagent.md §1"
+      },
+      "NiyamAI": {
+        "value": "1.7 s / 次获批动作；验证 51 ms",
+        "status": "cited",
+        "source": "arXiv:2608.07167（abstract，2026-08）"
+      },
+      "Zaguk": {
+        "value": "未报告可比数字（证明生成是主成本）",
+        "status": "cited",
+        "source": "JNIC'26 proceedings: https://www.incibe.es/sites/default/files/eventos/JNIC/JNIC26-Acta-red.pdf（本环境只取到定性描述）"
+      },
+      "PCO": {
+        "value": null,
+        "status": "cited",
+        "source": "IACR ePrint 2026/994（abstract）"
+      }
+    },
+    "证明/证书大小": {
+      "PoP": {
+        "value": "2.65–2.66 MiB（证明）",
+        "status": "measured",
+        "source": "bench/results/proofs.json + verify.json（本仓库实测）"
+      },
+      "signed-Merkle": {
+        "value": "648 B 证书 + 761 B 包含证明",
+        "status": "measured",
+        "source": "bench/results/baseline.json（本仓库实测）"
+      },
+      "trusted-server / TEE (sim)": {
+        "value": "648 B 证书；TEE 模拟 attestation 520 B",
+        "status": "measured",
+        "source": "本次运行（bench/bench_baselines.py 的 trusted-server 臂）"
+      },
+      "zkAgent": {
+        "value": "Shout ~96 MiB；LogUp 3.1 MiB",
+        "status": "cited",
+        "source": "IACR ePrint 2026/199；本仓库 bench/comparison_zkagent.md §1"
+      },
+      "NiyamAI": {
+        "value": "18.6 KB",
+        "status": "cited",
+        "source": "arXiv:2608.07167（abstract，2026-08）"
+      },
+      "Zaguk": {
+        "value": "未取到具体数值（原文称随编码长度稳定）",
+        "status": "cited",
+        "source": "JNIC'26 proceedings: https://www.incibe.es/sites/default/files/eventos/JNIC/JNIC26-Acta-red.pdf（本环境只取到定性描述）"
+      },
+      "PCO": {
+        "value": null,
+        "status": "cited",
+        "source": "IACR ePrint 2026/994（abstract）"
+      }
+    },
+    "响应隐私": {
+      "PoP": {
+        "value": "有（私有模式：只给 response_commitment / response_binding）",
+        "status": "measured",
+        "source": "bench/results/proofs.json + verify.json（本仓库实测）"
+      },
+      "signed-Merkle": {
+        "value": "无（验证者需 T 明文重跑；本仓库基线实测路径）",
+        "status": "measured",
+        "source": "bench/results/baseline.json（本仓库实测）"
+      },
+      "trusted-server / TEE (sim)": {
+        "value": "对验证者无（T 交给服务器）；TEE 可对服务器隐藏，本模拟不测",
+        "status": "measured",
+        "source": "本次运行（bench/bench_baselines.py 的 trusted-server 臂）"
+      },
+      "zkAgent": {
+        "value": "承诺式（证明推理与工具轨迹，不公开明文）",
+        "status": "cited",
+        "source": "IACR ePrint 2026/199；本仓库 bench/comparison_zkagent.md §1"
+      },
+      "NiyamAI": {
+        "value": "未在摘要中单独报告隐私指标",
+        "status": "cited",
+        "source": "arXiv:2608.07167（abstract，2026-08）"
+      },
+      "Zaguk": {
+        "value": "有（验证者不见输出前缀原文）",
+        "status": "cited",
+        "source": "JNIC'26 proceedings: https://www.incibe.es/sites/default/files/eventos/JNIC/JNIC26-Acta-red.pdf（本环境只取到定性描述）"
+      },
+      "PCO": {
+        "value": "有（binding + hiding；证明在审计时披露）",
+        "status": "cited",
+        "source": "IACR ePrint 2026/994（abstract）"
+      }
+    },
+    "策略隐私": {
+      "PoP": {
+        "value": "有（策略进电路作私有见证；需 P-PP 才可问责）",
+        "status": "measured",
+        "source": "bench/results/proofs.json + verify.json（本仓库实测）"
+      },
+      "signed-Merkle": {
+        "value": "无（验证者需 π 明文重跑）",
+        "status": "measured",
+        "source": "bench/results/baseline.json（本仓库实测）"
+      },
+      "trusted-server / TEE (sim)": {
+        "value": "无（服务器知道 π；验证者不需要）",
+        "status": "measured",
+        "source": "本次运行（bench/bench_baselines.py 的 trusted-server 臂）"
+      },
+      "zkAgent": {
+        "value": "不适用（无策略 π 这一义务）",
+        "status": "cited",
+        "source": "IACR ePrint 2026/199；本仓库 bench/comparison_zkagent.md §1"
+      },
+      "NiyamAI": {
+        "value": "Intent Contract 以 SHA-256 承诺；证明不公开模型参数",
+        "status": "cited",
+        "source": "arXiv:2608.07167（abstract，2026-08）"
+      },
+      "Zaguk": {
+        "value": "有（证明不公开过滤器参数）",
+        "status": "cited",
+        "source": "JNIC'26 proceedings: https://www.incibe.es/sites/default/files/eventos/JNIC/JNIC26-Acta-red.pdf（本环境只取到定性描述）"
+      },
+      "PCO": {
+        "value": "部分（谓词由命名权威发布；验证者需规范）",
+        "status": "cited",
+        "source": "IACR ePrint 2026/994（abstract）"
+      }
+    },
+    "验证者需要 T 明文？": {
+      "PoP": {
+        "value": "否（私有模式下只给承诺）",
+        "status": "measured",
+        "source": "bench/results/proofs.json + verify.json（本仓库实测）"
+      },
+      "signed-Merkle": {
+        "value": "是（不重跑 J(π,T) 无法确认 passed）",
+        "status": "measured",
+        "source": "bench/results/baseline.json（本仓库实测）"
+      },
+      "trusted-server / TEE (sim)": {
+        "value": "否（验证者只验签；服务器需要）",
+        "status": "measured",
+        "source": "本次运行（bench/bench_baselines.py 的 trusted-server 臂）"
+      },
+      "zkAgent": {
+        "value": "否（证明覆盖推理与工具轨迹）",
+        "status": "cited",
+        "source": "IACR ePrint 2026/199；本仓库 bench/comparison_zkagent.md §1"
+      },
+      "NiyamAI": {
+        "value": "未明确（摘要只称验证无需模型参数）",
+        "status": "cited",
+        "source": "arXiv:2608.07167（abstract，2026-08）"
+      },
+      "Zaguk": {
+        "value": "否（只给 SHA-256 输出承诺）",
+        "status": "cited",
+        "source": "JNIC'26 proceedings: https://www.incibe.es/sites/default/files/eventos/JNIC/JNIC26-Acta-red.pdf（本环境只取到定性描述）"
+      },
+      "PCO": {
+        "value": "否（证明覆盖 (x,y) 满足谓词；输入真实性不在范围内）",
+        "status": "cited",
+        "source": "IACR ePrint 2026/994（abstract）"
+      }
+    },
+    "验证者需要 π 明文？": {
+      "PoP": {
+        "value": "否（只需 policy_hash 与 vkey；P-PP 除外）",
+        "status": "measured",
+        "source": "bench/results/proofs.json + verify.json（本仓库实测）"
+      },
+      "signed-Merkle": {
+        "value": "是（重跑需要同一份策略）",
+        "status": "measured",
+        "source": "bench/results/baseline.json（本仓库实测）"
+      },
+      "trusted-server / TEE (sim)": {
+        "value": "否（验证者只验签；服务器需要）",
+        "status": "measured",
+        "source": "本次运行（bench/bench_baselines.py 的 trusted-server 臂）"
+      },
+      "zkAgent": {
+        "value": "不适用（无 π）",
+        "status": "cited",
+        "source": "IACR ePrint 2026/199；本仓库 bench/comparison_zkagent.md §1"
+      },
+      "NiyamAI": {
+        "value": "未明确（Intent Contract 以 SHA-256 承诺；摘要未说验证者是否需规范）",
+        "status": "cited",
+        "source": "arXiv:2608.07167（abstract，2026-08）"
+      },
+      "Zaguk": {
+        "value": "否（证明不公开过滤器参数）",
+        "status": "cited",
+        "source": "JNIC'26 proceedings: https://www.incibe.es/sites/default/files/eventos/JNIC/JNIC26-Acta-red.pdf（本环境只取到定性描述）"
+      },
+      "PCO": {
+        "value": "部分（谓词由权威发布；验证者需规范或承诺）",
+        "status": "cited",
+        "source": "IACR ePrint 2026/994（abstract）"
+      }
+    }
+  },
+  "citations": [
+    {
+      "system": "zkAgent",
+      "source": "Lizheng Wang et al., zkAgent: Verifiable LLM Agent Execution via One-Shot Transcript Proofs, IACR ePrint 2026/199",
+      "url": "https://eprint.iacr.org/2026/199",
+      "used_for": "prove/verify time, proof size"
+    },
+    {
+      "system": "NiyamAI",
+      "source": "Aditya Katkar et al., NiyamAI - An Intent-Bound AI Agent with Cryptographically Verifiable Guardrails using Zero-Knowledge Proofs, arXiv:2608.07167 (2026-08)",
+      "url": "https://arxiv.org/abs/2608.07167",
+      "used_for": "1.7 s/action, 51 ms verify, 18.6 KB proof"
+    },
+    {
+      "system": "Zaguk",
+      "source": "Zaguk, JNIC 2026 proceedings (INCIBE), JNIC26-Acta-red.pdf",
+      "url": "https://www.incibe.es/sites/default/files/eventos/JNIC/JNIC26-Acta-red.pdf",
+      "used_for": "mechanism/qualitative only; exact numbers not extracted"
+    },
+    {
+      "system": "PCO",
+      "source": "Hillel Avni, Shlomi Dolev, Avraam Yagudaev, Moti Yung, Super-intelligence Survival Guide: Verification via Proof-Carrying Output, IACR ePrint 2026/994",
+      "url": "https://eprint.iacr.org/2026/994",
+      "used_for": "mechanism/trust model; no performance numbers reported"
+    }
+  ],
+  "notes": [
+    "每格标 measured/cited；cited 必须带来源。",
+    "PoP/signed-Merkle 数字来自入库 JSON，未在本次运行重跑。",
+    "TEE 只模拟度量+签名，硬件 attestation 未测。"
+  ]
+}

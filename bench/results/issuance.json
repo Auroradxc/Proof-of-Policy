@@ -1,0 +1,473 @@
+{
+  "arm": "issuance-transparency",
+  "host": {
+    "hostname": "dxq",
+    "cpu_model": "Intel(R) Core(TM) i7-14650HX",
+    "cpu_count": 24,
+    "mem_total_mb": 14983,
+    "platform": "x86_64",
+    "python": "3.10.12",
+    "os": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35"
+  },
+  "model": {
+    "deliveries": 2000,
+    "p_grid": [
+      0.01,
+      0.02,
+      0.05,
+      0.1,
+      0.2
+    ],
+    "m_grid": [
+      1,
+      10,
+      50,
+      100,
+      500
+    ],
+    "trials": 500,
+    "seed": 20261101,
+    "exact_formula": "1 - C(N-m,s)/C(N,s)",
+    "independent_formula": "1 - (1-p)^m, p=s/N"
+  },
+  "f1": {
+    "p": 0.05,
+    "s": 100,
+    "violations": 100,
+    "delivery_frame_mc": 0.994,
+    "log_frame_mc": 0.0,
+    "delivery_frame_exact": 0.9948264893007189,
+    "log_frame_exact": 0.0,
+    "log_size": 1900,
+    "log_root": "426235ec39bd968cbb04705eb5796a40e3e231cd88bce0a12596ee18575137d4",
+    "delivered_count": 2000,
+    "trials": 500,
+    "why_log_frame_is_zero": "withholding 的交付没有日志条目，日志框样本里没有它；这不是抽样运气，是样本框错了（F-4）"
+  },
+  "table": [
+    {
+      "p": 0.01,
+      "s": 20,
+      "m": 1,
+      "exact_hypergeom": 0.01,
+      "independent_approx": 0.01,
+      "monte_carlo": 0.004,
+      "abs_error_exact_vs_mc": 0.006,
+      "abs_error_approx_vs_exact": 0.0
+    },
+    {
+      "p": 0.01,
+      "s": 20,
+      "m": 10,
+      "exact_hypergeom": 0.095824,
+      "independent_approx": 0.095618,
+      "monte_carlo": 0.114,
+      "abs_error_exact_vs_mc": 0.018176,
+      "abs_error_approx_vs_exact": 0.000206
+    },
+    {
+      "p": 0.01,
+      "s": 20,
+      "m": 50,
+      "exact_hypergeom": 0.398788,
+      "independent_approx": 0.394994,
+      "monte_carlo": 0.4,
+      "abs_error_exact_vs_mc": 0.001212,
+      "abs_error_approx_vs_exact": 0.003794
+    },
+    {
+      "p": 0.01,
+      "s": 20,
+      "m": 100,
+      "exact_hypergeom": 0.643314,
+      "independent_approx": 0.633968,
+      "monte_carlo": 0.636,
+      "abs_error_exact_vs_mc": 0.007314,
+      "abs_error_approx_vs_exact": 0.009346
+    },
+    {
+      "p": 0.01,
+      "s": 20,
+      "m": 500,
+      "exact_hypergeom": 0.996928,
+      "independent_approx": 0.99343,
+      "monte_carlo": 0.994,
+      "abs_error_exact_vs_mc": 0.002928,
+      "abs_error_approx_vs_exact": 0.003499
+    },
+    {
+      "p": 0.02,
+      "s": 40,
+      "m": 1,
+      "exact_hypergeom": 0.02,
+      "independent_approx": 0.02,
+      "monte_carlo": 0.012,
+      "abs_error_exact_vs_mc": 0.008,
+      "abs_error_approx_vs_exact": 0.0
+    },
+    {
+      "p": 0.02,
+      "s": 40,
+      "m": 10,
+      "exact_hypergeom": 0.183303,
+      "independent_approx": 0.182927,
+      "monte_carlo": 0.206,
+      "abs_error_exact_vs_mc": 0.022697,
+      "abs_error_approx_vs_exact": 0.000376
+    },
+    {
+      "p": 0.02,
+      "s": 40,
+      "m": 50,
+      "exact_hypergeom": 0.64043,
+      "independent_approx": 0.63583,
+      "monte_carlo": 0.646,
+      "abs_error_exact_vs_mc": 0.00557,
+      "abs_error_approx_vs_exact": 0.0046
+    },
+    {
+      "p": 0.02,
+      "s": 40,
+      "m": 100,
+      "exact_hypergeom": 0.874134,
+      "independent_approx": 0.86738,
+      "monte_carlo": 0.862,
+      "abs_error_exact_vs_mc": 0.012134,
+      "abs_error_approx_vs_exact": 0.006754
+    },
+    {
+      "p": 0.02,
+      "s": 40,
+      "m": 500,
+      "exact_hypergeom": 0.999991,
+      "independent_approx": 0.999959,
+      "monte_carlo": 1.0,
+      "abs_error_exact_vs_mc": 9e-06,
+      "abs_error_approx_vs_exact": 3.2e-05
+    },
+    {
+      "p": 0.05,
+      "s": 100,
+      "m": 1,
+      "exact_hypergeom": 0.05,
+      "independent_approx": 0.05,
+      "monte_carlo": 0.036,
+      "abs_error_exact_vs_mc": 0.014,
+      "abs_error_approx_vs_exact": 0.0
+    },
+    {
+      "p": 0.05,
+      "s": 100,
+      "m": 10,
+      "exact_hypergeom": 0.401974,
+      "independent_approx": 0.401263,
+      "monte_carlo": 0.406,
+      "abs_error_exact_vs_mc": 0.004026,
+      "abs_error_approx_vs_exact": 0.000711
+    },
+    {
+      "p": 0.05,
+      "s": 100,
+      "m": 50,
+      "exact_hypergeom": 0.925537,
+      "independent_approx": 0.923055,
+      "monte_carlo": 0.94,
+      "abs_error_exact_vs_mc": 0.014463,
+      "abs_error_approx_vs_exact": 0.002482
+    },
+    {
+      "p": 0.05,
+      "s": 100,
+      "m": 100,
+      "exact_hypergeom": 0.994826,
+      "independent_approx": 0.994079,
+      "monte_carlo": 0.998,
+      "abs_error_exact_vs_mc": 0.003174,
+      "abs_error_approx_vs_exact": 0.000747
+    },
+    {
+      "p": 0.05,
+      "s": 100,
+      "m": 500,
+      "exact_hypergeom": 1.0,
+      "independent_approx": 1.0,
+      "monte_carlo": 1.0,
+      "abs_error_exact_vs_mc": 0.0,
+      "abs_error_approx_vs_exact": 0.0
+    },
+    {
+      "p": 0.1,
+      "s": 200,
+      "m": 1,
+      "exact_hypergeom": 0.1,
+      "independent_approx": 0.1,
+      "monte_carlo": 0.076,
+      "abs_error_exact_vs_mc": 0.024,
+      "abs_error_approx_vs_exact": 0.0
+    },
+    {
+      "p": 0.1,
+      "s": 200,
+      "m": 10,
+      "exact_hypergeom": 0.652195,
+      "independent_approx": 0.651322,
+      "monte_carlo": 0.658,
+      "abs_error_exact_vs_mc": 0.005805,
+      "abs_error_approx_vs_exact": 0.000874
+    },
+    {
+      "p": 0.1,
+      "s": 200,
+      "m": 50,
+      "exact_hypergeom": 0.995191,
+      "independent_approx": 0.994846,
+      "monte_carlo": 0.994,
+      "abs_error_exact_vs_mc": 0.001191,
+      "abs_error_approx_vs_exact": 0.000345
+    },
+    {
+      "p": 0.1,
+      "s": 200,
+      "m": 100,
+      "exact_hypergeom": 0.99998,
+      "independent_approx": 0.999973,
+      "monte_carlo": 1.0,
+      "abs_error_exact_vs_mc": 2e-05,
+      "abs_error_approx_vs_exact": 7e-06
+    },
+    {
+      "p": 0.1,
+      "s": 200,
+      "m": 500,
+      "exact_hypergeom": 1.0,
+      "independent_approx": 1.0,
+      "monte_carlo": 1.0,
+      "abs_error_exact_vs_mc": 0.0,
+      "abs_error_approx_vs_exact": 0.0
+    },
+    {
+      "p": 0.2,
+      "s": 400,
+      "m": 1,
+      "exact_hypergeom": 0.2,
+      "independent_approx": 0.2,
+      "monte_carlo": 0.176,
+      "abs_error_exact_vs_mc": 0.024,
+      "abs_error_approx_vs_exact": 0.0
+    },
+    {
+      "p": 0.2,
+      "s": 400,
+      "m": 10,
+      "exact_hypergeom": 0.89323,
+      "independent_approx": 0.892626,
+      "monte_carlo": 0.9,
+      "abs_error_exact_vs_mc": 0.00677,
+      "abs_error_approx_vs_exact": 0.000604
+    },
+    {
+      "p": 0.2,
+      "s": 400,
+      "m": 50,
+      "exact_hypergeom": 0.999988,
+      "independent_approx": 0.999986,
+      "monte_carlo": 1.0,
+      "abs_error_exact_vs_mc": 1.2e-05,
+      "abs_error_approx_vs_exact": 2e-06
+    },
+    {
+      "p": 0.2,
+      "s": 400,
+      "m": 100,
+      "exact_hypergeom": 1.0,
+      "independent_approx": 1.0,
+      "monte_carlo": 1.0,
+      "abs_error_exact_vs_mc": 0.0,
+      "abs_error_approx_vs_exact": 0.0
+    },
+    {
+      "p": 0.2,
+      "s": 400,
+      "m": 500,
+      "exact_hypergeom": 1.0,
+      "independent_approx": 1.0,
+      "monte_carlo": 1.0,
+      "abs_error_exact_vs_mc": 0.0,
+      "abs_error_approx_vs_exact": 0.0
+    }
+  ],
+  "curve": {
+    "0.01": [
+      {
+        "m": 1,
+        "detect": 0.01
+      },
+      {
+        "m": 2,
+        "detect": 0.019905
+      },
+      {
+        "m": 5,
+        "detect": 0.049058
+      },
+      {
+        "m": 10,
+        "detect": 0.095824
+      },
+      {
+        "m": 20,
+        "detect": 0.182883
+      },
+      {
+        "m": 50,
+        "detect": 0.398788
+      },
+      {
+        "m": 100,
+        "detect": 0.643314
+      },
+      {
+        "m": 200,
+        "detect": 0.879709
+      },
+      {
+        "m": 500,
+        "detect": 0.996928
+      }
+    ],
+    "0.05": [
+      {
+        "m": 1,
+        "detect": 0.05
+      },
+      {
+        "m": 2,
+        "detect": 0.097524
+      },
+      {
+        "m": 5,
+        "detect": 0.226423
+      },
+      {
+        "m": 10,
+        "detect": 0.401974
+      },
+      {
+        "m": 20,
+        "detect": 0.643314
+      },
+      {
+        "m": 50,
+        "detect": 0.925537
+      },
+      {
+        "m": 100,
+        "detect": 0.994826
+      },
+      {
+        "m": 200,
+        "detect": 0.99998
+      },
+      {
+        "m": 500,
+        "detect": 1.0
+      }
+    ],
+    "0.1": [
+      {
+        "m": 1,
+        "detect": 0.1
+      },
+      {
+        "m": 2,
+        "detect": 0.190045
+      },
+      {
+        "m": 5,
+        "detect": 0.409838
+      },
+      {
+        "m": 10,
+        "detect": 0.652195
+      },
+      {
+        "m": 20,
+        "detect": 0.879709
+      },
+      {
+        "m": 50,
+        "detect": 0.995191
+      },
+      {
+        "m": 100,
+        "detect": 0.99998
+      },
+      {
+        "m": 200,
+        "detect": 1.0
+      },
+      {
+        "m": 500,
+        "detect": 1.0
+      }
+    ]
+  },
+  "m_for_99pct": {
+    "0.01": 459,
+    "0.02": 228,
+    "0.05": 90,
+    "0.10": 44,
+    "0.20": 21
+  },
+  "binding": {
+    "cert_digest": "f3dc92015c5ccb40143e290cad833646025c775f7be2fce64b1a41020e92cd68",
+    "binding_T0": "74bea83167d5ed0f3a5b39ff7b04e6ef14c63fa7e4bfa8f653ce3225868772dc",
+    "binding_T1": "373dfb922371d5385089367028bd5ff75bf117d368487695b339f7cf2e61780d",
+    "unbound": {
+      "verifies_without_binding": true,
+      "leaf_equals_cert_digest": true,
+      "would_mismatch_if_T1_were_bound": true,
+      "note": "日志只承诺证书摘要；没有字段能区分交付的 T，所以 T0/T1 都能「通过」（F-3 的缺口）"
+    },
+    "bound": {
+      "verifies_with_T0_binding": true,
+      "verifies_with_T1_binding": false,
+      "note": "叶子里含 B(n,T)；换成 T1 重算就对不上"
+    }
+  },
+  "assumptions": [
+    {
+      "id": "F-1（外部义务）",
+      "text": "F2 的充分性依赖 F-O：运营方**在交付前必须**追加日志。这不是密码学结论；没有它，F1 适用。本脚本演示机制，不提供强制力。"
+    },
+    {
+      "id": "F-3（绑定被交付的 T）",
+      "text": "日志条目必须绑定被交付的 `T`（`B(n,T)` / `H(T)` / 交付回执）。只记 `cert_digest` 时，运营方可记一张「另一条 T」的证书；见上面的绑定对照。"
+    },
+    {
+      "id": "F-4（抽样框 = 交付）",
+      "text": "样本必须从**被交付的工件**里抽，不能只抽日志；只抽日志时 withholding 检出率恒为 0。独立性/命中即检出也是模型假设。"
+    },
+    {
+      "id": "F-2（split-view）",
+      "text": "只追加只是对**单一视图**的承诺。恶意日志可给不同审计者不同树头；需要 gossip/一致性证明/监控。本原型只给 `checkpoint()`，不实现防 split-view。"
+    },
+    {
+      "id": "F-4 第 2 条（同源违规）",
+      "text": "`m` 必须是**独立可检事件数**；一个根因导致一批违规时，`1-(1-p)^m` 会高估检出率。本脚本的 Monte Carlo 按独立位置抽样。"
+    },
+    {
+      "id": "F-5（检出 ≠ 阻止）",
+      "text": "本脚本只算「被发现」的概率，不算「被阻止」；后者取决于罚则与激励。"
+    },
+    {
+      "id": "F-6（日志可用性）",
+      "text": "验证者查包含证明要求日志可用；本原型在内存里，未建模不可用/延迟。"
+    }
+  ],
+  "notes": [
+    "F1 不可能性、F3 检出表/曲线、F2 的透明日志原型均在本仓库可复现。",
+    "只量化检出，不量化阻止（F-5）。",
+    "不实现 split-view 防护（F-2）。"
+  ]
+}

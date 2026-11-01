@@ -1,0 +1,114 @@
+{
+  "arm": "gateway-signature-cost",
+  "host": {
+    "hostname": "dxq",
+    "cpu_model": "Intel(R) Core(TM) i7-14650HX",
+    "cpu_count": 24,
+    "mem_total_mb": 14983,
+    "platform": "x86_64",
+    "python": "3.10.12",
+    "os": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35"
+  },
+  "reps": 300,
+  "counts": [
+    1,
+    10,
+    100
+  ],
+  "host_verify": {
+    "rows": [
+      {
+        "receipts": 1,
+        "sign_median_ms": 0.058,
+        "verify_median_ms": 0.094,
+        "sign_per_receipt_ms": 0.058,
+        "verify_per_receipt_ms": 0.094,
+        "receipt_bytes": 237.0,
+        "n": 300,
+        "status": "measured"
+      },
+      {
+        "receipts": 10,
+        "sign_median_ms": 0.415,
+        "verify_median_ms": 0.844,
+        "sign_per_receipt_ms": 0.0415,
+        "verify_per_receipt_ms": 0.0844,
+        "receipt_bytes": 288.3,
+        "n": 300,
+        "status": "measured"
+      },
+      {
+        "receipts": 100,
+        "sign_median_ms": 4.885,
+        "verify_median_ms": 10.165,
+        "sign_per_receipt_ms": 0.0488,
+        "verify_per_receipt_ms": 0.1016,
+        "receipt_bytes": 295.2,
+        "n": 300,
+        "status": "measured"
+      }
+    ],
+    "seal": {
+      "sign_median_ms": 0.074,
+      "verify_median_ms": 0.184,
+      "bytes": 345,
+      "n": 300,
+      "status": "measured",
+      "note": "ToolSeal 语义未改：仍是 {count, trace_root, ts, keyid, sig}"
+    }
+  },
+  "circuit": {
+    "status": "blocked",
+    "blocker": "B1-circuit-ed25519",
+    "blocker_doc": "docs/blockers/B1.md",
+    "reason": "circuits/ 按设计不含 Ed25519 验签（sig 不进电路）；新增 guest crate 越出 B1 文件所有权；且本机无 /tmp/pop-proof.lock。",
+    "cycles": null,
+    "prove_time_s": null,
+    "peak_mem_mb": null,
+    "cannot_conclude": [
+      "电路内验签的周期数",
+      "电路内验签的证明时间",
+      "电路内验签的峰值内存"
+    ]
+  },
+  "body_bytes": 288,
+  "single": {
+    "sign_median_ms": 0.069,
+    "verify_median_ms": 0.173,
+    "cert_bytes": 648,
+    "threshold": "1-of-1",
+    "n": 300,
+    "status": "measured"
+  },
+  "threshold_2of3": {
+    "sign_all_median_ms": 0.173,
+    "sign_per_share_ms": 0.0577,
+    "combine_median_ms": 0.001,
+    "verify_median_ms": 0.508,
+    "cert_bytes_3sigs": 981,
+    "cert_bytes_2sigs": 759,
+    "n": 300,
+    "status": "measured",
+    "scheme": "2-of-3 multi-signature (concatenated Ed25519), NOT a compact threshold signature"
+  },
+  "checks": [
+    {
+      "check": "任意 2 个互异签名 ⇒ 通过",
+      "ok": true
+    },
+    {
+      "check": "只有 1 个签名 ⇒ 拒绝",
+      "ok": true
+    },
+    {
+      "check": "同一 keyid 的两条签名 ⇒ 不算两个",
+      "ok": true
+    }
+  ],
+  "toolseal_semantics_unchanged": true,
+  "notes": [
+    "链下与阈值列是 measured；电路内列是 blocked，无数字。",
+    "2-of-3 是 multi-signature 拼接，不是紧凑阈值签名；证书大小线性增长。",
+    "本实验不改变 ToolSeal 语义，也不接入 trace.py。"
+  ]
+}
