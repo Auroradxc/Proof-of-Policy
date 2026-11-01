@@ -423,3 +423,82 @@ TDSC 常规论文 **12 页双栏**（含参考文献与作者简介），最多 
    还是**明确声明本文只在 ROM 下主张**。**〔未定〕**
    骨架 `:703-715` 与附录 A 均留有 `\need{}`。
    注：这条是**证明层面的债，不是文字债**，改不动就先声明限定。
+
+---
+
+## 8. 2026-11-01 BHV 回写状态（P）
+
+> **分支 / worktree**：`bhv/p-paper`，基线 `c78ca67`（本 worktree）。
+> **范围**：只改 `paper/tdsc-paper.tex`、`docs/paper-inputs/bhv-v1-b1.md`、
+> 本状态记录；未改代码、未改 `docs/proofs/*`、未改框架文档、未 push。
+
+### 8.1 写进正文的内容
+
+| 节 | 回写内容 |
+|---|---|
+| 摘要 / §1 | “one spine, three sides”；policy-zero-knowledge 的三条上界（重执行 / `core` 非 ZK / 无新鲜性可重放）；明说单条猜测界是标准的，新意是框架 + 三难 + 策略侧 + 组合必要条件 + 测量 |
+| §3.2 | 定理 A（条件性三难，Prop + Remark）、PV-2 口径、带密钥 β 的正确措辞、`q·2^{-k}` 而非 `q·2^{-λ}` |
+| §3.3 | 定理 B（泄漏剖面）+ 五 regime 表；`core` 为结构性最坏情况，不写成实测恢复率 |
+| §3.4 | 定理 D（D-privacy，**固定同一 T / 同一 public T-view**）+ 带盐承诺；两通道：公开值（盐关闭）vs 证明工件（`core` 仍泄露，需 groth16/plonk） |
+| §3.5 | 定理 C（交付绑定 `|S|·c·2^{-f}`），补 `c` 因子与 D2 前提 |
+| §4 | 把“只有 leak 表”换成 leak 通道表 + L0/L1/L2 推断曲线；明确披露层级是证书层投影，不是电路级隐藏 |
+| §5 | 组合四格、P1-11 DoS 表（19.2×→90.1×；naive n=50 OOM）、B1 网关成本（0.094/0.844/10.165 ms；2-of-3 981 B；电路内 blocked）、49 格基线、签发检出（0.9948 vs 0.0000） |
+| §7 | E-1（`x_U` 强绑定未落地）、组合五条件、**G-1/V1-2 已修复**（Core `9ac2d59`）、circuit Ed25519 blocked、split-view 外部假设、只量化检出 |
+
+### 8.2 版式对齐（IEEE Computer Society 模板）
+
+- 主选项：`\documentclass[10pt,journal,compsoc]{IEEEtran}`；`[lettersize,journal]`
+  作为可切换注释保留。
+- 模板包已按样张加入：`amsmath,amsfonts,algorithmic,algorithm,array,subfig,textcomp,
+  stfloats,url,verbatim,graphicx,cite`；保留 `amssymb,amsthm,booktabs,microtype`；
+  `hyperref` 放在最后。
+- `\hyphenation{...}`、`\author{...\thanks{...}}`、`\markboth{...}{...}`、
+  `\IEEEPARstart{L}{LM}` 已加；未使用 `\IEEEpubid`（可选，且作者信息未定）。
+- 环境侧：本机 TeX Live 2026 缺 `algorithms`、`sttools`、`subfig`、`cite`、`palatino`、
+  `mathpazo`，已用 `tlmgr --usermode` 装到 `~/texmf`；模板目录未拷入仓库。
+
+### 8.3 编译与计数（2026-11-01）
+
+| 选项 | 页数 | error | undefined ref | overfull | `\need` | `\fixme` |
+|---|---:|---:|---:|---:|---:|---:|
+| `compsoc`（主） | **16** | 0 | 0 | 4 | **13** | **0** |
+| `lettersize,journal`（备选） | **16** | 0 | 0 | 2 | 13 | 0 |
+
+- 开工前同口径：11 页，`\need` 24 / `\fixme` 6（含文件头注释行）。
+  若剔除文件头那一行，开工前**真标记**为 `\need` 22 / `\fixme` 5；
+  终稿为 **13 / 0**（文件头不再含字面标记）。
+- 两组均 ≤18 页；`compsoc` 与样张在页数上无差异，仅栏宽/字号略变。
+- 剩余 4 个 overfull 均为 ≤22 pt 的表格/行内公式溢出，不影响分页；未发现 `??`。
+
+### 8.4 仍 pending（正文每条 `\need` 都有 blocker）
+
+| 项 | blocker |
+|---|---|
+| groth16 / plonk 档与 ZK 交叉点 | X1：≥16 GB 云机；`bench/results/scale-cloud.json` 不存在 |
+| 实测 `k` 与语义有损实例 | X2：真实模型多次采样 |
+| 组合成本 / “推理证明主导” | WP4-(2)/WP3 |
+| 引文作者、页码、出处 | WP8 |
+| 作者/资助/日期 | 作者元数据 |
+| P-PP 实例化（链上注册 vs 签名清单） | 作者决策 |
+| 是否把 Ω(n²) 升为定理 | 作者决策（当前按观察 + 测量陈述） |
+| 801 vs 783 文档漂移 | 作者定夺回填口径 |
+
+### 8.5 结果文件索引
+
+所有新数字的来源见 [`paper-inputs/bhv-v1-b1.md`](paper-inputs/bhv-v1-b1.md)；
+每个路径均在 `c78ca67` 上存在。
+
+### 8.6 Core NFA 修复（2026-11-01，`9ac2d59`）
+
+- **G-1**：空字符类（`[^\d\D]` 等）改为解析期 fail-closed，抛
+  `RegexSyntaxError`（经 `compile.py` 包装为 `PolicyError`）；A-G0 从定理
+  额外假设变为**解析器契约**。
+- **V1-2**：`a{0}` / `a{0,0}` 等价 ε；Rust `nfa_match_naive` 的空文本 ε
+  缺口同步修复（guest 变更 ⇒ vkey 变化）。
+- 新 `pop-script` sha256 `7f99fdb1…`；policy vkey 从 `0x0091b406…` 变为
+  `0x003eb14d…`；infer / session vkey 见
+  `docs/blockers/Core.md`（main `9ac2d59`）。
+- 论文 §V-B/§V-C 的 proving 表与 §VII-C 已按 **pre-NFA-fix binary** 标注；
+  X1 云机结果仍用旧 binary，必须标该 binary sha256，不得与新 vkey 同表。
+- 本 worktree 基于 `c78ca67`，未合并 `9ac2d59`；`Core.md` 与更新后的
+  `V1.md` 以 main / `tdsc-conversion` 为准。
