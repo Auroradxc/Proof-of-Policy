@@ -9,9 +9,12 @@
      —— core/compressed 的 STARK 并非零知识，这一档必须如实标注（P0-4）；
   3. 策略绑定**三方比对**：证书声明的 policy_hash == 由策略包现场重编译的 sha256
      == 证明公开值承诺的 policy_hash（三者必须同时成立，见 policydsl.evidence.verifier）；
-  3b. 响应绑定（P0-2）：证书 challenge 块声明的 response_binding == outcome 内嵌的
-     == 证明公开值承诺的 == 由**送达的响应 T′** 与 nonce 现场重算的。带 --response
-     时这一路才齐全 —— 那也正是「持 T′ 的一方」要做的核对；
+  3b. 响应绑定（P0-2 / P1-07）：证书 challenge 块声明的 response_binding == outcome
+     内嵌的 == 证明公开值承诺的 == 由**送达的响应 T′** 与 nonce 现场重算的。带
+     --response 时这一路才齐全 —— 那也正是「持 T′ 的一方」要做的核对。
+     challenge 块的 `issuer` 决定角色：`verifier` 用 `pop-bind-v1`；
+     `end-user` 另核对新域 `pop-bind-enduser-v1` 的 `end_user_binding`。旧块没有
+     `issuer` 时按 verifier 解释；未知 issuer 一律 fail closed。
   3c. 轨迹绑定（P1-5）：证书 outcome 内嵌的 trace_root == 证明公开值承诺的
      == 由**网关侧收到的回执链**现场重算的（带 --receipts 时这一路才齐全）。
      另：带 --gateway-key 时对回执链**逐条验签**（链下验签，与电路内的结构校验
@@ -329,16 +332,35 @@ def check_response_binding(args, payload: dict, proof_result) -> list:
     if not ch and proof_binding is None:
         return [("response_binding", True,
                  "certificate is not challenge-bound — skipped (no challenge block)")]
+
+    cards: list = []
+    issuer = None
+    if ch:
+        # P1-07：先校验 issuer / scheme / 字段完整性。未知 issuer、issuer 与
+        # scheme 不匹配、end-user 块缺 end_user_binding —— 一律 fail closed。
+        try:
+            issuer = challenge.challenge_issuer(ch)
+            challenge.validate_challenge_block(ch)
+        except ValueError as exc:
+            cards.append(("challenge_issuer", False, f"fail closed: {exc}"))
+            cards.append(("response_binding", False, "challenge block is invalid"))
+            return cards
+        cards.append(("challenge_issuer", True,
+                      f"issuer={issuer} scheme={ch.get('scheme')}"))
+
     nonce_hex = args.nonce if args.nonce is not None else ch.get("nonce")
     recomputed, note = None, ""
+    response_text = None
     if args.response is not None:
+        response_text = args.response.read_text(encoding="utf-8")
         if nonce_hex is None:
             note = " (--response given 但证书没有 nonce，无法重算)"
         else:
             try:
+                # 主卡始终核对 verifier 域：那是电路公开值里的 response_binding，
+                # 与 outcome / proof 必须继续一致。
                 recomputed = commit.response_binding(
-                    challenge.parse_nonce(nonce_hex),
-                    args.response.read_text(encoding="utf-8"))
+                    challenge.parse_nonce(nonce_hex), response_text)
                 note = " — 送达的 T′ 就是被证明的 T"
             except ValueError as exc:
                 note = f" (nonce 无法解析: {exc})"
@@ -350,7 +372,29 @@ def check_response_binding(args, payload: dict, proof_result) -> list:
     ])
     if not ok_bind and recomputed is not None:
         note = " — 送达的 T′ 与被证明的 T 对不上"
-    return [("response_binding", ok_bind, bind_detail + note)]
+    cards.append(("response_binding", ok_bind, bind_detail + note))
+
+    # end-user 绑定（P1-07）：U 的 nonce 走新域，字段是 end_user_binding。
+    # 它不替代上面那张卡；两者回答的是不同问题（V 的核对 vs U 的交付绑定）。
+    if issuer == challenge.ISSUER_END_USER:
+        end_binding = ch.get(challenge.END_USER_BINDING_FIELD)
+        if not isinstance(end_binding, str) or not end_binding:
+            cards.append(("response_binding_end_user", False,
+                          "end-user challenge 缺少 end_user_binding"))
+        elif args.response is None:
+            cards.append(("response_binding_end_user", True,
+                          "issuer=end-user；未给 --response，无法重算 (skipped)"))
+        else:
+            try:
+                nonce = challenge.parse_nonce(nonce_hex or "")
+                ok_end = commit.verify_end_user_binding(nonce, response_text, end_binding)
+                detail = ("送达的 T′ 就是 U 的 nonce 所绑定的 T"
+                          if ok_end else "送达的 T′ 与 end-user 绑定对不上")
+                cards.append(("response_binding_end_user", ok_end, detail))
+            except ValueError as exc:
+                cards.append(("response_binding_end_user", False,
+                              f"nonce 无法解析: {exc}"))
+    return cards
 
 
 def check_trace_binding(args, payload: dict, proof_result) -> list:

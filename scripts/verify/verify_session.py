@@ -51,6 +51,7 @@ bootstrap()
 from policydsl.evidence import anchor, cert, disclosure, keys, verifier  # noqa: E402
 from policydsl.evidence.cert import sha256_file  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.privacy import challenge  # noqa: E402
 from policydsl.adapters.langchain_adapter import verify_chain  # noqa: E402
 from policydsl.core.model import Policy  # noqa: E402
 # 快路径判定（二进制 + 边车 + 非 core 模式）在 policydsl.evidence.verifier；此处再导出以兼容旧导入
@@ -163,6 +164,14 @@ def check_certificates(entries: list, keyring: dict, ledger: Path, cache: dict) 
         # 不是「绑定通过」。真正的密码学那一腿在第 4 步用证明公开值补上。
         if payload.get("challenge"):
             bound_n += 1
+            # P1-07：issuer/scheme/字段完整性先 fail closed；end-user 块还要求
+            # end_user_binding 是 64 hex。会话层没有 T′，无法重算，但至少不能
+            # 让「标签说 end-user、字段却没有」的块混过去。
+            try:
+                challenge.validate_challenge_block(payload["challenge"])
+            except ValueError as exc:
+                bind_ok = False
+                bind_bad.append(f"{e['kind']}: invalid challenge block: {exc}")
             ok_bind, bind_detail = verifier.check_response_binding([
                 ("cert.challenge", payload["challenge"].get("response_binding")),
                 ("cert.outcome", (payload.get("outcome") or {}).get("response_binding")),
