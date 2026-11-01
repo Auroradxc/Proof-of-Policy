@@ -29,6 +29,44 @@
 
 ---
 
+## 0.1 不依赖 X1/X2 结果、可先跑的任务
+
+> **判据**：不读 `scale-cloud.json` / `k_entropy.json` / `privacy_surface.*`，
+> 不需要云机证明，也不改 vkey。可以与本机工作并行；与云机只共享“不要抢资源”这一条。
+
+| ID | 任务 | 为什么独立 | 产出 | 资源/冲突 |
+|---|---|---|---|---|
+| **A1** | M3-01 定理 A–G 证明债收口（A-RO、带密钥 β、PV-2、定理 C、D-privacy） | 纯纸面；已有证明底稿 | `docs/proofs/*` 更新 + §3 修补 | `[LOCAL]`；不碰云机 |
+| **A2** | M3-03 P-PP 原型（权威签名清单/注册表 + 带盐承诺开示） | 证书层；不依赖 groth16/k | 新 `policydsl/evidence/policy_registry.py` + 测试 + §4 输入 | `[LOCAL]`；不改 vkey |
+| **A3** | M3-04 计数统一（801/783/469）、Ω(n²) 升定理 vs 观察 | 文档/决策 | `plan-bhv`/`modules/08`/论文注记 | `[LOCAL]` |
+| **A4** | M4-03 Artifact：Dockerfile + 一键复现 + Zenodo 占位 | 不依赖云机数字 | `Dockerfile`、`scripts/ops/reproduce_*`、artifact README | `[LOCAL]`；Docker 可用 |
+| **A5** | M5-02 引文核实（WP8）：逐条打开原文、补作者/页码/DOI | 不依赖实验 | `paper/tdsc-paper.tex` bibliography + `docs/citation-audit.md` | `[LOCAL]`；需网络；P 单 owner |
+| **A6** | M5-03 当前稿件一致性审计（标题/摘要/§1 vs §5/§7；不编数字） | 用现有结果即可 | `docs/paper-inputs/audit.md` + §7 注记 | `[LOCAL]`；最终数字后续再核 |
+| **A7** | M6-01 cover letter 草稿 | 不依赖最终数字 | `docs/submission/cover-letter.md` | `[LOCAL]` |
+| **A8** | M6-03 mock review + rebuttal playbook（理论/系统/隐私三份） | 读现有稿即可 | `docs/submission/mock-reviews.md`、`rebuttal-playbook.md` | `[LOCAL]` |
+| **A9** | M4-01 电路级披露 coarsening 的**设计**（不改代码） | 设计不依赖云机 | `docs/design-disclosure-levels.md` | `[LOCAL]`；**实现/重建 vkey 等 X1 结束** |
+| **A10** | M4-02 透明日志一致性证明/gossip 原型 | 本地密码学/日志 | `policydsl/evidence/transparency.py` 扩展 + 测试 | `[LOCAL]`；不改 vkey |
+| **A11** | M4-02 真语义模型**本地**准确率/ONNX 可行性（不跑 ezkl） | 不依赖 X1/X2 结果 | `bench/results/semantic_feasibility.md` | `[LOCAL]` CPU/8GB；不占云 GPU |
+| **A12** | M4-02 电路内 Ed25519 的**设计/成本估算**（不实现） | 设计不依赖云机 | `docs/design-gateway-sig.md` | `[LOCAL]`；实现等 vkey 排期 |
+
+### 必须等 X1/X2 的任务（不要提前做）
+
+- §5 groth16 / scale / privacy surface 的数字列；
+- §5.6 实测 `k` 与端到端；
+- 标题 “Zero-Knowledge” vs “Succinct” 的最终决定（取决于 groth16）；
+- 最终页数/表格布局（填数字后会变）；
+- 任何“响应可恢复/隐私上界”的定量主张（需要 X2 的 `k`）；
+- 云机上的新 binary 重跑 probe、真推理证明、TEE 真机、任何与 X1 抢 CPU/内存的实验。
+
+### 推荐批次（若现在开）
+
+- **Batch A（3 agent）**：A1 理论收口、A2 P-PP 原型、A4 Artifact/Docker。
+- **Batch B（2 agent）**：A5 引文核实（resume P）、A8 mock review/rebuttal。
+- **Batch C（按需）**：A9 披露设计、A11 语义可行性、A10 透明日志扩展。
+- **不要开**：任何改 `circuits/` / 重建 vkey 的实现；任何占云机 CPU/GPU 的重任务。
+
+---
+
 ## M2 — 云机证明 + 真模型（进行中）
 
 ### M2-01 X1：groth16 探针与矩阵（`[CLOUD]`）
