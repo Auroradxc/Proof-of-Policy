@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import argparse
 import fcntl
-import hashlib
 import json
 import os
 import platform
@@ -65,6 +64,7 @@ from policydsl.core import nfa                                     # noqa: E402
 from policydsl.core.compile import compile_policy                  # noqa: E402
 from policydsl.core.model import Policy, Rule                      # noqa: E402
 from policydsl.core.serialize import spec_canonical_text          # noqa: E402
+from policydsl.evidence.cert import sha256_file                    # noqa: E402
 from policydsl.paths import POP_SCRIPT                             # noqa: E402
 
 PATTERN = "a+b"
@@ -140,11 +140,7 @@ def resolve_binary(explicit: Optional[Path]) -> Optional[Path]:
 def binary_fingerprint(path: Optional[Path]) -> Dict[str, Any]:
     if path is None:
         return {"path": None, "sha256": None, "note": "driver not found"}
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(1 << 20), b""):
-            h.update(chunk)
-    return {"path": str(path), "sha256": h.hexdigest()}
+    return {"path": str(path), "sha256": sha256_file(path)}
 
 
 # --------------------------------------------------------------------------- #
