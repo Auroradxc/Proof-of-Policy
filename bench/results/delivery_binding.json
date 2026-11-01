@@ -1,0 +1,48 @@
+{
+  "generated_at": "2026-11-01T07:08:28Z",
+  "trials": 200,
+  "scenarios": [
+    {
+      "name": "f=0 (empty nonce)",
+      "issuer": "verifier",
+      "nonce": "empty",
+      "f_bits": 0,
+      "trials": 200,
+      "honest_accept_rate": 1.0,
+      "divergent_accept_rate": 1.0,
+      "replay_accept_rate": 1.0
+    },
+    {
+      "name": "verifier-only (fresh V nonce)",
+      "issuer": "verifier",
+      "nonce": "fresh",
+      "f_bits": 256,
+      "trials": 200,
+      "honest_accept_rate": 1.0,
+      "divergent_accept_rate": 1.0,
+      "replay_accept_rate": 0.0
+    },
+    {
+      "name": "end-user (fresh U nonce)",
+      "issuer": "end-user",
+      "nonce": "fresh",
+      "f_bits": 256,
+      "trials": 200,
+      "honest_accept_rate": 1.0,
+      "divergent_accept_rate": 0.0,
+      "replay_accept_rate": 0.0
+    }
+  ],
+  "criteria": {
+    "f0_replay_succeeds": true,
+    "verifier_only_divergent_succeeds": true,
+    "end_user_divergent_fails": true,
+    "end_user_honest_succeeds": true
+  },
+  "all_criteria_met": true,
+  "notes": [
+    "Replay is modeled as re-submitting the same certificate + same T. With a fresh nonce the old certificate no longer matches; f=0 has no freshness at all, so replay is accepted.",
+    "verifier-only protects V's view of T, not U's delivery: U has no nonce and the certificate carries no end_user_binding, so a divergent delivery is accepted by U.",
+    "end-user uses the separate domain pop-bind-enduser-v1 and rejects divergent delivery. The circuit still commits the verifier-domain response_binding; end_user_binding is a certificate-layer add-on."
+  ]
+}

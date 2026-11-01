@@ -48,9 +48,10 @@ from _bootstrap import REPO, bootstrap  # noqa: E402
 
 bootstrap()
 
-from policydsl.evidence import anchor, cert, keys, verifier  # noqa: E402
+from policydsl.evidence import anchor, cert, disclosure, keys, verifier  # noqa: E402
 from policydsl.evidence.cert import sha256_file  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
+from policydsl.privacy import challenge  # noqa: E402
 from policydsl.adapters.langchain_adapter import verify_chain  # noqa: E402
 from policydsl.core.model import Policy  # noqa: E402
 # 快路径判定（二进制 + 边车 + 非 core 模式）在 policydsl.evidence.verifier；此处再导出以兼容旧导入
@@ -72,6 +73,17 @@ def spec_for(pack: str, cache: dict) -> dict:
     if pack not in cache:
         cache[pack] = compile_policy(load_policy(REPO / pack))
     return cache[pack]
+
+
+def projected_proof_outcome(payload: dict, proof_result) -> dict:
+    """把证明公开值投影到证书声明的披露级别（旧证书不投影，逐字节兼容）。"""
+    decoded = verifier.outcome_without_meta(proof_result)
+    if decoded is None:
+        return None
+    level = disclosure.declared_level(payload)
+    if level is None:
+        return decoded
+    return disclosure.project_outcome(decoded, level)
 
 
 def check_signers(args, base: Path, session: dict):
@@ -122,13 +134,18 @@ def check_certificates(entries: list, keyring: dict, ledger: Path, cache: dict) 
     vk_ok = True
     vk_bad: list[str] = []
     vk_marked = vk_skipped = 0
+    # 披露层级（P1-05）：字段存在时按级别检查载荷形状；未知级别 fail closed。
+    # 字段缺失 = P1-05 之前签发的证书，按旧行为跳过（不是「按 L0 核过」）。
+    disc_ok = True
+    disc_bad: list[str] = []
+    disc_marked = disc_skipped = 0
     kinds = {}
     for e in entries:
         env = e["envelope"]
         ok, payload = cert.verify_envelope(env, keyring)
         sig_ok &= ok
         if not ok or payload is None:
-            pol_ok = anch_ok = bind_ok = vk_ok = False
+            pol_ok = anch_ok = bind_ok = vk_ok = disc_ok = False
             continue
         kinds[e["kind"]] = kinds.get(e["kind"], 0) + 1
         # policy_hash 三方比对（链下部分）：证书载荷、证书 outcome 内嵌值、
@@ -147,6 +164,14 @@ def check_certificates(entries: list, keyring: dict, ledger: Path, cache: dict) 
         # 不是「绑定通过」。真正的密码学那一腿在第 4 步用证明公开值补上。
         if payload.get("challenge"):
             bound_n += 1
+            # P1-07：issuer/scheme/字段完整性先 fail closed；end-user 块还要求
+            # end_user_binding 是 64 hex。会话层没有 T′，无法重算，但至少不能
+            # 让「标签说 end-user、字段却没有」的块混过去。
+            try:
+                challenge.validate_challenge_block(payload["challenge"])
+            except ValueError as exc:
+                bind_ok = False
+                bind_bad.append(f"{e['kind']}: invalid challenge block: {exc}")
             ok_bind, bind_detail = verifier.check_response_binding([
                 ("cert.challenge", payload["challenge"].get("response_binding")),
                 ("cert.outcome", (payload.get("outcome") or {}).get("response_binding")),
@@ -188,6 +213,18 @@ def check_certificates(entries: list, keyring: dict, ledger: Path, cache: dict) 
                 vk_bad.append(
                     f"{e['kind']}: vkey_hash={declared_vk} 但 proof_sha256="
                     f"{'有' if has_proof_vk else 'null'}")
+        # 披露层级（P1-05）：字段存在时检查载荷形状与级别是否匹配。
+        if "disclosure_level" in payload:
+            disc_marked += 1
+            try:
+                ok_disc, disc_detail = disclosure.check_outcome_disclosure(payload, None)
+            except disclosure.DisclosureError as exc:
+                ok_disc, disc_detail = False, f"fail closed: {exc}"
+            disc_ok &= ok_disc
+            if not ok_disc:
+                disc_bad.append(f"{e['kind']}: {disc_detail}")
+        else:
+            disc_skipped += 1   # P1-05 之前签发的证书没有这个字段
         anch_ok &= anchor.find_anchor(ledger, cert.cert_digest(payload)) is not None
     cards.append(("certificates_signature", sig_ok,
                   f"{len(entries)} certs, {len(keyring)} key(s) in ring"))
@@ -202,6 +239,9 @@ def check_certificates(entries: list, keyring: dict, ledger: Path, cache: dict) 
     cards.append(("certificates_vkey_label", vk_ok,
                   f"{vk_marked} cert(s) labeled, {vk_skipped} predate the field"
                   if vk_ok else "; ".join(vk_bad[:2])))
+    cards.append(("certificates_disclosure", disc_ok,
+                  f"{disc_marked} cert(s) labeled, {disc_skipped} predate the field"
+                  if disc_ok else "; ".join(disc_bad[:2])))
     cards.append(("certificates_anchored", anch_ok, "digest present in ledger"))
     return cards, kinds
 
@@ -257,8 +297,12 @@ def check_zk_proofs(entries: list, base: Path, cache: dict) -> list:
             zk_ok &= v.get("public_values_sha256") == b.get("public_values_sha256")
             zk_ok &= v.get("vkey_hash") == b.get("vkey_hash")
             zk_ok &= sha256_file(proof) == payload["binding"]["proof_sha256"]
-            # 公开值解出来的 outcome 必须与证书载荷逐字段一致（含 policy_hash）
-            zk_ok &= verifier.outcome_without_meta(v) == payload["outcome"]
+            # 公开值解出来的 outcome 必须与证书载荷逐字段一致（含 policy_hash）；
+            # 证书声明了披露级别时，先按该级别重投影证明公开值（P1-05）。
+            try:
+                zk_ok &= projected_proof_outcome(payload, v) == payload["outcome"]
+            except disclosure.DisclosureError:
+                zk_ok = False
             kind = f"pop-verify ({v.get('proof_mode')}, no prover)"
         else:
             # Core 证明：用 pop-script --verify 重新验证
@@ -267,7 +311,10 @@ def check_zk_proofs(entries: list, base: Path, cache: dict) -> list:
                            env=dict(os.environ, SP1_PROVER="cpu"), check=True, cwd=str(REPO))
             v = json.loads(out.read_text())
             zk_ok &= bool(v.get("verified"))
-            zk_ok &= verifier.outcome_without_meta(v) == payload["outcome"]
+            try:
+                zk_ok &= projected_proof_outcome(payload, v) == payload["outcome"]
+            except disclosure.DisclosureError:
+                zk_ok = False
             zk_ok &= v.get("vkey_hash") == payload["binding"]["vkey_hash"]
             zk_ok &= sha256_file(proof) == payload["binding"]["proof_sha256"]
             kind = "SP1 proof verified (pop-script)"

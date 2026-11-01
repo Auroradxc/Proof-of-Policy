@@ -1,0 +1,60 @@
+{
+  "generated_at": "2026-11-01T07:09:18Z",
+  "base_pack": "policy_packs/agent_content_v1.json",
+  "seed": 20261101,
+  "variants": 20,
+  "train_per_variant": 40,
+  "test_per_variant": 15,
+  "classifier": "stdlib multinomial naive Bayes (alpha=1)",
+  "sklearn_available": false,
+  "levels": {
+    "L0": {
+      "features": "rule name + kind (per violation)",
+      "train_samples": 800,
+      "test_samples": 300,
+      "classes": 20,
+      "top1": 0.81,
+      "top3": 0.84,
+      "chance_top1": 0.05,
+      "mi_bits": 3.4445,
+      "entropy_bits": 4.3219,
+      "normalized_mi": 0.797,
+      "action_utility": 1.0,
+      "violating_cases": 407
+    },
+    "L1": {
+      "features": "category + per-category count + total",
+      "train_samples": 800,
+      "test_samples": 300,
+      "classes": 20,
+      "top1": 0.1133,
+      "top3": 0.3133,
+      "chance_top1": 0.05,
+      "mi_bits": 0.9397,
+      "entropy_bits": 4.3219,
+      "normalized_mi": 0.2174,
+      "action_utility": 0.4054,
+      "violating_cases": 407
+    },
+    "L2": {
+      "features": "violation count only (commitments are opaque hashes)",
+      "train_samples": 800,
+      "test_samples": 300,
+      "classes": 20,
+      "top1": 0.0733,
+      "top3": 0.22,
+      "chance_top1": 0.05,
+      "mi_bits": 0.2159,
+      "entropy_bits": 4.3219,
+      "normalized_mi": 0.05,
+      "action_utility": 0.0,
+      "violating_cases": 407
+    }
+  },
+  "notes": [
+    "Classifier is implemented with the standard library; no pip install was performed. sklearn, if present, is not used.",
+    "L0 exposes rule + kind; L1 exposes category + count; L2 exposes only opaque evidence commitments (the feature uses violation count only, because hashes do not generalize across samples).",
+    "Action utility is a proxy: L0 maps kind -> specific repair action; L1 maps category -> generic action (content cannot distinguish keyword vs pattern); L2 -> manual review.",
+    "This measures the certificate public-value channel only. Circuit public values still contain raw rule/kind (see docs/blockers/C1.md)."
+  ]
+}

@@ -47,6 +47,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
+from policydsl.evidence import disclosure
+
 try:  # pragma: no cover - 导入失败时给出可读错误，而不是 ImportError 栈
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives import serialization
@@ -202,7 +204,8 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
                   challenge: Optional[Dict[str, str]] = None,
                   proof_mode: Optional[str] = None,
                   trace_seal: Optional[Dict[str, Any]] = None,
-                  semantic: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                  semantic: Optional[Dict[str, Any]] = None,
+                  disclosure_level: Optional[str] = None) -> Dict[str, Any]:
     """组装证书载荷（给定输入 + ts 后即为确定性结构）。
 
     ``extra`` 携带可选注解，例如 ``{"streaming": {"partial": true, "tokens": N}}``
@@ -240,9 +243,24 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
     （``policydsl.proofs.verify_companion``），**一条都不能少** —— 少了就是
     「看起来验过了」而实际没验。``delegated`` 非空而本块缺失/不全时，
     ``verify_cert.py`` 一律判 FAIL（fail closed）。
+
+    ``disclosure_level`` 是 P1-05 的**证书层**披露选择（``L0``/``L1``/``L2``，
+    见 :mod:`policydsl.evidence.disclosure`）。给了它时，本函数会把
+    ``outcome.violations`` 投影到该级别并写进载荷；没给时**不写字段、不改
+    outcome**，旧证书逐字节不变。级别非法、或 ``delegated`` 非空却要求 L1/L2，
+    一律抛 :class:`policydsl.evidence.disclosure.DisclosureError`（fail closed）。
+
+    ⚠️ 这是**证书层**的披露，不是电路级隐藏：证明公开值里仍有 raw
+    ``rule`` / ``kind``，验证方按级别重投影后比对。电路级 coarsening 需要
+    单独的 vkey 重建任务（见 ``docs/blockers/C1.md``）。
     """
     if proof_mode is None and proof_sha256 is None:
         proof_mode = PROOF_MODE_UNPROVEN      # 没有工件 → 只能自称「未证明」
+    level = None
+    if disclosure_level is not None:
+        level = disclosure.normalize_level(disclosure_level)
+        # 深拷贝 + 投影；不改调用方的 outcome 字典。
+        outcome = disclosure.project_outcome(outcome, level)
     payload = {
         "cert_version": CERT_VERSION,
         "policy": {"id": policy_id, "version": policy_version},
@@ -263,6 +281,9 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
         payload["semantic"] = semantic
     if extra:
         payload.update(extra)
+    if level is not None:
+        # 放在 extra 之后，保证这个字段只能来自本次校验过的参数。
+        payload["disclosure_level"] = level
     return payload
 
 

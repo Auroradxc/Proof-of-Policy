@@ -43,6 +43,18 @@ BIND_DOMAIN = b"pop-bind-v1"
 #: 证书 ``challenge`` 块里声明的绑定方案名（便于将来换代）。
 BIND_SCHEME = "pop-bind-v1"
 
+#: **接收方（end-user）** nonce 的绑定域。见 :func:`end_user_response_binding`。
+#:
+#: 为什么需要单独一个域：verifier 的 nonce 与 end-user 的 nonce 回答的是两个
+#: 不同的问题 —— 前者让**验证者 V** 确认「被证明的 T 就是 V 手上的 T」；后者
+#: 让**收件人 U** 确认「送到 U 手上的 T′ 就是被证明的那条 T」。如果两者用同一
+#: 域、同一个 nonce 空间，一张为 V 签的证书可以被原样当作「U 的交付凭证」，
+#: 角色就混了。新域让两种绑定在密码学上不可互换，`:class:`challenge` 块再用
+#: ``issuer`` 字段声明是哪一种。
+END_USER_BIND_DOMAIN = b"pop-bind-enduser-v1"
+#: 证书 ``challenge`` 块里 end-user 绑定使用的方案名。
+END_USER_BIND_SCHEME = "pop-bind-enduser-v1"
+
 
 #: 仅对 ASCII 大写字母做小写化（与电路内匹配器保持字节级一致）。
 #:
@@ -87,13 +99,41 @@ def response_binding(nonce: bytes, response: str) -> str:
     ``nonce`` 为空是合法的（= 未走挑战流程）：绑定退化为「对空挑战的承诺」，
     **不提供重放防护**，但格式统一，验证方无需分支处理。
     """
-    return hashlib.sha256(BIND_DOMAIN + len(nonce).to_bytes(4, "big") + nonce
+    return _binding(BIND_DOMAIN, nonce, response)
+
+
+def _binding(domain: bytes, nonce: bytes, response: str) -> str:
+    """``SHA256(domain ‖ len(nonce) ‖ nonce ‖ T_utf8)``（长度前缀防拼接歧义）。"""
+    return hashlib.sha256(domain + len(nonce).to_bytes(4, "big") + nonce
                           + response.encode("utf-8")).hexdigest()
 
 
 def verify_binding(nonce: bytes, response: str, binding: str) -> bool:
     """``response`` 配上 ``nonce`` 能否「打开」``binding``（常量时间比较）。"""
     return hmac.compare_digest(response_binding(nonce, response), binding)
+
+
+def end_user_response_binding(nonce: bytes, response: str) -> str:
+    """把一条响应 ``T`` 绑定到**收件人 U** 的一次性 nonce 上。
+
+    计算 ``SHA256(END_USER_BIND_DOMAIN ‖ len(nonce) ‖ nonce ‖ T_utf8)``，
+    与 :func:`response_binding` 结构相同、**域不同**。因此：
+
+    * 同一个 ``(nonce, T)`` 在 verifier 域与 end-user 域算出两个不同的值；
+    * 一张为 V 的 nonce 签的证书，不能拿来冒充 U 的交付凭证；
+    * 反向亦然。
+
+    **电路仍未计算这个域**（不改电路/vkey 是 C1 的硬边界）：电路公开值里的
+    ``response_binding`` 仍是 ``pop-bind-v1``。end-user 绑定是证书 ``challenge``
+    块里的**附加**字段 ``end_user_binding``，供 U 用 ``(nonce, T′)`` 离线重算。
+    详见 ``policydsl/privacy/challenge.py`` 的模块文档与 ``docs/blockers/C1.md``。
+    """
+    return _binding(END_USER_BIND_DOMAIN, nonce, response)
+
+
+def verify_end_user_binding(nonce: bytes, response: str, binding: str) -> bool:
+    """``response`` 配上 U 的 ``nonce`` 能否打开 ``binding``（常量时间比较）。"""
+    return hmac.compare_digest(end_user_response_binding(nonce, response), binding)
 
 
 def canonical_violations(spec: Dict, response: str,
