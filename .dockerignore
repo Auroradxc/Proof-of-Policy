@@ -1,0 +1,51 @@
+# Docker build context for the pure-Python artifact image (see Dockerfile).
+#
+# Keep these in the image (they must NOT be excluded):
+#   policydsl/  scripts/  policy_packs/  tests/  docs/  semantic/  paper/*.tex,*.md
+#
+# The image is a *pure Python* smoke target; Rust build outputs, benchmark
+# results, generated demo output and private keys never need to be baked in.
+
+# --- VCS / agent isolation -------------------------------------------------
+.git
+.claude
+.github
+
+# --- Python caches ---------------------------------------------------------
+__pycache__
+*.pyc
+*.pyo
+.venv
+venv
+wheelhouse
+
+# --- Rust / build artifacts ------------------------------------------------
+circuits/target
+contracts/out
+contracts/cache
+bench/work
+scripts/.work
+
+# --- Generated demo / benchmark output -------------------------------------
+scripts/examples/out
+bench/results
+
+# --- Secrets / private material (never bake these into an image) -----------
+.pop-keys
+*.key
+*.pub.hex
+*.pem
+.env
+.env.*
+
+# --- Large generated files -------------------------------------------------
+paper/*.pdf
+semantic/artifacts/pk.ezkl
+semantic/artifacts/kzg.srs
+semantic/artifacts/witness.json
+semantic/artifacts/input.json
+semantic/artifacts/proof.json
+semantic/model.resmoke.onnx
+
+# --- Logs ------------------------------------------------------------------
+*.log
