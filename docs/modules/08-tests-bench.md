@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（42 个模块，783 个用例）与 `bench/`（7 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（48 个模块，916 个用例；默认环境 16 个设计内 skip）与 `bench/`（8 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,14 +8,26 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 期望 783 passed, 15 skipped
+python3 -m unittest discover -s tests -t . -v   # 期望 Ran 916 tests … OK (skipped=16)
 ```
+
+**计数口径（2026-11-01 实测，基线 `4fe5c41`）**：`grep -rho 'def test_' tests | wc -l`
+= **916**；`unittest` 收集 = **916**；实跑 = **916**，其中 **16 skip**、
+**900 实际通过**、0 failure / 0 error。**`Ran 916` 不等于「916 个通过」** ——
+skip 是「没跑」，不能算通过。旧文档写的「783 passed / 15 skip」把 skip 混进了
+passed（那次的正确读法是 783 实跑 / 15 skip / 768 通过），本文件已按新口径改正。
+
+> **前置条件**：`circuits/target/release/pop-script` 与 `pop-verify` 需先按
+> [`../reproduce.md`](../reproduce.md) §2 构建。缺构建产物时部分用例会额外 skip，
+> 少数未加 `skipUnless` 的接线用例会红（实测：`Ran 911 … FAILED (failures=19,
+> errors=5, skipped=83)`，失败全部指向 `pop-script` 不存在 / anvil / 真模型缺失）。
+> 那是**环境不完整**，不是回归；构建后再跑应回到 916/16。
 
 | 模块 | 用例数 | 守护的性质 |
 |---|---:|---|
 | `test_trace` | 41 | **P1-5**：四条验收（①完整链通过 ②删/换/重排失败 ③伪造「参数干净」的回执验签失败 ④旧 `tool_calls` 向量被拒）；`trace_root` 与 Python **逐字节一致**（实测 `--check`）；编码层的长度前缀/键序/keyid 覆盖；链尾篡改**只有链下验签抓得住**的边界；**第三方核对**（`verify_cert.py --receipts [--gateway-key]` 7 例：摘要重算对齐 / 换链对不上 / 重排结构先炸 / 伪造链尾只被验签抓住 / 缺网关公钥时如实报「签名未验」/ 没有 `--receipts` 时仍单独核 seal / 截尾三路全拒）；**P1-5b 截尾对策**（`TestSeal` 9 例：确定性 / 空链 genesis / 四个字段都进签名原像 / 回执签名不能冒充 seal（域分隔）/ 三类失败形态 / 早期 seal 被后续调用作废 / 无公钥时如实报「签名未验」/ **seal 只进载荷顶层不进 outcome** / 缺 seal 的诚实口径）+ **`test_tail_truncation_is_rejected`**（原 seal+截断链 / 冒充 keyid 的伪造 seal / 索性不带 seal 三路全拒 + 「没截尾时全 PASS」的正对照；原「缺口」用例已翻转，见安全模型 §5.3 与待办 T4） |
 | `test_dsl` | 33 | 领域模型、七类规则的通过/违规矩阵（含 P2-9b 的 `normalized_keyword_block`）、`PolicyError` 路径；**P1-5**：链坏 fail-closed、tokens 电路内自算（不可自填）；**R7**：`TestFromDictRejectsShape`（4 例）钉住「**不像策略包**的 JSON 只抛 `PolicyError`」——顶层不是对象 / 缺 `id` / `rules` 不是数组 / 规则项不是对象，四种形状原先各自漏 `KeyError`、`AttributeError`、`TypeError`，而调用方（11 份加载器、每个 CLI、常驻服务）**统统只接 `PolicyError`**，漏一个就是「用户把包写错了」表现成「工具崩了」（退出码 1 + 一坨 traceback，而不是退出码 2 + 一行 `error: …`）。两条**反向**用例同样重要：闸门不能反过来吞掉合法的包（空规则表合法、多余顶层字段允许）、形状对内容错仍须由 `Rule.validate` 报到**具体规则名**。见 `docs/dev-plan.md` §5.7.12 |
-| `test_nfa` | 7 | 正则子集解析、NFA 构造、`match_search` 与 `re` 的行为对照、fail-fast |
+| `test_nfa` | 10 | 正则子集解析、NFA 构造、`match_search` 与 `re` 的行为对照、fail-fast |
 | `test_pii` | 8 | 四个 PII 模式的命中/漏报、IBAN MOD-97 校验位 |
 | `test_serialize` | 10 | serde 外部标签枚举形状、未知 kind 抛 `NotImplementedError`、`spec_canonical` 字节稳定 |
 | `test_commit` | 12 | 承诺、私有输出、掩码覆盖、脱敏、证据开示 |
@@ -24,9 +36,9 @@ python3 -m unittest discover -s tests -t . -v   # 期望 783 passed, 15 skipped
 | `test_cert` | 19 | 证书载荷、`cert_digest` 稳定性、签名与篡改拒绝；**P0-3**：按 keyid 方案前缀分发、旧 `demo-hmac-sha256` 结构性被拒、`load_keyring` 的三种公钥来源（路径拼错要报**真因**）；**P0-4**：`binding.proof_mode` 诚实标注与 `proof_hiding` 映射 |
 | `test_cross_validate` | 6 | 真实证明分块（`--chunk`）：切开后拼回去逐一相等、顺序不变、`--chunk 0` 等价单进程、默认值刻意保守 |
 | `test_agent` | 5 | `AgentMonitor` 两条路径、`mock_agent` 确定性、LangGraph 适配 |
-| `test_frameworks` | 53 | LangChain 回调（流式链/篡改/早停/**真掐断**）、`guard_node`、`astream_events`；**P0-4**：`proof_mode` 贯通到回调与 `guard_node` 出的证书；错误回调（#96）与统一网关（#99，含**非恒真对照**：不共用网关时 seal 报截尾） |
+| `test_frameworks` | 67 | LangChain 回调（流式链/篡改/早停/**真掐断**）、`guard_node`、`astream_events`；**P0-4**：`proof_mode` 贯通到回调与 `guard_node` 出的证书；错误回调（#96）与统一网关（#99，含**非恒真对照**：不共用网关时 seal 报截尾） |
 | `test_mcp` | 15 | 参数侧飞行前拦截、结果侧判定、文本提取、**工具清单动态发现**（#98：未声明的工具在执行前被拦，附「声明过的照常放行」对照）；**P0-4**：`proof_mode` 同时落到参数侧与结果侧证书 |
-| `test_real_llm` | 13 | **`--model` 真模型客户端**（#98）。三层：① 规格解析与报错（未知 provider / 空模型名 / 缺 key 都当场说清是哪一个，**刻意不认** Claude Code 自己的 `ANTHROPIC_AUTH_TOKEN`）② 真实 `langchain_openai` 客户端 + 本地 SSE 桩（`tests/openai_sse_stub.py`，**默认跑**，不需要网络与真 key）—— 由**服务器侧**数它写出去了几片，证明早停是在**传输层**真的断了连接，而非「我们这边不再 append」；对照组是关掉 `hard_stop` 后每一片都写出去 ③ 真 provider（`POP_TEST_LLM=1`）只断言结构，**不**赌模型一定会违规 |
+| `test_real_llm` | 17 | **`--model` 真模型客户端**（#98）。三层：① 规格解析与报错（未知 provider / 空模型名 / 缺 key 都当场说清是哪一个，**刻意不认** Claude Code 自己的 `ANTHROPIC_AUTH_TOKEN`）② 真实 `langchain_openai` 客户端 + 本地 SSE 桩（`tests/openai_sse_stub.py`，**默认跑**，不需要网络与真 key）—— 由**服务器侧**数它写出去了几片，证明早停是在**传输层**真的断了连接，而非「我们这边不再 append」；对照组是关掉 `hard_stop` 后每一片都写出去 ③ 真 provider（`POP_TEST_LLM=1`）只断言结构，**不**赌模型一定会违规 |
 | `test_anchor` | 7 | 账本读写、`verify_ledger`、篡改检出；**c6**：`TestUnconfiguredTypeConsistency`（3 例）钉住「要上链但没配」这一个条件在 `backend_from_env(require=True)` 与 `anchor_on_chain` 两处给出**同一种**异常 —— `test_same_type` 用 `assertIs(type(a),type(b))` 而非「都继承 RuntimeError」这种弱断言，`test_same_message` 断言消息一字不差，`test_not_implemented_error_would_not_be_caught` 是**反例对照**（证明前两条不是恒真的：原写法确实接不住） |
 | `test_anchor_chain` | 28 | 合约 artifact、摘要编码、后端选择、RPC 后端离线（幂等/竞态）、cast 命令行、**账本尾部 O(1) 缓存**（`TestLedgerTail` 5 例：缺文件即 genesis / 追加后命中缓存 / **命中时一次 `read_ledger` 都不调**（数调用次数，这才是 O(1) 的真凭据）/ 外部追加使缓存失效 / 截短也失效）、anvil 端到端（含**服务层真的把摘要写进真链**：`ProofService(rpc_url=..., contract=...)` 走完一次作业，再由**独立只读客户端**读回核对 —— 假客户端测不出两层之间的接线错） |
 | `test_normalize` | 28 | **P2-9b**：同形异义折叠（`pop-fold-v1`）。折叠表构造与 13 种非法声明（未知版本/未知键/超长表/非 ASCII或多字符替换值/自映射/重复 `from`/`map∩drop` …）全部 fail-closed；算法单遍**不链式**、`ascii_lower` 只碰 ASCII；**验收判据**是「折叠前 `passed=True`、折叠后 `passed=False`」这一对（并另断言 ASCII 那条被两条规则同时拦住，免得用例退化成恒真）；折叠表**进契约** → 改表即改 `policy_hash`。 |
@@ -55,9 +67,15 @@ python3 -m unittest discover -s tests -t . -v   # 期望 783 passed, 15 skipped
 | `test_bench_views` | 6 | **入库的基准视图必须恰好是它那份数据渲染出来的**（R11）。分工是：`bench/results/*.json` 是**数据**（跑基准时自动落盘），`*.md` 是**视图**（同一个 `dump()` 顺手渲染）。视图由数据完全决定 —— 这既是承诺，也是个可机械检查的性质；而它一旦破了**不会有人发现**：谁手工改了 `.md` 里一句措辞，下一次重跑基准就**静默**覆盖回去；反过来只提交 `.json` 忘了 `.md`，入库的就是过期的表（`.md` 恰恰是论文/文档/issue 里引的那一份）。**不用「跑一遍基准对拍」来测** —— 那要真出证十几分钟、还得撞 `proofs.json` 里那几个**故意留着的 OOM 点**；渲染是纯函数，直接调它：零成本、无副作用，红起来意思完全一样。查的**不是「数字对不对」**（数字是量出来的，本文件造不出），而是「入库的这份视图，是不是这份数据渲染的那个」。新增入库结果只要往 `VIEWS` 加一行。另钉：三张旋钮表**口径各不相同（默认矩阵 / 默认旋钮实验 / 旋钮 A/B），不要混读**；cliff 那张必须**每个点都在每个臂下量过**，且所探的点必须**真的是缺省会 OOM 的那些** —— 这一条是在「跨文件的同一份语料」被实测**证伪**之后改的（`demo` 语料是个 glob，其 sha256 随时间变，跨文件比它是**假命题**），改法是把**测量**本身换成一次 `--arms` 调用、两臂共用同一份装载好的语料 |
 | `test_frontdoor` | 9 | **门面的 `__all__` 是一份承诺**（R12）。`from policydsl import Policy` 是本包对外的稳定面，而 `__all__` 出问题时**没有任何东西会报错**：**漏掉一个名字** → `from policydsl import *` 的使用者拿不到它，报错发生在**他的**代码里、不在本仓的 CI 里；**混进解析不了的名字**（拼错/被删/搬家没同步）→ `import *` 直接抛 `AttributeError`，而本包的测试若都点名导入就一个都碰不到；**重名** → `len(__all__)` 与实际导出的符号数对不上，而那个长度常被人当「门面有多大」读；**门面递出来的是另一个对象**（本地定义了个同名包装/别名）→ 名字还在、也解析得了，语义已经不是子包里的那一个。四条都不在「跑一遍看看」的射程里。与验收快照第 6 面（`6_import_surface`）分工明确：快照记名单的**内容**，变了要**人**确认后重采（那是「变更被承认」）；本文件记名单的**不变量**（不重不漏、能解析、与命名空间一致），名单**坏**了才红 —— 只有快照，改名单会退化成「反正重采一次就绿了」；只有不变量，名单被谁加了看不出来。**同名函数只要求「至少一处同一对象」**：仓库里合法地存在两个同名的 `verify_chain`（`evidence/trace.py` 收回执链、`adapters/langchain_adapter.py` 收证书表），而 `adapters` 只在别的用例 import 它时才进 `sys.modules` —— 早先「所有定义模块都必须一致」的写法因此**依赖执行顺序**（单跑绿、全量红），已改成「可调用物：至少一处是同一对象；常量：所有定义模块逐字相等」 |
 | `test_layering` | 6 | **`core` 不许 import `proofs`**（R14）。`core` 是**判定层**（决定「合不合规」），`proofs` 是**出证编排层**（决定「怎么把判定包成一份可验证的产物」）；两层关系**单向** —— 出证层产出的东西要被判定层理解，判定层不该反过来依赖出证层。R14 之前这里是真倒置：`core/compile.py` 与 `core/evaluate.py` 为了取模型指纹写了四处 `from policydsl.proofs import semantic`，修法是把那组**纯契约**函数（模型指纹 / 路径口径 / 图的字符上限）下沉到 `core/model_fp.py`。门槛值得存在的理由很具体：倒置**能被重新引入**，而引入时**不会有任何东西变红**（多一条 import 而已，功能照跑）。**必须走 AST 不走正则**：被搬出来的 `core/model_fp.py` 的 docstring 里**就写着**那串字（作为反例说明），按文本扫会把它误判成违规；而只扫模块级又会漏掉 R14 修掉的**全部四处 —— 它们都在函数体里**，所以 `ast.walk` 走全树。门槛自己也要能被证伪（本仓反复记过的失败模式「**空集合上全绿**」）：一条断言扫描确实覆盖到 `core` 包（目录改了 / glob 写错会当场红），四条注入探针（模块级注入 / **函数级注入** / 换成 `core.model_fp` 不算违规 / docstring 里的文字不算 import）。**已实测非恒真**：往 `core/compile.py` 注入一句函数级 `from policydsl.proofs import semantic`，用例变红并指出 `(文件, 行号, 模块)`；恢复后工作区零 diff |
-| **合计** | **783** | |
+| `test_policy_registry` | 30 | **P-PP 策略签发清单**：签发 → 字段齐全 → 权威公钥验签；篡改任一字段（含把策略正文/盐塞进清单）验不过；清单是公开分发的，不泄露盐与策略正文；审计路径用权威开示的 `(π, nonce)` 重算清单哈希；签发记录的增删查与 JSON 往返 |
+| `test_transparency` | 21 | **透明日志原型**：追加只增长、根随内容变化、空日志没有根；包含证明逐下标可核并过检查点；改叶子/路径/绑定/根必失败；旧证明、他人证明、同一证书的另一事件都不能重放；检查点与头部绑定 |
+| `test_disclosure_levels` | 17 | **证书层披露层级（P1-05，L0/L1/L2）**：三级投影形状（L0 名+类型 / L1 类别+数 / L2 仅承诺）；没有 `disclosure_level` 的旧证书字段不出现、outcome 不投影（向后兼容）；未知级别与「标签与形状不一致」fail closed；`verify_cert.py` 端到端 |
+| `test_fuzz_rules` | 16 | **P2-03 差分模糊测试**：Pike VM vs Python `re`，固定模式 + 随机模式 + 长度 ≤3 的穷举文本；G-1（空字符类）与 V1-2（`a{0}`）的回归形状；语义等价是消融对比与周期数字可比的前提 |
+| `test_receiver_nonce` | 15 | **接收方 nonce（P1-07）**：verifier 域旧行为、旧块兼容、未知 issuer fail closed；end-user 域换 `T`/换 nonce/缺字段都拒绝；`f=0` 重放、verifier-only 缺口、end-user 拦截三场景与 demo/bench 同口径；`verify_cert.py` 端到端 |
+| `test_policy_commit` | 13 | **带盐策略承诺（定理 D / E4a）**：无 nonce 的向后兼容；加盐承诺的绑定与开示；nonce 形状校验；小候选空间枚举攻击（E4a 的单测版）；多证明者切片携带 nonce |
+| **合计** | **916** | |
 
-### 15 个 skip（都是设计内的）
+### 16 个 skip（都是设计内的）
 
 | skip | 原因 | 怎么启用 |
 |---|---|---|
@@ -65,7 +83,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 783 passed, 15 skipped
 | `test_frameworks`（或 `test_mcp`）中 1 例 | 依赖已安装而用例本身是「缺依赖时的行为」 | 设计如此，装了框架就会 skip |
 | `test_policy_binding` 中 2 例 | 「证明层」用例默认关闭（要 `scripts/examples/out/cert_public/` 下的工件与当前 guest ELF 匹配；改过 ELF 就得重新出证） | `POP_TEST_PROOF=1 python3 -m unittest tests.test_policy_binding`（**已实测通过**：Ran 22 … OK，67.1 s） |
 | `test_multiparty` 中 1 例 | 「真·端到端」要给**两段**切片各出一份 SP1 证明（每段 ~2 分钟、峰值 ~10 GiB） | `POP_TEST_MULTIPARTY=1 python3 -m unittest tests.test_multiparty.TestMultipartyEndToEnd -v` |
-| `test_semantic` 中 1 例 | 「真·端到端」要出一份 ezkl 证明（~61 s、峰值 ~9 GiB） | `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic`（已实测通过） |
+| `test_semantic` 中 2 例 | ① 「真·端到端」要出一份 ezkl 证明（~61 s、峰值 ~9 GiB）；② `test_replica_matches_recorded_ezkl` 要 `semantic/artifacts/selftest.json`（本机没跑过 `ezkl_prove.py selftest` 就没有） | ① `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic`（已实测通过）；② `python3 scripts/prove/ezkl_prove.py selftest` 生成记录后自动启用 |
 | `test_compose` 中 5 例 | 「真·端到端」要出**两份** SP1 证明（各 ~2 分钟、峰值 ~10.5 GiB） | `POP_TEST_COMPOSE=1 python3 -m unittest tests.test_compose`（**已实测通过**：47 例全跑、无一 skip，563.5 s；加四条接线回归后共 48 例） |
 | `test_session` 中 1 例 | 「真·端到端」要出一份 SP1 **会话聚合证明**（3 张证书，~2.5 分钟、峰值 ~10 GiB） | `POP_TEST_SESSION=1 python3 -m unittest tests.test_session.TestSessionEndToEnd -v`（**已实测通过**：Ran 1 … OK，152.5 s —— 含一次出证、一次独立验证与**四条**拒绝路径：换组证书 / 尾截断 / 混入异策略证书 / 错 nonce） |
 | `test_proof_service` 中 1 例 | 「真 vkey 出证」要跑一次 SP1 core 证明（~2.5 分钟、峰值 ~10.2 GiB 的**固定地板**）。本机 11.7 GiB **装得下但没有余量**：2026-09-13 第一次与别的进程并跑时被 OOM killer 杀在 9.7 GiB 常驻（`dmesg` 有记录），**腾空后重跑通过**（171.1 s，`MemAvailable` 一度只剩 0.15 GiB 并靠 swap 撑住）。服务把这种失败翻成一句人话，见下 | `POP_TEST_PROOF=1 python3 -m unittest tests.test_proof_service.TestRealProofAttest -v`。**跑之前先让别的进程腾出内存**（本机实测：腾空即过、并跑即 OOM）；换 ≥16 GB 的机器则不必讲究 |
@@ -75,7 +93,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 783 passed, 15 skipped
 
 六条反例在 `verify_companion` 的**第 1–5 步**就被挡住（指纹比对、证明文件哈希、
 本地 `vk` 哈希、`encode(T′)` 逐位比对），而这几步不跑 ezkl 验证器 ——
-所以 29 例在**没有 ezkl、没有 32 MiB `kzg.srs`** 的机器上也能全绿。
+所以 28 例（30 − 2 条默认跳过）在**没有 ezkl、没有 32 MiB `kzg.srs`** 的机器上也能全绿。
 第 3 步之后才是"跑 ezkl 验证器"（`verify_proof=True`），它由那条默认关闭的端到端
 用例覆盖。**把最后一颗钉子与整面墙分开**，是为了让反例能在 CI 上天天跑。
 
@@ -84,7 +102,7 @@ python3 -m unittest discover -s tests -t . -v   # 期望 783 passed, 15 skipped
 
 > 这是当前环境下的计数（`langchain`/`langgraph`/`mcp`、`pop-script`/`pop-verify`、
 > 以及 `ezkl`/`torch` 均已安装，因此真实框架用例、Rust 路径用例与 ezkl 用例**实际执行**了，
-> 而不是跳过）。**CI 上的 skip 数会更多（12 → 17）**：CI 不装 `ezkl`/`torch`，
+> 而不是跳过；本机合计 skip = **16**）。**CI 上的 skip 数会更多**：CI 不装 `ezkl`/`torch`，
 > `test_ezkl_evm` 里需要真实 ezkl 的 5 例（`TestEzklEvmVerifier`）整组跳过，只有不依赖 ezkl 的
 > `TestRunHelper` 5 例照跑 —— 这是设计内的，P2-9 的可选依赖不进 CI。
 
@@ -501,7 +519,7 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **783 passed / 15 skip**（2026-09-13 复跑、2026-09-16 c4 后重测、2026-09-17 `scripts/` 分组后与验收基线加入后重测、2026-09-17 R3（NFA 编译缓存）后重测、2026-09-17 P1-①（加载器对拍）后重测、2026-09-17 R4（驱动路径收敛）后重测、2026-09-17 R5（工件摘要收敛）后重测、2026-09-17 R6（kind 翻译表收敛）后重测、2026-09-17 R7（策略加载器收敛 + 包形状闸门）后重测、2026-09-18 R8–R14（拆 main / 流式等效替代 / 转移表 / 旋钮实验 / 门面 / 死代码 / 分层倒置）后重测、2026-09-18 §5.8 步 5（demo 支路表闸门，+1 例）后重测；CI 上更多 skip，见 §1）、
+  当前验收判据是 **916 实跑 / 900 通过 / 16 skip**（2026-11-01 基线 `4fe5c41` 实测；前置构建见 §1）。历史计数 **469 → 783 → 801** 都是旧快照（P2 收尾 / 2026-09-18 两档），口径与来历见 [`../paper-inputs/decisions.md`](../paper-inputs/decisions.md) §1；CI 上更多 skip，见 §1）、
   `cross_validate` **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 整批重跑，见下）。
   这条判据现在**有自动留痕**：`scripts/prove/regression_prove.py` 每次运行把它追加进
   `bench/results/regression-prove.jsonl`（只追加），并附 git sha / 硬件 / 证明器二进制摘要
@@ -523,19 +541,20 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
 ### 1. 跑测试
 
 ```bash
-python3 -m unittest discover tests                # 全量：783 passed / 15 skipped，~41 s
+python3 -m unittest discover tests                # 全量：916 实跑 / 900 通过 / 16 skipped，~45 s
 python3 -m unittest tests.test_dsl -v             # 单个模块（哪一板块 → 见 §1 的表）
 python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 ```
 
 三条纪律：
 
-1. **⚠️ `unittest` 的 skip 是静默的绿。** 末行是 `OK (skipped=15)` —— `OK` 只说
+1. **⚠️ `unittest` 的 skip 是静默的绿。** 末行是 `OK (skipped=16)` —— `OK` 只说
    「没失败」，不说「都跑了」。要判断某个性质**到底被守住了没**，得看那个 skip 数，
    再看 §1.1 那张表里跳过的是不是设计内的。**这一条是本项目付出过代价的**：
    `test_generic_adapter` 的一次变异改动**等价**，其余 17 例全绿，直到补了断言才杀掉。
-2. **默认这一档不需要网络、不需要 key、也不出证明**，所以可以随时跑、随便跑
-   （CI 跑的就是它）。要真证明 / 真 ezkl / 真 provider 的全部是**环境变量门控** ——
+2. **默认这一档不需要网络、不需要 key、也不出证明**（但要先构建 `pop-script`/`pop-verify`；
+   缺构建产物会多 skip 或让接线用例变红，见 §1），所以可以随时跑、随便跑
+   （CI 跑的是最轻的子集）。要真证明 / 真 ezkl / 真 provider 的全部是**环境变量门控** ——
    `POP_TEST_PROOF` / `POP_TEST_COMPOSE` / `POP_TEST_SESSION` / `POP_TEST_MULTIPARTY`
    / `POP_TEST_EZKL` / `POP_TEST_LLM`，逐条的「怎么启用 + 实测耗时 + 峰值内存」在 §1.1。
 3. **开这些门之前先让机器腾空。** 它们每一条都要 ~10 GiB 峰值，和别的重活并跑
@@ -561,14 +580,14 @@ python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 
 **唯一有留痕的是 `cross_validate` 的判据**：`scripts/prove/regression_prove.py`
 每次运行把它追加进 `bench/results/regression-prove.jsonl`（**只追加**），并附
-git sha / 硬件 / 证明器二进制摘要，所以「783 passed」这类数字指得回具体的某一次运行（T3）。
+git sha / 硬件 / 证明器二进制摘要，所以「916 实跑 / 900 通过」这类数字指得回具体的某一次运行（T3）。
 
 ## 怎么改它
 
 | 我想改…… | 去哪 | 别忘了 |
 |---|---|---|
 | **加一个测试** | 放进**对应板块**的 `tests/test_<板块>.py`（§1 的表就是板块清单） | 见下「四处同步」 |
-| **新增一个测试模块** | 同上，新开 `tests/test_<新板块>.py` | **四处同步 + 改本文件顶部那句「42 个模块」** |
+| **新增一个测试模块** | 同上，新开 `tests/test_<新板块>.py` | **四处同步 + 改本文件顶部那句「48 个模块」** |
 | **加一条默认关闭的端到端** | `@unittest.skipUnless(os.environ.get("POP_TEST_XXX"), "…")` | 在 §1.1 登记：原因 / 怎么启用 / **实测耗时与峰值内存**（这三项是这张表的价值所在） |
 | **加一个 bench 脚本** | 结果写 `bench/results/<name>.{json,md}`，模板抄 `bench_cycles.py`（纯标准库 + `policydsl`，不引 numpy） | §3 的表加一行 + 在 `bench/README.md` 加一条命令 |
 | **改「证明模式 / 规则 kind / 契约字段」这类会动数字的东西** | 重跑对应 bench | 上面那四处硬编码数字 |
@@ -576,8 +595,8 @@ git sha / 硬件 / 证明器二进制摘要，所以「783 passed」这类数字
 **「四处同步」清单**（改测试计数时，这四处都写着同一批数字）：
 
 1. 本文件 §1 表的**那一行**与**合计行**；
-2. 本文件**顶部**那句「42 个模块，783 个用例」；
-3. 本文件 §5 扩展指引里的**验收判据**（`783 passed / 15 skip`）；
+2. 本文件**顶部**那句「48 个模块，916 个用例」；
+3. 本文件 §5 扩展指引里的**验收判据**（`916 实跑 / 900 通过 / 16 skip`）；
 4. `docs/README.md` 的计数口径 + `README.md` / `docs/reproduce.md` 的验收判据。
 
 （`docs/README.md` §3 已把「测试计数 → 08」写成约定：**本文件是唯一权威源**，
@@ -601,7 +620,7 @@ git sha / 硬件 / 证明器二进制摘要，所以「783 passed」这类数字
 
 ```bash
 # 改完测试层的两条验证
-python3 -m unittest discover tests                # 783 passed / 15 skipped（数对不上先查 §1 表）
+python3 -m unittest discover tests                # 916 实跑 / 900 通过 / 16 skipped（数对不上先查 §1 表）
 python3 -m unittest tests.test_scripts_layout     # 若动过 scripts/ 分组
 ```
 
