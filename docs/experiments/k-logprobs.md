@@ -35,8 +35,8 @@
 | 网络绕行 | `HF_ENDPOINT=https://hf-mirror.com`、`HF_HUB_DISABLE_XET=1` |
 | 模型缓存 | `/root/autodl-tmp/hf-cache`（Qwen 已有缓存） |
 
-本轮 Qwen run 期间 GPU 上无并发任务；run 结束后另有一个 Mistral E6 run 启动
-（`bench/results/e6_mistral/`），与本文件的数字无关。
+本轮 Qwen run 期间 GPU 上无并发任务；run 结束后在同一台机器上跑了可选的
+Mistral E6 对照（见 §4.7，`bench/results/e6_mistral/`），不影响 Qwen 的数字。
 
 ---
 
@@ -167,6 +167,24 @@ logprob** 或固定长度，不能直接比序列 `k_est`。这也是 unsafe 短
 3. **16/50 组可确定不达标**：全部是 unsafe 短回答，`k_est` 12.1–36.8 bit < 40。
 4. **温度 0 时 `k=0`**：解码参数若不绑定，猜测熵为零。
 
+### 4.7 跨模型对照：Mistral-7B-Instruct-v0.3（可选）
+
+同一批 50 prompt、同 `N=20`、同温度 0.7，Mistral 的结果见
+[`bench/results/e6_mistral/k_logprobs.md`](../../bench/results/e6_mistral/k_logprobs.md)：
+
+| 模型 | N | 组数 | 经验 `p_max` | `p_max_est` 中位 | `k_est` 中位 | `k_est` min–max | 每 token logp 中位 | 平均字符数 | `>1/N` |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Qwen2.5-7B-Instruct | 20 | 50 | 0.05（49/50 撞上限） | 9.97e-25 | **79.73** | 12.13–210.78 | −0.522 | 925.9 | 0/50 |
+| Mistral-7B-Instruct-v0.3 | 20 | 50 | 0.05（50/50 撞上限） | 9.24e-20 | **63.23** | 12.56–111.58 | −0.335 | 938.3 | 0/50 |
+
+- 两个模型都是 **50/50 组 `p_max_est < 1/N`**，`k_est` 中位 79.7 / 63.2 bit，
+  远高于 `log2(20)=4.32`；这是同一现象在两个模型上的重复观测。
+- Mistral 的每 token 平均 logp 更高（−0.335 vs −0.522），同样长度下序列概率
+  更大、`k_est` 更小。这再次说明序列 `k_est` 混入了**长度与逐 token 置信度**，
+  跨模型比较必须看每 token 量或固定长度（§4.4）。
+- 两个模型的最低 `k_est` 都出现在 unsafe 短回答上（约 12–13 bit），与 §4.3 一致。
+- 该对照**不改变** §5 的上界结论：它只是第二个模型上的同向观测，不是真实熵。
+
 ---
 
 ## 5. 估计器偏差（必读）
@@ -246,6 +264,7 @@ k_est = -log2(p_max_est) >= -log2(p_max_true) = k_true
 | [`bench/results/k_logprobs.json`](../../bench/results/k_logprobs.json) | 全部 50 + 50 组明细、聚合、偏差说明 |
 | [`bench/results/k_logprobs.md`](../../bench/results/k_logprobs.md) | 脚本自动渲染的报告（与本文件同口径） |
 | [`bench/results/k_logprobs_samples.jsonl`](../../bench/results/k_logprobs_samples.jsonl) | 1050 条原始样本（含 `gen_ids`、`response`、逐样本 logprob） |
+| [`bench/results/e6_mistral/k_logprobs.md`](../../bench/results/e6_mistral/k_logprobs.md) | Mistral 对照（同口径；json / md / samples） |
 | `bench/results/run_qwen_fixed.log` | 运行日志（**`.log` 被 `.gitignore` 忽略**，只留在本地/云机） |
 
 校验（本地拷贝与云机逐字节一致）：
@@ -254,6 +273,9 @@ k_est = -log2(p_max_est) >= -log2(p_max_true) = k_true
 k_logprobs.json          8b91d7facb9fead25365435d73e8a655
 k_logprobs.md            6fa36a9aa1f1324748b23d189f546dfe
 k_logprobs_samples.jsonl 1ebfdd0ea7c79bac49999a6472c6d8f7
+e6_mistral/k_logprobs.json          816c0b55fd00380b52e52af580448ac7
+e6_mistral/k_logprobs.md            c5774d2ba37d389b277c43144ee01bfb
+e6_mistral/k_logprobs_samples.jsonl bf6d4317fa50730e2cce92d9c696c3ae
 run_qwen_fixed.log       727cd3eb55d15e2290eb6b0520322460
 ```
 
@@ -286,8 +308,8 @@ python3 bench/bench_k_logprobs.py \
 
 - **`N=20` 是这一轮的口径**；E1 的 large-N 对照用的是 `N=50`。若要和 E1 的
   `k=log2(50)=5.64 bit` 直接并列，需要补一轮 `--n-samples 50`（脚本支持续跑，
-  但换 `N` 会重采；建议用独立 `--out-dir`）。本轮机器上另有一个 Mistral E6
-  run 占用 GPU，未并发跑 `N=50`。
+  但换 `N` 会重采；建议用独立 `--out-dir`）。Mistral 对照已完成（§4.7），
+  但同样只跑了 `N=20`，未并发跑 `N=50`。
 - 恢复点 `780c649` 已包含 padding 截断与续跑加固；之后本分支又补了
   **偏差措辞更正**（"E1 是下界" → "采样分辨率上限"）与 `--analyze-only`
   （不加载模型、从样本重算 JSON/MD）。本轮是全新 run，**采样与打分数值不受
