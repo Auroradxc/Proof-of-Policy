@@ -1,6 +1,6 @@
 # 用序列对数概率估计猜测熵 `k`（E6）
 
-**生成时间**：2026-11-01T16:09:00Z  
+**生成时间**：2026-11-01T16:20:55Z  
 **backend**：`local:Qwen/Qwen2.5-7B-Instruct` → `local:Qwen/Qwen2.5-7B-Instruct@cuda+chat_template`  
 **prompts**：`scripts/examples/datasets/wave2/prompts_xstest.jsonl`（50 条）  
 **每 prompt 采样**：20  **温度**：0.7  
@@ -133,7 +133,7 @@
 
 ## 估计器偏差与口径（必读）
 
-1. **`p_max_est` 是众数概率的下界，`k_est` 是真实 `k` 的上界**：`max` 只取已采样的 `N` 条，真实众数可能没被采到，所以 `p_max_est <= p_max_true`、`k_est >= k_true`。E1 的经验 `k=log2(N)` 是 `k_true` 的**下界**；两者合起来把真实 `k` 夹在区间里。
+1. **`p_max_est` 是众数概率的下界，`k_est` 是真实 `k` 的严格上界**：`max` 只取已采样的 `N` 条，真实众数可能没被采到，所以 `p_max_est <= p_max_true`、`k_est >= k_true`，即 `k_true <= k_est`。E1 的经验 `k=log2(N)`（全唯一时）只是**采样分辨率上限**，不是`k_true` 的下界。
 2. **长度混淆**：序列 `logprob` 是逐 token 求和，长响应天然更小。跨 prompt 比较请看**每 token 平均 logprob**，不要直接比 `p_max_est`。
 3. **温度缩放口径**：主口径 `softmax(logits/T)`，与 `do_sample=True, temperature=T, top_p=1.0` 的实际采样分布一致；次口径 `softmax(logits)`（T=1）见 JSON 的 `p_max_est_raw`。温度 0 是确定性解码，`p_max=1`、`k=0`，另报贪心响应的模型概率。
 4. **精确匹配 vs 语义**：这里估的是精确 token 串的概率；语义相同、措辞不同的响应是两个不同的 `T`，各自概率都极小。本脚本不估计语义簇。

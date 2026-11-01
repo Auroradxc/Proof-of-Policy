@@ -19,8 +19,9 @@
 1. `max` over `N` 个已采样候选只是**下界**：真实众数概率 `p_max_true` 至少是
    任一已采样响应的概率，所以 `p_max_est <= p_max_true`，于是
    `k_est = -log2(p_max_est) >= -log2(p_max_true) = k_true`。也就是说
-   **`p_max_est` 是众数概率的下界，`k_est` 是真实 `k` 的上界**。E1 的经验
-   `k = log2(N)` 则是 `k_true` 的**下界**。两者合起来给真实 `k` 一个区间。
+   **`p_max_est` 是众数概率的下界，`k_est` 是真实 `k` 的严格上界**。
+   E1 的经验 `k = log2(N)`（全唯一时）只是**采样分辨率上限**，不是
+   `k_true` 的下界；正确可写的单向结论是 `k_true <= k_est`。
 2. **序列概率随长度衰减**：`logprob` 是逐 token 求和，长响应天然更小。因此跨
    prompt 比较 `p_max_est` 会被长度混淆；本脚本同时报告**每 token 平均对数概率**
    （长度的几何平均口径）。
@@ -421,6 +422,15 @@ def aggregate(groups: List[Dict[str, Any]], threshold_bits: float) -> Dict[str, 
 # --------------------------------------------------------------------------- #
 
 def run(args: argparse.Namespace) -> Dict[str, Any]:
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    samples_path = Path(args.samples_out) if args.samples_out else (
+        out_dir / "k_logprobs_samples.jsonl")
+    samples_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if getattr(args, "analyze_only", False):
+        return analyze_and_write(args, samples_path, out_dir)
+
     if not args.backend.startswith("local:"):
         raise SystemExit("E6 需要 teacher-forced forward，只支持 --backend local:<model>")
     prompts = load_prompts(args.prompts, args.max_prompts, stratify=not args.no_stratify)
@@ -428,12 +438,6 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
                            load_in_4bit=args.load_in_4bit,
                            chat_template=True)
     temperature = float(args.temperature)
-
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    samples_path = Path(args.samples_out) if args.samples_out else (
-        out_dir / "k_logprobs_samples.jsonl")
-    samples_path.parent.mkdir(parents=True, exist_ok=True)
 
     # 续跑：按 (prompt_id, temperature, sample_index) 去重
     existing: Dict[Tuple[str, float, int], Dict[str, Any]] = {}
@@ -517,9 +521,27 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
     print(f"新增 {total_new} 条样本 → {samples_path}", flush=True)
 
+    return analyze_and_write(args, samples_path, out_dir, n_prompts=len(prompts),
+                             model_name=backend.name)
+
+
+def analyze_and_write(args: argparse.Namespace, samples_path: Path,
+                      out_dir: Path, n_prompts: Optional[int] = None,
+                      model_name: Optional[str] = None) -> Dict[str, Any]:
+    """从 samples JSONL 重算聚合与视图（不加载模型、不重新采样）。
+
+    这也是 ``--analyze-only`` 的实现：改渲染文本时只需重跑这一层，
+    数字完全来自样本文件，不需要 GPU。
+    """
+    if not samples_path.exists():
+        raise SystemExit(f"--analyze-only 需要样本文件：{samples_path}")
+    temperature = float(args.temperature)
+
     # 从磁盘重算（续跑 + 新样本统一）
     by_group: Dict[Tuple[str, float], Dict[int, Dict[str, Any]]] = defaultdict(dict)
     meta: Dict[Tuple[str, float], Dict[str, Any]] = {}
+    models: Counter = Counter()
+    prompt_ids: set = set()
     with samples_path.open(encoding="utf-8") as fh:
         for line in fh:
             try:
@@ -531,6 +553,8 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             by_group[(pid, t)][int(r["sample_index"])] = r
             meta[(pid, t)] = {"prompt_id": pid, "prompt": r.get("prompt"),
                               "label": r.get("label"), "type": r.get("type")}
+            models[str(r.get("model") or "unknown")] += 1
+            prompt_ids.add(pid)
 
     groups: List[Dict[str, Any]] = []
     for (pid, t), idx_map in sorted(by_group.items(),
@@ -541,14 +565,19 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
                    if g["temperature"] > 0 and g["n"] and g["n"] >= args.n_samples]
     greedy_groups = [g for g in groups if g["temperature"] <= 0]
 
+    if n_prompts is None:
+        n_prompts = len(prompt_ids)
+    if model_name is None:
+        model_name = models.most_common(1)[0][0] if models else "unknown"
+
     threshold = math.log2(args.q) + math.log2(1.0 / args.eps)
     result = {
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "experiment": "E6",
         "backend": args.backend,
-        "model": backend.name,
+        "model": model_name,
         "prompts_file": str(args.prompts),
-        "n_prompts": len(prompts),
+        "n_prompts": n_prompts,
         "n_samples_per_prompt": args.n_samples,
         "temperature": temperature,
         "max_tokens": args.max_tokens,
@@ -573,8 +602,9 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
             "LOWER bound on the true mode probability (the mode may not be "
             "sampled).",
             "k_est = -log2(p_max_est) is therefore an UPPER bound on the true k.",
-            "E1's empirical k = log2(N) when all samples are unique is a LOWER "
-            "bound on the true k; together they bracket k.",
+            "E1's empirical k = log2(N) when all samples are unique is a "
+            "sampling-resolution cap, NOT a lower bound on the true k; the only "
+            "strict one-sided statement is k_true <= k_est.",
             "Sequence logprob sums over tokens and shrinks with length; compare "
             "per-token mean logprob across prompts, not raw sums.",
             "This estimates the probability of the EXACT token string, not of a "
@@ -697,10 +727,11 @@ def render_md(r: Dict[str, Any]) -> str:
         "",
         "## 估计器偏差与口径（必读）",
         "",
-        "1. **`p_max_est` 是众数概率的下界，`k_est` 是真实 `k` 的上界**："
+        "1. **`p_max_est` 是众数概率的下界，`k_est` 是真实 `k` 的严格上界**："
         "`max` 只取已采样的 `N` 条，真实众数可能没被采到，所以 "
-        "`p_max_est <= p_max_true`、`k_est >= k_true`。E1 的经验 `k=log2(N)` "
-        "是 `k_true` 的**下界**；两者合起来把真实 `k` 夹在区间里。",
+        "`p_max_est <= p_max_true`、`k_est >= k_true`，即 `k_true <= k_est`。"
+        "E1 的经验 `k=log2(N)`（全唯一时）只是**采样分辨率上限**，不是"
+        "`k_true` 的下界。",
         "2. **长度混淆**：序列 `logprob` 是逐 token 求和，长响应天然更小。"
         "跨 prompt 比较请看**每 token 平均 logprob**，不要直接比 `p_max_est`。",
         "3. **温度缩放口径**：主口径 `softmax(logits/T)`，与 "
@@ -760,6 +791,9 @@ def main() -> int:
                     help="跳过每个 prompt 的温度 0 贪心对照")
     ap.add_argument("--resume", action="store_true",
                     help="跳过 (prompt_id, temperature, sample_index) 已存在的样本")
+    ap.add_argument("--analyze-only", action="store_true",
+                    help="不加载模型/不采样，只从 --samples-out 重算 JSON/MD"
+                         "（改渲染文本时用）")
     args = ap.parse_args()
     args.greedy = not args.no_greedy
     result = run(args)

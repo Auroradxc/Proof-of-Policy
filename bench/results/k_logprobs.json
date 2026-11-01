@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-01T16:09:00Z",
+  "generated_at": "2026-11-01T16:20:55Z",
   "experiment": "E6",
   "backend": "local:Qwen/Qwen2.5-7B-Instruct",
   "model": "local:Qwen/Qwen2.5-7B-Instruct@cuda+chat_template",
@@ -23,7 +23,7 @@
   "estimator_bias": [
     "p_max_est = max over N sampled sequences of exp(logprob) is a LOWER bound on the true mode probability (the mode may not be sampled).",
     "k_est = -log2(p_max_est) is therefore an UPPER bound on the true k.",
-    "E1's empirical k = log2(N) when all samples are unique is a LOWER bound on the true k; together they bracket k.",
+    "E1's empirical k = log2(N) when all samples are unique is a sampling-resolution cap, NOT a lower bound on the true k; the only strict one-sided statement is k_true <= k_est.",
     "Sequence logprob sums over tokens and shrinks with length; compare per-token mean logprob across prompts, not raw sums.",
     "This estimates the probability of the EXACT token string, not of a semantic cluster."
   ],

@@ -1,8 +1,8 @@
 # E6：用序列对数概率估计猜测熵 `k`
 
 > **实验 ID**：E6 ｜ **日期**：2026-11-02 ｜ **状态**：完成（Qwen2.5-7B-Instruct chat，`N=20`）
-> **分支/提交**：`bhv/e6-logprobs`；脚本 `bench/bench_k_logprobs.py`（`780c649`），
-> 结果与本文为同一 commit
+> **分支/提交**：`bhv/e6-logprobs`（基线 `1c1fc60`）；脚本、结果与本文为同一
+> 提交（恢复点 `780c649` 之后）
 > **目的**：E1（[`k-largen-crossmodel.md`](k-largen-crossmodel.md)）用**精确字符串计数**
 > 估计 `p_max = Guess(T|Z)`，在 `N` 个样本全不重复时只能报告 `p_max = 1/N`、
 > `k = log2(N)` —— 这是**采样分辨率**，不是真实猜测熵。E6 改用 **teacher-forced
@@ -104,7 +104,8 @@ python3 -u bench/bench_k_logprobs.py \
 | 温度 0.7（模型分布 T=1） | 50 | 4.47e-26 | 84.21 bit | 14.28 | 226.31 | — | — | — |
 | 温度 0（贪心） | 50 | **1** | **0.00** | 0.00 | 0.00 | — | — | 100% |
 
-- `p_max_est / (1/N)`：中位 **9.57e-21**（低 20.0 个数量级），最小 `7.09e-63`，
+- `p_max_est / (1/N)` 的组间中位（按 log10 取中位）：**低 22.7 个数量级**
+  （等价于 `p_max_est` 中位 9.97e-25 vs `1/N = 0.05`）；最小 `7.09e-63`，
   最大 `4.46e-3`（prompt 30，唯一的重复组）。
 - `mass_n = sum_i exp(logprob_i)`（N 条已采样响应分到的总概率质量）中位
   **4.79e-22**：精确 token 串的分布极散，N 条样本几乎不覆盖概率质量。
@@ -184,10 +185,8 @@ k_est = -log2(p_max_est) >= -log2(p_max_true) = k_true
 **推论**：`k_est < 40` ⇒ `k_true < 40`，是**可靠的证伪**；`k_est >= 40` 不能推出
 `k_true >= 40`。
 
-### 5.2 对生成报告里"E1 是下界"这一措辞的更正
+### 5.2 E1 的 `k=log2(N)` 只是采样分辨率，不是下界
 
-自动生成的 [`bench/results/k_logprobs.md`](../../bench/results/k_logprobs.md) 写
-"E1 的经验 `k=log2(N)` 是 `k_true` 的下界"。**严格地说这句不成立**：
 `N` 个样本全不重复只说明经验众数计数为 1、`p_hat=1/N`，它既不保证
 `p_max_true >= 1/N`，也不保证 `<= 1/N`。反例：支撑集 10^6、近似均匀、`N=20`
 全不重复时，`p_max_true≈1e-6`、`k_true≈19.9 bit > log2(20)`；反之若
@@ -196,13 +195,14 @@ k_est = -log2(p_max_est) >= -log2(p_max_true) = k_true
 
 正确的表述是：
 
-- E1 的 `k=log2(N)` 是**采样分辨率下限**，且作为估计量是**向下偏**的
+- E1 的 `k=log2(N)` 是**采样分辨率上限**，且作为估计量是**向下偏**的
   （`E[max count/N] >= p_max_true`），可以当作 `k_true` 的**近似下界**，
   但**不是定理**；
 - E6 的 `k_est` 是**严格的单向上界**；
 - 因此两者合起来只是**启发式夹逼**，其中只有 E6 一侧可写进"可证明"的话术。
 
-论文里引用时请用 §5.1 的严格版本，不要引用生成 `.md` 里那句"下界"。
+论文里引用时请用 §5.1 的严格版本；自动生成的
+[`bench/results/k_logprobs.md`](../../bench/results/k_logprobs.md) 与本文件同口径。
 
 ### 5.3 其余偏差
 
@@ -233,9 +233,9 @@ k_est = -log2(p_max_est) >= -log2(p_max_true) = k_true
    - 把解码参数（温度、`top_p`、seed/nonce）绑定进 `Z`，否则温度 0 下 `k=0`；
    - 对短回答引入每请求随机性（nonce / 采样种子），或要求更长、更多样的输出；
    - 或在隐私面评估里按响应长度分层报告，避免被长 safe 回答的平均值掩盖。
-4. **不可混用**：E6 的 `k_est` 是**精确串上界**，与 E1 的**计数下界**不是同一种
-   估计量，不能把两者数值直接放进同一列比较；只能作为区间的两端（且下端只是
-   近似）。
+4. **不可混用**：E6 的 `k_est` 是**精确串上界**，与 E1 的**计数估计（采样
+   分辨率）**不是同一种量，不能把两者数值直接放进同一列比较；只能作为区间的
+   两端（且下端只是近似）。
 
 ---
 
@@ -244,18 +244,22 @@ k_est = -log2(p_max_est) >= -log2(p_max_true) = k_true
 | 文件 | 内容 |
 |---|---|
 | [`bench/results/k_logprobs.json`](../../bench/results/k_logprobs.json) | 全部 50 + 50 组明细、聚合、偏差说明 |
-| [`bench/results/k_logprobs.md`](../../bench/results/k_logprobs.md) | 脚本自动渲染的报告（措辞见 §5.2 更正） |
+| [`bench/results/k_logprobs.md`](../../bench/results/k_logprobs.md) | 脚本自动渲染的报告（与本文件同口径） |
 | [`bench/results/k_logprobs_samples.jsonl`](../../bench/results/k_logprobs_samples.jsonl) | 1050 条原始样本（含 `gen_ids`、`response`、逐样本 logprob） |
 | `bench/results/run_qwen_fixed.log` | 运行日志（**`.log` 被 `.gitignore` 忽略**，只留在本地/云机） |
 
 校验（本地拷贝与云机逐字节一致）：
 
 ```
-k_logprobs.json          81d260fef616d38674e8398c2dd6e996
-k_logprobs.md            1ef1857e4a28dc8c16159cf7eb19d996
+k_logprobs.json          8b91d7facb9fead25365435d73e8a655
+k_logprobs.md            6fa36a9aa1f1324748b23d189f546dfe
 k_logprobs_samples.jsonl 1ebfdd0ea7c79bac49999a6472c6d8f7
 run_qwen_fixed.log       727cd3eb55d15e2290eb6b0520322460
 ```
+
+> `k_logprobs.json` / `.md` 是用 `--analyze-only` 从**同一份**样本重算的
+> （只改了偏差说明里"E1 是下界"的措辞）；`generated_at` 与渲染时间戳随之变化，
+> **所有数值与逐组明细不变**。
 
 完整性检查（对 `k_logprobs_samples.jsonl` 的 1050 条）：
 
@@ -284,8 +288,9 @@ python3 bench/bench_k_logprobs.py \
   `k=log2(50)=5.64 bit` 直接并列，需要补一轮 `--n-samples 50`（脚本支持续跑，
   但换 `N` 会重采；建议用独立 `--out-dir`）。本轮机器上另有一个 Mistral E6
   run 占用 GPU，未并发跑 `N=50`。
-- 云机 `bench/bench_k_logprobs.py` 与本分支 `780c649` 的脚本只差两处
-  **run 之后的 resume 加固**（续跑条件更严、续跑分支也做 `trim_generation_ids`），
-  本轮是全新 run，未走续跑路径，**数值不受影响**。
+- 恢复点 `780c649` 已包含 padding 截断与续跑加固；之后本分支又补了
+  **偏差措辞更正**（"E1 是下界" → "采样分辨率上限"）与 `--analyze-only`
+  （不加载模型、从样本重算 JSON/MD）。本轮是全新 run，**采样与打分数值不受
+  这些文本/工具改动影响**。
 - 结果文件是脚本从 `k_logprobs_samples.jsonl` 重算得到的；若要改渲染文本，
   应改脚本后重跑，**不要手改** `.json` / `.md` 的数字。
