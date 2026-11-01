@@ -899,8 +899,8 @@ how much of it to disclose. We implement the levels \emph{in the circuit}: the
 level is a private input, the guest coarsens each violation before commitment,
 and the public value carries a \texttt{pop-pv-v2} schema and the committed
 level. L0 emits the raw rule and kind; L1 one bucket per category with its
-count and the total; L2 only one opaque commitment per violation (whose list
-length still leaks the count). Evidence plaintext is absent at every level. On
+count and the total; L2 only one opaque commitment per violation, while the
+list length still leaks the count. Evidence plaintext is absent at every level. On
 the cloud-built circuit (vkey \texttt{0x000cfdfc\ldots}), core proofs for
 L0/L1/L2 all verify; the L1 public value contains only
 \texttt{category="content"}, \texttt{count=1}, the total and a
