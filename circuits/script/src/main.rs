@@ -71,6 +71,9 @@ struct VectorIn {
     /// 拿旧向量出证会在客户端就报错，而不是静默当成零次调用。
     #[serde(default)]
     receipts: Vec<pop_types::ToolReceipt>,
+    /// 披露级别（C2）。缺省 L0；未知值反序列化失败（fail closed）。
+    #[serde(default)]
+    disclosure_level: pop_types::DisclosureLevel,
 }
 
 /// 推理域（P1-6）的输入向量。**只有响应与挑战值** —— 模型权重来自编译期常量、
@@ -139,6 +142,7 @@ impl VectorIn {
                 redacted: self.redacted.clone(),
                 spans: self.spans.clone(),
                 receipts: self.receipts.clone(),
+                disclosure_level: self.disclosure_level,
             })
         } else {
             Job::Public(ProofRequest {
@@ -146,6 +150,7 @@ impl VectorIn {
                 response: self.response.clone(),
                 nonce: self.nonce.clone(),
                 receipts: self.receipts.clone(),
+                disclosure_level: self.disclosure_level,
             })
         }
     }

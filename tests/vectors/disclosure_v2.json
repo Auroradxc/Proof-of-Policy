@@ -1,0 +1,53 @@
+{
+  "schema": "pop-pv-v2",
+  "disclosure_domain": "pop-disclose-v1",
+  "response_binding": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "items": [
+    {
+      "evidence": "secret",
+      "commitment": "2f0b0d29368afb852b40b8fb179ce3a35871fe8992322d44f4955969e3100784"
+    },
+    {
+      "evidence": "len=250",
+      "commitment": "b727b9c8fbc13f8137b03d89ed23a9b6b74042e491c05d8163b16eb49f380afc"
+    },
+    {
+      "evidence": "dev@example.com",
+      "commitment": "b2ee094d7ba2f80f8f7038f15b3d606d3deddbef622215e02c8b39e357cee68d"
+    },
+    {
+      "evidence": "trace broken",
+      "commitment": "2e5041636ae02a3dc43da6a17c7117f0e101857e41e3c386413c4636b4b49b78"
+    }
+  ],
+  "buckets": [
+    {
+      "category": "content",
+      "category_id": 0,
+      "evidence": ["secret", "dev@example.com"],
+      "commitment": "c9b574442b08a8c0acaa2f64e78389aca250a901c076706355da5079ffb5839b"
+    },
+    {
+      "category": "length",
+      "category_id": 1,
+      "evidence": ["len=250"],
+      "commitment": "f89420421a0194e9c9491579721b902cb72688aa2f5f1cf23aedab6e26787e76"
+    },
+    {
+      "category": "trace_integrity",
+      "category_id": 5,
+      "evidence": ["trace broken"],
+      "commitment": "aa40ad9a971f4ce08679784a4dc7557274bb770ee815e4f9f563ecc77801e6e0"
+    }
+  ],
+  "rule_names": [
+    {
+      "rule": "sem-pii",
+      "commitment": "1ad7ac937c1be16173abcc0ea31163b086c14b8c6583611a5b2eb910eada2d4c"
+    }
+  ],
+  "names": {
+    "rules": ["sem-pii", "sem-toxic"],
+    "commitment": "34847ba7804c329cf966560ccf98bac9619064ff28eba019eb9397fcc20445a9"
+  }
+}
