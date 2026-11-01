@@ -39,12 +39,23 @@
 
 ## 2. OOM 原因
 
-- 5000 在 155 s 采样时 RSS **67.5 GB**，同期 cgroup `memory.current` **94.9 GB**
-  （`memory.max` = 96.6 GB），约 2.7 s 后被 SIGKILL。
-- 直接触发点是 **cgroup 内存上限**；`timeout 900` 远未到，**不是超时**。
+- **「RSS 67.5 GB 距 96.6 GB 还有 29 GB」是口径错觉**：67.5 GB 是 155 s 的
+  `ps rss` 采样（非峰值），而同一时刻 cgroup `memory.current` 已是 **94.9 GB**，
+  离 `memory.max` 96.6 GB 只剩 **1.75 GB**。
+- 那 ~29 GB 差额已被同一 cgroup 的其他账目占掉：E1 的 Qwen 进程 ~3.4 GB anon、
+  其它容器进程 ~0.3 GB、slab/shmem ~1.6 GB、**文件页缓存 ~22 GB**（HF 缓存 45 GB：
+  Qwen 15 GB + 正在下载的 Mistral 31 GB）。
+- 149→155 s，cgroup 从 78.6 GB 涨到 94.9 GB（**+2.72 GB/s**），1.75 GB 余量理论上
+  **0.6 s** 耗尽；靠页缓存回收又撑了 2.7 s 才被杀。`memory.swap.max = 0`，anon 不可换出。
+- **不是超时**：`timeout 900` 远未到。
+- **SIGKILL 来源无法在容器内定论**：`memory.events` 为 `max 277508 / oom 0 /
+  oom_kill 0`，`dmesg_restrict=1` 读不到内核日志。内核 cgroup OOM 没有留下足迹，
+  现有证据更支持**容器外的平台内存守卫/上层 cgroup** 在 ~95–98% 配额时 kill；
+  也可能是别人 `kill -9`（仓库 `policydsl/runtime/service.py` 同口径）。
+- **不是 SP1 的 memory monitor**：它只对 executor 子进程按 `MEMORY_LIMIT`（默认
+  24 GB）杀，并以 `KilledByMemoryMonitor` 错误返回；顶层 prover 无此机制。
 - `time -v` 在 SIGKILL 下不打印 Max RSS，故 5000 无峰值内存数字；67.5 GB 是运行中
-  采样值，不是峰值。anon 与页缓存/最后阶段分配尖峰共同撞墙的机制与不确定性，
-  详见实验文档 §3.2。
+  采样值。完整分解见实验文档 §3.2。
 
 ## 3. 边界
 

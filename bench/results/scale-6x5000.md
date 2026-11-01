@@ -5,7 +5,7 @@
 - 生成时间：2026-11-01T21:28:57
 
 > **口径（X1e）**：host `autodl-container-14574f97ce-6e5bc639`（cgroup 16 核 / 92160 MB；宿主 128 核 / 754 GiB 仅记录，不作配额）；binary `7f99fdb1…`；policy vkey `0x003eb14d…`；commit `025796b`（binary 构建基线 `e45178b`，**post-NFA-fix**）；单进程串行（`flock /tmp/pop-proof.lock`，一次一个证明）；规则集 6 条 = 1 `length_bound` + 3 `keyword_block` + 2 `pattern_block`；语料 `demo`（166 字符）。
-> **本点观察**：157.74 s 被 SIGKILL；`time -v` 在 SIGKILL 下不输出 Max RSS，运行中采样 RSS 67.5 GB（155 s）/ cgroup `memory.current` 94.9 GB（上限 96.6 GB）。
+> **本点观察**：157.74 s 被 SIGKILL；`time -v` 在 SIGKILL 下不输出 Max RSS。155 s 采样：进程 RSS 67.5 GB（十进制，非峰值），同刻 cgroup `memory.current` 94.9 GB（上限 96.6 GB，余量仅 1.75 GB）；149→155 s cgroup +16.3 GB（~2.72 GB/s）。`memory.swap.max=0`；`memory.events` oom=0 / oom_kill=0，`dmesg_restrict=1`，容器内无法区分内核 OOM 与平台外部 kill，证据更支持后者。
 
 > **隐私模式（public/private）不在本表里**：`pop-script` 没有 `--mode`，公私之别住在会话层，不进 zkVM。见本文件头部说明。
 

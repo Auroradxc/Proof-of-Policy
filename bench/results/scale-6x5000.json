@@ -61,6 +61,6 @@
     "rule_set": "6 rules = 1 length_bound + 3 keyword_block + 2 pattern_block (bench_cycles.make_policy, mode=pike)",
     "proof_timeout": "outer timeout 900 s",
     "sibling_points": "scale-6x2000 / scale-6x3000 / scale-6x5000",
-    "oom_observation": "SIGKILL at 157.74 s; /usr/bin/time -v prints no Max RSS on SIGKILL. Sampled just before the kill: RSS 67.5 GB at 155 s, cgroup memory.current 94.9 GB against memory.max 96.6 GB."
+    "oom_observation": "SIGKILL at 157.74 s; /usr/bin/time -v prints no Max RSS on SIGKILL. Sampled at 155 s: prover RSS 67.5 GB (decimal) while cgroup memory.current was already 94.9 GB against memory.max 96.6 GB (1.75 GB headroom); cgroup grew 78.6 -> 94.9 GB in the 6 s before the sample (~2.72 GB/s, RSS +16.1 GB). memory.swap.max=0; memory.events max=277508 / oom=0 / oom_kill=0; dmesg_restrict=1. Kill source cannot be identified inside the container; the evidence favors an external/platform kill over a kernel cgroup OOM."
   }
 }
