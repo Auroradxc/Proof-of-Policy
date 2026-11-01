@@ -406,3 +406,34 @@ def evidence_bundle(spec: Dict, response: str) -> List[Dict]:
 def verify_bundle(bundle: List[Dict]) -> bool:
     """每条记录的承诺都必须等于 sha256(evidence)。"""
     return all(open_evidence(e["evidence_commitment"], e["evidence"]) for e in bundle)
+
+
+def evidence_bundle_v2(spec: Dict, response: str,
+                       response_binding_hex: str) -> List[Dict]:
+    """v2 电路公开值的开示件：承诺按 ``item_commitment_v2`` 加盐。
+
+    v2 把 ``response_binding`` 作为每条证据承诺的盐，因此开示件必须用同一个
+    binding 重算；拿 v1 的无盐 SHA256 去比对会全部对不上。
+    """
+    from policydsl.evidence.disclosure import item_commitment_v2
+    out = []
+    for v in canonical_violations(spec, response):
+        out.append({
+            "rule": v["rule"], "kind": v["kind"],
+            "evidence": v["evidence"],
+            "evidence_commitment": item_commitment_v2(
+                v["evidence"], response_binding_hex),
+        })
+    return out
+
+
+def verify_bundle_v2(bundle: List[Dict], response_binding_hex: str) -> bool:
+    """v2 开示件：每条承诺都必须等于加盐后的 ``item_commitment_v2``。"""
+    from policydsl.evidence.disclosure import item_commitment_v2
+    try:
+        return all(
+            item_commitment_v2(e["evidence"], response_binding_hex)
+            == e["evidence_commitment"]
+            for e in bundle)
+    except (KeyError, TypeError):
+        return False

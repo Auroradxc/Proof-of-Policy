@@ -340,14 +340,20 @@ def print_mode_contrast(pub_env: dict, priv_env: dict, spec: dict, response: str
 
     # 私有模式真正的出口：证据可以**选择性开示**。开示件必须与证书里的承诺对得上，
     # 篡改一件必须被拒 —— 否则「承诺」就只是装饰，不构成可核对的披露。
-    bundle = commit.evidence_bundle(spec, response)
-    ok_open = commit.verify_bundle(bundle)
+    if vo.get("public_value_schema") == "pop-pv-v2":
+        rb = vo["response_binding"]
+        bundle = commit.evidence_bundle_v2(spec, response, rb)
+        verify_bundle = lambda b: commit.verify_bundle_v2(b, rb)
+    else:
+        bundle = commit.evidence_bundle(spec, response)
+        verify_bundle = commit.verify_bundle
+    ok_open = verify_bundle(bundle)
     proof_comms = {x["evidence_commitment"] for x in vo.get("violations", [])}
     bundled = {e["evidence_commitment"] for e in bundle}
     tampered = [dict(e) for e in bundle]
     if tampered:
         tampered[0]["evidence"] = "tampered"
-    ok_reject = not commit.verify_bundle(tampered)
+    ok_reject = not verify_bundle(tampered)
     ok_disclose = ok_open and proof_comms == bundled and ok_reject
     print(f"[{'PASS' if ok_disclose else 'FAIL'}] 选择性开示 开示件自洽={ok_open} "
           f"与证明里的承诺逐条相符={proof_comms == bundled} 篡改被拒={ok_reject}"
