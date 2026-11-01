@@ -42,7 +42,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import hashlib
 import json
 import sys
 import time
@@ -52,6 +51,13 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO))
+
+# 全仓唯一出处：文件摘要必须走 policydsl.evidence.cert.sha256_file。
+# tests/test_artifact_digest.py 会拒绝第二份实现（哪怕名字换掉、只有分块读的
+# 惯用法也不行）—— 摘要进证书 binding，两份口径会让出证方与验证方各算一个值。
+from policydsl.evidence.cert import sha256_file  # noqa: E402
+
 DEFAULT_OUT = REPO / "scripts" / "examples" / "datasets" / "wave2"
 
 XSTEST_URLS = [
@@ -64,14 +70,6 @@ TAU2_TASKS_URL = (
 )
 XSTEST_LICENSE = "CC-BY-4.0"
 TAU2_LICENSE = "MIT (repo); 数据使用请核对上游"
-
-
-def sha256_file(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as fh:
-        for block in iter(lambda: fh.read(1 << 20), b""):
-            h.update(block)
-    return h.hexdigest()
 
 
 def download(urls: Iterable[str], dest: Path, timeout: int = 30) -> str:

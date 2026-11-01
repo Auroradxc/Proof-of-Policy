@@ -188,7 +188,10 @@ class TestDispatchSitesAgree(unittest.TestCase):
 SYNTHETIC_EVIDENCE_KIND = "trace_unbound"
 
 #: 扫描全仓时跳过的目录（与 tests/test_driver_paths.py、test_artifact_digest.py 同）。
-SKIP_DIRS = {".git", "target", "__pycache__", "node_modules", ".venv", "out", ".work"}
+SKIP_DIRS = {".git", "target", "__pycache__", "node_modules", ".venv", "out", ".work",
+             # agent 并行执行的 worktree 是**同一份代码的隔离副本**：扫进它们
+             # 会把"重复实现"报成 N 份，而那是隔离机制，不是代码重复。
+             ".claude"}
 
 #: 「一次抄了至少两项」才算副本 —— 单个巧合配对（如某处只映射一个词）不算。
 COPY_MIN_PAIRS = 2

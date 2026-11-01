@@ -42,7 +42,9 @@ from policydsl.evidence import cert  # noqa: E402
 DIGEST_HELPER_NAMES = {"sha256_file", "_sha256", "_sha256_of_file", "sha256_of_file",
                        "file_sha256"}
 
-SKIP_DIRS = {".git", "target", "__pycache__", "node_modules", ".venv", "out", ".work"}
+SKIP_DIRS = {".git", "target", "__pycache__", "node_modules", ".venv", "out", ".work",
+             # 见 test_rule_kinds.py：.claude/ 下是 agent 的隔离 worktree。
+             ".claude"}
 
 #: ── 申报的例外（逐条给理由，条数钉死）──────────────────────────────────────
 #:

@@ -41,7 +41,10 @@ DRIVER_NAMES = {"pop-script", "pop-verify"}
 DRIVER_CONST = {"POP_SCRIPT", "POP_VERIFY", "DEFAULT_POP"}
 
 #: 不参与扫描的目录（构建产物 / 第三方 / 缓存）。
-SKIP_DIRS = {".git", "target", "__pycache__", "node_modules", ".venv", "out", ".work"}
+SKIP_DIRS = {".git", "target", "__pycache__", "node_modules", ".venv", "out", ".work",
+             # 见 test_rule_kinds.py：.claude/ 下是 agent 的隔离 worktree，
+             # 扫进它们会把同一份代码报成重复。
+             ".claude"}
 
 #: ── 申报的例外 ────────────────────────────────────────────────────────────
 #:

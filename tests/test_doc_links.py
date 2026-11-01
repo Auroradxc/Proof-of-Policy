@@ -41,7 +41,10 @@ _SUFFIXES = (".md", ".py", ".rs", ".json", ".jsonl", ".txt", ".sh", ".yml", ".ya
 _SKIP_PREFIXES = ("http://", "https://", "mailto:", "#", "<", "data:")
 
 #: 扫描范围：仓库里全部 Markdown。``.git/`` 与虚拟环境不在其内。
-_SCAN_SKIP_DIRS = (".git", ".venv", "node_modules", "target", "out")
+_SCAN_SKIP_DIRS = (".git", ".venv", "node_modules", "target", "out",
+                   # agent 并行执行的 worktree 是同一份文档的隔离副本；
+                   # 扫进它们只会把同一份链接检查 N 遍。
+                   ".claude")
 
 
 def _is_repo_path(target: str) -> bool:
