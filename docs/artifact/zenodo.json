@@ -1,0 +1,40 @@
+{
+  "metadata": {
+    "title": "Proof-of-Policy (PoP): policy zero-knowledge proofs for LLM agent responses",
+    "upload_type": "software",
+    "description": "Proof-of-Policy (PoP) proves that a delivered LLM agent response T satisfies a public policy pi without exposing the violating content; violations are disclosed only through evidence commitments. The artifact covers the Python reference layer and the certificate/verification chain (policy compilation, salted policy commitment, Ed25519-signed certificates, append-only ledger, third-party verify_session). Reproduction scope: the Docker image runs 42 pure-Python tests; on a host, scripts/ops/reproduce_artifact.sh runs demo_all.sh in fast mode (host checks, no SP1 proof) and then verify_session.py. NOT covered: groth16/compressed proving, real-LLM guessability k, and cloud-scale matrices. Every number in this record must correspond to the git commit below and to a specific result file in the repository (for example bench/results/proofs.md, bench/results/compressed.md, bench/results/compose.md, bench/results/semantic.md), with the machine and proof_mode stated. Do not compare numbers across machines or proof modes as if they were the same table. This template intentionally contains no DOI: Zenodo assigns the DOI at publication time, and it must be filled in afterwards.",
+    "creators": [
+      {
+        "name": "<AUTHOR_NAME>",
+        "affiliation": "<AFFILIATION>",
+        "orcid": "<ORCID iD, or delete this field>"
+      }
+    ],
+    "version": "<VERSION, e.g. v0.1.0>",
+    "license": "<SPDX-License-Identifier, e.g. MIT or Apache-2.0; this repository currently has no LICENSE file, so add one before upload>",
+    "publication_date": "<YYYY-MM-DD>",
+    "keywords": [
+      "zero-knowledge proof",
+      "SP1",
+      "LLM agent",
+      "policy compliance",
+      "response binding",
+      "Ed25519",
+      "certificate",
+      "privacy"
+    ],
+    "related_identifiers": [
+      {
+        "identifier": "https://github.com/Auroradxc/Proof-of-Policy/tree/<FULL_GIT_COMMIT_SHA>",
+        "relation": "isSupplementTo",
+        "resource_type": "software"
+      },
+      {
+        "identifier": "https://github.com/Auroradxc/Proof-of-Policy/blob/<FULL_GIT_COMMIT_SHA>/docs/artifact/README.md",
+        "relation": "isDocumentedBy",
+        "resource_type": "publication-other"
+      }
+    ],
+    "notes": "Artifact scope: pure Python reference layer plus certificate/verification chain. Entry points: Dockerfile (docker build -t pop-artifact . && docker run --rm pop-artifact) and scripts/ops/reproduce_artifact.sh on a host. The repository baseline for this template is commit 28f0625, but <FULL_GIT_COMMIT_SHA> must be replaced with the exact released commit. Acceptance evidence: 42 pure-Python tests in the image, demo_all.sh fast report (scripts/examples/out/artifact/all/REPORT.md), verify_session.py RESULT: PASS, and tests.test_doc_links. No SP1 proving is performed by this artifact. The license and creators fields are placeholders and must be completed before upload."
+  }
+}
