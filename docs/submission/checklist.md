@@ -22,9 +22,9 @@ Zenodo DOI 未分配，推荐审稿人未填。**当前不可直接提交。**
 | 主文件 | `[x]` | [`paper/tdsc-paper.tex`](../../paper/tdsc-paper.tex)，IEEEtran `[10pt,journal,compsoc]` |
 | 编译方式 | `[x]` | 两遍 `pdflatex "\def\SKELQUIET{}\input{tdsc-paper.tex}"`（第二遍收交叉引用） |
 | 本机复编 | `[ ]` **OPEN / 环境阻塞** | 本机 TeX Live 2026 缺 `algorithmic.sty`，`pdflatex` 在 `\usepackage{algorithmic}` 处停止；需在 M5 环境补包后复编并记录页数 |
-| 页数 | `[ ]` **OPEN** | P 最终修订（`37982c6`）已到 **18 页**（TDSC 上限，**无余量**）；E6/C2 的 delta 必须等量压缩；**以最终 PDF 为准** |
+| 页数 | `[ ]` **OPEN** | P-compress（`c8474a5` / 合并 `bc58d66`）主稿 **13 页**；supplementary **7 页**（不计入主稿）；E6/C2 的 delta 最多还有 **1 页**（≤14）；**以最终 PDF 为准** |
 | 页数上限 | `[x]` 规则已核 | TDSC 常规论文 **12 页双栏**（含参考文献与作者简介），最多 **18 页**；超过 12 页按 MOPC 计费。来源：[IEEE CSDL Author Information](https://www.computer.org/csdl/journals/tq/write-for-us/15068) |
-| 超长费 | `[ ]` **OPEN** | 若 18 页投稿，超出 12 页 6 页；历史文档记 **$200/页**（约 $1,200）。**2026 年费率必须在 live author guide 复核**，不要直接引用旧 PDF |
+| 超长费 | `[ ]` **OPEN** | 主稿 13 页，超出 12 页 1 页；历史文档记 **$200/页**（约 $200）。若 E6/C2 delta 到 14 页则 2 页（约 $400）。**2026 年费率必须在 live author guide 复核**，不要直接引用旧 PDF |
 | 图 | `[x]` | 当前正文无 `\includegraphics`，无可分离图源；若 M5 加图，补 PDF/EPS 源与授权 |
 | 表 | `[x]` | 全部为 LaTeX `tabular`，无外部图源 |
 | 参考文献 | `[x]` 形式 / `[ ]` 内容 | 正文内联 `thebibliography`；当前 **20 个 `\cite{}`**，**7 个 `\need{}`**、**0 个 `\fixme{}`**；剩余 need 为作者元数据、Zaguk/Lean-Agent、P-PP、E6、C2、WP4-(2)/WP3、ROM |
