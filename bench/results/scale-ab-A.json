@@ -1,0 +1,54 @@
+{
+  "host": {
+    "hostname": "autodl-container-14574f97ce-6e5bc639",
+    "cpu_model": "Intel(R) Xeon(R) Gold 6459C",
+    "cpu_count": 16,
+    "cpu_count_host": 128,
+    "mem_total_mb": 92160,
+    "mem_total_proc_mb": 772649,
+    "mem_total_cgroup_mb": 92160,
+    "mem_source": "cgroup",
+    "platform": "x86_64"
+  },
+  "axes": {
+    "lengths": [
+      200
+    ],
+    "rules": [
+      1
+    ],
+    "proof_modes": [
+      "groth16"
+    ]
+  },
+  "generated_at": "2026-11-01T19:22:54",
+  "rows": [
+    {
+      "length": 200,
+      "rules": 1,
+      "proof_mode": "groth16",
+      "trace_sha256": "7125dcb0372d2e937e80876878a5f1e39d360f0f7776320774fcf61933fd9783",
+      "ok": true,
+      "seconds": 299.05,
+      "proof_bytes": 1874,
+      "peak_rss_mb": 29613.8,
+      "verified": true,
+      "passed": true,
+      "shards": null,
+      "elapsed_min": 5.33
+    }
+  ],
+  "provenance": {
+    "binary_sha256": "7f99fdb11a4a859c45598c384db3b98dd50426210adbc14d6b576c4d15dda49f",
+    "policy_vkey": "0x003eb14de80339bddef2b9207ef27469088267888bb9bebb9836b4ee701fd7be",
+    "commit": "e45178b",
+    "post_nfa_fix": true,
+    "concurrency": "isolated",
+    "artifact_cache": "/root/autodl-tmp/sp1-cache/groth16/v6.1.0",
+    "artifact_note": "official SP1 v6.1.0-groth16.tar.gz; size 6211807514 verified; gzip -t ok",
+    "host_note": "cgroup 16 CPU / 92160 MB; /proc/meminfo reports 772649 MB (host)",
+    "knobs": {
+      "GOMAXPROCS": 16
+    }
+  }
+}
