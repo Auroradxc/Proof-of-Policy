@@ -267,8 +267,10 @@ E3 是机制演示，不是「模型合规」；A11 是失败可行性评估，�
   - 证明成本/内存：`bench/results/scale-cloud.md`、`eu_ai_act_proof.md`、
     `scale-6x*.md`；
   - 隐私面：`bench/results/privacy_surface.md`、`privacy_surface_real.md`；
-  - 猜测熵 `k`：`bench/results/k_entropy_largeN.md`、`k_entropy_crossmodel.md`；
+  - 猜测熵 `k`：`bench/results/k_entropy_largeN.md`、`k_entropy_crossmodel.md`、
+    `k_logprobs.md`、`e6_mistral/k_logprobs.md`；
   - 策略推断：`bench/results/policy_corpus_infer.md`；
+  - 电路级披露：`bench/results/c2/`、`docs/experiments/circuit-disclosure.md`；
   - 端到端：`bench/results/agent_e2e_deepseek.md`；
   - 语义可行性：`bench/results/semantic_feasibility.md`。
 - 跨机数字必须同时注明硬件与 `proof_mode`（`core` / `groth16`），并说明
