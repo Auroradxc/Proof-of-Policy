@@ -499,6 +499,26 @@ TDSC 常规论文 **12 页双栏**（含参考文献与作者简介），最多 
   `0x003eb14d…`；infer / session vkey 见
   `docs/blockers/Core.md`（main `9ac2d59`）。
 - 论文 §V-B/§V-C 的 proving 表与 §VII-C 已按 **pre-NFA-fix binary** 标注；
-  X1 云机结果仍用旧 binary，必须标该 binary sha256，不得与新 vkey 同表。
+  早期 `paper-inputs/bhv-v1-b1.md` 的「X1 云机仍用旧 binary」已过时：
+  X1c/X1d 云机实测为 **post-NFA-fix** binary `7f99fdb1…`、policy vkey
+  `0x003eb14d…`（见 `docs/blockers/X1c.md` §6）。
 - 本 worktree 基于 `c78ca67`，未合并 `9ac2d59`；`Core.md` 与更新后的
   `V1.md` 以 main / `tdsc-conversion` 为准。
+
+### 8.7 P 最终修订（2026-11-01，`bhv/p-final`，基线 `1c1fc60`）
+
+| 项 | 结果 |
+|---|---|
+| 页数 | **18**（`\def\SKELQUIET{}`，三遍 pdflatex 后稳定） |
+| error / undefined ref | **0 / 0**（第三遍 0 LaTeX Warning） |
+| `\need` / `\fixme` | **7 / 0**（开工前 9 / 0） |
+| 标题 | 保留 “Zero-Knowledge”；摘要第一段与 §7.1/§7.2 前置三条上界（core 非 ZK、groth16 wrapper-only 非后量子、重执行可恢复 T） |
+| 测试计数 | **945 实跑 / 930 通过 / 15 skip**（静态清点与 unittest 收集均为 945） |
+| X1c/X1d | EU AI Act core 48.82 s / 12.38 GB / 2.79 MB；groth16 301.19 s / 30.07 GB / 1,874 B；verify PASS；矩阵 16 ✓ / 2 OOM；6 规则 2000/3000/4000/4500 可证，4500 余量 20,480 B 且依赖 5.27 GB 页缓存回收 |
+| X1d 隐私面 | 真实响应不在交付物；策略名 `no_bad_topics` 仍泄露；core `hiding=none`、groth16 `wrapper-only`；canary=0 不是 ZK 证明 |
+| E1 | Qwen N=50 全唯一，k=5.644=log2(50) 只是下界；温度 0 k=0；DeepSeek 4/50 组重复（k=3.32），Mistral 撞 log2(20) |
+| E2 | 300 类：L0 0.449–0.500；L1 0.068–0.076；L2 实际载荷 0.382（证据承诺可跨样本链接）；L2-count-only 0.014–0.017 |
+| E3 | 8 次真实调用、32 张证书、verify_session PASS、TTFT 0.167 s；早停只防完整密钥 |
+| X2/X2c | 温度 0 k=0；chat 口径 unsafe 拒绝 7/10、拒绝率 35% vs 续写 15%；N=10/20 截断；90% 违规主要是关键词策略误报 |
+| pending | **E6** logprobs estimator（§5.10 `\need`）；**C2** 电路级 coarsening 仅设计、未实现/未测（§4.2 `\need`） |
+| 其余 `\need` | 作者元数据；Zaguk/Lean-Agent 不入 bib；P-PP 实例化；WP4-(2)/WP3 组合成本；ROM 限定 |
