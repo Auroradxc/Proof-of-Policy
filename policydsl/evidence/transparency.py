@@ -20,9 +20,15 @@ Merkle 原语**复用** :mod:`policydsl.proofs.session`（``MERKLE_NODE_DOMAIN``
   只记 ``H(cert)`` 时，运营方可以记一张「另一条 ``T``」的证书。
 * 追加本身**不是**「交付前必须追加」的外部义务（证明债 **F-1**）。本模块只提供
   机制；没有 F-O，定理 F1 的不可能性仍然适用。
-* 本模块**不**实现 gossip / 一致性证明（证明债 **F-2**）。:meth:`checkpoint`
-  给出 ``(size, root)``，调用方必须自己把它们**跨审计者/跨时间**比较，否则恶意
-  日志可以给不同验证者看不同视图（split-view）。
+* 本模块实现了 **RFC6962 风格的一致性证明**
+  （:meth:`TransparencyLog.consistency_proof` / :func:`verify_consistency`）和一个
+  最小的 **gossip 消息**接口（:meth:`TransparencyLog.gossip_message` /
+  :func:`verify_gossip`）：审计者可以拿自己见过的旧树头，向日志要一条
+  「新树头是旧树头的只追加延伸」的路径，并**独立验证**它。
+  这只关闭 F-2 的**密码学内核**，不是 F-2 的全部：真实的网络 gossip、审计者之间
+  的协作与告警、树头的持续公开记录仍是**外部义务**。没有那些通道，恶意日志照样
+  可以给两个审计者看两套话；本模块给的是「任何一方拿到两份树头后**能证明**
+  它们在撒谎」的机制。详见 ``docs/design-transparency-consistency.md``。
 * 本模块**不**强制「日志条目必须来自真实交付」（**F-4**）：抽样框若只抽日志，
   withholding 对手根本不进样本。见 ``bench/bench_issuance.py``。
 
@@ -41,6 +47,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 from policydsl.evidence import cert
 from policydsl.proofs.session import (
+    MERKLE_NODE_DOMAIN,
     merkle_proof,
     merkle_root,
     verify_merkle_proof,
@@ -52,6 +59,9 @@ LEAF_BINDING_DOMAIN = b"pop-transparency-leaf-binding-v1"
 
 #: 检查点 / 树头签名载荷的域标签（进 DSSE 载荷，便于人读）。
 HEAD_DOMAIN = "pop-transparency-head-v1"
+
+#: gossip 消息的域标签。与树头签名载荷分开，防止把 gossip 信封当树头重放。
+GOSSIP_DOMAIN = "pop-transparency-gossip-v1"
 
 
 class TransparencyError(ValueError):
@@ -69,6 +79,33 @@ def _hex32(digest: str, what: str) -> str:
     if len(raw) != 32:
         raise TransparencyError(f"{what}不是 32 字节：{len(raw)} 字节")
     return raw.hex()
+
+
+def _largest_power_of_two_below(n: int) -> int:
+    """严格小于 ``n`` 的最大 2 的幂（``n >= 2``）。
+
+    这正是 RFC 6962 §2.1 的 ``k``：把 ``D[n]`` 切成 ``D[0:k]`` 与
+    ``D[k:n]``。本仓库的 Merkle 构造（奇数末位**提升**，不复制）与 RFC 6962
+    的 ``MTH`` 在任意 ``n`` 上逐字节一致，因此这里可以直接用递归切分。
+    """
+    return 1 << ((n - 1).bit_length() - 1)
+
+
+def _node_hash(left: str, right: str) -> str:
+    """内部节点哈希；与 :mod:`policydsl.proofs.session` 同一域分隔。"""
+    return hashlib.sha256(
+        MERKLE_NODE_DOMAIN + bytes.fromhex(left) + bytes.fromhex(right)
+    ).hexdigest()
+
+
+def _same_root(a: Any, b: Any) -> bool:
+    """两个「根」是否相同；``None``/空串表示空树（没有根）。"""
+    if a in (None, "") or b in (None, ""):
+        return a in (None, "") and b in (None, "")
+    try:
+        return _hex32(a, "根") == _hex32(b, "根")
+    except TransparencyError:
+        return False
 
 
 def entry_hash(cert_digest: str, binding: Optional[str] = None) -> str:
@@ -92,8 +129,10 @@ def entry_hash(cert_digest: str, binding: Optional[str] = None) -> str:
 class Checkpoint:
     """某一时刻的日志视图：``size`` 片叶子、根 ``root``。
 
-    **防 split-view 的起点，不是终点**：两个检查点只有在被跨审计者比较之后才有
-    意义。本类不实现 gossip，也不实现一致性证明（F-2）。
+    **防 split-view 的起点**：两个检查点本身只是两个孤立的断言；把它们变成
+    「后者是前者的只追加延伸」的是 :meth:`TransparencyLog.consistency_proof` +
+    :func:`verify_consistency`。但**跨审计者的比较通道**（gossip）仍是外部义务，
+    本类不提供网络。
     """
 
     size: int
@@ -174,6 +213,100 @@ class TransparencyLog:
             "path": [[side, sib] for side, sib in path],
         }
 
+    # -- 一致性证明（RFC 6962 §2.1.2） --
+    def _subtree_root(self, lo: int, hi: int) -> str:
+        """叶子区间 ``[lo, hi)`` 的 Merkle 根（等于 RFC 6962 的 ``MTH(D[lo:hi])``）。"""
+        return merkle_root(self._leaves[lo:hi])
+
+    def _consistency_path(self, m: int, lo: int, hi: int,
+                          complete: bool) -> List[str]:
+        """RFC 6962 的 ``SUBPROOF``：返回重建两个根所需的兄弟哈希（自底向上）。
+
+        参数 ``m`` 是「旧树在本区间里的前缀长度」；``complete`` 表示该前缀是否
+        **恰好覆盖**旧树（顶层调用为 ``True``）。递归与 RFC 6962 §2.1.2 一一对应：
+
+        * ``m == hi - lo``：整段都是旧的 —— ``complete`` 时为 ``{}``，否则把这一
+          整棵子树的根交出去（它是旧树的一部分，验证方无法自己算）；
+        * ``m <= k``：旧前缀在左子树里，递归后附上右子树根；
+        * ``m > k``：旧前缀跨过左子树，递归右子树（``complete=False``）后附上左
+          子树根。
+
+        切分点 ``k`` 是严格小于区间长度的最大 2 的幂。因为 ``k < m <= n < 2k``
+        时 ``k`` 也是 ``m`` 的切分点，所以旧根可以用同样两段重算。
+        """
+        n = hi - lo
+        if m == n:
+            return [] if complete else [self._subtree_root(lo, hi)]
+        k = _largest_power_of_two_below(n)
+        if m <= k:
+            return (self._consistency_path(m, lo, lo + k, complete)
+                    + [self._subtree_root(lo + k, hi)])
+        return (self._consistency_path(m - k, lo + k, hi, False)
+                + [self._subtree_root(lo, lo + k)])
+
+    def consistency_proof(self, old_size: int, new_size: int) -> Dict[str, Any]:
+        """从旧树头 ``(old_size, root(old_size))`` 到当前树头的只追加证明。
+
+        返回 ``{old_size, new_size, old_root, new_root, path}``；``path`` 是
+        RFC 6962 风格的一致性证明（自底向上的兄弟哈希列表）。``old_size ==
+        new_size`` 或 ``old_size == 0`` 时 ``path`` 为空（前者要求两根相等，后者是
+        「空树是任何树的前缀」）。空树没有根，``old_root`` 为 ``None``。
+
+        与 :meth:`prove` 不同，本方法**不**返回签名；树头签名见 :meth:`head`。
+        """
+        if (not isinstance(old_size, int) or not isinstance(new_size, int)
+                or isinstance(old_size, bool) or isinstance(new_size, bool)):
+            raise TransparencyError("old_size/new_size 必须是整数")
+        if old_size < 0 or new_size < 0:
+            raise TransparencyError(f"树大小不能为负：old={old_size} new={new_size}")
+        if old_size > new_size:
+            raise TransparencyError(
+                f"旧树比新树大：old={old_size} new={new_size}（不是只追加）")
+        if new_size > self.size:
+            raise TransparencyError(
+                f"new_size 超过日志当前大小：{new_size} > {self.size}")
+        old_root = None if old_size == 0 else self._subtree_root(0, old_size)
+        new_root = None if new_size == 0 else self._subtree_root(0, new_size)
+        if old_size == 0 or old_size == new_size:
+            path: List[str] = []
+        else:
+            path = self._consistency_path(old_size, 0, new_size, True)
+        return {
+            "old_size": old_size,
+            "new_size": new_size,
+            "old_root": old_root,
+            "new_root": new_root,
+            "path": path,
+        }
+
+    # -- gossip（最小接口；网络传输不在本模块内） --
+    def gossip_message(self, previous_head: Dict[str, Any], *, signer: Any = None,
+                       ts: Optional[str] = None) -> Dict[str, Any]:
+        """把「``previous_head`` → 当前视图」打包成一条可转发的 gossip 消息。
+
+        ``previous_head`` 是调用方**曾经见过**的树头（``{size, root, sth?}``）。
+        消息里带一条 :meth:`consistency_proof` 生成的路径，任何拿到它的审计者都
+        可以调 :func:`verify_gossip` 自行判断「当前树头是不是旧树头的延伸」。
+
+        若 ``previous_head`` 的根与本日志在同一 ``size`` 的历史根不一致，说明调用方
+        看到的是**另一棵树**：本方法抛 :class:`TransparencyError`，而不是伪造一条
+        证明（诚实日志的行为）。
+        """
+        prev = _normalize_head(previous_head, "旧树头")
+        if prev is None:
+            raise TransparencyError("旧树头形状不合法：需要 {size, root[, sth]}")
+        if prev["size"] > self.size:
+            raise TransparencyError(
+                f"旧树头比当前日志还大：{prev['size']} > {self.size}")
+        if prev["size"] > 0:
+            local_root = self._subtree_root(0, prev["size"])
+            if not _same_root(prev["root"], local_root):
+                raise TransparencyError(
+                    "旧树头不属于本日志的历史：同 size 的根与本地不一致")
+        current = self.head(signer, ts=ts)
+        return gossip_message(prev, current,
+                              self.consistency_proof(prev["size"], self.size))
+
     # -- 树头（可选签名；验签本身不在本模块的「最小接口」里） --
     def head(self, signer: Any = None, *, ts: Optional[str] = None) -> Dict[str, Any]:
         """树头 ``{size, root, sth?}``。
@@ -252,10 +385,220 @@ def verify_inclusion(cert_digest: str, proof: Dict[str, Any], *,
         return False
 
 
+def _proof_path(proof: Any) -> Optional[List[str]]:
+    """从 ``{..., \"path\": [...]}`` 或裸列表里取出规范化的一致性路径。"""
+    if isinstance(proof, dict):
+        raw = proof.get("path")
+    elif isinstance(proof, (list, tuple)):
+        raw = proof
+    else:
+        return None
+    if not isinstance(raw, (list, tuple)):
+        return None
+    out: List[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            return None
+        try:
+            out.append(_hex32(item, "一致性证明元素"))
+        except TransparencyError:
+            return None
+    return out
+
+
+def verify_consistency(old_root: Optional[str], old_size: int,
+                       new_root: Optional[str], new_size: int,
+                       proof: Union[Dict[str, Any], Sequence[str], None]) -> bool:
+    """验证「``new_root`` 是 ``old_root`` 的**只追加**延伸」（RFC 6962 §2.1.3）。
+
+    ``proof`` 可以是 :meth:`TransparencyLog.consistency_proof` 返回的字典（推荐；
+    会额外核对内嵌的 ``old_size`` / ``new_size`` / 两个根），也可以直接是
+    ``path`` 列表。
+
+    语义按 RFC 6962 的递归重算两个根：
+
+    * 空树（``old_size == 0``）是任何树的前缀，``path`` 必须为空；
+    * ``old_size == new_size`` 时两根必须相等且 ``path`` 为空；
+    * 否则 ``path`` 必须非空、每个元素是 32 字节十六进制，且用它们重算出的
+      **旧根与新根同时**与入参一致 —— 只重算新根是不够的，那样任何一棵更大的树
+      （包括分叉）都能「通过」。
+
+    这里证明的是「两棵树共享前 ``old_size`` 片叶子」；在碰撞抗性假设下，恶意日志
+    无法为回滚、改写或分叉的树给出这样一条路径。**任何**形状错误返回 ``False``
+    （验证函数不因坏输入抛异常）。
+    """
+    try:
+        if (not isinstance(old_size, int) or not isinstance(new_size, int)
+                or isinstance(old_size, bool) or isinstance(new_size, bool)):
+            return False
+        if old_size < 0 or new_size < 0 or old_size > new_size:
+            return False
+        path = _proof_path(proof)
+        if path is None:
+            return False
+        if isinstance(proof, dict):
+            # 证明里自带的元数据必须与调用方的树头一致，防止「拿 A 对的证明去验 B」。
+            if "old_size" in proof and proof["old_size"] != old_size:
+                return False
+            if "new_size" in proof and proof["new_size"] != new_size:
+                return False
+            if "old_root" in proof and not _same_root(proof["old_root"], old_root):
+                return False
+            if "new_root" in proof and not _same_root(proof["new_root"], new_root):
+                return False
+
+        # 空树：没有根，是任何树的前缀。
+        if old_size == 0:
+            if path or not _same_root(old_root, None):
+                return False
+            if new_size == 0:
+                return _same_root(new_root, None)
+            if new_root is None or new_root == "":
+                return False
+            _hex32(new_root, "新根")
+            return True
+
+        if old_size == new_size:
+            if path or old_root is None or new_root is None:
+                return False
+            return _hex32(old_root, "旧根") == _hex32(new_root, "新根")
+
+        # 0 < old_size < new_size：两棵树都必须从证明里重算出来。
+        if old_root is None or new_root is None or not path:
+            return False
+        old_norm = _hex32(old_root, "旧根")
+        new_norm = _hex32(new_root, "新根")
+        ptr = 0
+
+        def take() -> str:
+            nonlocal ptr
+            if ptr >= len(path):
+                raise TransparencyError("一致性证明太短，重算所需的兄弟哈希不够")
+            h = path[ptr]
+            ptr += 1
+            return h
+
+        def rebuild(m: int, n: int, complete: bool) -> Tuple[str, str]:
+            """返回 ``(旧树前缀根, 本子树新根)``；``m/n`` 是区间内的长度。"""
+            if m == n:
+                if complete:
+                    # 前缀恰好覆盖整棵旧树：两根都是调用方给的旧根。
+                    return old_norm, old_norm
+                h = take()
+                return h, h
+            k = _largest_power_of_two_below(n)
+            if m <= k:
+                old_left, new_left = rebuild(m, k, complete)
+                return old_left, _node_hash(new_left, take())
+            # 旧前缀跨过左子树：旧根 = H(左子树根, 右子树内旧前缀根)。
+            # 注意这里不能只返回 ``old_right`` —— 那是**本子树内**的前缀根，
+            # 只有在 ``m <= k`` 的分支里它才同时是整颗旧树在该节点的根。
+            old_right, new_right = rebuild(m - k, n - k, False)
+            left = take()
+            return _node_hash(left, old_right), _node_hash(left, new_right)
+
+        old_calc, new_calc = rebuild(old_size, new_size, True)
+        if ptr != len(path):
+            return False
+        return old_calc == old_norm and new_calc == new_norm
+    except (TransparencyError, ValueError, TypeError, RecursionError):
+        return False
+
+
+def _normalize_head(head: Any, what: str) -> Optional[Dict[str, Any]]:
+    """校验并规范化树头 ``{size, root[, sth]}``；空树根为 ``None``。"""
+    if not isinstance(head, dict):
+        return None
+    size = head.get("size")
+    root = head.get("root")
+    if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+        return None
+    out: Dict[str, Any] = {"size": size}
+    if size == 0:
+        if root not in (None, ""):
+            return None
+        out["root"] = None
+    else:
+        if not isinstance(root, str):
+            return None
+        try:
+            out["root"] = _hex32(root, what)
+        except TransparencyError:
+            return None
+    if "sth" in head:
+        out["sth"] = head["sth"]
+    if "domain" in head:
+        out["domain"] = head["domain"]
+    return out
+
+
+def gossip_message(older_head: Dict[str, Any], newer_head: Dict[str, Any],
+                   proof: Union[Dict[str, Any], Sequence[str]]) -> Dict[str, Any]:
+    """把「旧树头 → 新树头 + 一致性证明」打包成一条可转发的 gossip 消息。
+
+    本函数只**打包**，不生成证明（证明需要日志的叶子）。生产方通常是
+    :meth:`TransparencyLog.gossip_message`。消息结构::
+
+        {"domain": GOSSIP_DOMAIN,
+         "older": {size, root[, sth]},
+         "newer": {size, root[, sth]},
+         "consistency": <consistency_proof 的返回值>}
+
+    ``domain`` 与树头签名载荷的 ``HEAD_DOMAIN`` 分开：gossip 信封不能被当成树头
+    承诺重放。**网络传输、重试、对端选择都不在本模块内。**
+    """
+    older = _normalize_head(older_head, "旧树头")
+    newer = _normalize_head(newer_head, "新树头")
+    if older is None or newer is None:
+        raise TransparencyError("gossip 端点的树头形状不合法")
+    return {"domain": GOSSIP_DOMAIN, "older": older, "newer": newer,
+            "consistency": proof}
+
+
+def verify_gossip(message: Dict[str, Any],
+                  keyring: Any = None) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """验证一条 gossip 消息：「``newer`` 是 ``older`` 的只追加延伸」。
+
+    检查三件事：
+
+    1. ``message`` 形状与 ``GOSSIP_DOMAIN`` 域标签；
+    2. :func:`verify_consistency` 对新旧树头与内嵌证明成立；
+    3. 若给了 ``keyring``，**两个**树头都必须带 ``sth`` 且验签通过（F-L 假设）。
+
+    返回 ``(ok, detail)``。不给 ``keyring`` 时**不验签**，``detail`` 里的
+    ``signatures_checked`` 为 ``False`` —— 调用方不得把「一致性通过」当成
+    「树头来自真日志」。真实 gossip 还需要传输层与审计者协作（见设计文档）。
+    """
+    if not isinstance(message, dict) or message.get("domain") != GOSSIP_DOMAIN:
+        return False, None
+    older = _normalize_head(message.get("older"), "旧树头")
+    newer = _normalize_head(message.get("newer"), "新树头")
+    if older is None or newer is None:
+        return False, None
+    detail: Dict[str, Any] = {
+        "older": older,
+        "newer": newer,
+        "signatures_checked": keyring is not None,
+    }
+    if not verify_consistency(older.get("root"), older["size"],
+                              newer.get("root"), newer["size"],
+                              message.get("consistency")):
+        return False, detail
+    if keyring is not None:
+        for head in (older, newer):
+            if "sth" not in head:
+                return False, detail
+            ok, _ = verify_head(head, keyring)
+            if not ok:
+                return False, detail
+    return True, detail
+
+
 def verify_head(head: Dict[str, Any], keyring: Any) -> Tuple[bool, Optional[Dict[str, Any]]]:
     """验证带签名的树头。返回 ``(ok, 载荷)``；未签名头一律 ``False``。
 
-    只验**签名**，不验「这个根是否在此前根之后」（一致性证明不在本原型内，F-2）。
+    只验**签名**，不验「这个根是否在此前根之后」；后者用
+    :func:`verify_consistency`（把旧树头与新树头连起来）。
     """
     if not isinstance(head, dict) or "sth" not in head:
         return False, None
@@ -270,7 +613,8 @@ def verify_head(head: Dict[str, Any], keyring: Any) -> Tuple[bool, Optional[Dict
 
 
 __all__ = [
-    "LEAF_BINDING_DOMAIN", "HEAD_DOMAIN", "TransparencyError",
+    "LEAF_BINDING_DOMAIN", "HEAD_DOMAIN", "GOSSIP_DOMAIN", "TransparencyError",
     "Checkpoint", "TransparencyLog", "entry_hash",
-    "verify_inclusion", "verify_head",
+    "verify_inclusion", "verify_consistency", "verify_head",
+    "gossip_message", "verify_gossip",
 ]
