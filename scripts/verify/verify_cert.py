@@ -33,7 +33,7 @@
 
 实现按**具名函数**分段，函数名与上面的编号一一对应，:func:`main` 只负责把它们
 串起来并打印：``check_signature``(1) / ``check_proof``(2) /
-``check_artifact_claims``(2b+2c) / ``check_policy_binding``(3) /
+``check_artifact_claims``(2b+2c) / ``check_disclosure``(2d) / ``check_policy_binding``(3) /
 ``check_response_binding``(3b) / ``check_trace_binding``(3c+3d) /
 ``check_semantic``(3e) / ``check_anchor``(4+4b) / :func:`print_report`。
 每个函数**只产出自己那几张卡片**，由 :func:`main` 按调用顺序合并 —— 「卡片顺序」
@@ -68,7 +68,7 @@ from _bootstrap import REPO, bootstrap  # noqa: E402
 
 bootstrap()
 
-from policydsl.evidence import anchor, cert, keys, trace, verifier
+from policydsl.evidence import anchor, cert, disclosure, keys, trace, verifier
 from policydsl.evidence.cert import sha256_file
 from policydsl.privacy import challenge, commit
 from policydsl.proofs import semantic as S
@@ -80,6 +80,25 @@ from policydsl.paths import POP_SCRIPT, POP_VERIFY
 def load_policy(path: Path) -> Policy:
     """从 JSON 文件加载策略包（唯一出处 :meth:`policydsl.core.model.Policy.from_dict`）。"""
     return Policy.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+
+def projected_proof_outcome(payload: dict, proof_result):
+    """把证明公开值投影到证书声明的披露级别。
+
+    旧证书（没有 ``disclosure_level``）**不投影**，逐字节保持原路径 —— 那正是
+    「默认 L0、旧证书不变」的落点。新证书则要求
+    ``project_outcome(proof_outcome) == payload.outcome``：验证方按级别重投影，
+    而不是信任证书载荷里已经投影好的那份。
+    """
+    if proof_result is None:
+        return None
+    decoded = verifier.outcome_without_meta(proof_result)
+    if decoded is None:
+        return None
+    level = disclosure.declared_level(payload)
+    if level is None:
+        return decoded
+    return disclosure.project_outcome(decoded, level)
 
 
 def check_signature(args, env: dict) -> tuple:
@@ -137,9 +156,16 @@ def check_proof(args, payload: dict) -> tuple:
         cards.append(("vkey_hash", v.get("vkey_hash") == b.get("vkey_hash"), "vkey matches"))
         # 快路径过去只比公开值的哈希，证书里的 outcome 完全没被核对过；
         # 现在 pop-verify 会把公开值解回 Outcome，这里逐字段比对。
-        decoded = verifier.outcome_without_meta(v)
-        cards.append(("proof_outcome", decoded is not None and decoded == payload["outcome"],
-                      "decoded public values == certificate outcome"))
+        try:
+            decoded = projected_proof_outcome(payload, v)
+        except disclosure.DisclosureError as exc:
+            decoded = None
+            cards.append(("proof_outcome", False, f"disclosure projection failed: {exc}"))
+        else:
+            cards.append(("proof_outcome",
+                          decoded is not None and decoded == payload["outcome"],
+                          "decoded public values == certificate outcome"
+                          + (" (projected)" if disclosure.declared_level(payload) else "")))
     elif args.proof is not None and args.proof.exists():
         # 无边车 → 用 pop-script 重新验证（core 证明路径）
         out = args.proof.parent / "verify_out.json"
@@ -147,7 +173,10 @@ def check_proof(args, payload: dict) -> tuple:
                        env=dict(os.environ, SP1_PROVER="cpu"), check=True, cwd=str(REPO))
         v = proof_result = json.loads(out.read_text())
         ok_verified = bool(v.get("verified"))
-        ok_outcome = verifier.outcome_without_meta(v) == payload["outcome"]
+        try:
+            ok_outcome = projected_proof_outcome(payload, v) == payload["outcome"]
+        except disclosure.DisclosureError:
+            ok_outcome = False
         ok_vkey = v.get("vkey_hash") == payload["binding"]["vkey_hash"]
         ok_sha = sha256_file(args.proof) == payload["binding"]["proof_sha256"]
         cards.append(("proof_verify", ok_verified, "SP1 proof verified (pop-script)"))
@@ -231,6 +260,33 @@ def check_artifact_claims(args, payload: dict, proof_result) -> list:
                     "宿主判定的证书只能标 unproven（没有电路参与，无 vkey 可指）")
         cards.append(("vkey_label", honest, note))
     return cards
+
+
+def check_disclosure(args, payload: dict, proof_result) -> list:
+    """步骤 2d：披露层级（P1-05）—— 证书说 L0/L1/L2，载荷就必须**真的**是那一档。
+
+    这个字段不存在时（P1-05 之前签发的证书）如实跳过，走原路径 —— 不新增卡片
+    失败，也不假装「按 L0 检查过」。字段存在时：
+
+    1. 级别必须是 ``L0``/``L1``/``L2``，未知级别 **fail closed**；
+    2. 载荷的 ``outcome.violations`` 形状必须与级别匹配
+       （L1 不得残留 ``rule``/``kind``，L2 只能是承诺）；
+    3. 有证明时，``project_outcome(proof_outcome, level)`` 必须**逐字段等于**
+       证书载荷 —— 否则证书可能只投影了一半，或换了级别来掩盖 raw 违规。
+
+    ⚠️ 这是证书层检查。证明公开值里仍有 raw ``rule``/``kind``；本卡只保证
+    「证书载荷按声明的级别披露」，**不**保证电路级隐藏（见 ``docs/blockers/C1.md``）。
+    """
+    if "disclosure_level" not in payload:
+        return [("disclosure_level", True,
+                 "certificate predates the field — L0 behavior")]
+    try:
+        level = disclosure.declared_level(payload)
+        proof_outcome = verifier.outcome_without_meta(proof_result) if proof_result else None
+        ok, detail = disclosure.check_outcome_disclosure(payload, proof_outcome)
+    except disclosure.DisclosureError as exc:
+        return [("disclosure_level", False, f"fail closed: {exc}")]
+    return [("disclosure_level", ok, f"{level}: {detail}")]
 
 
 def check_policy_binding(args, payload: dict, proof_result) -> list:
@@ -583,6 +639,7 @@ def main() -> int:
     cards, proof_result = check_proof(args, payload)
     results += cards
     results += check_artifact_claims(args, payload, proof_result)
+    results += check_disclosure(args, payload, proof_result)
 
     # 3) 策略绑定 / 3b 响应绑定 / 3c+3d 轨迹与末端承诺 / 3e 语义规则
     results += check_policy_binding(args, payload, proof_result)
