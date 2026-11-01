@@ -1,0 +1,88 @@
+{
+  "host": {
+    "hostname": "autodl-container-14574f97ce-6e5bc639",
+    "cpu_model": "Intel(R) Xeon(R) Gold 6459C",
+    "cpu_count": 16,
+    "cpu_count_host": 128,
+    "mem_total_mb": 92160,
+    "mem_total_proc_mb": 772649,
+    "mem_total_cgroup_mb": 92160,
+    "mem_source": "cgroup",
+    "platform": "x86_64"
+  },
+  "axes": {
+    "lengths": [
+      4500
+    ],
+    "rules": [
+      6
+    ],
+    "proof_modes": [
+      "core"
+    ]
+  },
+  "generated_at": "2026-11-01T22:03:21",
+  "provenance": {
+    "task": "X1f",
+    "host": "autodl-container-14574f97ce-6e5bc639",
+    "cpu_count_cgroup": 16,
+    "cpu_count_host": 128,
+    "mem_total_cgroup_mb": 92160,
+    "mem_total_proc_mb": 772649,
+    "binary_sha256": "7f99fdb11a4a859c45598c384db3b98dd50426210adbc14d6b576c4d15dda49f",
+    "policy_vkey": "0x003eb14de80339bddef2b9207ef27469088267888bb9bebb9836b4ee701fd7be",
+    "commit": "2c786096cfdb79b597a0af40f06ba46ecfea4fb6",
+    "binary_build_commit": "e45178b",
+    "post_nfa_fix": true,
+    "concurrency": "isolated: one proof process at a time under flock /tmp/pop-proof.lock",
+    "env": {
+      "SP1_PROVER": "cpu",
+      "GOMAXPROCS": "16",
+      "RAYON_NUM_THREADS": "16",
+      "SP1_WORKER_NUM_CORE_WORKERS": "8",
+      "SP1_WORKER_NUM_SETUP_WORKERS": "8",
+      "SP1_WORKER_NUM_RECURSION_EXECUTOR_WORKERS": "16",
+      "SP1_WORKER_NUM_RECURSION_PROVER_WORKERS": "16"
+    },
+    "work_root": "/root/autodl-tmp/zk-policy-x1f (repo copy) + /root/autodl-tmp/x1f-work (proof artefacts and samples)",
+    "corpus": "demo (166 chars; demo_e2e artifact absent -> 1 segment excluded; source scripts/examples/eu_agent_reply.txt)",
+    "rule_set": "6 rules = 1 length_bound + 3 keyword_block + 2 pattern_block (bench_cycles.make_policy, mode=pike)",
+    "proof_timeout": "outer timeout 900 s",
+    "sibling_points": "scale-6x3000 / scale-6x4000 / scale-6x4500 / scale-6x5000",
+    "pre_run_conditions": "2026-11-01T21:59:55+08:00 snapshot: cgroup memory.current 34467540992 B (34.47 GB), memory.max 96636764160 B (96.64 GB), memory.swap.max 0; memory.stat anon 3268476928, file 30480859136 (30.48 GB page cache), slab 689484216, shmem 869552128; memory.events max 284155 / oom 0 / oom_kill 0; E1 bench_k_entropy.py (Qwen2.5-7B, CUDA) alive, RSS 3367204 KB, GPU 80% / 15205 MiB; HF cache 45 GB; caches not dropped.",
+    "page_cache_confound": "E1 Qwen inference plus the 45 GB HF cache kept ~30 GB of file page cache charged to the same cgroup; caches were deliberately not dropped because that would disturb E1. This point survived at the cgroup limit only because ~5.27 GB of that page cache was reclaimable.",
+    "sampling": {
+      "interval_s": 5,
+      "samples": 39,
+      "samples_with_prover": 35,
+      "window": "2026-11-01T21:59:59..2026-11-01T22:03:14+08:00",
+      "peak_memory_current_bytes": 96636743680,
+      "peak_memory_current_at": "2026-11-01T22:01:26+08:00",
+      "headroom_vs_memory_max_bytes": 20480,
+      "peak_sampled_prover_rss_kb": 63885732,
+      "peak_sampled_prover_rss_at": "2026-11-01T22:01:31+08:00",
+      "peak_cgroup_anon_bytes": 68649811968,
+      "file_cache_bytes_range": [25210351616, 30485618688],
+      "memory_events_before": {"max": 284155, "oom": 0, "oom_kill": 0},
+      "memory_events_after": {"max": 321340, "oom": 0, "oom_kill": 0},
+      "max_event_delta": 37185,
+      "note": "The cgroup sat at memory.max (20,480 B headroom) and reclaimed 5.27 GB of page cache in place of an OOM; memory.events oom/oom_kill stayed 0. Raw 5 s samples retained at /root/autodl-tmp/x1f-work/sample-6x4500.log on the cloud host."
+    }
+  },
+  "rows": [
+    {
+      "length": 4500,
+      "rules": 6,
+      "proof_mode": "core",
+      "trace_sha256": "996ae907924b86b0390043f819f4918ec355cce7307e1cf2e3ea0db0d69cb498",
+      "ok": true,
+      "seconds": 181.66,
+      "proof_bytes": 5946711,
+      "peak_rss_mb": 64224.7,
+      "verified": true,
+      "passed": true,
+      "shards": null,
+      "elapsed_min": 3.36
+    }
+  ]
+}
