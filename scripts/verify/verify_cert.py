@@ -85,23 +85,17 @@ def load_policy(path: Path) -> Policy:
     return Policy.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
-def projected_proof_outcome(payload: dict, proof_result):
-    """把证明公开值投影到证书声明的披露级别。
+def decoded_proof_outcome(payload: dict, proof_result):
+    """解码证明公开值，**不做任何投影**（C2 之后验证方只做恒等比较）。
 
-    旧证书（没有 ``disclosure_level``）**不投影**，逐字节保持原路径 —— 那正是
-    「默认 L0、旧证书不变」的落点。新证书则要求
-    ``project_outcome(proof_outcome) == payload.outcome``：验证方按级别重投影，
-    而不是信任证书载荷里已经投影好的那份。
+    v2 证明的公开值已经由 guest 按披露级别 coarsen；验证方若再投影一次，就等于
+    替出证方补做隐藏 —— 正是电路级 coarsening 要消除的证书层行为。旧 v1 证明
+    （无 schema）也原样返回，是否放行由 :func:`check_disclosure` 的
+    ``--legacy-v1`` 闸门决定。
     """
     if proof_result is None:
         return None
-    decoded = verifier.outcome_without_meta(proof_result)
-    if decoded is None:
-        return None
-    level = disclosure.declared_level(payload)
-    if level is None:
-        return decoded
-    return disclosure.project_outcome(decoded, level)
+    return verifier.outcome_without_meta(proof_result)
 
 
 def check_signature(args, env: dict) -> tuple:
@@ -160,15 +154,14 @@ def check_proof(args, payload: dict) -> tuple:
         # 快路径过去只比公开值的哈希，证书里的 outcome 完全没被核对过；
         # 现在 pop-verify 会把公开值解回 Outcome，这里逐字段比对。
         try:
-            decoded = projected_proof_outcome(payload, v)
+            decoded = decoded_proof_outcome(payload, v)
         except disclosure.DisclosureError as exc:
             decoded = None
-            cards.append(("proof_outcome", False, f"disclosure projection failed: {exc}"))
+            cards.append(("proof_outcome", False, f"public values decode failed: {exc}"))
         else:
             cards.append(("proof_outcome",
                           decoded is not None and decoded == payload["outcome"],
-                          "decoded public values == certificate outcome"
-                          + (" (projected)" if disclosure.declared_level(payload) else "")))
+                          "decoded public values == certificate outcome"))
     elif args.proof is not None and args.proof.exists():
         # 无边车 → 用 pop-script 重新验证（core 证明路径）
         out = args.proof.parent / "verify_out.json"
@@ -177,7 +170,7 @@ def check_proof(args, payload: dict) -> tuple:
         v = proof_result = json.loads(out.read_text())
         ok_verified = bool(v.get("verified"))
         try:
-            ok_outcome = projected_proof_outcome(payload, v) == payload["outcome"]
+            ok_outcome = decoded_proof_outcome(payload, v) == payload["outcome"]
         except disclosure.DisclosureError:
             ok_outcome = False
         ok_vkey = v.get("vkey_hash") == payload["binding"]["vkey_hash"]
@@ -266,30 +259,44 @@ def check_artifact_claims(args, payload: dict, proof_result) -> list:
 
 
 def check_disclosure(args, payload: dict, proof_result) -> list:
-    """步骤 2d：披露层级（P1-05）—— 证书说 L0/L1/L2，载荷就必须**真的**是那一档。
+    """步骤 2d：电路级披露（C2 / pop-pv-v2）—— 证书必须是公开值的逐字段镜像。
 
-    这个字段不存在时（P1-05 之前签发的证书）如实跳过，走原路径 —— 不新增卡片
-    失败，也不假装「按 L0 检查过」。字段存在时：
+    与 P1-05 的证书层检查不同，本卡**不重投影**：
 
-    1. 级别必须是 ``L0``/``L1``/``L2``，未知级别 **fail closed**；
-    2. 载荷的 ``outcome.violations`` 形状必须与级别匹配
-       （L1 不得残留 ``rule``/``kind``，L2 只能是承诺）；
-    3. 有证明时，``project_outcome(proof_outcome, level)`` 必须**逐字段等于**
-       证书载荷 —— 否则证书可能只投影了一半，或换了级别来掩盖 raw 违规。
-
-    ⚠️ 这是证书层检查。证明公开值里仍有 raw ``rule``/``kind``；本卡只保证
-    「证书载荷按声明的级别披露」，**不**保证电路级隐藏（见 ``docs/blockers/C1.md``）。
+    1. ``binding.public_value_schema`` 与公开值里的 schema 必须一致；v2 必须是
+       ``pop-pv-v2``，未知 schema fail closed；
+    2. 证书顶层 ``disclosure_level`` 必须存在，并与公开值里的级别相等；
+    3. 公开值形状必须严格匹配级别（L0 = raw，L1 = 类别桶 + violation_count，
+       L2 = 不透明承诺）；未知/多余键、乱序桶、计数不符一律 FAIL；
+    4. 有证明时，解码后的公开值必须与证书载荷**逐字段相等**（不投影）；
+    5. 旧 v1（无 schema）：没有证明工件的证书按旧路径接受但如实标注；有证明
+       时默认拒绝，只有 ``--legacy-v1`` 且级别为（缺省或）L0 才放行并标
+       ``legacy-v1``。
     """
-    if "disclosure_level" not in payload:
-        return [("disclosure_level", True,
-                 "certificate predates the field — L0 behavior")]
-    try:
-        level = disclosure.declared_level(payload)
+    if "disclosure_level" not in payload and not _claims_v2(payload):
+        # 旧载荷：仍做 L0 形状检查（可证明「没有被篡改成越级声明」）。
         proof_outcome = verifier.outcome_without_meta(proof_result) if proof_result else None
-        ok, detail = disclosure.check_outcome_disclosure(payload, proof_outcome)
+        try:
+            ok, detail = disclosure.check_outcome_disclosure(
+                payload, proof_outcome, allow_legacy_v1=getattr(args, "legacy_v1", False))
+        except disclosure.DisclosureError as exc:
+            return [("disclosure_level", False, f"fail closed: {exc}")]
+        return [("disclosure_level", ok, detail)]
+    try:
+        proof_outcome = verifier.outcome_without_meta(proof_result) if proof_result else None
+        ok, detail = disclosure.check_outcome_disclosure(
+            payload, proof_outcome, allow_legacy_v1=getattr(args, "legacy_v1", False))
     except disclosure.DisclosureError as exc:
         return [("disclosure_level", False, f"fail closed: {exc}")]
-    return [("disclosure_level", ok, f"{level}: {detail}")]
+    return [("disclosure_level", ok, detail)]
+
+
+def _claims_v2(payload: dict) -> bool:
+    """证书是否声称 ``pop-pv-v2``（binding 或 outcome 任一处）。"""
+    binding = payload.get("binding") or {}
+    outcome = payload.get("outcome") or {}
+    return (binding.get("public_value_schema") == disclosure.PUBLIC_VALUE_SCHEMA_V2
+            or outcome.get("public_value_schema") == disclosure.PUBLIC_VALUE_SCHEMA_V2)
 
 
 def check_policy_binding(args, payload: dict, proof_result) -> list:
@@ -661,6 +668,9 @@ def main() -> int:
     ap.add_argument("--semantic-skip-ezkl", action="store_true",
                     help="P2-9：只核对指纹与响应绑定，**不跑 ezkl 验证器**。用于没有 ezkl 的"
                          "环境；此时「证明本身有效」这一条未被核验，结果会如实标注")
+    ap.add_argument("--legacy-v1", action="store_true",
+                    help="C2：显式接受旧 v1 证明公开值（无 pop-pv-v2 schema），"
+                         "仅 L0；结果标 legacy-v1。默认拒绝 v1 证明。")
     args = ap.parse_args()
 
     env = json.loads(args.cert.read_text(encoding="utf-8"))

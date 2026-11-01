@@ -244,23 +244,48 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
     「看起来验过了」而实际没验。``delegated`` 非空而本块缺失/不全时，
     ``verify_cert.py`` 一律判 FAIL（fail closed）。
 
-    ``disclosure_level`` 是 P1-05 的**证书层**披露选择（``L0``/``L1``/``L2``，
-    见 :mod:`policydsl.evidence.disclosure`）。给了它时，本函数会把
-    ``outcome.violations`` 投影到该级别并写进载荷；没给时**不写字段、不改
-    outcome**，旧证书逐字节不变。级别非法、或 ``delegated`` 非空却要求 L1/L2，
-    一律抛 :class:`policydsl.evidence.disclosure.DisclosureError`（fail closed）。
-
-    ⚠️ 这是**证书层**的披露，不是电路级隐藏：证明公开值里仍有 raw
-    ``rule`` / ``kind``，验证方按级别重投影后比对。电路级 coarsening 需要
-    单独的 vkey 重建任务（见 ``docs/blockers/C1.md``）。
+    ``disclosure_level`` 是 C2 / M4-01 的**电路级**披露级别（``L0``/``L1``/``L2``）。
+    与 P1-05 的证书层投影不同，本函数**不再投影**：``outcome`` 必须是电路
+    产出的 ``pop-pv-v2`` 公开值镜像（带 ``public_value_schema`` 与
+    ``disclosure_level``），本函数只做形状校验并原样存进载荷；``binding``
+    补上 ``public_value_schema``，顶层记下电路承诺的级别。给了
+    ``disclosure_level`` 而 outcome 是旧 v1 形状时一律抛
+    :class:`policydsl.evidence.disclosure.DisclosureError`（fail closed）——
+    级别必须由 guest 承诺，不能在出证方这里补做隐藏。没给 ``disclosure_level``
+    且 outcome 没有 schema 时，保持 P1-05 之前的旧载荷形状（v1，逐字节兼容）。
     """
     if proof_mode is None and proof_sha256 is None:
         proof_mode = PROOF_MODE_UNPROVEN      # 没有工件 → 只能自称「未证明」
     level = None
-    if disclosure_level is not None:
-        level = disclosure.normalize_level(disclosure_level)
-        # 深拷贝 + 投影；不改调用方的 outcome 字典。
-        outcome = disclosure.project_outcome(outcome, level)
+    public_value_schema = None
+    outcome_schema = (outcome.get("public_value_schema")
+                      if isinstance(outcome, dict) else None)
+    if outcome_schema == disclosure.PUBLIC_VALUE_SCHEMA_V2:
+        # 电路级 v2：outcome **就是**公开值的镜像，不再投影。调用方若另外
+        # 声明了级别，必须与电路承诺的级别相等；形状不符一律 fail closed。
+        outcome_level = disclosure.normalize_level(outcome.get("disclosure_level"))
+        if disclosure_level is not None:
+            asked = disclosure.normalize_level(disclosure_level)
+            if asked != outcome_level:
+                raise disclosure.DisclosureError(
+                    f"requested {asked} but the public values commit {outcome_level}; "
+                    "the certificate cannot change the circuit's disclosure level")
+        ok, why = disclosure.validate_outcome_v2(outcome, outcome_level)
+        if not ok:
+            raise disclosure.DisclosureError(f"pop-pv-v2 outcome is malformed: {why}")
+        level = outcome_level
+        public_value_schema = disclosure.PUBLIC_VALUE_SCHEMA_V2
+    elif outcome_schema not in (None, ""):
+        raise disclosure.DisclosureError(
+            f"unknown public_value_schema {outcome_schema!r} (expected "
+            f"{disclosure.PUBLIC_VALUE_SCHEMA_V2!r})")
+    elif disclosure_level is not None:
+        # 旧 v1 公开值没有 ``shape``/schema，无法事后升级成电路级声明。
+        # 与 P1-05 的证书层投影不同：v2 的级别必须由 guest 承诺，不能在
+        # 验证方或出证方这里「补做隐藏」。
+        raise disclosure.DisclosureError(
+            "cannot issue a disclosure-level certificate from v1 public values; "
+            "re-prove with a pop-pv-v2 binary (the level must be committed by the circuit)")
     payload = {
         "cert_version": CERT_VERSION,
         "policy": {"id": policy_id, "version": policy_version},
@@ -273,6 +298,8 @@ def build_payload(policy_id: str, policy_version: str, spec: Dict, mode: str,
         "ai_act": ai_act_claims(mode, challenge_bound=challenge is not None),
         "ts": ts or utc_now(),
     }
+    if public_value_schema is not None:
+        payload["binding"]["public_value_schema"] = public_value_schema
     if challenge is not None:
         payload["challenge"] = challenge
     if trace_seal is not None:

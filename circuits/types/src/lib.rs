@@ -408,6 +408,267 @@ pub const SEMANTIC_AND: &str = "and";
 /// 换个用途（如将来绑定工具轨迹）就用另一段前缀，两个域的哈希永不碰撞。
 pub const BIND_DOMAIN: &[u8] = b"pop-bind-v1";
 
+// --------------------------------------------------------------------------- //
+// 电路级披露 coarsening（C2 / M4-01 MVP）
+//
+// 证明公开值**本身**只含声明级别允许的字段；证书层不再重投影。级别由
+// `ProofRequest` / `PrivateRequest` 的私有输入给出，guest 在 commit 之前按它
+// 生成违规形状，并把 `public_value_schema` 与 `disclosure_level` 一起写进
+// 公开值。设计见 docs/design-disclosure-levels.md；本实现的范围与未做项见
+// docs/experiments/circuit-disclosure.md 与 docs/blockers/C2.md。
+// --------------------------------------------------------------------------- //
+
+/// 公开值契约版本（v2）。旧证明没有这个字段 → 验证方按 v1 处理（默认拒绝）。
+pub const PUBLIC_VALUE_SCHEMA_V2: &str = "pop-pv-v2";
+
+/// 披露级别。serde 写成 `"L0"`/`"L1"`/`"L2"`，与证书字段同形。
+///
+/// `#[serde(default)]` 让旧 vectors（不带 `disclosure_level`）继续可用：缺省 L0。
+/// 未知枚举值在反序列化阶段失败（客户端就产不出证明），即 fail closed。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum DisclosureLevel {
+    #[default]
+    L0,
+    L1,
+    L2,
+}
+
+/// 违规的粗粒度类别。**固定枚举 + 编译期穷尽 match**：新增 kind 忘了登记
+/// 会在 `cargo build` 失败，而不是静默落到 `other`。
+///
+/// 判别值（`id()`）决定 L1 桶的输出顺序，必须与 Python
+/// `disclosure.CATEGORY_IDS` 逐项一致。
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RuleCategory {
+    Content,
+    Length,
+    Format,
+    ToolArguments,
+    Budget,
+    TraceIntegrity,
+    Semantic,
+    Other,
+}
+
+impl RuleCategory {
+    /// 稳定的类别 id（L1 桶按它升序）。**不要重排枚举**：顺序就是契约。
+    pub fn id(self) -> u8 {
+        match self {
+            RuleCategory::Content => 0,
+            RuleCategory::Length => 1,
+            RuleCategory::Format => 2,
+            RuleCategory::ToolArguments => 3,
+            RuleCategory::Budget => 4,
+            RuleCategory::TraceIntegrity => 5,
+            RuleCategory::Semantic => 6,
+            RuleCategory::Other => 7,
+        }
+    }
+}
+
+/// 电路内的 `kind` → 类别映射（穷尽 match）。
+///
+/// `semantic_bound` 只用于 delegated 桶；它不会产生 violation（见 `evaluate`），
+/// 登记在这里是为了让类别表完整、与 Python 侧同名同义。
+pub fn category_for_kind(kind: &str) -> RuleCategory {
+    match kind {
+        "keyword_block" | "normalized_keyword_block" | "pattern_block" => RuleCategory::Content,
+        "length_bound" => RuleCategory::Length,
+        "format_check" => RuleCategory::Format,
+        "tool_arg_guard" | "retrieval_guard" => RuleCategory::ToolArguments,
+        "budget_bound" => RuleCategory::Budget,
+        "trace_unbound" => RuleCategory::TraceIntegrity,
+        "semantic_bound" => RuleCategory::Semantic,
+        _ => RuleCategory::Other,
+    }
+}
+
+/// 披露域与类型标签（与 `policydsl.evidence.disclosure` 逐字节一致）。
+pub const DISCLOSURE_DOMAIN: &[u8] = b"pop-disclose-v1";
+pub const TAG_ITEM: u8 = 0x01;
+pub const TAG_BUCKET: u8 = 0x02;
+pub const TAG_NAMES: u8 = 0x03;
+pub const TAG_RULE_NAME: u8 = 0x04;
+
+/// L2 / L0 的逐条证据承诺：
+/// `H("pop-disclose-v1" ‖ 0x01 ‖ RB ‖ u32be(len(E)) ‖ E)`。
+///
+/// `RB` 是公开值里 `response_binding` 的 64 个 ASCII 字节，作盐用：同一段证据
+/// 在不同响应下得到不同承诺，避免跨证书链接。
+pub fn item_commitment_v2(evidence: &str, response_binding: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(DISCLOSURE_DOMAIN);
+    h.update([TAG_ITEM]);
+    h.update(response_binding.as_bytes());
+    h.update((evidence.len() as u32).to_be_bytes());
+    h.update(evidence.as_bytes());
+    hex(&h.finalize())
+}
+
+/// L1 的类别桶承诺：
+/// `H("pop-disclose-v1" ‖ 0x02 ‖ RB ‖ u8(category_id) ‖ u32be(n) ‖
+///     concat(sorted_raw32(item(E_i))))`。
+pub fn bucket_commitment_v2(
+    category: RuleCategory,
+    items: &[String],
+    response_binding: &str,
+) -> String {
+    let mut digests: Vec<[u8; 32]> = items.iter().map(|c| hex32(c)).collect();
+    digests.sort();
+    let mut h = Sha256::new();
+    h.update(DISCLOSURE_DOMAIN);
+    h.update([TAG_BUCKET]);
+    h.update(response_binding.as_bytes());
+    h.update([category.id()]);
+    h.update((items.len() as u32).to_be_bytes());
+    for d in digests {
+        h.update(d);
+    }
+    hex(&h.finalize())
+}
+
+/// delegated 桶的规则名承诺（MVP 未在电路内启用，供 Python 侧/后续实现对齐）：
+/// `H("pop-disclose-v1" ‖ 0x04 ‖ RB ‖ u32be(len(R)) ‖ R)`。
+pub fn rule_name_commitment_v2(rule: &str, response_binding: &str) -> String {
+    let mut h = Sha256::new();
+    h.update(DISCLOSURE_DOMAIN);
+    h.update([TAG_RULE_NAME]);
+    h.update(response_binding.as_bytes());
+    h.update((rule.len() as u32).to_be_bytes());
+    h.update(rule.as_bytes());
+    hex(&h.finalize())
+}
+
+/// delegated 桶的名字集合承诺（MVP 未在电路内启用）：
+/// `H("pop-disclose-v1" ‖ 0x03 ‖ RB ‖ u32be(|S|) ‖ concat(sorted_raw32(rule_name(R))))`。
+pub fn names_commitment_v2(rules: &[String], response_binding: &str) -> String {
+    let mut digests: Vec<[u8; 32]> = rules
+        .iter()
+        .map(|r| hex32(&rule_name_commitment_v2(r, response_binding)))
+        .collect();
+    digests.sort();
+    let mut h = Sha256::new();
+    h.update(DISCLOSURE_DOMAIN);
+    h.update([TAG_NAMES]);
+    h.update(response_binding.as_bytes());
+    h.update((rules.len() as u32).to_be_bytes());
+    for d in digests {
+        h.update(d);
+    }
+    hex(&h.finalize())
+}
+
+/// 一条**已按披露级别 coarsen** 的违规。`shape` 标签让每条违规自描述：
+/// 验证方可以「按形状查级别、按级别查形状」双向核对，未知 shape fail closed。
+///
+/// * `shape = "raw"` —— L0：`rule` + `kind` + 逐条证据承诺（明文证据**不进
+///   公开值**）；
+/// * `shape = "category"` —— L1：`category` + `count` + **桶承诺**；
+/// * `shape = "opaque"` —— L2：仅逐条承诺。
+///
+/// **为什么是 struct 而不是 internally-tagged enum**：SP1 的公开值用 bincode
+/// 编解码，而 bincode 不支持 `deserialize_any`（internally-tagged / untagged
+/// enum 都依赖它）。用固定字段的 struct，bincode 可正常解码；JSON 侧由
+/// [`DisclosedViolation::to_json_value`] 手工摊平成 `pop-pv-v2` 的精确形状
+/// （只出现该级别允许的键）。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DisclosedViolation {
+    /// `"raw"` | `"category"` | `"opaque"`。
+    pub shape: String,
+    /// L0 专用：规则名。
+    #[serde(default)]
+    pub rule: Option<String>,
+    /// L0 专用：规则类型。
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// L1 专用：类别。
+    #[serde(default)]
+    pub category: Option<RuleCategory>,
+    /// L1 专用：该类别计数。
+    #[serde(default)]
+    pub count: Option<u32>,
+    /// L0/L1/L2 都有：证据承诺（L1 是桶承诺）。
+    pub evidence_commitment: String,
+}
+
+impl DisclosedViolation {
+    pub fn raw(rule: String, kind: String, evidence_commitment: String) -> Self {
+        Self {
+            shape: String::from("raw"),
+            rule: Some(rule),
+            kind: Some(kind),
+            category: None,
+            count: None,
+            evidence_commitment,
+        }
+    }
+
+    pub fn category_shape(
+        category: RuleCategory,
+        count: u32,
+        evidence_commitment: String,
+    ) -> Self {
+        Self {
+            shape: String::from("category"),
+            rule: None,
+            kind: None,
+            category: Some(category),
+            count: Some(count),
+            evidence_commitment,
+        }
+    }
+
+    pub fn opaque(evidence_commitment: String) -> Self {
+        Self {
+            shape: String::from("opaque"),
+            rule: None,
+            kind: None,
+            category: None,
+            count: None,
+            evidence_commitment,
+        }
+    }
+
+    /// 摊平成 `pop-pv-v2` 的 JSON 形状：只输出该 `shape` 允许的键。
+    pub fn to_json_value(&self) -> serde_json::Value {
+        match self.shape.as_str() {
+            "raw" => serde_json::json!({
+                "shape": "raw",
+                "rule": self.rule.clone().unwrap_or_default(),
+                "kind": self.kind.clone().unwrap_or_default(),
+                "evidence_commitment": self.evidence_commitment,
+            }),
+            "category" => serde_json::json!({
+                "shape": "category",
+                "category": self.category,
+                "count": self.count,
+                "evidence_commitment": self.evidence_commitment,
+            }),
+            "opaque" => serde_json::json!({
+                "shape": "opaque",
+                "evidence_commitment": self.evidence_commitment,
+            }),
+            other => panic!("unknown disclosed violation shape {other:?}"),
+        }
+    }
+}
+
+/// L1/L2 下 delegated 的类别级表示（**MVP 未启用**：delegated 非空时 L1/L2
+/// fail closed，见 `evaluate`）。类型先落地，避免后续加字段时再改 vkey 契约。
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DelegatedBucket {
+    pub category: RuleCategory,
+    pub system: String,
+    pub model_vkey: String,
+    pub onnx_sha256: String,
+    pub threshold_bp: u32,
+    pub direction: BoundDirection,
+    pub count: u32,
+    pub names_commitment: String,
+}
+
 /// prover 的输入：agent 响应、规范策略字节、以及**工具回执链**
 /// （供 tool_arg_guard / budget_bound 使用）。
 ///
@@ -430,6 +691,9 @@ pub struct ProofRequest {
     /// 工具回执链（P1-5）。空链 = 一次工具都没调用，合法。
     #[serde(default)]
     pub receipts: Vec<ToolReceipt>,
+    /// 披露级别（C2）。旧 vectors 缺省 L0；未知值反序列化失败（fail closed）。
+    #[serde(default)]
+    pub disclosure_level: DisclosureLevel,
 }
 
 /// 一条被违反的规则（仅在未通过时非空）。
@@ -465,7 +729,17 @@ pub struct ProofOutput {
     /// 「证明绑定了一条自洽的链」，而不是「这条链里的签名已被电路验证过」。
     pub trace_root: String,
     pub passed: bool,
-    pub violations: Vec<Violation>,
+    /// 公开值契约版本（v2）。旧证明没有这个字段 → 验证方按 v1 处理并默认拒绝。
+    pub public_value_schema: String,
+    /// 电路承诺的披露级别（证书顶层声明必须与它相等）。
+    pub disclosure_level: DisclosureLevel,
+    /// L1 的总违规数（各桶 `count` 之和）；L0/L2 在 **JSON** 里不出现这个键。
+    ///
+    /// 注意：这里**不能**用 `skip_serializing_if` —— 公开值用 bincode 编解码，
+    /// 跳过字段会让解码器错位。JSON 侧的省略由 `outcome_value` 手工处理。
+    #[serde(default)]
+    pub violation_count: Option<u32>,
+    pub violations: Vec<DisclosedViolation>,
     /// **本次判定中被委托出去的约束**（P2-9 的 `semantic_bound`），按约束在策略
     /// 里出现的顺序排列。空表示「这份证明自己就够了」。
     ///
@@ -479,6 +753,10 @@ pub struct ProofOutput {
     /// 放在公开值里，验证方才能**独立**看出「这份证明需要陪伴」，而不必信任
     /// 出证方的转述。见 [`DelegatedConstraint`]。
     pub delegated: Vec<DelegatedConstraint>,
+    /// L1/L2 下 delegated 的类别级表示。**MVP 恒为空**：delegated 非空时
+    /// L1/L2 直接 fail closed（见 `evaluate`）。字段保留是为了形状稳定。
+    #[serde(default)]
+    pub delegated_buckets: Vec<DelegatedBucket>,
 }
 
 // --------------------------------------------------------------------------- //
@@ -759,7 +1037,47 @@ pub fn evaluate(
     response: &str,
     nonce: &[u8],
     receipts: &[ToolReceipt],
+    level: DisclosureLevel,
 ) -> ProofOutput {
+    let (rb, tr, violations, delegated) = judge(constraints, response, nonce, receipts);
+
+    // A9 §6.4 / C2 MVP：delegated 的类别级桶 schema **尚未实现**。L1/L2 下
+    // delegated.name 就是规则名；与其静默泄露，不如在 circuit 内 fail closed
+    // （产不出证明）。L0 保留名字（明确放弃名字隐藏）。
+    if level != DisclosureLevel::L0 && !delegated.is_empty() {
+        panic!(
+            "{:?}: delegated constraints are non-empty; category-level delegated buckets \
+             are not implemented in this v2 MVP (fail closed). Use L0 for policies with \
+             semantic_bound rules.",
+            level
+        );
+    }
+
+    let (violations, violation_count) = disclose_violations(&violations, level, &rb);
+    ProofOutput {
+        policy_hash: String::from(policy_hash),
+        response_binding: rb,
+        trace_root: tr,
+        passed: violations.is_empty(),
+        public_value_schema: String::from(PUBLIC_VALUE_SCHEMA_V2),
+        disclosure_level: level,
+        violation_count,
+        violations,
+        delegated,
+        delegated_buckets: Vec::new(),
+    }
+}
+
+/// 判定（未披露）的原始结果：`(response_binding, trace_root, violations, delegated)`。
+///
+/// 公开模式与私有模式共用这一份判定；披露 coarsening 在 [`evaluate`] /
+/// [`evaluate_private`] 里对**同一份**原始违规做，保证两种模式语义一致。
+fn judge(
+    constraints: &[SpecConstraint],
+    response: &str,
+    nonce: &[u8],
+    receipts: &[ToolReceipt],
+) -> (String, String, Vec<Violation>, Vec<DelegatedConstraint>) {
     let mut violations: Vec<Violation> = Vec::new();
     // 被委托给外部证明系统的约束（P2-9）。**只登记、不判定** —— 判不了，
     // 见 `DelegatedConstraint`。登记它的原因见 `SpecConstraint::SemanticBound`。
@@ -965,13 +1283,73 @@ pub fn evaluate(
         }
     }
 
-    ProofOutput {
-        policy_hash: String::from(policy_hash),
-        response_binding: response_binding(nonce, response),
-        trace_root: trace_root(receipts),
-        passed: violations.is_empty(),
+    (
+        response_binding(nonce, response),
+        trace_root(receipts),
         violations,
         delegated,
+    )
+}
+
+/// 把原始违规按级别 coarsen 成公开值形状，并返回 L1 的 `violation_count`。
+///
+/// 顺序规则（A9 §5.3）：
+/// * L0：保持判定顺序（已泄露规则顺序，不再额外承诺排序）；
+/// * L1：按 `RuleCategory::id()` 升序，每类一个桶；
+/// * L2：按承诺（hex = 原始 32 字节序）非降序，允许相等。
+fn disclose_violations(
+    violations: &[Violation],
+    level: DisclosureLevel,
+    rb: &str,
+) -> (Vec<DisclosedViolation>, Option<u32>) {
+    match level {
+        DisclosureLevel::L0 => (
+            violations
+                .iter()
+                .map(|v| DisclosedViolation::raw(
+                    v.rule.clone(),
+                    v.kind.clone(),
+                    item_commitment_v2(&v.evidence, rb),
+                ))
+                .collect(),
+            None,
+        ),
+        DisclosureLevel::L1 => {
+            // BTreeMap 的键序就是 `RuleCategory` 的判别值顺序（derive Ord）。
+            let mut buckets: BTreeMap<RuleCategory, Vec<String>> = BTreeMap::new();
+            for v in violations {
+                buckets
+                    .entry(category_for_kind(&v.kind))
+                    .or_default()
+                    .push(item_commitment_v2(&v.evidence, rb));
+            }
+            let mut out = Vec::with_capacity(buckets.len());
+            let mut total: u32 = 0;
+            for (category, items) in buckets {
+                let n = items.len() as u32;
+                total += n;
+                out.push(DisclosedViolation::category_shape(
+                    category,
+                    n,
+                    bucket_commitment_v2(category, &items, rb),
+                ));
+            }
+            (out, Some(total))
+        }
+        DisclosureLevel::L2 => {
+            let mut commitments: Vec<String> = violations
+                .iter()
+                .map(|v| item_commitment_v2(&v.evidence, rb))
+                .collect();
+            commitments.sort();
+            (
+                commitments
+                    .into_iter()
+                    .map(DisclosedViolation::opaque)
+                    .collect(),
+                None,
+            )
+        }
     }
 }
 
@@ -1065,6 +1443,9 @@ pub struct PrivateRequest {
     /// 工具回执链（与 `ProofRequest::receipts` 同义）。
     #[serde(default)]
     pub receipts: Vec<ToolReceipt>,
+    /// 披露级别（C2）。与公开模式同一套级别与公开值 schema。
+    #[serde(default)]
+    pub disclosure_level: DisclosureLevel,
 }
 
 /// 私有模式公开输出：不含响应明文，只有其承诺与逐违规的证据承诺
@@ -1083,8 +1464,19 @@ pub struct PrivateOutput {
     /// 本身不进公开值，验证方拿到的是这一个摘要。
     pub trace_root: String,
     pub passed: bool,
-    pub violations: Vec<PrivateViolation>,
+    /// 公开值契约版本（v2）。
+    pub public_value_schema: String,
+    /// 电路承诺的披露级别。
+    pub disclosure_level: DisclosureLevel,
+    /// L1 的总违规数；L0/L2 在 JSON 里不出现（bincode 字段必须保留，理由见
+    /// `ProofOutput::violation_count`）。
+    #[serde(default)]
+    pub violation_count: Option<u32>,
+    pub violations: Vec<DisclosedViolation>,
     pub redaction: Option<RedactionProof>,
+    /// 私有模式下恒为空（语义规则与私有模式不相容）；字段保留以保持形状一致。
+    #[serde(default)]
+    pub delegated_buckets: Vec<DelegatedBucket>,
 }
 
 /// 程序调度的顶层任务。
@@ -1141,31 +1533,58 @@ pub const DOMAIN_INFER: &str = "infer";
 /// `mode` 则如实保留（它由 `Outcome` 的变体决定，是承诺语义的一部分）。
 pub fn outcome_value(out: &Outcome) -> serde_json::Value {
     match out {
-        Outcome::Public(o) => serde_json::json!({
-            "mode": "public",
-            "policy_hash": o.policy_hash,
-            "response_binding": o.response_binding,
-            "trace_root": o.trace_root,
-            "passed": o.passed,
-            "violations": o.violations,
-            "delegated": o.delegated,
-        }),
-        Outcome::Private(o) => serde_json::json!({
-            "mode": "private",
-            "policy_hash": o.policy_hash,
-            "response_binding": o.response_binding,
-            "trace_root": o.trace_root,
-            "passed": o.passed,
-            "response_commitment": o.response_commitment,
-            "violations": o.violations,
-            "redaction": o.redaction,
-            // 私密模式下**恒为空**：语义规则需要响应本身进 ezkl 的公开实例，
-            // 而私密模式的前提正是「响应不进公开值」。二者不相容，电路在
-            // `evaluate_private` 入口直接拒绝（见那里的说明），所以这里不可能
-            // 出现非空值 —— 保留字段是为了两种模式**形状一致**，让验证方的
-            // 逐字段比对不必区分模式。
-            "delegated": Vec::<DelegatedConstraint>::new(),
-        }),
+        Outcome::Public(o) => {
+            let mut v = serde_json::json!({
+                "mode": "public",
+                "policy_hash": o.policy_hash,
+                "response_binding": o.response_binding,
+                "trace_root": o.trace_root,
+                "passed": o.passed,
+                "public_value_schema": o.public_value_schema,
+                "disclosure_level": o.disclosure_level,
+                "violations": o.violations.iter()
+                    .map(|v| v.to_json_value())
+                    .collect::<Vec<_>>(),
+                "delegated": o.delegated,
+                "delegated_buckets": o.delegated_buckets,
+            });
+            // L1 才有 `violation_count`；L0/L2 不出现这个键（而不是 null）。
+            if let Some(n) = o.violation_count {
+                v.as_object_mut()
+                    .expect("outcome_value always builds an object")
+                    .insert(String::from("violation_count"), serde_json::json!(n));
+            }
+            v
+        }
+        Outcome::Private(o) => {
+            let mut v = serde_json::json!({
+                "mode": "private",
+                "policy_hash": o.policy_hash,
+                "response_binding": o.response_binding,
+                "trace_root": o.trace_root,
+                "passed": o.passed,
+                "response_commitment": o.response_commitment,
+                "public_value_schema": o.public_value_schema,
+                "disclosure_level": o.disclosure_level,
+                "violations": o.violations.iter()
+                    .map(|v| v.to_json_value())
+                    .collect::<Vec<_>>(),
+                "redaction": o.redaction,
+                // 私密模式下**恒为空**：语义规则需要响应本身进 ezkl 的公开实例，
+                // 而私密模式的前提正是「响应不进公开值」。二者不相容，电路在
+                // `evaluate_private` 入口直接拒绝（见那里的说明），所以这里不可能
+                // 出现非空值 —— 保留字段是为了两种模式**形状一致**，让验证方的
+                // 逐字段比对不必区分模式。
+                "delegated": Vec::<DelegatedConstraint>::new(),
+                "delegated_buckets": Vec::<DelegatedBucket>::new(),
+            });
+            if let Some(n) = o.violation_count {
+                v.as_object_mut()
+                    .expect("outcome_value always builds an object")
+                    .insert(String::from("violation_count"), serde_json::json!(n));
+            }
+            v
+        }
         Outcome::Infer(o) => serde_json::json!({
             "mode": "infer",
             "domain": INFER_DOMAIN_STR,
@@ -1300,17 +1719,20 @@ pub fn evaluate_private(req: &PrivateRequest, policy_hash: &str,
         );
     }
 
-    let public = evaluate(policy_hash, constraints, &req.response, &req.nonce,
-                          &req.receipts);
-    let violations = public
-        .violations
-        .iter()
-        .map(|v| PrivateViolation {
-            rule: v.rule.clone(),
-            kind: v.kind.clone(),
-            evidence_commitment: sha256_hex(&v.evidence),
-        })
-        .collect();
+    let (rb, tr, raw_violations, delegated) =
+        judge(constraints, &req.response, &req.nonce, &req.receipts);
+    // 与公开模式同一道 fail-closed：语义规则在入口已 panic，这里是兜底
+    // （未来若有别的东西往 delegated 里写，L1/L2 也不能静默带出规则名）。
+    if req.disclosure_level != DisclosureLevel::L0 && !delegated.is_empty() {
+        panic!(
+            "{:?}: delegated constraints are non-empty in private mode; \
+             category-level delegated buckets are not implemented (fail closed).",
+            req.disclosure_level
+        );
+    }
+    let passed = raw_violations.is_empty();
+    let (violations, violation_count) =
+        disclose_violations(&raw_violations, req.disclosure_level, &rb);
     let redaction = req.redacted.as_ref().map(|red| {
         let chars: Vec<char> = req.response.chars().collect();
         let covered = spans_valid(constraints, &chars, &req.spans)
@@ -1323,13 +1745,17 @@ pub fn evaluate_private(req: &PrivateRequest, policy_hash: &str,
         }
     });
     PrivateOutput {
-        policy_hash: public.policy_hash.clone(),
-        response_binding: public.response_binding.clone(),
+        policy_hash: String::from(policy_hash),
+        response_binding: rb,
         response_commitment: sha256_hex(&req.response),
-        trace_root: public.trace_root.clone(),
-        passed: public.passed,
+        trace_root: tr,
+        passed,
+        public_value_schema: String::from(PUBLIC_VALUE_SCHEMA_V2),
+        disclosure_level: req.disclosure_level,
+        violation_count,
         violations,
         redaction,
+        delegated_buckets: Vec::new(),
     }
 }
 
@@ -1791,7 +2217,7 @@ pub fn run_job(job: &Job) -> Outcome {
         Job::Public(r) => {
             let (hash, spec) = parse_spec(&r.spec_canonical);
             Outcome::Public(evaluate(&hash, &spec.constraints, &r.response, &r.nonce,
-                                     &r.receipts))
+                                     &r.receipts, r.disclosure_level))
         }
         Job::Private(r) => {
             let (hash, spec) = parse_spec(&r.spec_canonical);
@@ -1870,6 +2296,250 @@ mod nfa_contract_tests {
             for text in ["", "a", "abc", "0"] {
                 assert_eq!(nfa_match(&spec, text), nfa_match_naive(&spec, text),
                            "pike/naive disagree on {:?}", text);
+            }
+        }
+    }
+}
+
+// --------------------------------------------------------------------------- //
+// C2：披露 coarsening 的固定向量（与 Python `tests/test_disclosure_levels.py`
+// 读同一份 `tests/vectors/disclosure_v2.json`，逐字节对拍）。
+//
+// 这些测试只在宿主编译（`cargo test -p pop-types`），不进 guest ELF / vkey。
+// --------------------------------------------------------------------------- //
+
+#[cfg(test)]
+mod disclosure_contract_tests {
+    use super::*;
+    use alloc::string::ToString;
+
+    fn fixture() -> serde_json::Value {
+        serde_json::from_str(include_str!("../../../tests/vectors/disclosure_v2.json"))
+            .expect("disclosure_v2.json must be valid JSON")
+    }
+
+    fn rb() -> String {
+        fixture()["response_binding"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn item_commitments_match_python_golden() {
+        let f = fixture();
+        for row in f["items"].as_array().unwrap() {
+            let evidence = row["evidence"].as_str().unwrap();
+            let want = row["commitment"].as_str().unwrap();
+            assert_eq!(item_commitment_v2(evidence, &rb()), want, "evidence={evidence}");
+        }
+    }
+
+    #[test]
+    fn bucket_commitments_match_python_golden() {
+        let f = fixture();
+        for row in f["buckets"].as_array().unwrap() {
+            let category = match row["category_id"].as_u64().unwrap() {
+                0 => RuleCategory::Content,
+                1 => RuleCategory::Length,
+                5 => RuleCategory::TraceIntegrity,
+                other => panic!("unexpected category id {other}"),
+            };
+            assert_eq!(category.id(), row["category_id"].as_u64().unwrap() as u8);
+            let evidence: Vec<String> = row["evidence"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect();
+            let items: Vec<String> = evidence
+                .iter()
+                .map(|e| item_commitment_v2(e, &rb()))
+                .collect();
+            assert_eq!(
+                bucket_commitment_v2(category, &items, &rb()),
+                row["commitment"].as_str().unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn delegated_commitments_match_python_golden() {
+        let f = fixture();
+        for row in f["rule_names"].as_array().unwrap() {
+            assert_eq!(
+                rule_name_commitment_v2(row["rule"].as_str().unwrap(), &rb()),
+                row["commitment"].as_str().unwrap()
+            );
+        }
+        let names = &f["names"];
+        let rules: Vec<String> = names["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_string())
+            .collect();
+        assert_eq!(
+            names_commitment_v2(&rules, &rb()),
+            names["commitment"].as_str().unwrap()
+        );
+    }
+
+    #[test]
+    fn category_table_is_unchanged() {
+        assert_eq!(category_for_kind("keyword_block"), RuleCategory::Content);
+        assert_eq!(category_for_kind("normalized_keyword_block"), RuleCategory::Content);
+        assert_eq!(category_for_kind("pattern_block"), RuleCategory::Content);
+        assert_eq!(category_for_kind("length_bound"), RuleCategory::Length);
+        assert_eq!(category_for_kind("format_check"), RuleCategory::Format);
+        assert_eq!(category_for_kind("tool_arg_guard"), RuleCategory::ToolArguments);
+        assert_eq!(category_for_kind("retrieval_guard"), RuleCategory::ToolArguments);
+        assert_eq!(category_for_kind("budget_bound"), RuleCategory::Budget);
+        assert_eq!(category_for_kind("trace_unbound"), RuleCategory::TraceIntegrity);
+        assert_eq!(category_for_kind("semantic_bound"), RuleCategory::Semantic);
+        assert_eq!(category_for_kind("future_kind"), RuleCategory::Other);
+    }
+
+    fn sample_constraints() -> Vec<SpecConstraint> {
+        vec![
+            SpecConstraint::KeywordBlock {
+                name: String::from("no-secret"),
+                keywords: vec![String::from("secret")],
+            },
+            SpecConstraint::LengthBound {
+                name: String::from("bounded"),
+                min: 1,
+                max: 10,
+            },
+        ]
+    }
+
+    #[test]
+    fn l0_commitments_replace_plaintext_evidence() {
+        let out = evaluate("hash", &sample_constraints(), "secret and a long tail",
+                           b"", &[], DisclosureLevel::L0);
+        assert_eq!(out.public_value_schema, PUBLIC_VALUE_SCHEMA_V2);
+        assert_eq!(out.disclosure_level, DisclosureLevel::L0);
+        assert_eq!(out.violation_count, None);
+        assert_eq!(out.violations.len(), 2);
+        let json = serde_json::to_string(
+            &outcome_value(&Outcome::Public(out.clone()))).unwrap();
+        assert!(!json.contains("\"evidence\""), "plaintext evidence leaked: {json}");
+        for v in &out.violations {
+            assert_eq!(v.shape, "raw");
+            assert!(!v.rule.as_deref().unwrap_or("").is_empty());
+            assert!(!v.kind.as_deref().unwrap_or("").is_empty());
+            assert_eq!(v.evidence_commitment.len(), 64);
+            assert!(v.category.is_none() && v.count.is_none());
+        }
+    }
+
+    #[test]
+    fn l1_buckets_are_ordered_and_counted() {
+        let out = evaluate("hash", &sample_constraints(), "secret and a long tail",
+                           b"", &[], DisclosureLevel::L1);
+        assert_eq!(out.disclosure_level, DisclosureLevel::L1);
+        assert_eq!(out.violation_count, Some(2));
+        assert_eq!(out.violations.len(), 2);
+        let cats: Vec<RuleCategory> = out
+            .violations
+            .iter()
+            .map(|v| {
+                assert_eq!(v.shape, "category");
+                assert_eq!(v.count, Some(1));
+                assert!(v.rule.is_none() && v.kind.is_none());
+                v.category.expect("L1 bucket lacks a category")
+            })
+            .collect();
+        assert_eq!(cats, vec![RuleCategory::Content, RuleCategory::Length]);
+        let json = serde_json::to_string(
+            &outcome_value(&Outcome::Public(out.clone()))).unwrap();
+        assert!(!json.contains("\"rule\"") && !json.contains("\"kind\""));
+    }
+
+    #[test]
+    fn l2_is_opaque_and_sorted() {
+        let out = evaluate("hash", &sample_constraints(), "secret and a long tail",
+                           b"", &[], DisclosureLevel::L2);
+        assert_eq!(out.disclosure_level, DisclosureLevel::L2);
+        assert_eq!(out.violation_count, None);
+        let commits: Vec<String> = out
+            .violations
+            .iter()
+            .map(|v| {
+                assert_eq!(v.shape, "opaque");
+                assert!(v.rule.is_none() && v.kind.is_none()
+                        && v.category.is_none() && v.count.is_none());
+                v.evidence_commitment.clone()
+            })
+            .collect();
+        let mut sorted = commits.clone();
+        sorted.sort();
+        assert_eq!(commits, sorted);
+    }
+
+    #[test]
+    #[should_panic(expected = "delegated constraints are non-empty")]
+    fn l1_delegated_fails_closed() {
+        let constraints = vec![SpecConstraint::SemanticBound {
+            name: String::from("sem"),
+            model_vkey: String::from("vk"),
+            onnx_sha256: String::from("onnx"),
+            threshold_bp: 7000,
+            direction: BoundDirection::Le,
+        }];
+        let _ = evaluate("hash", &constraints, "anything", b"", &[], DisclosureLevel::L1);
+    }
+
+    #[test]
+    fn l0_delegated_keeps_names() {
+        let constraints = vec![SpecConstraint::SemanticBound {
+            name: String::from("sem"),
+            model_vkey: String::from("vk"),
+            onnx_sha256: String::from("onnx"),
+            threshold_bp: 7000,
+            direction: BoundDirection::Le,
+        }];
+        let out = evaluate("hash", &constraints, "anything", b"", &[], DisclosureLevel::L0);
+        assert_eq!(out.delegated.len(), 1);
+        assert_eq!(out.delegated[0].name, "sem");
+        assert!(out.delegated_buckets.is_empty());
+    }
+
+    #[test]
+    fn outcome_bincode_roundtrips_at_every_level() {
+        // SP1 的公开值用 bincode。tagged/untagged enum 会触发
+        // `DeserializeAnyNotSupported` —— 这条测试把该故障挡在出证之前。
+        for level in [DisclosureLevel::L0, DisclosureLevel::L1, DisclosureLevel::L2] {
+            let outcome = Outcome::Public(evaluate(
+                "hash", &sample_constraints(), "secret and a long tail",
+                b"n", &[], level,
+            ));
+            let bytes = bincode::serialize(&outcome).unwrap();
+            let back: Outcome = bincode::deserialize(&bytes).unwrap();
+            assert_eq!(outcome, back, "bincode roundtrip failed at {level:?}");
+        }
+    }
+
+    #[test]
+    fn json_shapes_only_contain_level_allowed_keys() {
+        let cases = [
+            (DisclosureLevel::L0, vec!["shape", "rule", "kind", "evidence_commitment"]),
+            (DisclosureLevel::L1, vec!["shape", "category", "count", "evidence_commitment"]),
+            (DisclosureLevel::L2, vec!["shape", "evidence_commitment"]),
+        ];
+        for (level, allowed) in cases {
+            let out = evaluate("hash", &sample_constraints(), "secret and a long tail",
+                               b"", &[], level);
+            let value = outcome_value(&Outcome::Public(out));
+            let mut allowed = allowed.clone();
+            allowed.sort();
+            for (i, v) in value["violations"].as_array().unwrap().iter().enumerate() {
+                let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(|s| s.as_str()).collect();
+                keys.sort();
+                assert_eq!(keys, allowed, "{level:?} violations[{i}] keys");
+            }
+            if level == DisclosureLevel::L1 {
+                assert!(value.get("violation_count").is_some());
+            } else {
+                assert!(value.get("violation_count").is_none());
             }
         }
     }

@@ -24,7 +24,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from policydsl.privacy import commit  # noqa: E402
-from policydsl.evidence import trace  # noqa: E402
+from policydsl.evidence import disclosure, trace  # noqa: E402
 from policydsl.core.compile import compile_policy  # noqa: E402
 from policydsl.core.model import Policy, Rule  # noqa: E402
 from policydsl.core.serialize import spec_canonical_text  # noqa: E402
@@ -223,7 +223,9 @@ class TestEvidenceCommitmentParity(unittest.TestCase):
         got = run_check(vector)
 
         canon = commit.canonical_violations(spec, response, calls)
-        expected = sorted((v["rule"], v["kind"], commit.evidence_commitment(v["evidence"]))
+        rb = got["response_binding"]      # C2：v2 公开值承诺带 response_binding 盐
+        expected = sorted((v["rule"], v["kind"],
+                           disclosure.item_commitment_v2(v["evidence"], rb))
                           for v in canon)
         seen = sorted((v["rule"], v["kind"], v["evidence_commitment"])
                       for v in got["violations"])
@@ -248,7 +250,9 @@ class TestEvidenceCommitmentParity(unittest.TestCase):
 
         canon = commit.canonical_violations(spec, response, [])
         self.assertEqual([v["evidence"] for v in canon], ["delegate"])
-        expected = sorted((v["rule"], v["kind"], commit.evidence_commitment(v["evidence"]))
+        rb = got["response_binding"]      # C2：v2 承诺带 response_binding 盐
+        expected = sorted((v["rule"], v["kind"],
+                           disclosure.item_commitment_v2(v["evidence"], rb))
                           for v in canon)
         seen = sorted((v["rule"], v["kind"], v["evidence_commitment"])
                       for v in got["violations"])
