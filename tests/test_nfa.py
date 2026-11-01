@@ -65,6 +65,19 @@ class TestMatchesPythonRe(unittest.TestCase):
 class TestFailFast(unittest.TestCase):
     """超出子集的语法必须显式抛错，而不是静默产生错误的匹配语义。"""
 
+    def test_empty_character_class_rejected(self):
+        # 取反后没有剩下任何码点 ⇒ 语言是空集 ∅。本仓不把 ∅ 与 ε 混在一个
+        # AST 表示里（原 G-1），而是在解析期 fail closed。
+        for pat in [r"[^\d\D]", r"[^\w\W]", r"[^\s\S]"]:
+            with self.subTest(pattern=pat):
+                with self.assertRaises(nfa.RegexSyntaxError):
+                    nfa.compile_pattern(pat)
+        # ``[]`` / ``[^]`` 这类边界同样拒绝。
+        for pat in [r"[]", r"[^]"]:
+            with self.subTest(pattern=pat):
+                with self.assertRaises(nfa.RegexSyntaxError):
+                    nfa.compile_pattern(pat)
+
     def test_unsupported_anchors(self):
         # 锚点 ^ $ 不在子集内：判定语义本就等价于 re.search，无需锚定。
         for pat in [r"^x", r"x$"]:
@@ -85,6 +98,25 @@ class TestFailFast(unittest.TestCase):
         # 括号不闭合属于语法错误。
         with self.assertRaises(nfa.RegexSyntaxError):
             nfa.compile_pattern(r"(ab")
+
+
+class TestZeroRepeat(unittest.TestCase):
+    """``{0}`` / ``{0,0}`` 是零次重复，必须等价于空串 ε（原 V1-2 崩溃）。"""
+
+    def test_zero_repeat_is_epsilon(self):
+        for pat in [r"a{0}", r"a{0,0}", r"(ab){0}", r"(a|b){0,0}"]:
+            with self.subTest(pattern=pat):
+                spec = nfa.compile_pattern(pat)
+                self.assertTrue(nfa.match_search(spec, ""))
+                self.assertTrue(nfa.match_search(spec, "a"))  # search：零宽匹配
+                # 但它不消耗任何字符。
+                self.assertFalse(nfa.anchored_full_match(spec, "a", 0, 1))
+                self.assertEqual([], nfa.find_spans(spec, "a"))
+
+    def test_zero_repeat_concatenation(self):
+        spec = nfa.compile_pattern(r"xa{0}y")
+        self.assertTrue(nfa.match_search(spec, "xy"))
+        self.assertFalse(nfa.match_search(spec, "xay"))
 
 
 class TestSpec(unittest.TestCase):

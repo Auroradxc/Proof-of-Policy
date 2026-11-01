@@ -1,4 +1,4 @@
-"""P2-03 差分模糊测试：Pike VM vs Python ``re``（含 T3 的 G-1 空字符类缺口）。
+"""P2-03 差分模糊测试：Pike VM vs Python ``re``（G-1 / V1-2 已修复）。
 
 **要证的命题**：`policydsl.core.nfa` 的 Pike VM 在**受支持子集**上与 Python
 ``re.search`` 判定一致；否则 Python 参考评估器与 SP1 电路会对同一条响应给出
@@ -9,14 +9,16 @@
 1. **固定 + 随机生成的模式 × 穷举/随机文本**：逐例比较
    ``nfa.match_search`` 与 ``bool(re.search(...))``；同时比较 Pike 与朴素匹配器
    （``match_search_naive``）—— 消融实验的可比性依赖这一条。
-2. **G-1 空字符类缺口**（T3 `docs/proofs/theorem-d-g.md` §12.3）：
-   ``[^\\d\\D]`` 取反后区间为空，Python 视为**空语言**，而当前实现把它编译成
-   ``Lit([])`` → ε 边 → 匹配空串。这是 **NFA 语义 bug，不是测试问题**；
-   本文件用 ``expectedFailure`` 显式标注，并在结果文件里记录为 known gap。
-   ``[]`` / ``[^]`` 这类边界则是**两端都拒绝**，作为对照。
+2. **空字符类契约**（原 G-1，T3 `docs/proofs/theorem-d-g.md` §12.3）：
+   ``[^\\d\\D]`` 的语言按定义是 ∅。修复选择是 **fail-closed**：解析器在
+   解析期抛 ``RegexSyntaxError``，不再把空语言编译成 ``Lit([])``（后者只表示
+   空连接 ε）。因此 Python ``re`` **接受**该模式、本仓 NFA **拒绝**它 ——
+   这是有意的子集边界，由 ``docs/blockers/Core.md`` 记录。
 3. **Python↔Rust 对拍**（``POP_SCRIPT`` 可用时）：同一份 NFA spec 喂给
-   ``pop-script --check``，比较 Rust 的匹配结论。注意 G-1 是**两种实现共有**
-   的语义缺口 —— Python 与 Rust 彼此一致，但都与 ``re`` 不一致。
+   ``pop-script --check``，比较 Rust 的匹配结论。Rust 侧只解释编译后的 spec
+   （不解析正则），空字符类在编译期就被 Python 拒绝，不会到达电路。
+
+另外单独覆盖 V1-2（``a{0}`` / ``a{0,0}`` 等价于 ε）。
 
 固定种子（``SEED``），stdlib + ``unittest`` 可跑，不依赖 Hypothesis。
 结果写到 ``bench/results/fuzz.json`` 与同目录的 ``fuzz.md``（由
@@ -42,7 +44,7 @@ sys.path.insert(0, str(REPO))
 
 from policydsl.core import nfa                                    # noqa: E402
 from policydsl.core.compile import compile_policy                 # noqa: E402
-from policydsl.core.model import Policy, Rule                     # noqa: E402
+from policydsl.core.model import Policy, PolicyError, Rule    # noqa: E402
 from policydsl.core.serialize import spec_canonical_text         # noqa: E402
 from policydsl.paths import POP_SCRIPT                            # noqa: E402
 
@@ -74,9 +76,8 @@ ATOMS = [
 ]
 QUANTIFIERS = ["", "", "", "*", "+", "?", "{2}", "{1,2}", "{0,2}"]
 
-#: T3 §12.3 的 G-1：取反后为空的字符类。只收**必须消费一个字符**的形式
-#: （裸类 / ``+`` / ``{1,2}``）—— ``?`` 与 ``*`` 在 Python 里也能零次匹配，
-#: 两端都返回 True，不会出现分歧，不能拿来当反例。
+#: 原 T3 §12.3 的 G-1：取反后为空的字符类。修复后**解析器拒绝**这些模式
+#: （fail-closed 契约），见 ``docs/blockers/Core.md``。
 G1_PATTERNS = [
     r"[^\d\D]",
     r"[^\w\W]",
@@ -84,8 +85,11 @@ G1_PATTERNS = [
     r"([^\d\D])+",
     r"([^\d\D]){1,2}",
 ]
-#: G-1 的对照边界：Python 与 NFA 都应**拒绝**（不是语义分歧）。
+#: 空字符类的边界形式：Python 与本仓 NFA 都拒绝（只是报错类型不同）。
 EMPTY_BRACKET_PATTERNS = [r"[]", r"[^]"]
+
+#: V1-2 的零次重复：必须等价于 ε（匹配空串，且不消耗任何字符）。
+ZERO_REPEAT_PATTERNS = [r"a{0}", r"a{0,0}", r"(ab){0}", r"(a|b){0,0}"]
 
 TARGETED_TEXTS = [
     "", "a", "b", "aaab", "ab", "0", " ", "\n", "xyz", "a" * 32, "ab" * 8,
@@ -138,16 +142,15 @@ def _random_pattern(rng: random.Random) -> str:
 def _compiles_both(pattern: str) -> bool:
     """Python ``re`` 与本仓 NFA 都能编译（受支持子集的必要条件）。
 
-    NFA 侧**不只是** ``RegexSyntaxError``：``a{0}`` 会让 ``_chain([])`` 调到
-    不存在的 ``self._build``，抛 ``AttributeError``（V1-2，见
-    ``docs/blockers/V1.md``）。这不是受支持子集的一部分，过滤掉即可；
-    该崩溃由 :class:`TestZeroRepeatCrash` 单独显式覆盖。
+    空字符类（原 G-1）现在由本仓解析器**主动拒绝**，因此会在这里被过滤掉；
+    这是有意的子集边界，不是测试噪声（见 ``docs/blockers/Core.md``）。
+    零次重复（V1-2）已经修复，不再需要额外吞掉 ``AttributeError``。
     """
     try:
         re.compile(pattern)
         nfa.compile_pattern(pattern)
         return True
-    except (re.error, nfa.RegexSyntaxError, AttributeError):
+    except (re.error, nfa.RegexSyntaxError):
         return False
 
 
@@ -235,21 +238,39 @@ def run_sweep() -> Dict[str, Any]:
                     "kind": "pike_vs_re",
                 })
 
-    # G-1：单独跑，显式标 known_gap。
-    g1_entries: List[Dict[str, Any]] = []
-    g1_texts = ["", "a", "1", " ", "abc", "xyz"]
+    # 原 G-1：修复后空字符类必须在解析期被拒绝（fail-closed）。
+    g1_patterns: List[Dict[str, Any]] = []
     for pattern in G1_PATTERNS:
-        spec = nfa.compile_pattern(pattern)
-        for text in g1_texts:
-            pike = nfa.match_search(spec, text)
-            expected = _re_match(pattern, text)
-            g1_entries.append({
-                "pattern": pattern, "text": text,
-                "pike": pike, "re": expected,
-                "known_gap": pike != expected,
-                "kind": "g1_empty_character_class",
-                "source": "docs/proofs/theorem-d-g.md §12.3 / G-1",
+        entry: Dict[str, Any] = {"pattern": pattern}
+        try:
+            nfa.compile_pattern(pattern)
+        except nfa.RegexSyntaxError as exc:
+            entry.update({
+                "status": "rejected_by_parser",
+                "error_type": "RegexSyntaxError",
+                "error": str(exc),
+                "python_re": "accepts (language = empty set)",
+                "source": "docs/proofs/theorem-d-g.md §12.3 / G-1; docs/blockers/Core.md",
             })
+        else:  # pragma: no cover —— 修复回退了才会走到这里
+            entry.update({"status": "ACCEPTED_REGRESSION",
+                          "error_type": None, "error": None,
+                          "python_re": "accepts (language = empty set)"})
+        g1_patterns.append(entry)
+
+    zero_repeat: List[Dict[str, Any]] = []
+    for pattern in ZERO_REPEAT_PATTERNS:
+        spec = nfa.compile_pattern(pattern)
+        zero_repeat.append({
+            "pattern": pattern,
+            "id": "V1-2",
+            "nfa": "compiled as epsilon (matches empty string)",
+            "match_empty": nfa.match_search(spec, ""),
+            "consumes_a": nfa.anchored_full_match(spec, "a", 0, 1),
+            "python_re_fullmatch_a": re.fullmatch(pattern, "a") is not None,
+            "source": "policydsl/core/nfa.py::_Builder._chain (empty fragment list)",
+            "status": "fixed (zero repeat = epsilon)",
+        })
 
     _REPORT = {
         "task": "P2-03 differential fuzz (Pike VM vs Python re)",
@@ -266,23 +287,21 @@ def run_sweep() -> Dict[str, Any]:
         "pike_vs_naive_mismatches": naive_mismatches,
         "g1": {
             "patterns": G1_PATTERNS,
-            "entries": g1_entries,
-            "mismatch_count": sum(1 for e in g1_entries if e["known_gap"]),
-            "direction": "NFA/Pike 匹配空串（True），Python re 不匹配（False）",
-            "status": "known NFA semantics bug (G-1)",
+            "entries": g1_patterns,
+            "rejected_count": sum(1 for e in g1_patterns
+                                  if e["status"] == "rejected_by_parser"),
+            "status": ("fixed: empty character classes are rejected at parse time "
+                       "(fail-closed); Python re accepts them as the empty language"),
         },
         "empty_brackets": {
             "patterns": EMPTY_BRACKET_PATTERNS,
-            "note": "Python 与 NFA 都拒绝；这是边界对照，不是语义分歧。",
+            "note": "Python 与本仓 NFA 都拒绝；这是边界对照，不是语义分歧。",
         },
-        "known_crashes": [{
-            "pattern": r"a{0}",
-            "id": "V1-2",
-            "python_re": "接受，匹配空串",
-            "nfa": "AttributeError: '_Builder' object has no attribute '_build'",
-            "source": "policydsl/core/nfa.py::_Builder._chain（_chain([]) 调 self._build）",
-            "status": "known implementation bug (not a test issue)",
-        }],
+        "zero_repeat": {
+            "patterns": ZERO_REPEAT_PATTERNS,
+            "entries": zero_repeat,
+            "status": "fixed: zero repetition compiles to epsilon",
+        },
         "rust": {"status": "not_run", "available": False},
         "notes": [],
     }
@@ -301,9 +320,9 @@ def run_rust_parity(report: Dict[str, Any]) -> Dict[str, Any]:
     patterns = report["patterns"][:24]
     texts = report["texts"][:8]
     sample = [(p, t) for p in patterns for t in texts][:RUST_SAMPLE_LIMIT]
-    # 显式把 G-1 的裸空字符类塞进 Rust 样本：这样 `rust_vs_re_mismatches`
-    # 才能显示「两种实现共有 G-1」这一事实，而不是只靠另一条测试口述。
-    sample += [(p, t) for p in G1_PATTERNS[:3] for t in ["", "a", "1", "abc"]]
+    # 显式把「零次重复 = ε」的样例塞进 Rust 样本（V1-2 修复的跨层验证）。
+    # 空字符类不再进入样本：它们在 Python 编译器就被拒绝，到不了 Rust。
+    sample += [(p, t) for p in ZERO_REPEAT_PATTERNS for t in ["", "a", "abc"]]
     vectors = []
     compiled: Dict[str, str] = {}
     for pattern, text in sample:
@@ -348,8 +367,8 @@ def run_rust_parity(report: Dict[str, Any]) -> Dict[str, Any]:
         "comparisons": len(sample),
         "python_vs_rust_mismatches": mismatches,
         "rust_vs_re_mismatches": re_mismatches,
-        "note": ("python_vs_rust 为 0 表示两种实现判据一致；rust_vs_re 的非零项"
-                 "只有 G-1 空字符类这一处，且两种实现**共有**该缺口。"),
+        "note": ("python_vs_rust 为 0 表示两种实现判据一致；修复后 rust_vs_re "
+                 "也应为 0（空字符类在编译期就被拒绝，不再产生共有缺口）。"),
     }
     report["rust"] = result
     return result
@@ -374,29 +393,25 @@ def render_md(report: Dict[str, Any]) -> str:
         f"**{len(report['mismatches'])}** | 受支持子集；期望 0 |",
         f"| Pike vs 朴素 (`match_search_naive`) | "
         f"**{len(report['pike_vs_naive_mismatches'])}** | 消融实验的可比性前提；期望 0 |",
-        f"| G-1 空字符类（单独统计） | **{report['g1']['mismatch_count']}** | "
-        "**已知 NFA 语义 bug**，见下 |",
+        f"| 空字符类（原 G-1） | **{report['g1']['rejected_count']}** | "
+        f"{len(report['g1']['patterns'])} 个模式全部被解析器拒绝（fail-closed） |",
+        f"| 零次重复 `a{{0}}`（原 V1-2） | **0** | "
+        f"{len(report['zero_repeat']['patterns'])} 个模式均编译为 ε |",
         "",
-        "## G-1：空字符类的语义缺口（已知，不是测试问题）",
+        "## 空字符类契约（原 G-1，已修复：fail-closed）",
         "",
-        "`[^\\d\\D]` 等取反字符类在求补后区间为空。Python 把它当作**空语言**"
-        "（`re.search` 永不匹配）；当前 NFA 把空区间编译成 `Lit([])` → ε 边，"
-        "于是**匹配空串**。复现：",
+        "`[^\\d\\D]` 等取反字符类在求补后区间为空，其语言按定义是 **空集 ∅**。"
+        "修复选择是让**解析器直接拒绝**空字符类，而不是引入新的 AST 节点：",
         "",
         "```",
-        "pattern = r\"[^\\d\\D]\"",
-        "nfa.match_search(spec, \"\")   == True    # 代码：ε 边",
-        "re.search(pattern, \"\")        == None    # Python：空语言",
+        "nfa.compile_pattern(r\"[^\\d\\D]\")   # RegexSyntaxError",
+        "re.compile(r\"[^\\d\\D]\")             # 接受（语言 = ∅，永不匹配）",
         "```",
         "",
-        f"本文件用 `@unittest.expectedFailure` 显式标注这条相等断言；"
-        f"{report['g1']['mismatch_count']} 条 G-1 样例全部记录在 "
-        "`fuzz.json` 的 `g1.entries` 里（`known_gap: true`）。",
-        "",
-        "**这是 NFA 语义 bug，不是测试问题**：空字符类的语言应为 ∅，而不是 `{ε}`。"
-        "修复需要把 AST 的「空语言」与「空连接（ε）」分开（T3 §12.3、"
-        "[`docs/blockers/V1.md`](../../docs/blockers/V1.md)）。在修复前，"
-        "定理 G(a)(b) 只在假设 A-G0（字符类区间非空）下成立。",
+        "这是**有意的子集边界**：本仓把空字符类归入「受支持子集」之外，"
+        "由 [`docs/blockers/Core.md`](../../docs/blockers/Core.md) 记录解析器契约。"
+        "Rust 侧不解析正则、只解释编译后的 spec，因此该模式在编译期就被拦下，"
+        "不会到达电路。",
         "",
         "### 边界对照",
         "",
@@ -408,19 +423,21 @@ def render_md(report: Dict[str, Any]) -> str:
 
     lines += [
         "",
-        "## 另一条已知实现 bug：`a{0}`（V1-2）",
+        "## 零次重复 `a{0}`（原 V1-2，已修复）",
         "",
-        "| 模式 | Python `re` | NFA `compile_pattern` |",
-        "|---|---|---|",
+        "| 模式 | NFA `compile_pattern` | 匹配空串 | 消耗 `a` |",
+        "|---|---|---|---|",
     ]
-    for c in report["known_crashes"]:
-        lines.append(f"| `{c['pattern']}` | {c['python_re']} | `{c['nfa']}` |")
+    for c in report["zero_repeat"]["entries"]:
+        lines.append(
+            f"| `{c['pattern']}` | {c['nfa']} | {c['match_empty']} | "
+            f"{c['consumes_a']} |")
     lines += [
         "",
-        "`_Builder._chain([])`（零次重复展开后为空）调用了 `self._build`，"
-        "而类里只有 `build`。这是**实现 bug**，由 "
-        "[`docs/blockers/V1.md`](../../docs/blockers/V1.md) 的 V1-2 记录；"
-        "本测试不修 core，只用 `assertRaises(AttributeError)` 把它钉成已知行为。",
+        "`_Builder._chain([])`（零次重复展开后为空）现在返回一个显式的 ε 片段"
+        "（`s --ε--> t`），并修掉了原先指向不存在方法 `_build` 的笔误。"
+        "注意 `match_search` 是 **search** 语义：零宽匹配会让 `a{0}` 在 `\"a\"` "
+        "上也返回真，但它**不消耗**任何字符（`anchored_full_match` 为假）。",
         "",
         "",
         "## Python ↔ Rust 对拍",
@@ -437,8 +454,8 @@ def render_md(report: Dict[str, Any]) -> str:
             f"| Rust vs Python `re` | "
             f"**{len(rust.get('rust_vs_re_mismatches', []))}** |",
             "",
-            "两种实现判据一致；Rust vs `re` 的非零项来自 **G-1**（Python 与 Rust "
-            "共有的空字符类缺口），不是两种实现之间的分歧。",
+            "修复后两种实现与 Python `re` 均一致（空字符类在编译期被拒绝，"
+            "零次重复编译为 ε）。",
         ]
     else:
         lines.append(f"未跑：{rust.get('reason', rust.get('status'))}")
@@ -497,31 +514,39 @@ class TestDifferentialPikeVsRe(unittest.TestCase):
         self.assertGreater(report["counts"]["comparisons"], 1000)
 
 
-class TestEmptyCharacterClassGap(unittest.TestCase):
-    """T3 G-1：空字符类被当成 ε —— 已知缺口，显式标注。"""
+class TestEmptyCharacterClassContract(unittest.TestCase):
+    """原 G-1：空字符类必须被解析器**拒绝**（fail-closed 子集契约）。"""
 
-    def test_g1_reproduced_and_recorded(self):
-        """当前行为可复现：NFA 匹配空串，Python 视为空语言。"""
+    def test_empty_class_rejected_by_parser(self):
+        """``[^\\d\\D]`` 等取反后为空的字符类抛 ``RegexSyntaxError``。"""
+        for pattern in G1_PATTERNS:
+            with self.subTest(pattern=pattern):
+                with self.assertRaises(nfa.RegexSyntaxError):
+                    nfa.compile_pattern(pattern)
+
+    def test_python_re_accepts_but_nfa_rejects(self):
+        """有意分歧：Python 把空字符类当空语言，本仓把它排除出受支持子集。"""
+        for pattern in G1_PATTERNS:
+            with self.subTest(pattern=pattern):
+                re.compile(pattern)          # Python：合法，语言为 ∅
+                with self.assertRaises(nfa.RegexSyntaxError):
+                    nfa.compile_pattern(pattern)
+
+    def test_compile_policy_fails_closed(self):
+        """策略编译层把 ``RegexSyntaxError`` 包成 ``PolicyError``（不是崩溃）。"""
+        with self.assertRaises(PolicyError):
+            compile_policy(Policy("fuzz", "1", rules=[
+                Rule("pattern_block", "pb", {"patterns": [r"[^\d\D]"]})]))
+
+    def test_report_records_rejection(self):
         report = run_sweep()
         entries = report["g1"]["entries"]
-        self.assertTrue(entries, "G-1 样例没有跑")
+        self.assertEqual(len(G1_PATTERNS), len(entries), "空字符类样例没有跑全")
         for e in entries:
-            with self.subTest(pattern=e["pattern"], text=e["text"]):
-                # 方向固定：NFA True / Python False。若哪天修复了，这里会红，
-                # 提醒把 expectedFailure 与结果文件一起更新。
-                self.assertTrue(e["pike"], e)
-                self.assertFalse(e["re"], e)
-                self.assertTrue(e["known_gap"], e)
-
-    @unittest.expectedFailure
-    def test_g1_empty_class_language_matches_re(self):
-        """已知会失败：修复 G-1 后这条会变成 unexpected success，提醒摘掉装饰器。"""
-        for pattern in G1_PATTERNS:
-            spec = nfa.compile_pattern(pattern)
-            for text in ["", "a", "1", " ", "abc", "xyz"]:
-                with self.subTest(pattern=pattern, text=text):
-                    self.assertEqual(nfa.match_search(spec, text),
-                                     _re_match(pattern, text))
+            with self.subTest(pattern=e["pattern"]):
+                self.assertEqual("rejected_by_parser", e["status"], e)
+                self.assertEqual("RegexSyntaxError", e["error_type"], e)
+        self.assertEqual(len(G1_PATTERNS), report["g1"]["rejected_count"])
 
     def test_empty_brackets_rejected_by_both(self):
         """``[]`` / ``[^]`` 是边界对照：两端都必须拒绝，不能一边接受一边拒绝。"""
@@ -533,23 +558,44 @@ class TestEmptyCharacterClassGap(unittest.TestCase):
                     nfa.compile_pattern(pattern)
 
 
-class TestZeroRepeatCrash(unittest.TestCase):
-    """V1-2：``a{0}`` 让 NFA 构造器崩溃 —— 已知实现 bug，不是测试问题。
+class TestZeroRepeatIsEpsilon(unittest.TestCase):
+    """原 V1-2：``a{0}`` / ``a{0,0}`` 等价于 ε，不再崩溃。"""
 
-    ``_Builder._build_repeat`` 在 ``lo=hi=0`` 时得到空片段列表，``_chain([])``
-    调用 ``self._build(Lit([]))``，而方法名是 ``build``。Python ``re`` 接受
-    ``a{0}`` 并匹配空串。本测试只固定现状，**不修 core**。
-    """
+    def test_zero_repeat_matches_empty_string(self):
+        for pattern in ZERO_REPEAT_PATTERNS:
+            with self.subTest(pattern=pattern):
+                spec = nfa.compile_pattern(pattern)
+                self.assertTrue(nfa.match_search(spec, ""))
+                self.assertTrue(nfa.match_search_naive(spec, ""))
 
-    def test_zero_repeat_crashes(self):
-        with self.assertRaises(AttributeError):
-            nfa.compile_pattern(r"a{0}")
-        self.assertTrue(re.search(r"a{0}", "xyz"))
+    def test_zero_repeat_consumes_nothing(self):
+        """零宽匹配：``re.search`` 会返回真，但 ``a`` 不会被消耗。
 
-    def test_zero_repeat_documented_in_report(self):
+        用 ``anchored_full_match`` / ``find_spans`` 断言「不匹配 a」——它们要求
+        一次性消耗 ≥ 1 个字符；这比 ``re.search`` 的布尔值更能区分 ε 与 ``a``。
+        """
+        for pattern in ZERO_REPEAT_PATTERNS:
+            with self.subTest(pattern=pattern):
+                spec = nfa.compile_pattern(pattern)
+                self.assertFalse(nfa.anchored_full_match(spec, "a", 0, 1))
+                self.assertEqual([], nfa.find_spans(spec, "a"))
+                self.assertIsNone(re.fullmatch(pattern, "a"))
+
+    def test_zero_repeat_in_concatenation(self):
+        """``x a{0} y`` ≡ ``xy``；``x a{0} y`` 不匹配 ``xay``。"""
+        spec = nfa.compile_pattern(r"xa{0}y")
+        self.assertTrue(nfa.match_search(spec, "xy"))
+        self.assertFalse(nfa.match_search(spec, "xay"))
+
+    def test_report_records_fix(self):
         report = run_sweep()
-        crash = next(c for c in report["known_crashes"] if c["pattern"] == r"a{0}")
-        self.assertEqual("V1-2", crash["id"])
+        entries = report["zero_repeat"]["entries"]
+        self.assertEqual(len(ZERO_REPEAT_PATTERNS), len(entries))
+        for e in entries:
+            with self.subTest(pattern=e["pattern"]):
+                self.assertTrue(e["match_empty"], e)
+                self.assertFalse(e["consumes_a"], e)
+                self.assertFalse(e["python_re_fullmatch_a"], e)
 
 
 @unittest.skipUnless(_rust_binary() is not None,
@@ -566,17 +612,21 @@ class TestRustParity(unittest.TestCase):
                          "Python Pike 与 Rust 实现判定不一致：\n"
                          + "\n".join(str(m) for m in rust["python_vs_rust_mismatches"][:5]))
 
-    def test_g1_gap_is_shared_by_rust(self):
-        """G-1 不是 Python 侧实现独有的：Rust 也把 ``[^\\d\\D]`` 当 ε。
+    def test_empty_class_rejected_before_rust(self):
+        """空字符类在编译期就被 Python 拒绝，不会生成坏 spec 送到 Rust。"""
+        with self.assertRaises(nfa.RegexSyntaxError):
+            nfa.compile_pattern(r"[^\d\D]")
+        with self.assertRaises(PolicyError):
+            compile_policy(Policy("fuzz", "1", rules=[
+                Rule("pattern_block", "pb", {"patterns": [r"[^\d\D]"]})]))
 
-        这条**不断言 bug 是"正确"的**，只固定「两种实现共有同一缺口」这一事实，
-        避免把 Rust 对拍结果误读成「Rust 是对的」。
-        """
+    def test_rust_naive_zero_repeat_matches_empty(self):
+        """``mode=naive`` 下 ``a{0}`` 对空文本也必须判违规（Rust 侧 ε 修复）。"""
         binary = _rust_binary()
         self.assertIsNotNone(binary)
-        pattern = r"[^\d\D]"
         spec = compile_policy(Policy("fuzz", "1", rules=[
-            Rule("pattern_block", "pb", {"patterns": [pattern]})]))
+            Rule("pattern_block", "pb",
+                 {"patterns": [r"a{0}"], "match_mode": "naive"})]))
         vectors = [{"name": "empty", "response": "",
                     "spec_canonical": spec_canonical_text(spec)}]
         with tempfile.TemporaryDirectory() as td:
@@ -588,7 +638,44 @@ class TestRustParity(unittest.TestCase):
             self.assertEqual(0, proc.returncode, proc.stderr[-500:])
             row = json.loads(op.read_text(encoding="utf-8"))[0]
         self.assertTrue(row["violations"],
-                        "Rust 对空串没有报违规 —— G-1 可能已被修复；请同步更新测试")
+                        "Rust naive 匹配器把空文本上的 a{0} 判成了不匹配 —— "
+                        "ε 语义未同步")
+
+    def test_rust_treats_empty_ranges_as_empty_language(self):
+        """Rust 解释器对 ``ranges: []`` 的边不匹配任何字符（∅，而不是 ε）。
+
+        空字符类已不可能经由编译器产生 spec；这条直接构造一份「空区间边」的
+        spec，钉住 Rust 侧的解释语义与 Python ``Lit([]) → ε`` 的旧 bug 不同。
+        """
+        binary = _rust_binary()
+        self.assertIsNotNone(binary)
+        spec = {
+            "spec_version": "v1", "policy_id": "g1", "policy_version": "1",
+            "semantic": "and",
+            "constraints": [{
+                "kind": "pattern_block", "name": "pb",
+                "patterns": [r"[^\d\D]"],
+                "nfa": {"compiled": [{
+                    "start": 0, "accept": [1],
+                    "states": [
+                        {"eps": [], "edges": [{"to": 1, "ranges": []}]},
+                        {"eps": [], "edges": []},
+                    ],
+                }]},
+            }],
+        }
+        vectors = [{"name": "empty", "response": "",
+                    "spec_canonical": spec_canonical_text(spec)}]
+        with tempfile.TemporaryDirectory() as td:
+            vp, op = Path(td) / "vectors.json", Path(td) / "out.json"
+            vp.write_text(json.dumps({"vectors": vectors}), encoding="utf-8")
+            proc = subprocess.run([str(binary), "--check", "--vectors", str(vp),
+                                   "--out", str(op)],
+                                  capture_output=True, text=True, timeout=120)
+            self.assertEqual(0, proc.returncode, proc.stderr[-500:])
+            row = json.loads(op.read_text(encoding="utf-8"))[0]
+        self.assertFalse(row["violations"],
+                         "Rust 把空区间边当成了 ε —— 与「空类 = ∅」的契约不符")
 
 
 def tearDownModule() -> None:

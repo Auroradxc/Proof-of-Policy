@@ -11,9 +11,15 @@ no_std）程序**判定结果完全一致**。Python 的 ``re`` 无法在 zkVM �
   - 字符类 ``[...]``，含区间与 ``\\w \\d \\s``、取反 ``[^...]``
   - 类转义 ``\\w \\W \\d \\D \\s \\S``（ASCII 语义，见下）
   - 分组 ``( ... )`` 与分支 ``|``
-  - 量词 ``*  +  ?  {m}  {m,}  {m,n}``
+  - 量词 ``*  +  ?  {m}  {m,}  {m,n}``；``{0}`` / ``{0,0}`` 等价于空串
   - 不支持（抛 ``RegexSyntaxError``）：锚点 ``^ $``、反向引用、环视、
     懒惰/贪婪区分、``\\b``。
+
+**空字符类（fail-closed）**：取反后区间为空的字符类（如 ``[^\\d\\D]``，
+其语言按定义是 ∅）在**解析期**直接抛 ``RegexSyntaxError``，而不是被编译成
+``Lit([])``（后者只表示空连接 ε）。``[]`` / ``[^]`` 同样拒绝。这样「空语言
+∅」与「空串 ε」在 AST 里不再共用一个表示 —— 见
+``docs/blockers/Core.md`` 的解析器契约。
 
 ASCII 语义说明：``\\w \\d \\s`` 这里分别指 ASCII 的
 ``[A-Za-z0-9_]`` / ``[0-9]`` / ``[ \\t\\n\\r\\f\\v]``。这与 Python 的
@@ -84,7 +90,12 @@ def _merge(ranges_list: List[List[List[int]]]) -> List[List[int]]:
 
 @dataclass
 class Lit:
-    """字面量/字符类：由一组字符区间表示（可匹配其中任一字符）。"""
+    """字面量/字符类：由一组字符区间表示（可匹配其中任一字符）。
+
+    ``ranges`` 非空时是一条字符边；**空列表只用于表示空连接 ε**（``re`` 的
+    空分支 / 空分组）。空语言 ∅ 不在这里表示 —— 解析器直接拒绝空字符类
+    （见 :func:`_parse_char_class`），因此 ``Lit([])`` 不会同时被当成 ∅。
+    """
     ranges: List[List[int]]
 
 
@@ -145,6 +156,13 @@ def _parse_char_class(pat: str, i: int):
             ranges = _merge(parts)
             if negate:
                 ranges = _complement(ranges)
+            if not ranges:
+                # 取反后没有剩下任何码点 ⇒ 语言是空集 ∅，而不是空串 {ε}。
+                # AST 里没有「空语言」节点，Lit([]) 已被空连接（ε）占用；
+                # 与其用同一个表示承载两种语义（G-1），不如在解析期 fail closed。
+                raise RegexSyntaxError(
+                    f"empty character class at position {i - 1}: its language is "
+                    f"the empty set, which is outside the supported subset")
             return ranges, i
         if c == "\\":
             # 转义：类转义 \d \w 等 / 控制转义 \n \t 等 / 转义任意字符
@@ -313,7 +331,7 @@ class _Builder:
             if node.ranges:
                 self.states[s].edges.append((t, node.ranges))
             else:
-                self.states[s].eps.append(t)  # 空语言/空匹配 → ε 直连
+                self.states[s].eps.append(t)  # 空连接（ε）→ ε 直连
             return s, t
         if isinstance(node, Repeat):
             return self._build_repeat(node)
@@ -367,9 +385,16 @@ class _Builder:
         return s, t
 
     def _chain(self, frags: List[Tuple[int, int]]) -> Tuple[int, int]:
-        """把多个 NFA 片段按顺序用 ε 串联。"""
+        """把多个 NFA 片段按顺序用 ε 串联；空列表返回一个显式的 ε 片段。
+
+        空列表来自零次重复（``a{0}`` / ``a{0,0}``）：它必须匹配空串 ε，
+        而**不是**崩溃或空语言。以前这里调用了不存在的方法 ``self._build``
+        （V1-2），现在直接新建 ``s --ε--> t``。
+        """
         if not frags:
-            return self._build(Lit([]))
+            s, t = self.new_state(), self.new_state()
+            self.states[s].eps.append(t)
+            return s, t
         for (_, a_end), (b_start, _) in zip(frags, frags[1:]):
             self.states[a_end].eps.append(b_start)
         return frags[0][0], frags[-1][1]
