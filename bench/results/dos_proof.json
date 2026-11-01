@@ -1,0 +1,147 @@
+{
+  "task": "P1-11 proof-path DoS",
+  "generated_by": "bench/bench_dos.py",
+  "machine": {
+    "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "cpu_count": 24,
+    "mem_total_gib": 14.6,
+    "python": "3.10.12"
+  },
+  "pattern": "a+b",
+  "input": "a × n",
+  "binary": {
+    "path": "/tmp/pop-script-v1",
+    "sha256": "b81e6d072bb04a3d49b8265499204a2f3fe00d3552191e314554ad9ba6468ad0"
+  },
+  "execution": {
+    "rust": [
+      {
+        "status": "ok",
+        "cycles": 643906,
+        "passed": true,
+        "wall_s": 22.488,
+        "n": 100,
+        "mode": "pike"
+      },
+      {
+        "status": "ok",
+        "cycles": 12382732,
+        "passed": true,
+        "wall_s": 22.86,
+        "n": 100,
+        "mode": "naive"
+      },
+      {
+        "status": "ok",
+        "cycles": 1145221,
+        "passed": true,
+        "wall_s": 22.562,
+        "n": 200,
+        "mode": "pike"
+      },
+      {
+        "status": "ok",
+        "cycles": 48638958,
+        "passed": true,
+        "wall_s": 24.479,
+        "n": 200,
+        "mode": "naive"
+      },
+      {
+        "status": "ok",
+        "cycles": 2143629,
+        "passed": true,
+        "wall_s": 29.255,
+        "n": 400,
+        "mode": "pike"
+      },
+      {
+        "status": "ok",
+        "cycles": 193207142,
+        "passed": true,
+        "wall_s": 31.251,
+        "n": 400,
+        "mode": "naive"
+      }
+    ],
+    "python": [
+      {
+        "n": 100,
+        "mode": "pike",
+        "matched": false,
+        "median_s": 5.0830999498430174e-05
+      },
+      {
+        "n": 100,
+        "mode": "naive",
+        "matched": false,
+        "median_s": 0.0027506719998200424
+      },
+      {
+        "n": 200,
+        "mode": "pike",
+        "matched": false,
+        "median_s": 0.00011013400035153609
+      },
+      {
+        "n": 200,
+        "mode": "naive",
+        "matched": false,
+        "median_s": 0.011376931999620865
+      },
+      {
+        "n": 400,
+        "mode": "pike",
+        "matched": false,
+        "median_s": 0.0002437840003040037
+      },
+      {
+        "n": 400,
+        "mode": "naive",
+        "matched": false,
+        "median_s": 0.04119761499987362
+      }
+    ]
+  },
+  "proof": [
+    {
+      "n": 100,
+      "mode": "pike",
+      "proof_mode": "core",
+      "status": "ok",
+      "returncode": 0,
+      "prove_wall_s": 122.2,
+      "peak_rss_mib": 11695.1,
+      "binary": "/tmp/pop-script-v1",
+      "cycles": 643906,
+      "source": "this_run"
+    },
+    {
+      "n": 25,
+      "mode": "naive",
+      "proof_mode": "core",
+      "status": "ok",
+      "returncode": 0,
+      "prove_wall_s": 153.2,
+      "peak_rss_mib": 12137.3,
+      "binary": "/tmp/pop-script-v1",
+      "source": "this_run"
+    },
+    {
+      "n": 50,
+      "mode": "naive",
+      "proof_mode": "core",
+      "status": "oom_or_killed",
+      "returncode": 137,
+      "prove_wall_s": 226.5,
+      "peak_rss_mib": 13771.6,
+      "binary": "/tmp/pop-script-v1",
+      "stderr_tail": "loaded 1 vector(s) (job=policy, mode=prove)\n[dos-n50-naive] generating proof (mode=core) ...\nCommand terminated by signal 9\n\tCommand being timed: \"/tmp/pop-script-v1 --vectors /tmp/tmp3nelwvie/vectors.json --out /tmp/tmp3nelwvie/out.json --job policy --proof-mode core\"\n\tUser time (seconds): 1316.48\n\tSystem time (seconds): 633.24\n\tPercent of CPU this job got: 794%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 4:05.39\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 14102152\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 1288\n\tMinor (reclaiming a frame) page faults: 8378206\n\tVoluntary context switches: 21696981\n\tInvoluntary context switches: 688366\n\tSwaps: 0\n\tFile system inputs: 0\n\tFile system outputs: 0\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+      "source": "this_run"
+    }
+  ],
+  "prove_timeout_s": 600.0,
+  "notes": [
+    "本 worktree 无构建产物（circuits/target/release/pop-script 不存在）；本表用显式指定的驱动 /tmp/pop-script-v1（sha256 见 binary.sha256）。其执行周期数与 bench/results/ablation.md 一致（643,906 vs 643,894），说明是同一份实现的构建产物。"
+  ]
+}

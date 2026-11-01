@@ -1,0 +1,405 @@
+{
+  "task": "P1-09 composition negative controls",
+  "generated_by": "bench/bench_compose_controls.py",
+  "machine": {
+    "platform": "Linux-6.18.54.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "cpu_count": 24,
+    "python": "3.10.12"
+  },
+  "mode": "binding layer (verify_proofs=False)",
+  "theorem_e_source": "docs/certificate-binding-framework.md §8; docs/proofs/theorem-c-e-f.md §2",
+  "cells": [
+    {
+      "id": "a",
+      "title": "同一 nonce + 推理半绑 x（x = x_U = derive(T_U)）",
+      "conditions": {
+        "same_nonce": true,
+        "same_T": true,
+        "x_bound_to_user_input": true,
+        "delegated_empty": true
+      },
+      "setup": {
+        "composite_nonce_hex": "11223344",
+        "policy_nonce_hex": "11223344",
+        "inference_nonce_hex": "11223344",
+        "delivered_response": "Summarize the refund policy for billing customers.",
+        "user_input_x_U": [
+          -13830,
+          -11143,
+          -5498,
+          2646,
+          9200,
+          22044,
+          13982,
+          14079,
+          24439,
+          -29707,
+          -6753,
+          -7743,
+          3231,
+          -17521,
+          27047,
+          -27113
+        ],
+        "delegated": []
+      },
+      "verify": {
+        "ok": true,
+        "satisfied": true,
+        "detail": "proof_sha256 两份均符; **证明有效性未核**（verify_proofs=False）; 键分离：pol00000… ≠ inf00000…; **未提供期望 vkey**：只能核『两份证明用的是不同程序』，不能核『它们是你信任的那两个程序』; response_binding 四方一致（含由 T′ 现场重算）; model_hash 与 input_binding 均与现场重算相符; 策略那一半 passed=true 且无委托规则"
+      },
+      "input_checks": {
+        "derived_input": [
+          -13830,
+          -11143,
+          -5498,
+          2646,
+          9200,
+          22044,
+          13982,
+          14079,
+          24439,
+          -29707,
+          -6753,
+          -7743,
+          3231,
+          -17521,
+          27047,
+          -27113
+        ],
+        "user_input": [
+          -13830,
+          -11143,
+          -5498,
+          2646,
+          9200,
+          22044,
+          13982,
+          14079,
+          24439,
+          -29707,
+          -6753,
+          -7743,
+          3231,
+          -17521,
+          27047,
+          -27113
+        ],
+        "user_input_equals_derived": true,
+        "inference_input_binding": "9e69cb26d80ef31879b9b35b4a324b9617a4f394518daf41daed13bc226b13dd",
+        "user_input_binding": "9e69cb26d80ef31879b9b35b4a324b9617a4f394518daf41daed13bc226b13dd",
+        "weak_form": true,
+        "weak_form_statement": "∃x: x = derive(T_U) ∧ 推理输出 = M(x)",
+        "strong_form": true,
+        "strong_form_statement": "推理半绑定到用户提交的 x_U（定理 E 的 C4）",
+        "strong_form_landed": false,
+        "strong_form_note": "verify_composite 的签名里没有 x_U；第 7 步只重算 IB(n, input_from_response(T_U))。强形式 x=x_U 尚未落地（证明债 E-1）。"
+      },
+      "expected": "ok=True, satisfied=True；弱形式与强形式都成立",
+      "conclusion": "定理 E 的五个条件全部满足：这是四格中**唯一**真正成立的组合。",
+      "theorem_e_condition": "C1–C5 全部满足（C4 以 x_U = derive(T_U) 的实例满足）",
+      "verdict": "PASS（真组合）"
+    },
+    {
+      "id": "b",
+      "title": "两半不同 nonce（n_p ≠ n_i）",
+      "conditions": {
+        "same_nonce": false,
+        "same_T": true,
+        "x_bound_to_user_input": true,
+        "delegated_empty": true
+      },
+      "setup": {
+        "composite_nonce_hex": "11223344",
+        "policy_nonce_hex": "11223344",
+        "inference_nonce_hex": "55667788",
+        "delivered_response": "Summarize the refund policy for billing customers.",
+        "user_input_x_U": [
+          -13830,
+          -11143,
+          -5498,
+          2646,
+          9200,
+          22044,
+          13982,
+          14079,
+          24439,
+          -29707,
+          -6753,
+          -7743,
+          3231,
+          -17521,
+          27047,
+          -27113
+        ],
+        "delegated": []
+      },
+      "verify": {
+        "ok": false,
+        "satisfied": false,
+        "detail": "两份证明绑的不是同一条送达响应（或绑定缺失）：MISMATCH: d9affa5c…[composite] == d9affa5c…[policy] == cc50a663…[inference] == d9affa5c…[response]"
+      },
+      "input_checks": {
+        "derived_input": [
+          -13830,
+          -11143,
+          -5498,
+          2646,
+          9200,
+          22044,
+          13982,
+          14079,
+          24439,
+          -29707,
+          -6753,
+          -7743,
+          3231,
+          -17521,
+          27047,
+          -27113
+        ],
+        "user_input": [
+          -13830,
+          -11143,
+          -5498,
+          2646,
+          9200,
+          22044,
+          13982,
+          14079,
+          24439,
+          -29707,
+          -6753,
+          -7743,
+          3231,
+          -17521,
+          27047,
+          -27113
+        ],
+        "user_input_equals_derived": true,
+        "inference_input_binding": "0bd6c104f8b1c7aded1e4cf761a9866446cd6e822b269d8a15483b55b10bdf12",
+        "user_input_binding": "0bd6c104f8b1c7aded1e4cf761a9866446cd6e822b269d8a15483b55b10bdf12",
+        "weak_form": true,
+        "weak_form_statement": "∃x: x = derive(T_U) ∧ 推理输出 = M(x)",
+        "strong_form": true,
+        "strong_form_statement": "推理半绑定到用户提交的 x_U（定理 E 的 C4）",
+        "strong_form_landed": false,
+        "strong_form_note": "verify_composite 的签名里没有 x_U；第 7 步只重算 IB(n, input_from_response(T_U))。强形式 x=x_U 尚未落地（证明债 E-1）。"
+      },
+      "expected": "ok=False（第 6 步 response_binding 四方不一致）",
+      "conclusion": "缺 C2：两半各自为真，但说的不是同一次挑战；证书被拒。",
+      "theorem_e_condition": "C2 缺失",
+      "verdict": "REJECT（正确）"
+    },
+    {
+      "id": "c",
+      "title": "推理半只绑 derive(T_U)，用户提交的 x_U ≠ derive(T_U)",
+      "conditions": {
+        "same_nonce": true,
+        "same_T": true,
+        "x_bound_to_user_input": false,
+        "delegated_empty": true
+      },
+      "setup": {
+        "composite_nonce_hex": "11223344",
+        "policy_nonce_hex": "11223344",
+        "inference_nonce_hex": "11223344",
+        "delivered_response": "Summarize the refund policy for billing customers.",
+        "user_input_x_U": [
+          20288,
+          29768,
+          10380,
+          20807,
+          -26056,
+          -19147,
+          -30429,
+          -10173,
+          -24314,
+          7765,
+          22798,
+          -15345,
+          19516,
+          9774,
+          5212,
+          -11383
+        ],
+        "user_input_derived_from": "HARMFUL",
+        "delegated": []
+      },
+      "verify": {
+        "ok": true,
+        "satisfied": true,
+        "detail": "proof_sha256 两份均符; **证明有效性未核**（verify_proofs=False）; 键分离：pol00000… ≠ inf00000…; **未提供期望 vkey**：只能核『两份证明用的是不同程序』，不能核『它们是你信任的那两个程序』; response_binding 四方一致（含由 T′ 现场重算）; model_hash 与 input_binding 均与现场重算相符; 策略那一半 passed=true 且无委托规则"
+      },
+      "input_checks": {
+        "derived_input": [
+          -13830,
+          -11143,
+          -5498,
+          2646,
+          9200,
+          22044,
+          13982,
+          14079,
+          24439,
+          -29707,
+          -6753,
+          -7743,
+          3231,
+          -17521,
+          27047,
+          -27113
+        ],
+        "user_input": [
+          20288,
+          29768,
+          10380,
+          20807,
+          -26056,
+          -19147,
+          -30429,
+          -10173,
+          -24314,
+          7765,
+          22798,
+          -15345,
+          19516,
+          9774,
+          5212,
+          -11383
+        ],
+        "user_input_equals_derived": false,
+        "inference_input_binding": "9e69cb26d80ef31879b9b35b4a324b9617a4f394518daf41daed13bc226b13dd",
+        "user_input_binding": "639dd30385a49b4d1ea186376b8fba6d4d03565bdaf3e4649cdde6c3a3abcf1e",
+        "weak_form": true,
+        "weak_form_statement": "∃x: x = derive(T_U) ∧ 推理输出 = M(x)",
+        "strong_form": false,
+        "strong_form_statement": "推理半绑定到用户提交的 x_U（定理 E 的 C4）",
+        "strong_form_landed": false,
+        "strong_form_note": "verify_composite 的签名里没有 x_U；第 7 步只重算 IB(n, input_from_response(T_U))。强形式 x=x_U 尚未落地（证明债 E-1）。"
+      },
+      "expected": "当前实现 ok=True, satisfied=True —— 它与 (a) 在验证器眼里完全相同；弱形式成立，强形式不成立",
+      "conclusion": "缺 C4 的**强形式**：(c) 只证明了存在 x=derive(T_U) 使推理成立，没有证明 x=x_U。这是弱形式，不是定理 E 的结论。",
+      "theorem_e_condition": "C4 仅以弱形式成立（x = derive(T_U)，非 x_U）",
+      "verdict": "ACCEPT-AS-WEAK（当前实现的缺口）"
+    },
+    {
+      "id": "d",
+      "title": "策略半 delegated 非空（有规则未被这份证明判定）",
+      "conditions": {
+        "same_nonce": true,
+        "same_T": true,
+        "x_bound_to_user_input": true,
+        "delegated_empty": false
+      },
+      "setup": {
+        "composite_nonce_hex": "11223344",
+        "policy_nonce_hex": "11223344",
+        "inference_nonce_hex": "11223344",
+        "delivered_response": "Summarize the refund policy for billing customers.",
+        "user_input_x_U": [
+          -13830,
+          -11143,
+          -5498,
+          2646,
+          9200,
+          22044,
+          13982,
+          14079,
+          24439,
+          -29707,
+          -6753,
+          -7743,
+          3231,
+          -17521,
+          27047,
+          -27113
+        ],
+        "delegated": [
+          {
+            "name": "low_harm_probability",
+            "system": "ezkl-halo2",
+            "model_vkey": "abababababababababababababababababababababababababababababababab",
+            "onnx_sha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+            "threshold_bp": 5000,
+            "direction": "le"
+          }
+        ]
+      },
+      "verify": {
+        "ok": true,
+        "satisfied": false,
+        "detail": "proof_sha256 两份均符; **证明有效性未核**（verify_proofs=False）; 键分离：pol00000… ≠ inf00000…; **未提供期望 vkey**：只能核『两份证明用的是不同程序』，不能核『它们是你信任的那两个程序』; response_binding 四方一致（含由 T′ 现场重算）; model_hash 与 input_binding 均与现场重算相符; 策略那一半有 1 条规则被**委托**（delegated 非空） —— 组合层不替它下结论，须另行合取 ezkl 陪伴证明（见 verify_cert.py 的『合规』行）"
+      },
+      "input_checks": {
+        "derived_input": [
+          -13830,
+          -11143,
+          -5498,
+          2646,
+          9200,
+          22044,
+          13982,
+          14079,
+          24439,
+          -29707,
+          -6753,
+          -7743,
+          3231,
+          -17521,
+          27047,
+          -27113
+        ],
+        "user_input": [
+          -13830,
+          -11143,
+          -5498,
+          2646,
+          9200,
+          22044,
+          13982,
+          14079,
+          24439,
+          -29707,
+          -6753,
+          -7743,
+          3231,
+          -17521,
+          27047,
+          -27113
+        ],
+        "user_input_equals_derived": true,
+        "inference_input_binding": "9e69cb26d80ef31879b9b35b4a324b9617a4f394518daf41daed13bc226b13dd",
+        "user_input_binding": "9e69cb26d80ef31879b9b35b4a324b9617a4f394518daf41daed13bc226b13dd",
+        "weak_form": true,
+        "weak_form_statement": "∃x: x = derive(T_U) ∧ 推理输出 = M(x)",
+        "strong_form": true,
+        "strong_form_statement": "推理半绑定到用户提交的 x_U（定理 E 的 C4）",
+        "strong_form_landed": false,
+        "strong_form_note": "verify_composite 的签名里没有 x_U；第 7 步只重算 IB(n, input_from_response(T_U))。强形式 x=x_U 尚未落地（证明债 E-1）。"
+      },
+      "expected": "ok=True, satisfied=False（组合层 fail closed，要求陪伴证明）",
+      "conclusion": "缺 C5：证书**为真**，但组合义务**未成立**；必须另行合取 ezkl 陪伴证明，且其公开实例要含 encode(T_U)。",
+      "theorem_e_condition": "C5 缺失（陪伴证明未合取）",
+      "verdict": "TRUE-BUT-UNSATISFIED（正确 fail closed）"
+    }
+  ],
+  "summary": {
+    "genuine_compositions": [
+      "a"
+    ],
+    "rejected": [
+      "b"
+    ],
+    "accepted_weak_form_only": [
+      "c"
+    ],
+    "true_but_unsatisfied": [
+      "d"
+    ],
+    "only_a_holds": true,
+    "c_is_weak_form": true,
+    "strong_form_x_U_landed": false,
+    "proof_debt": "E-1（`input_binding` 绑 `derive(T_U)` 而非 `x_U`）"
+  }
+}
