@@ -302,12 +302,29 @@ def render_conclusion(rows: list[dict], rules: list[int], modes: list[str]) -> s
     if not ok:
         return "没有任何点成功 —— 这一轮没有可用的结论，见上面的失败原因。"
     mems = [r["peak_rss_mb"] for r in ok if r.get("peak_rss_mb")]
-    max_rc = max(r["rules"] for r in ok)
-    max_len = max(r["length"] for r in ok)
+    lengths = sorted({r["length"] for r in rows})
     parts = [
-        f"本轮成功 {len(ok)} 个点；已量到的可行域到 **{max_rc} 条规则 × "
-        f"{max_len} 字符** 为止。",
+        f"本轮成功 {len(ok)} 个点。**可行域不是矩形**："
+        f"「最大规则数 × 最大长度」这个组合不一定成功，"
+        f"下面按长度/规则两个方向分别报。",
     ]
+    # 逐档报告：按长度看最大成功规则数，按规则看最大成功长度。
+    # 旧版用 max(rule) × max(length) 拼成一句，会把 3 规则 × 10000 字符
+    # 说成可行 —— 而那一格恰恰 OOM。这里改为分别投影，避免把边界表读成矩形。
+    for mode in modes:
+        sub = [r for r in ok if r["proof_mode"] == mode]
+        if not sub:
+            continue
+        per_len = {L: max((r["rules"] for r in sub if r["length"] == L),
+                          default=None) for L in lengths}
+        per_rule = {rc: max((r["length"] for r in sub if r["rules"] == rc),
+                            default=None) for rc in sorted({r["rules"] for r in sub})}
+        len_txt = "、".join(f"{L}→{per_len[L]}" if per_len[L] is not None
+                            else f"{L}→—" for L in lengths)
+        rule_txt = "、".join(f"{rc}→{per_rule[rc]}" if per_rule[rc] is not None
+                             else f"{rc}→—" for rc in per_rule)
+        parts.append(f"`{mode}`：按长度看最大成功规则数 {len_txt}；"
+                     f"按规则看最大成功长度 {rule_txt}。")
     if mems:
         parts.append(f"成功点的峰值常驻在 {min(mems):.0f}–{max(mems):.0f} MB 之间。")
     unrun = [r for r in rows if not r.get("ok") and "预算用尽" in (r.get("error") or "")]
