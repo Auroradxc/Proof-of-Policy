@@ -6,21 +6,19 @@
 |---|---:|---|
 | Pike (`match_search`) vs Python `re.search` | **0** | 受支持子集；期望 0 |
 | Pike vs 朴素 (`match_search_naive`) | **0** | 消融实验的可比性前提；期望 0 |
-| G-1 空字符类（单独统计） | **30** | **已知 NFA 语义 bug**，见下 |
+| 空字符类（原 G-1） | **5** | 5 个模式全部被解析器拒绝（fail-closed） |
+| 零次重复 `a{0}`（原 V1-2） | **0** | 4 个模式均编译为 ε |
 
-## G-1：空字符类的语义缺口（已知，不是测试问题）
+## 空字符类契约（原 G-1，已修复：fail-closed）
 
-`[^\d\D]` 等取反字符类在求补后区间为空。Python 把它当作**空语言**（`re.search` 永不匹配）；当前 NFA 把空区间编译成 `Lit([])` → ε 边，于是**匹配空串**。复现：
+`[^\d\D]` 等取反字符类在求补后区间为空，其语言按定义是 **空集 ∅**。修复选择是让**解析器直接拒绝**空字符类，而不是引入新的 AST 节点：
 
 ```
-pattern = r"[^\d\D]"
-nfa.match_search(spec, "")   == True    # 代码：ε 边
-re.search(pattern, "")        == None    # Python：空语言
+nfa.compile_pattern(r"[^\d\D]")   # RegexSyntaxError
+re.compile(r"[^\d\D]")             # 接受（语言 = ∅，永不匹配）
 ```
 
-本文件用 `@unittest.expectedFailure` 显式标注这条相等断言；30 条 G-1 样例全部记录在 `fuzz.json` 的 `g1.entries` 里（`known_gap: true`）。
-
-**这是 NFA 语义 bug，不是测试问题**：空字符类的语言应为 ∅，而不是 `{ε}`。修复需要把 AST 的「空语言」与「空连接（ε）」分开（T3 §12.3、[`docs/blockers/V1.md`](../../docs/blockers/V1.md)）。在修复前，定理 G(a)(b) 只在假设 A-G0（字符类区间非空）下成立。
+这是**有意的子集边界**：本仓把空字符类归入「受支持子集」之外，由 [`docs/blockers/Core.md`](../../docs/blockers/Core.md) 记录解析器契约。Rust 侧不解析正则、只解释编译后的 spec，因此该模式在编译期就被拦下，不会到达电路。
 
 ### 边界对照
 
@@ -29,25 +27,28 @@ re.search(pattern, "")        == None    # Python：空语言
 | `[]` | 拒绝 | 拒绝 | 两端一致（都 fail closed） |
 | `[^]` | 拒绝 | 拒绝 | 两端一致（都 fail closed） |
 
-## 另一条已知实现 bug：`a{0}`（V1-2）
+## 零次重复 `a{0}`（原 V1-2，已修复）
 
-| 模式 | Python `re` | NFA `compile_pattern` |
-|---|---|---|
-| `a{0}` | 接受，匹配空串 | `AttributeError: '_Builder' object has no attribute '_build'` |
+| 模式 | NFA `compile_pattern` | 匹配空串 | 消耗 `a` |
+|---|---|---|---|
+| `a{0}` | compiled as epsilon (matches empty string) | True | False |
+| `a{0,0}` | compiled as epsilon (matches empty string) | True | False |
+| `(ab){0}` | compiled as epsilon (matches empty string) | True | False |
+| `(a|b){0,0}` | compiled as epsilon (matches empty string) | True | False |
 
-`_Builder._chain([])`（零次重复展开后为空）调用了 `self._build`，而类里只有 `build`。这是**实现 bug**，由 [`docs/blockers/V1.md`](../../docs/blockers/V1.md) 的 V1-2 记录；本测试不修 core，只用 `assertRaises(AttributeError)` 把它钉成已知行为。
+`_Builder._chain([])`（零次重复展开后为空）现在返回一个显式的 ε 片段（`s --ε--> t`），并修掉了原先指向不存在方法 `_build` 的笔误。注意 `match_search` 是 **search** 语义：零宽匹配会让 `a{0}` 在 `"a"` 上也返回真，但它**不消耗**任何字符（`anchored_full_match` 为假）。
 
 
 ## Python ↔ Rust 对拍
 
-驱动：`/tmp/pop-script-v1`；样本 172 对。
+驱动：`/home/dong/Proof-of-Policy/03_代码仓库/zk-policy/circuits/target/release/pop-script`；样本 172 对。
 
 | 比较 | mismatch 数 |
 |---|---:|
 | Python Pike vs Rust `--check` | **0** |
-| Rust vs Python `re` | **12** |
+| Rust vs Python `re` | **0** |
 
-两种实现判据一致；Rust vs `re` 的非零项来自 **G-1**（Python 与 Rust 共有的空字符类缺口），不是两种实现之间的分歧。
+修复后两种实现与 Python `re` 均一致（空字符类在编译期被拒绝，零次重复编译为 ε）。
 
 ## 复现
 

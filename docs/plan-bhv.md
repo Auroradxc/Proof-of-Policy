@@ -204,13 +204,20 @@ python3 bench/bench_policy_leak.py --out-dir bench/results
 
 | ID | 内容 | 影响 | 偿还方 |
 |---|---|---|---|
-| **G-1** | `[^\d\D]` 编译成 `Lit([])` → ε 边，匹配空串；Python/Rust 共有 | 定理 G 在空字符类上不成立；T3 已用 A-G0 限定 | core owner：区分 `Empty`/`Eps` 或拒绝空类；同步 Rust + 重建 vkey |
-| **V1-2** | `a{0}` 抛 `AttributeError: '_Builder' object has no attribute '_build'` | 编译期崩溃（不是 `PolicyError`），可用性缺陷；不涉健全性 | core owner：`_chain([])` 返回显式 ε 或拒绝零次重复；同步 Rust |
+| **G-1** | `[^\d\D]` 编译成 `Lit([])` → ε 边，匹配空串；Python/Rust 共有 | **已修复**（Core `45d7f61` / 合并 `9ac2d59`）：解析器 fail-closed 拒绝空类，A-G0 成为解析器契约 | — |
+| **V1-2** | `a{0}` 抛 `AttributeError: '_Builder' object has no attribute '_build'` | **已修复**：`a{0}`/`a{0,0}` 等价 ε；Rust `nfa_match_naive` 空文本 ε 缺口同步修复 | — |
 | **E-1** | `verify_composite` 绑 `derive(T_U)` 而非用户 `x_U` | 组合只证弱形式；论文 §7.5 的强形式未落地 | 证书公开值加入 `x_U`/承诺，验证方重算 `IB(n,x_U)` |
 | **B1-circuit-ed25519** | 电路内验签未做 | “网关信任”仍 residual | 电路 owner 提供 guest；B1 量测 |
 | **B1-split-view** | 透明日志无一致性证明/gossip | 签发完整性依赖外部假设 | 接 RFC 6962 风格日志 |
 
-**下一步**：core owner 修 G-1/V1-2；X1 云机跑 P0-06/07/08；X2 真模型跑 P0-09/10；
+**Core 修复（2026-11-01，`45d7f61` / 合并 `9ac2d59`）**：G-1 与 V1-2 均已修。
+新 `pop-script` sha256 `7f99fdb1…`，policy vkey `0x003eb14d…`（旧
+`0x0091b406…`）；详见 [`blockers/Core.md`](blockers/Core.md)。
+⚠️ **X1 云机仍用旧 binary**（pre-NFA-fix）；其 groth16 / 隐私面结果表必须标注
+云机 binary sha256 与 “pre-NFA-fix”。若论文要求最终代码的数字，需把新 binary
+传到云机重跑 probe（正常策略的判定语义不变，但 vkey 不同，不能与新 vkey 混表）。
+
+**下一步**：X1 云机跑 P0-06/07/08；X2 真模型跑 P0-09/10；
 P 把 T1/T2/T3 证明与 V1/B1 结果回写论文 §3–§7。
 
 ### 3.3 P2（工程与叙事）

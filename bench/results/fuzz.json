@@ -530,377 +530,114 @@
     "entries": [
       {
         "pattern": "[^\\d\\D]",
-        "text": "",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\d\\D]",
-        "text": "a",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\d\\D]",
-        "text": "1",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\d\\D]",
-        "text": " ",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\d\\D]",
-        "text": "abc",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\d\\D]",
-        "text": "xyz",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
+        "status": "rejected_by_parser",
+        "error_type": "RegexSyntaxError",
+        "error": "empty character class at position 6: its language is the empty set, which is outside the supported subset",
+        "python_re": "accepts (language = empty set)",
+        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1; docs/blockers/Core.md"
       },
       {
         "pattern": "[^\\w\\W]",
-        "text": "",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\w\\W]",
-        "text": "a",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\w\\W]",
-        "text": "1",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\w\\W]",
-        "text": " ",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\w\\W]",
-        "text": "abc",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\w\\W]",
-        "text": "xyz",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
+        "status": "rejected_by_parser",
+        "error_type": "RegexSyntaxError",
+        "error": "empty character class at position 6: its language is the empty set, which is outside the supported subset",
+        "python_re": "accepts (language = empty set)",
+        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1; docs/blockers/Core.md"
       },
       {
         "pattern": "[^\\s\\S]",
-        "text": "",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\s\\S]",
-        "text": "a",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\s\\S]",
-        "text": "1",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\s\\S]",
-        "text": " ",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\s\\S]",
-        "text": "abc",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "[^\\s\\S]",
-        "text": "xyz",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
+        "status": "rejected_by_parser",
+        "error_type": "RegexSyntaxError",
+        "error": "empty character class at position 6: its language is the empty set, which is outside the supported subset",
+        "python_re": "accepts (language = empty set)",
+        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1; docs/blockers/Core.md"
       },
       {
         "pattern": "([^\\d\\D])+",
-        "text": "",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "([^\\d\\D])+",
-        "text": "a",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "([^\\d\\D])+",
-        "text": "1",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "([^\\d\\D])+",
-        "text": " ",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "([^\\d\\D])+",
-        "text": "abc",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "([^\\d\\D])+",
-        "text": "xyz",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
+        "status": "rejected_by_parser",
+        "error_type": "RegexSyntaxError",
+        "error": "empty character class at position 7: its language is the empty set, which is outside the supported subset",
+        "python_re": "accepts (language = empty set)",
+        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1; docs/blockers/Core.md"
       },
       {
         "pattern": "([^\\d\\D]){1,2}",
-        "text": "",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "([^\\d\\D]){1,2}",
-        "text": "a",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "([^\\d\\D]){1,2}",
-        "text": "1",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "([^\\d\\D]){1,2}",
-        "text": " ",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "([^\\d\\D]){1,2}",
-        "text": "abc",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
-      },
-      {
-        "pattern": "([^\\d\\D]){1,2}",
-        "text": "xyz",
-        "pike": true,
-        "re": false,
-        "known_gap": true,
-        "kind": "g1_empty_character_class",
-        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1"
+        "status": "rejected_by_parser",
+        "error_type": "RegexSyntaxError",
+        "error": "empty character class at position 7: its language is the empty set, which is outside the supported subset",
+        "python_re": "accepts (language = empty set)",
+        "source": "docs/proofs/theorem-d-g.md §12.3 / G-1; docs/blockers/Core.md"
       }
     ],
-    "mismatch_count": 30,
-    "direction": "NFA/Pike 匹配空串（True），Python re 不匹配（False）",
-    "status": "known NFA semantics bug (G-1)"
+    "rejected_count": 5,
+    "status": "fixed: empty character classes are rejected at parse time (fail-closed); Python re accepts them as the empty language"
   },
   "empty_brackets": {
     "patterns": [
       "[]",
       "[^]"
     ],
-    "note": "Python 与 NFA 都拒绝；这是边界对照，不是语义分歧。"
+    "note": "Python 与本仓 NFA 都拒绝；这是边界对照，不是语义分歧。"
   },
-  "known_crashes": [
-    {
-      "pattern": "a{0}",
-      "id": "V1-2",
-      "python_re": "接受，匹配空串",
-      "nfa": "AttributeError: '_Builder' object has no attribute '_build'",
-      "source": "policydsl/core/nfa.py::_Builder._chain（_chain([]) 调 self._build）",
-      "status": "known implementation bug (not a test issue)"
-    }
-  ],
+  "zero_repeat": {
+    "patterns": [
+      "a{0}",
+      "a{0,0}",
+      "(ab){0}",
+      "(a|b){0,0}"
+    ],
+    "entries": [
+      {
+        "pattern": "a{0}",
+        "id": "V1-2",
+        "nfa": "compiled as epsilon (matches empty string)",
+        "match_empty": true,
+        "consumes_a": false,
+        "python_re_fullmatch_a": false,
+        "source": "policydsl/core/nfa.py::_Builder._chain (empty fragment list)",
+        "status": "fixed (zero repeat = epsilon)"
+      },
+      {
+        "pattern": "a{0,0}",
+        "id": "V1-2",
+        "nfa": "compiled as epsilon (matches empty string)",
+        "match_empty": true,
+        "consumes_a": false,
+        "python_re_fullmatch_a": false,
+        "source": "policydsl/core/nfa.py::_Builder._chain (empty fragment list)",
+        "status": "fixed (zero repeat = epsilon)"
+      },
+      {
+        "pattern": "(ab){0}",
+        "id": "V1-2",
+        "nfa": "compiled as epsilon (matches empty string)",
+        "match_empty": true,
+        "consumes_a": false,
+        "python_re_fullmatch_a": false,
+        "source": "policydsl/core/nfa.py::_Builder._chain (empty fragment list)",
+        "status": "fixed (zero repeat = epsilon)"
+      },
+      {
+        "pattern": "(a|b){0,0}",
+        "id": "V1-2",
+        "nfa": "compiled as epsilon (matches empty string)",
+        "match_empty": true,
+        "consumes_a": false,
+        "python_re_fullmatch_a": false,
+        "source": "policydsl/core/nfa.py::_Builder._chain (empty fragment list)",
+        "status": "fixed (zero repeat = epsilon)"
+      }
+    ],
+    "status": "fixed: zero repetition compiles to epsilon"
+  },
   "rust": {
     "status": "ok",
     "available": true,
-    "binary": "/tmp/pop-script-v1",
+    "binary": "/home/dong/Proof-of-Policy/03_代码仓库/zk-policy/circuits/target/release/pop-script",
     "comparisons": 172,
     "python_vs_rust_mismatches": [],
-    "rust_vs_re_mismatches": [
-      {
-        "pattern": "[^\\d\\D]",
-        "text": "",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\d\\D]",
-        "text": "a",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\d\\D]",
-        "text": "1",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\d\\D]",
-        "text": "abc",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\w\\W]",
-        "text": "",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\w\\W]",
-        "text": "a",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\w\\W]",
-        "text": "1",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\w\\W]",
-        "text": "abc",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\s\\S]",
-        "text": "",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\s\\S]",
-        "text": "a",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\s\\S]",
-        "text": "1",
-        "rust": true,
-        "re": false
-      },
-      {
-        "pattern": "[^\\s\\S]",
-        "text": "abc",
-        "rust": true,
-        "re": false
-      }
-    ],
-    "note": "python_vs_rust 为 0 表示两种实现判据一致；rust_vs_re 的非零项只有 G-1 空字符类这一处，且两种实现**共有**该缺口。"
+    "rust_vs_re_mismatches": [],
+    "note": "python_vs_rust 为 0 表示两种实现判据一致；修复后 rust_vs_re 也应为 0（空字符类在编译期就被拒绝，不再产生共有缺口）。"
   },
   "notes": []
 }
