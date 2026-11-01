@@ -1,0 +1,952 @@
+% =====================================================================
+%  Proof-of-Policy --- Supplementary Material (standalone IEEEtran)
+%
+%  Compile (two passes, quiet mode):
+%      pdflatex "\def\SKELQUIET{}\input{tdsc-supplementary.tex}"
+%
+%  This document carries the material removed from the 12--14 page main
+%  paper to meet the TDSC length limit: full proofs, the detailed
+%  evaluation tables, policy-private-mode detail, related-work tables,
+%  and reproduction instructions. It is self-contained: it restates the
+%  results it proves and can be read without the main PDF.
+% =====================================================================
+\documentclass[10pt,journal,compsoc]{IEEEtran}
+
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{array}
+\usepackage[caption=false,font=normalsize,labelfont=sf,textfont=sf]{subfig}
+\usepackage{textcomp}
+\usepackage{stfloats}
+\usepackage{url}
+\usepackage{verbatim}
+\usepackage{graphicx}
+\usepackage{cite}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{microtype}
+\usepackage{hyperref}
+
+\hyphenation{Proof-of-Policy zero-knowl-edge re-exec-ution pol-icy
+com-pli-ance bind-ing veri-fi-a-bil-ity cer-ti-fi-cate non-zero-knowl-edge}
+
+\setlength{\emergencystretch}{2em}
+
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcommand{\tabfont}{\footnotesize}
+
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+\newtheorem{remark}[theorem]{Remark}
+
+% Work markers are no-ops in the supplementary material.
+\newcommand{\need}[1]{}
+\newcommand{\fixme}[1]{}
+\newcommand{\wpmark}[1]{}
+
+% Supplementary numbering: S1, S2, ... and Table S1, S2, ...
+\renewcommand{\thesection}{S\arabic{section}}
+\renewcommand{\thetable}{S\arabic{table}}
+
+\begin{document}
+
+\title{Supplementary Material for\\``Proof-of-Policy: Zero-Knowledge Compliance
+Certificates for LLM Agent Outputs''}
+\author{Author Name(s)}
+\maketitle
+
+\begin{abstract}
+This supplement contains the full proofs, the detailed evaluation tables, the
+policy-private-mode tables, the related-work positioning, and the reproduction
+instructions omitted from the main paper for length. Section and table numbers
+are prefixed with ``S''. The main paper states every result; this document
+supplies the arguments and the per-configuration numbers behind them.
+\end{abstract}
+
+% =====================================================================
+\section{Full Proofs}
+\label{app:proofs}
+
+This section restates the results proved in the main paper and gives complete
+proofs. We use the main paper's notation; for convenience, the two objects the
+proofs depend on are repeated here.
+
+\begin{definition}[Guessing entropy; restated from the main paper]
+\label{def:k}
+For a secret distribution $\mathcal{D}$ and adversary side information $Z$, let
+\begin{multline*}
+\mathsf{Guess}(X \mid Z) \;\triangleq\; \max_{\mathcal{A}} \Pr[\mathcal{A}(Z) = X]\\
+\;=\; \mathbb{E}_z\!\left[\max_x \Pr[X = x \mid Z = z]\right],
+\end{multline*}
+\[
+k_X \;\triangleq\; -\log_2 \mathsf{Guess}(X \mid Z),
+\]
+the maximum ranging over all time-unbounded adversaries.
+\end{definition}
+
+\begin{assumption}[Adversary side information; restated from the main paper]
+\label{as:Z}
+The adversary knows the prompt, the model (possibly its weights), and the
+decoding parameters.
+\end{assumption}
+
+\begin{proposition}[Conditional trilemma; restated from the main paper]
+\label{thm:t1}
+Fix $\lambda,\varepsilon>0$ and $q\ge 1$. Let $X$ be a secret with guessing
+entropy $k_X<\log q+\log(1/\varepsilon)$ whose binding is \emph{guess-tight}:
+$\beta_\rho(X)=H(\mathsf{DOM}\|\rho\|X)$ for a random oracle $H$ and public
+randomness $\rho$ independent of $X$ and $Z$. Then:
+\begin{enumerate}
+\item[(1)] \emph{Public binding.} For any adversary that evaluates $\beta$ at
+most $q$ times,
+\[
+\Pr\!\left[\mathcal{A}^\beta(Z,\beta(X))=X\right]
+\le q\cdot\mathsf{Guess}(X\mid Z)+\mathrm{negl}(\lambda)
+= q\cdot 2^{-k_X}+\mathrm{negl}(\lambda).
+\]
+Hiding with advantage $\varepsilon$ is \emph{certified} by this bound when
+$k_X\ge\log q+\log(1/\varepsilon)$; for a skewed distribution this is a
+sufficient condition, not a matching attack. The integer $q$ counts evaluations
+of $\beta$, not time: the adversary may be computationally unbounded.
+\item[(2)] \emph{Keyed binding.} For $\beta_s(X)=H(s,X)$ with $s$ held only by a
+designated party and absent from the public values,
+$\Pr[\mathcal{A}(Z,b)=X]\le\mathsf{Guess}(X\mid Z)+\mathrm{negl}(\kappa)$.
+What the keyed form buys is hiding when
+$k_X<\log q+\log(1/\varepsilon)$; its price is PV-2.
+\item[(3)] \emph{Conditional trilemma.} Consider schemes whose binding is
+publicly recomputable (PV-2), whose hiding is exact recovery, and whose binding
+is guess-tight. Within the scheme class defined above, when
+$k_X<\log q+\log(1/\varepsilon)$ such a scheme cannot satisfy binding, hiding
+and PV-2 simultaneously.
+\end{enumerate}
+\end{proposition}
+
+\begin{proof}[Proof of Proposition~\ref{thm:t1}]
+\emph{(1).} Fix $z$ and let the adversary's query set be
+$Q = \{q_1, \dots, q_q\}$. Decompose by first hit,
+\[
+\Pr[\exists i : q_i = X] \;=\; \sum_i \Pr\!\left[q_i = X \wedge \neg E_{<i}\right],
+\]
+where $E_{<i} \triangleq \{\exists j < i : q_j = X\}$.
+Conditioned on $\neg E_{<i}$, every oracle answer $a_1,\dots,a_{i-1}$ already
+revealed is uniform and independent of $X$ (no queried point equals $X$, and $H$
+is a fresh random function), and $\beta(X)$ itself is uniform and independent of
+$X$. Hence $q_i$---a deterministic function of $(z, \beta(X), a_{<i})$---is
+\emph{independent of $X$}, so
+\begin{multline*}
+\Pr[q_i = X \mid Z = z]
+= \sum_x \Pr[q_i = x]\,\Pr[X = x \mid Z = z] \\
+\le \max_x \Pr[X = x \mid Z = z] = 2^{-k_z},
+\end{multline*}
+giving $\Pr[\exists i : q_i = X \mid z] \le q\,2^{-k_z}$. Taking the expectation
+over $z$ and using $\mathbb{E}_z[2^{-k_z}] = \mathsf{Guess}(X \mid Z) = 2^{-k_X}$
+from Definition~\ref{def:k} yields $q \cdot 2^{-k_X}$. An adversary that outputs
+an unqueried value wins with probability at most $2^{-k_z} \le q\,2^{-k_z}$,
+which the same bound absorbs. No $q\cdot2^{-\lambda}$ term is needed in the
+exact-recovery game: a query that lands on a different $x$ with
+$\beta(x)=y$ is a second preimage of $H$, not a win. The explicit
+$q\cdot2^{-\lambda}$ is kept only when the win condition is consistency with the
+published $b$ rather than exact recovery, or when $q$ is unbounded.
+
+\emph{(2).} Without an oracle for $\beta_s$, the value $b=H(s,X)$ is uniform and
+independent of $X$ in the random-oracle model for an adversary that does not know
+$s$, so the best strategy is the prior mode and succeeds with probability
+$\mathsf{Guess}(X\mid Z)$. An attempted enumeration must also guess $s$, at cost
+$2^{-\kappa}$ per query. The bound is therefore
+$\mathsf{Guess}(X\mid Z)+\mathrm{negl}(\kappa)$, with no $q$-fold amplification.
+Part (2) buys hiding only below the public-form threshold
+$\log q+\log(1/\varepsilon)$; when $k_X=0$ the prior mode already recovers $X$
+and no binding helps.
+
+\emph{(3).} Public recomputability gives (1). If (1) exceeds $\varepsilon$, the
+only way to avoid it is a binding that a verifier cannot recompute, i.e.\ a keyed
+binding, which by part (2) forfeits PV-2. The third leg---hiding plus PV-2
+without binding---is excluded from the class of compliance schemes because a
+certificate whose binding does not pin $X$ certifies nothing about the delivered
+artifact.
+\end{proof}
+
+\noindent\emph{Preimage-class bound.} For an arbitrary deterministic public
+$\beta$, conditioning on $\beta(X)$ gives
+$\Pr[\mathcal{A}^\beta(Z,\beta(X))=X]\le
+\mathbb{E}_y[\max_x\Pr[X=x\mid Z,\beta(X)=y]]$, with no hypothesis on $\beta$.
+For $\beta=\mathrm{id}$ or an injective $\mathsf{encode}$ this equals $1$; for a
+lossy encoding it equals the inverse of the preimage-class size.
+
+\begin{theorem}[D-privacy from three conditions; restated from the main paper]
+\label{thm:dpriv}
+The scheme is $D$-private if (C1) there is a PPT simulator $S_{\mathrm{rest}}$
+such that, for every admissible $(\pi,T,n)$, the public values other than the
+commitment satisfy
+$(h_\pi,S_{\mathrm{rest}}(pp,h_\pi,D(\pi),\mathrm{pub}_T,n))\approx_c
+L_{\mathrm{pub}}(\pi,T,n)$; (C2) the proof system is witness-hiding, i.e.\
+$L_{\mathrm{proof}}$ has a simulator that takes only the public statement;
+and (C3) the policy commitment is hiding for all $D$-equal policies,
+$(pp,h_{\pi_0})\approx_c(pp,h_{\pi_1})$. The advantage is
+$O(\varepsilon_{\mathrm{pub}}+\varepsilon_{\mathrm{wh}}+\varepsilon_{\mathrm{com}})$.
+\end{theorem}
+
+\begin{proof}[Proof of Theorem~\ref{thm:dpriv}]
+Fix an admissible tuple $(\pi_0,\pi_1,T,n)$ with $D(\pi_0)=D(\pi_1)$ and
+$R(\pi_0,T)=R(\pi_1,T)$. Write $h_i=h_{\pi_i}$,
+$R_i=L_{\mathrm{rest}}(\pi_i,T,n)$, $P_i=L_{\mathrm{proof}}(\pi_i,T,n)$ and
+$\mathsf{Stmt}_i=(h_i,R_i)$. Consider the hybrids
+\begin{align*}
+H_0&=(h_0,R_0,P_0),\\
+H_1&=(h_0,R_0,S_{\mathrm{proof}}(\mathsf{Stmt}_0)),\\
+H_2&=(h_0,S_{\mathrm{rest}}(h_0,D,\mathrm{pub}_T,n),S_{\mathrm{proof}}(\mathsf{Stmt}_0)),\\
+H_3&=(h_1,S_{\mathrm{rest}}(h_1,D,\mathrm{pub}_T,n),S_{\mathrm{proof}}(\mathsf{Stmt}_1)),\\
+H_4&=(h_1,R_1,S_{\mathrm{proof}}(\mathsf{Stmt}_1)),\\
+H_5&=(h_1,R_1,P_1).
+\end{align*}
+$H_0\approx H_1$ and $H_4\approx H_5$ cost $\varepsilon_{\mathrm{wh}}$ each by
+C2; $H_1\approx H_2$ and $H_3\approx H_4$ cost
+$\varepsilon_{\mathrm{pub}}$ each by C1. For $H_2\approx H_3$, split into
+$H_{2a}=(h_1,S_{\mathrm{rest}}(h_1,D,\mathrm{pub}_T,n),S_{\mathrm{proof}}(\mathsf{Stmt}_0))$
+and $H_{2b}=H_3$: $H_2\approx H_{2a}$ costs $\varepsilon_{\mathrm{com}}$ by C3,
+and $H_{2a}\approx H_{2b}$ follows because
+$\mathsf{Stmt}_0\approx_c\mathsf{Stmt}_1$ (C1 and C3 by triangle inequality) and
+$S_{\mathrm{proof}}$ is a PPT function of the statement. The triangle inequality
+gives $4\varepsilon_{\mathrm{pub}}+2\varepsilon_{\mathrm{wh}}+2\varepsilon_{\mathrm{com}}$,
+which is $O(\varepsilon_{\mathrm{pub}}+\varepsilon_{\mathrm{wh}}+\varepsilon_{\mathrm{com}})$.
+The game fixes one $T$ because two different artifacts are distinguished by
+$B(n,\cdot)$ itself, which is response-side leakage and not a policy advantage.
+\end{proof}
+
+\begin{theorem}[Leakage-profile decomposition; restated from the main paper]
+\label{thm:leak}
+Let $V=(L_{\mathrm{pub}},L_{\mathrm{proof}},L_{\mathrm{side}})$ be the verifier's
+view, where $L_{\mathrm{pub}}$ is the certificate's public values,
+$L_{\mathrm{proof}}$ is what the proof artefact reveals about the witness
+$w=(\pi,T,\mathrm{trace})$, and $L_{\mathrm{side}}$ is the adversary's prior
+information $Z$. For any $q\ge 1$ and any adversary that evaluates $\beta$ at
+most $q$ times,
+\[
+\Pr\!\left[\mathcal{A}^\beta(V)=X\right]
+\;\le\; q\cdot\mathsf{Guess}\!\left(X\mid L_{\mathrm{pub}},L_{\mathrm{proof}},L_{\mathrm{side}}\right)
++\mathrm{negl}(\lambda),
+\]
+with the final output charged as one evaluation.
+\end{theorem}
+
+\noindent\emph{Proof of Theorem~\ref{thm:leak}.} The proof is the first-hit
+decomposition of Proposition~\ref{thm:t1}(1) with $(Z,\beta(X))$ replaced by the
+verifier view $V$. The step that changes is the uniformity of answers to queries
+that have not hit $X$: it holds conditionally on $L_{\mathrm{pub}}$ and fails when
+$L_{\mathrm{proof}}$ is a function of the witness. A witness-hiding tier restores
+$L_{\mathrm{proof}}=\bot$ and hence the public-value bound; a \texttt{core}
+artefact does not, and the bound can reach $1$.
+
+\begin{theorem}[Delivery binding; restated from the main paper]
+\label{thm:t3}
+Fix a policy $\pi$. A delivery adversary $\mathcal{B}$ may, \emph{before}
+seeing the receiver's challenge, precompute a set $S$ of accepted transcripts,
+where each transcript covers at most $c$ challenges. The receiver then
+contributes $f$ fresh, uniformly random bits $r$ that enter the proven
+statement. Under the certificate's soundness (D1) and challenge binding
+(D2/B-bind), the divergence advantage satisfies
+\[
+\mathsf{Adv}_{\mathrm{del}}(\mathcal{B}) \;\le\; |S| \cdot c \cdot 2^{-f}
+\;+\; \mathrm{negl}(\lambda).
+\]
+The replay-only probability---acceptance without requiring divergence---is at
+most $|S|\cdot c\cdot 2^{-f}$. If the receiver contributes no fresh randomness
+($f = 0$; e.g.\ an empty nonce), a precomputed transcript is accepted with
+probability $1$ and \emph{does not decay in any parameter of the system}.
+\end{theorem}
+
+\begin{proof}[Proof of Theorem~\ref{thm:t3}]
+The receiver's freshness $r$ enters the proven statement through
+$b = H(\mathsf{dom} \,\|\, r \,\|\, T)$. For a certificate in $S$ to be accepted
+on $r$, the value $r$ must fall inside that certificate's challenge set
+$A(\mathrm{cert})$, with $|A(\mathrm{cert})|\le c$; a union bound over $S$ gives
+$\sum_{\mathrm{cert}\in S}|A(\mathrm{cert})|/2^f\le |S|\cdot c\cdot 2^{-f}$.
+A certificate minted \emph{after} $r$ is seen can diverge only by exhibiting two
+distinct preimages of the same $b$ under $B(r,\cdot)$, which is exactly a
+challenge-binding failure and costs $\mathrm{negl}(\lambda)$. When $f = 0$ every
+element of $S$ is a permanently valid replay, so the replay probability is $1$
+and does not decay in any parameter of the system. The $f = 0$ branch is not
+hypothetical: \texttt{circuits/\allowbreak types/\allowbreak src/\allowbreak
+lib.rs} (lines 950--995) documents an empty nonce as a legal input that
+``provides no replay protection.'' The $f=0$ separation holds under stateless
+public verification with no external mechanism (no revocation table, trusted
+clock, or hardware). The $c$ factor is tight when the challenge sets of the
+transcripts in $S$ are disjoint and of size $c$.
+\end{proof}
+
+\begin{proposition}[Quadratic cost of the naive matcher]
+\label{prop:naive}
+For the pattern \texttt{a+b} and input \texttt{a}$^n$, the naive backtracking
+matcher performs
+$\sum_{i=1}^{n}(n-i+1)=n(n+1)/2=\Theta(n^{2})$ NFA steps, whereas the Pike VM
+performs $\Theta(n)$. The adversarial input family is admissible because the
+response bytes are chosen by the party being checked. This bounds the cost of
+\emph{that} baseline, not of policy-compliance matching: the Pike VM is linear
+on the same family, and no lower bound for the problem is claimed.
+\end{proposition}
+\begin{proof}
+No input position contains \texttt{b}, so no start position can fail or accept
+before the end of the string. The start at $i$ therefore takes exactly
+$n-i+1$ steps, and the sum is $n(n+1)/2$. The Pike VM keeps one state per NFA
+position and scans once.
+\end{proof}
+
+\begin{proposition}[NFA contract]
+\label{prop:nfa}
+For the supported regular-expression subset $P$---ASCII, ordered and disjoint
+character-class ranges, Unicode scalar values, and the same compiled policy on
+both sides---the Thompson construction preserves the language, the Pike VM
+implements unanchored substring search, and the Python reference and Rust
+circuit matchers agree on the same compiled NFA specification. Empty character
+classes are rejected at parse time (fail-closed), so ``non-empty character
+class'' is a parser contract rather than an extra theorem assumption.
+\end{proposition}
+\begin{proof}[Proof sketch]
+Language preservation is the standard Thompson construction over the restricted
+syntax. The Pike VM simulates all NFA states at one input position and advances
+once per character, so it decides unanchored search in one pass. The two
+matchers consume the same \texttt{ConstraintSpec} bytes and implement the same
+transition relation; agreement is checked by an algorithm-level bisimulation
+plus differential fuzzing against Python's \texttt{re}, not by line-by-line
+formal verification.
+\end{proof}
+
+% =====================================================================
+\section{Evaluation Details}
+\label{app:eval-details}
+
+This section carries the per-configuration tables and the detailed readings
+omitted from the main paper. Every number is the content of the checked-in
+result file named in the caption, as in the main paper.
+
+\subsection{Cycle sweep: length versus rule count}
+\label{sec:eval-cycles}
+
+Response length was pushed from 200 to 100{,}000 characters and the rule count
+from 1 to 6, giving 40 measurement points (\texttt{bench/bench\_cycles.py}; the
+full matrix is in \texttt{bench/results/cycles.md}). The response text comes from
+an evaluation artefact the repository's own end-to-end demo produced (372
+characters, three segments deduplicated by content); longer points are tiled from
+it. What is measured is therefore the \emph{curve} of scanning cost, not ``a real
+100{,}000-character document''. Every point was first confirmed to match no rule:
+a matching rule short-circuits, and the cost of a short-circuit says nothing.
+
+\begin{table}[t]
+\centering
+\caption{Cycle count against length, per rule set. Five rule sets, six length
+points each; $R^2 \approx 1.0000$ throughout. Source:
+\texttt{bench/results/cycles.md}.}
+\label{tab:cycles}
+\tabfont
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+Rules & \texttt{keyword} & \texttt{pattern} & Slope (cyc/char) & Intercept \\
+\midrule
+1 & 0 & 0 & 73.9      & 50{,}137 \\
+2 & 1 & 0 & 105.3     & 65{,}942 \\
+3 & 1 & 1 & 4{,}289.8 & 387{,}501 \\
+4 & 2 & 1 & 4{,}048.8 & 405{,}785 \\
+6 & 3 & 2 & 5{,}403.5 & 993{,}257 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three findings, in decreasing order of how much they change what may be claimed.
+
+\emph{(1) With the rule set fixed, cycle count is exactly linear in length.}
+Five rule sets, six length points each, $R^2 \approx 1.0000$ throughout
+(Table~\ref{tab:cycles}).
+
+\emph{(2) Scanning cost is dominated by the NFA, not by the rule count.} One
+keyword rule costs about $+31.6$ cycles per character at the margin; one NFA
+regular expression (an email pattern) costs about $+3{,}634$---roughly
+$115\times$ more. Equivalently, a rule set containing a regular expression has a
+per-character slope ($4{,}289.8$) $58\times$ that of a rule set with only string
+rules ($73.9$).
+
+\emph{(3) Unit prices are not additive: a unit price is a property of a rule
+\emph{in context}, not of the rule.} Fitting the slopes as
+$(\text{keyword},\text{pattern})$ unit prices gives $R^2 = 0.9169$ and a
+\emph{negative} keyword unit price ($-477.2$ cycles per character). This is not
+noise; two probes give the mechanism directly:
+
+\begin{itemize}
+  \item \textbf{Ordering probe} (same rules, same text, $L = 10^5$): declared
+  order costs $541{,}342{,}069$ cycles against $570{,}736{,}989$ in reverse,
+  a difference of $+5.43\%$, while \texttt{passed} is identical in both. \emph{The
+  semantics of the decision do not depend on order; the cost does.}
+  \item \textbf{Marginal probe} ($L = 10^5$, filling the one matrix cell the
+  sweep could not reach---regular expressions with no keyword rule):
+  $[\text{len},\text{pat}]$ over $[\text{len}]$ has a marginal unit price of
+  $3{,}633.7$, whereas ``add one more keyword rule'' has two different answers:
+  $+31.6$ alone, $+585.6$ in a policy that already contains a regular expression
+  ($-153.7$ if inserted before it). The same action changes sign between
+  $-154$ and $+586$.
+\end{itemize}
+
+The mechanism lies in zkVM memory allocation: every \texttt{ascii\_lower} and
+every Pike VM match allocates, and allocator state depends on previous
+allocations. We therefore quote \emph{per-rule-set slopes} (the table above,
+directly citable) rather than any ``unit price $\times$ count'' expression. The
+simple model $\text{cycles} \approx a\cdot|T|\cdot\text{rules} + b$ that this
+work anticipated is refuted by the data ($R^2 = 0.872$, negative intercept), and
+we report that too: \emph{a model refuted by its own data is itself an evaluation
+result.}
+
+\subsection{Matcher ablation and proof-path cost}
+\label{sec:eval-ablation}
+
+\emph{Construction.} Pattern \texttt{a+b} against input
+\texttt{a}$^{\times n}$ containing no \texttt{b}, so the match is necessarily
+absent and both implementations must scan to the end. The naive implementation
+reinvents and restarts at every start position, giving $\Theta(n^2)$; the Pike VM
+decides in a single linear pass (\texttt{bench/bench\_ablation.py}).
+Table~\ref{tab:ablation} reports the cycles. Read per-character cost rather than
+absolute figures. Doubling $n$ leaves the Pike VM's per-character cost
+essentially unchanged ($-11.1\%$, $-6.4\%$) while the naive path's nearly doubles
+($+96.4\%$, $+98.6\%$). At $n = 400$ the naive path is already $90\times$ slower,
+and that ratio doubles again with each doubling of $n$. \emph{This is an attack
+surface}: the input length for policy compliance is chosen externally---an
+agent's reply, a concatenated session---so an adversary who needs only to write a
+long reply drives a naive implementation's cost quadratically. The comparison is
+meaningful only because the two paths decide identically, which
+\texttt{tests/test\_ablation.py} pins down (Python and Rust
+\texttt{match\_search} $\equiv$ \texttt{match\_search\_naive}). In the systems we
+surveyed, we are not aware of ablation evidence specific to policy-compliance
+matching.
+
+\begin{table}[t]
+\centering
+\caption{Matcher ablation for pattern \texttt{a+b} on input \texttt{a}$^n$.
+Cycles are zkVM execution counts. Source:
+\texttt{bench/results/ablation.md}.}
+\label{tab:ablation}
+\tabfont
+\begin{tabular}{@{}rrrrr@{}}
+\toprule
+$n$ & Naive cycles & Pike cycles & Ratio \\
+\midrule
+100 & 12{,}382{,}720  & 643{,}894   & $19.2\times$ \\
+200 & 48{,}638{,}946  & 1{,}145{,}209 & $42.5\times$ \\
+400 & 193{,}207{,}130 & 2{,}143{,}617 & $90.1\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Proof-path cost.} Re-running the same construction through the
+compliance driver (\texttt{bench/results/dos\_proof.md}) reproduces the ratios
+on the execution path---$643{,}906$ against $12{,}382{,}732$ cycles at $n=100$,
+rising to $90.1\times$ at $n=400$---and then prices the proving path. Proving is
+where the quadratic term meets the prover's fixed memory floor: the Pike path at
+$n=100$ succeeds at $122.2$\,s and $11{,}695$\,MiB; the naive path at $n=25$
+succeeds at $153.2$\,s and $12{,}137$\,MiB; at $n=50$ it is
+\textbf{OOM/SIGKILL} after $226.5$\,s at $13{,}772$\,MiB peak. We report the OOM
+as a result rather than a discarded run: it is the point at which the
+adversarial quadratic term exhausts a $14.6$\,GiB machine, and it is why the
+$n\ge100$ naive points and all $n=400$ proving points are left to a cloud
+machine. The cycle counts differ from these execution-path figures by about one
+part in $10^5$, because they come from a separate driver build; the ratios
+agree. These proving runs predate the NFA fix discussed in the main paper and
+carry that binary's digest; the fix changes the guest and the verification key,
+so the figures are not mixed with any post-fix run.
+
+\begin{table}[t]
+\centering
+\caption{Proof-path denial of service on a 24-core / 14.6\,GiB machine. The
+\texttt{naive} row at $n=50$ is an observed out-of-memory kill, retained as a
+result. Source: \texttt{bench/results/dos\_proof.md}.}
+\label{tab:dos}
+\tabfont
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrrl@{}}
+\toprule
+Point & Cycles & Prove (s) & RSS (MiB) & Result \\
+\midrule
+pike $n{=}100$ & 643{,}906 & 122.2 & 11{,}695.1 & \checkmark \\
+naive $n{=}25$ & --- & 153.2 & 12{,}137.3 & \checkmark \\
+naive $n{=}50$ & --- & 226.5 & 13{,}771.6 & OOM/SIGKILL \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Composition: four negative controls}
+\label{sec:eval-compose}
+
+The leakage-profile theorem of the main paper prices each half; it does not say
+that conjoining two valid halves yields a valid composite. We built the four
+cells of Table~\ref{tab:compose} against the composite verifier's binding layer,
+with the cryptographic validity of the two sub-proofs covered separately by the
+end-to-end tests. Only cell~(a) satisfies the strong form, and only because
+$x_U=\mathsf{derive}(T_U)$; the implementation claims only the weak form of the
+composition proposition in the main paper and its E-1 remark. Cell~(c) is the
+one that matters: the current verifier binds the inference half to
+$\mathsf{derive}(T_U)$, not to the input $x_U$ the user submitted, so it accepts
+a certificate that proves the weak form
+$\exists x: x=\mathsf{derive}(T_U)\wedge T_U=M(x)$ while the strong form
+$x=x_U$ remains unproved. This is proof debt E-1, not a test artefact; it is the
+concrete reason composition alone does not close the gap.
+
+\begin{table}[t]
+\centering
+\caption{Composition negative controls. \texttt{ok} is the verifier's binding
+check; \texttt{satisfied} is the policy outcome. Source:
+\texttt{bench/results/composition\_controls.md}.}
+\label{tab:compose}
+\tabfont
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lL{0.34\columnwidth}ccL{0.23\columnwidth}@{}}
+\toprule
+Cell & Construction & ok & sat. & Reading \\
+\midrule
+(a) & same $n$; $x_U=\mathsf{derive}(T_U)$; \texttt{delegated} empty &
+\checkmark & \checkmark & true composition \\
+(b) & the two halves use different nonces & $\times$ & $\times$ &
+rejected by the four-way binding check \\
+(c) & $x_U\neq\mathsf{derive}(T_U)$; inference binds only the derived input &
+\checkmark & \checkmark & \textbf{weak form only}; $x=x_U$ not landed (E-1) \\
+(d) & \texttt{delegated} non-empty & \checkmark & $\times$ &
+true but unsatisfied; fail closed \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Gateway signing: measured cost, blocked circuit}
+\label{sec:eval-gateway}
+
+Table~\ref{tab:gateway} prices the trust boundary the main paper states rather
+than hides. Off-circuit Ed25519 verification costs $0.094$, $0.844$ and
+$10.165$\,ms per receipt batch at $1$, $10$ and $100$ receipts, with a
+per-receipt marginal near $0.08$--$0.10$\,ms; the session-end \texttt{ToolSeal}
+is $0.074$\,ms to sign, $0.184$\,ms to verify and $345$\,B. A concatenated
+2-of-3 threshold prototype signs in $0.173$\,ms, merges in $0.001$\,ms, verifies
+in $0.508$\,ms and produces a $981$\,B certificate ($759$\,B when only the two
+required signatures are carried). The threshold semantics are machine-checked:
+any two distinct signatures pass, one signature is rejected, and two signatures
+under the same key id do not count as two.
+
+\begin{table}[t]
+\centering
+\caption{Gateway signing cost on a 24-core / 14.6\,GiB machine ($n=300$ per
+row). Rows are measured medians. The in-circuit row is \emph{blocked}: the
+circuit contains no Ed25519 verifier by design, and no cycle, time or memory
+figure is reported. Source: \texttt{bench/results/gateway\_sig.md}.}
+\label{tab:gateway}
+\tabfont
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+Configuration & Sign (ms) & Verify (ms) & Cert (B) & $n$ \\
+\midrule
+Ed25519, 1 receipt & 0.058 & 0.094 & 237.0 & 300 \\
+Ed25519, 10 receipts & 0.415 & 0.844 & 288.3 & 300 \\
+Ed25519, 100 receipts & 4.885 & 10.165 & 295.2 & 300 \\
+\texttt{ToolSeal} (10 receipts) & 0.074 & 0.184 & 345 & 300 \\
+1-of-1 & 0.069 & 0.173 & 648 & 300 \\
+2-of-3 (3 signatures) & 0.173 & 0.508 & 981 & 300 \\
+\midrule
+In-circuit Ed25519 & \multicolumn{3}{c}{blocked: no guest, no number} & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The in-circuit row is the honest blank. Verifying Ed25519 inside the zkVM is not
+in the circuit---\texttt{circuits/} deliberately keeps the signature field out
+of the circuit view---and building a guest to measure it exceeds this
+experiment's file ownership, so cycles, proving time and peak memory are
+\emph{null}, not zero. We therefore do not infer a circuit cost from the
+off-circuit cost, and the trust root still contains the gateway key. What the
+threshold prototype buys is not a cheaper verification but a weaker single point
+of trust: one key compromised is no longer enough, at roughly three times the
+signing work and certificate size, and with a new obligation to argue that the
+gateways agree on the chain tail.
+
+Putting Ed25519 inside the guest is a design option, not a measured one. SP1
+6.7.0 has no Ed25519 precompile; the guest change would rotate the policy vkey
+and add public values to the outcome, invalidating existing certificates, and we
+did not build or time it. The only gateway-side variant measured is the 2-of-3
+threshold prototype. It removes the single-key trust but not gateway collusion
+or tail truncation. An authenticated gateway roster, HSM key custody and a
+trusted time source remain open.
+
+\subsection{Cross-system baselines: 49 cells, 46 populated}
+\label{sec:eval-baselines}
+
+Table~\ref{tab:baselines} places PoP against six alternatives across seven
+dimensions: 49 cells, of which 46 are populated (measured or cited) and 3 are
+unavailable. Every populated cell is tagged $[m]$ (measured in this repository
+or this study) or $[c]$ (cited from the named paper). The three measured arms are
+PoP, the signed-Merkle log and a simulated trusted server; zkAgent, NiyamAI,
+Zaguk and PCO are cited. Zaguk and PCO did not yield comparable performance
+numbers in our environment---the former's proceedings PDF was unreachable and
+the latter reports no performance table---so those cells are em dashes, not
+estimates. The seven dimensions impose different proof obligations; the table is
+a statement of \emph{what each system obliges the verifier to trust}, not a
+single ranking.
+
+\begin{table*}[t]
+\centering
+\caption{Cross-system comparison. $[m]$ = measured here; $[c]$ = cited from the
+source named in \texttt{bench/results/baselines.md}; em dash = not available,
+not guessed. The trust root is per obligation, not one column: PoP's response
+and policy proofs trust the vkey, while tool receipts additionally trust the
+gateway key.}
+\label{tab:baselines}
+\tabfont
+\setlength{\tabcolsep}{3pt}
+\scriptsize
+\begin{tabular}{@{}L{0.11\textwidth}L{0.13\textwidth}L{0.13\textwidth}L{0.12\textwidth}L{0.11\textwidth}L{0.10\textwidth}L{0.10\textwidth}L{0.08\textwidth}@{}}
+\toprule
+Dimension & PoP & signed-Merkle & TEE (sim) & zkAgent & NiyamAI & Zaguk & PCO \\
+\midrule
+Trust root & vkey + crypto $[m]$; tool-receipt gateway key & Ed25519 gateway $[m]$ &
+server / TEE $[m]$ & zkVM + provider $[c]$ & SNARK + judge $[c]$ &
+ezkl + commitment $[c]$ & authority + ledger $[c]$ \\
+Latency & 40.5--100.3\,s core; 279--344\,s \texttt{gr\-oth16}; 89.84\,ms verify $[m]$ &
+0.132\,ms sign; 2.131\,ms append; 0.322\,ms check $[m]$ &
+0.139\,ms sign; 0.102\,ms verify $[m]$ &
+194.4\,s / 0.42\,s $[c]$ & 1.7\,s / 51\,ms $[c]$ &
+not comparable $[c]$ & --- \\
+Size & 2.79\,MB core; 1{,}874\,B \texttt{gr\-oth16} $[m]$ & 648\,B + 761\,B $[m]$ &
+648\,B $[m]$ & 96\,MiB (Shout) $[c]$ & 18.6\,KB $[c]$ & --- & --- \\
+Response privacy & committed $[m]$ & none $[m]$ & none $[m]$ &
+committed $[c]$ & not reported $[c]$ & yes $[c]$ & yes $[c]$ \\
+Policy privacy & public values salted; proof artefact open $[m]$ & none $[m]$ & none $[m]$ &
+n/a $[c]$ & contract commitment $[c]$ & yes $[c]$ & partial $[c]$ \\
+Needs $T$ plaintext & no $[m]$ & yes $[m]$ & no $[m]$ & no $[c]$ &
+unclear $[c]$ & no $[c]$ & no $[c]$ \\
+Needs $\pi$ plaintext & no $[m]$ & yes $[m]$ & no $[m]$ & n/a $[c]$ &
+unclear $[c]$ & no $[c]$ & partial $[c]$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The asymmetry the table exposes is the one the signature baseline already
+showed: the cheap arms require the verifier to re-run the judgment on plaintext,
+while the private arms move that work into a proof or into a trusted party. PoP
+is on the proof side, with a measured cost four to five orders of magnitude
+above the signature arm and a trust root that, unlike the TEE arm, contains no
+hardware.
+
+\subsection{Issuance: detection, not prevention}
+\label{sec:eval-issuance}
+
+A provider that never issues a certificate is indistinguishable, from the
+verifier's side, from a provider with nothing to certify; no cryptographic
+layer forces issuance. What a transparency log changes is the \emph{detection}
+rate, and only under an external obligation to append before delivery. In a
+simulation with $N=2000$ deliveries, $m=100$ withheld violations and a sampling
+rate $p=0.05$, an audit that samples the \emph{delivered} artifacts detects
+$0.9948$ of the withheld set in exact arithmetic ($0.9940$ by Monte Carlo over
+500 draws). An audit that samples the \emph{log} detects $0.0000$, because the
+withheld deliveries have no log entry at all: the sampling frame is wrong, not
+unlucky.
+
+\begin{table}[t]
+\centering
+\caption{Issuance detection under two sampling frames ($N=2000$, $m=100$,
+$p=0.05$, seed 20261101). Exact is $1-\binom{N-m}{s}/\binom{N}{s}$ with $s=100$;
+Monte Carlo uses 500 draws. Source: \texttt{bench/results/issuance.md}.}
+\label{tab:issuance}
+\tabfont
+\begin{tabular}{@{}lrr@{}}
+\toprule
+Sampling frame & Exact & Monte Carlo \\
+\midrule
+Delivered artifacts (correct frame) & 0.9948 & 0.9940 \\
+Log entries (wrong frame) & 0.0000 & 0.0000 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two boundaries travel with these numbers. First, the result quantifies
+\emph{detection}, never \emph{prevention}: whether a detected violation is
+punished depends on penalties and incentives outside the model. Second, the
+sufficiency direction assumes an append-before-delivery obligation, a log that
+is append-only and publicly readable, inclusion proofs, and an external
+mechanism against split views. The prototype implements append-only semantics,
+inclusion proofs, optional tree-head signatures and checkpoints; it does
+\emph{not} implement consistency proofs or gossip, so split-view resistance is
+an external assumption, not a delivered property. Three premises travel with the
+result: (F-1) the append-before-deliver obligation is external to cryptography;
+(F-3) the log entry must bind the delivered $T$ (or a receipt), not only
+$H(\mathrm{cert})$; and (F-4) the audit sample frame is delivered artifacts, not
+log entries. The $1-(1-p)^m$ form assumes independent sampling and
+detection-on-hit.
+
+% =====================================================================
+\section{Policy-Private Mode Details}
+\label{app:private-policy}
+
+\paragraph{Three parties.} ``Three'' means \emph{authority / operator / third
+party}; an auditor is a named instance of the third party, not a fourth trust
+anchor. Table~\ref{tab:wp4-parties} states the model.
+
+\begin{table}[t]
+\centering
+\caption{The three-party model of policy-private mode.}
+\label{tab:wp4-parties}
+\tabfont
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.16\columnwidth}L{0.14\columnwidth}L{0.62\columnwidth}@{}}
+\toprule
+Party & Honest? & Holds; wants \\
+\midrule
+Authority $R$ & \textbf{Yes}, by (P-PP) & Holds $\pi$ and the issuing record;
+wants $\pi$ actually enforced, and wants to be able to check that it was. \\
+Operator $O$ & \textbf{No} (the adversary) & Holds $\pi$, $T$, the proving key;
+wants $\pi$ hidden from third parties while still being able to certify. \\
+Third party $V$ & Yes & Holds only public values---\texttt{policy\_\allowbreak hash},
+\texttt{circuit\_\allowbreak hash}, \texttt{response\_\allowbreak commitment},
+\texttt{passed}, the proof; wants to confirm that \emph{some issued} policy
+passed, and must \emph{not} learn $\pi$. \\
+\emph{(Auditor $V^{*}$)} & Yes & As $V$, plus $\pi$ once $O$ discloses it;
+wants ex-post accountability. \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Two boundaries must be stated with the model. First, secrecy of $\pi$ comes from
+a \emph{data-flow fact}---$\pi$ never enters the public values---and not from
+zero-knowledge; any rule that writes a fragment of $\pi$ into the public values
+breaks secrecy on that fragment. Second, accountability for $V^{*}$ is
+\emph{voluntary}: $V^{*}$ can check only when $O$ chooses to disclose $\pi$ and
+the salt. The mode offers no forced disclosure; that would require the
+release-gating family discussed in \texttt{docs/tdsc-plan.md}~\S1.6(b), which we
+do not claim.
+
+\paragraph{What each verifier may conclude.} Table~\ref{tab:wp4-capability} is
+the contribution of this subsection: the cryptography is downstream of it, and
+the table survives even if the cryptography only partially lands.
+
+\begin{table*}[t]
+\centering
+\caption{What each verifier may and may not conclude in policy-private mode.}
+\label{tab:wp4-capability}
+\tabfont
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}L{0.13\textwidth}L{0.30\textwidth}L{0.30\textwidth}L{0.19\textwidth}@{}}
+\toprule
+Verifier & \textbf{May} conclude & \textbf{May not} conclude & Rests on \\
+\midrule
+Third party $V$ & (i) the commitment binds $T$
+(Definition~1 of the main paper); (ii) \emph{some} policy with commitment $h_\pi$
+passed; (iii) $h_\pi$ appears in the issuing record & (iv) the \emph{content} of
+$\pi$; (v) how many rules $\pi$ has, or of which classes; (vi) ``the operator
+enforces the regulation \emph{I} care about''---only ``some issued regulation'' &
+(P-PP); Assumption~\ref{as:Z}; the $k$ of Proposition~\ref{thm:t1} \\
+End user (also receiver) & As $V$, and additionally: the proved $T$ is the
+string it received, since its nonce is bound (Theorem~\ref{thm:t3}, requires
+$f>0$)$^{\dagger}$ & Only the string it received; \emph{not} what was delivered
+to another downstream agent & $f>0$ \\
+Authority $R$ & Everything; it holds $\pi$, the salt and can recompute $h_\pi$ &
+--- & --- \\
+Auditor $V^{*}$ (after disclosure) & (vii) $\mathsf{verify\_commit}(\pi,s)=
+\texttt{policy\_\allowbreak hash}$, i.e.\ what ran was the issued $\pi$;
+(viii) the disclosed violation record is consistent & (ix) the undisclosed part
+of $T$ & voluntary disclosure \\
+On-chain verifier & (i)--(iii) only; it hashes and verifies signatures, and does
+not interpret policy semantics & (iv)--(ix) & (P-PP) \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The $V$ row is the reason the table exists. A third party does not obtain
+``compliance''; it obtains ``some issued policy was satisfied''. Conflating the
+two is the sentence a referee would use to reject the mode, and preventing that
+sentence is what the table is for. $^{\dagger}$\,The end-user binding is
+currently a certificate-layer field; the circuit still computes the
+verifier-domain binding, so the end-to-end form needs a circuit change and a new
+vkey.
+
+% =====================================================================
+\section{Related-Work Positioning}
+\label{app:related}
+
+Table~\ref{tab:related} records the slot each lineage occupies---which is also,
+read the other way, what the main paper does not have to claim.
+Table~\ref{tab:zkagent} places PoP against zkAgent: the two prove different
+obligations, so the rows are a statement of orthogonality, not a race.
+
+\begin{table}[t]
+\centering
+\caption{Positioning against the five prior-art lineages. The right-hand column
+names what each lineage already occupies, and therefore what we do not claim.}
+\label{tab:related}
+\tabfont
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.26\columnwidth}L{0.42\columnwidth}L{0.26\columnwidth}@{}}
+\toprule
+Lineage & Representative work & Slot already occupied \\
+\midrule
+Policy $\to$ circuit & zkGen \cite{zkgen}, Circuitree, Prezta & DSL-to-circuit
+translation \\
+Agent/LLM compliance & NiyamAI, Zaguk, PCO \cite{pco}, WITNESS & policy-level
+private-mode kernel \\
+Model computation & DeepProve, zkGPT, zkAgent \cite{zkagent} & inference
+integrity \\
+Attacks / negative results & Hollow-LLM \cite{hollowllm}, zk-attach
+\cite{zkattach} & naming the gaps \\
+Non-ZK industry baseline & \texttt{@brivora/verify}, VAOL & signed audit logs \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{PoP against zkAgent. The two prove different obligations, so the rows
+are a statement of orthogonality, not a race.}
+\label{tab:zkagent}
+\tabfont
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}L{0.22\columnwidth}L{0.38\columnwidth}L{0.30\columnwidth}@{}}
+\toprule
+& \textbf{zkAgent} \cite{zkagent} & \textbf{PoP} \\
+\midrule
+Obligation & provider executed the declared model and tools (inference integrity)
+& response/trace satisfies policy $\pi$ (compliance) \\
+Depends on the model & yes (weights, arithmetisation) & \textbf{no} \\
+Cost grows with & model size, sequence length & response length; rule-class
+composition (per-rule-set slope), not rule count \\
+Content privacy & none & committed, selective disclosure \\
+Hardware reported & 32 cores / 512\,GB & 16 cores / 90\,GiB \\
+Proving & 194.4\,s (Shout, $T{=}512$) & 40.5--100.3\,s core; 279--344\,s \texttt{gr\-oth16} \\
+Proof size & 96\,MiB (Shout); 3.1\,MiB (LogUp) & 2.79\,MB core; 1{,}874\,B \texttt{gr\-oth16} \\
+Verification & 0.42\,s (Shout); 0.038\,s (LogUp) & $\approx$0.090\,s \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+We deliberately do not claim that PoP is faster, and the temptation to do so is
+worth naming because the raw numbers invite it. The correct statement is
+narrower, and we make only it: \emph{for the compliance obligation}, PoP
+completes in a proving time of the same order as zkAgent's, with a smaller memory
+footprint and a comparable proof size, without touching the model---and it adds
+committed content privacy that zkAgent does not provide. Two caveats must travel
+with those figures. The hardware is not matched (16 cores and a 90\,GiB cgroup
+against 32 cores and 512\,GB), and PoP's ceiling is memory-bound rather than
+cycle-bound, so its feasible region is a non-rectangular set of measured points
+rather than a curve. The comparison is of orders of magnitude under unmatched
+hardware, not a race. Source: \texttt{bench/comparison\_zkagent.md}, which
+itself warns against reading the rows as ``PoP is faster.''
+
+% =====================================================================
+\section{Reproduction}
+\label{app:repro}
+
+The full walkthrough---environment, a single compliance proof, cross-checking
+against the reference layer, private mode, certificate issuance, the one-command
+demo, and third-party verification---is maintained in \texttt{docs/reproduce.md}
+together with the exact commands and their expected output. This section records
+only what a reader needs in order to judge the claims of the main paper's
+evaluation.
+
+\paragraph{Environment.} Ubuntu or WSL2 on x86-64, no GPU. The Rust/SP1 side
+needs Rust stable, \texttt{cargo-prove}~v6.7.0, Go $\ge$\,1.24, and the usual
+native toolchain; the reference layer is pure Python~3.10+ and runs on its own.
+Memory, not time, is the binding constraint: the CPU prover carries a fixed
+floor of approximately 10.5\,GiB on the cloud cgroup (10.15\,GiB under
+default local prover options; \texttt{NUM\_CORE\_WORKERS=1},
+\texttt{CORE\_BUFFER\_SIZE=1} lowers it to $\approx$9.3\,GiB) regardless of the
+trace; memory, not time, sets the ceiling in the proof-cost table of the main
+paper.
+
+\paragraph{What reproduces without the prover.} The reference layer, the policy
+compiler, and the whole test suite run in seconds and need no Rust. This is
+enough to reproduce the non-ZK baseline of the main paper, to inspect the
+certificate and inclusion proofs, and to check the cross-layer contract---that
+the Python reference implementation and the zkVM guest consume the same
+compiled policy bytes.
+
+\paragraph{What needs the prover.} Every timing, size, and memory figure in the
+cycle, ablation, denial-of-service, and proof-cost evaluations, and the
+end-to-end result, requires a real proof. The measurements were taken on a
+16-core CPU cgroup with 90\,GiB of RAM, which is what places the ceiling
+reported there: the successes and the out-of-memory configurations are both
+properties of that machine.
+
+\paragraph{Where each number comes from.} Every measurement in the main paper's
+evaluation is the content of a checked-in result file with a machine-readable
+companion: \texttt{bench/results/} holds \texttt{cycles}, \texttt{ablation},
+\texttt{scale-cloud}, \texttt{scale-6x2000}--\texttt{scale-6x5000},
+\texttt{eu\_ai\_act\_proof}, \texttt{privacy\_surface\_real},
+\texttt{k\_entropy\_largeN}, \texttt{k\_entropy\_crossmodel},
+\texttt{policy\_corpus\_infer}, \texttt{agent\_e2e\_deepseek},
+\texttt{baseline}, \texttt{verify}, \texttt{semantic}, \texttt{streaming},
+\texttt{compose}, \texttt{dos\_proof}, \texttt{gateway\_sig},
+\texttt{baselines}, \texttt{issuance}, and \texttt{prover\_knobs}, each as a
+\texttt{.json} alongside its \texttt{.md}. The reproduction guide records the
+commit, the hardware, and the prover binary digest for each run, so that a
+reported figure can be traced to one specific execution rather than to a state
+of the tree.
+
+\begin{thebibliography}{99}
+
+\bibitem{hollowllm}
+C.~Gong, B.~Liu, and M.~Li, ``Hollow-LLM Attack: Computationally Trivial
+Weights in Zero-Knowledge Verification of LLM Inference,'' in \emph{IEEE
+Symposium on Security and Privacy (S\&P)}, 2026, pp.~4339--4355,
+DOI 10.1109/SP63933.2026.00258; arXiv:2607.28884.
+
+\bibitem{zkattach}
+A.~S.~Gopalakrishna, ``Zero-Knowledge Predicate Proofs Between AI Agents: A
+Measured, Cross-Protocol Gateway and the Source-Integrity Gap,''
+arXiv:2608.30083, 2026. (The \texttt{zk-attach/v0} envelope is the system
+contribution of this paper.)
+
+\bibitem{zkgen}
+J.~Lauinger, J.~Ernstberger, and S.~Steinhorst, ``zkGen: Policy-to-Circuit
+Transpiler,'' in \emph{IEEE International Conference on Blockchain and
+Cryptocurrency (ICBC)}, 2024, pp.~620--624,
+DOI 10.1109/ICBC59979.2024.10634440.
+
+\bibitem{pco}
+H.~Avni, S.~Dolev, A.~Yagudaev, and M.~Yung, ``Super-intelligence Survival
+Guide: Verification via Proof-Carrying Output,'' IACR Cryptology ePrint
+Archive, Report 2026/994, 2026.
+
+\bibitem{zkagent}
+L.~Wang, H.~Lou, C.~Li, Y.~Yu, and Y.~Hu, ``zkAgent: Verifiable LLM Agent
+Execution via One-Shot Transcript Proofs,'' IACR Cryptology ePrint Archive,
+Report 2026/199, 2026.
+
+\bibitem{hiddencred}
+J.~E.~Holt, R.~W.~Bradshaw, K.~E.~Seamons, and H.~Orman, ``Hidden
+Credentials,'' in \emph{Proc.\ 2003 ACM Workshop on Privacy in the Electronic
+Society (WPES)}, 2003, pp.~1--8, DOI 10.1145/1005140.1005142.
+
+\bibitem{handshake}
+D.~Balfanz, G.~Durfee, N.~Shankar, D.~K.~Smetters, J.~Staddon, and H.-C.~Wong,
+``Secret Handshakes from Pairing-Based Key Agreements,'' in \emph{Proc.\ IEEE
+Symposium on Security and Privacy (S\&P)}, 2003, pp.~180--196,
+DOI 10.1109/SECPRI.2003.1199336.
+
+\bibitem{xacmlpriv}
+C.~A.~Ardagna, S.~De~Capitani~di~Vimercati, G.~Neven, S.~Paraboschi,
+F.-S.~Preiss, P.~Samarati, and M.~Verdicchio, ``Enabling Privacy-Preserving
+Credential-Based Access Control with XACML and SAML,'' in \emph{Proc.\ 10th
+IEEE International Conference on Computer and Information Technology (CIT)},
+2010, pp.~1090--1095, DOI 10.1109/CIT.2010.199.
+
+\bibitem{sw05}
+A.~Sahai and B.~Waters, ``Fuzzy Identity-Based Encryption,'' in \emph{Advances
+in Cryptology -- EUROCRYPT 2005}, LNCS 3494, Springer, 2005, pp.~457--473,
+DOI 10.1007/11426639\_27.
+
+\bibitem{ksw08}
+J.~Katz, A.~Sahai, and B.~Waters, ``Predicate Encryption Supporting
+Disjunctions, Polynomial Equations, and Inner Products,'' in \emph{Advances in
+Cryptology -- EUROCRYPT 2008}, Springer, 2008, pp.~146--162,
+DOI 10.1007/978-3-540-78967-3\_9.
+
+\bibitem{vdr}
+H.~Chabanne, R.~Hugel, and J.~Keuffer, ``Verifiable Document Redacting,'' in
+\emph{Computer Security -- ESORICS 2017}, LNCS 10492, Springer, 2017,
+pp.~334--351, DOI 10.1007/978-3-319-66402-6\_20.
+
+\end{thebibliography}
+
+\end{document}
