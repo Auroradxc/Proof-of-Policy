@@ -119,6 +119,17 @@ python3 bench/bench_policy_leak.py --out-dir bench/results
 | P0-10 | 真实 LLM 端到端 | `bench/results/real_llm_e2e.md/.json` | P0-09 | `[GPU/API]` | 真实模型 + LangChain；延迟/证书/策略 P/R/F1 | ⏳ |
 | P0-11 | 可提交性清理 | 0 `\need{}` / 0 `\fixme{}`；引文核实；801/783/469 统一 | — | `[LOCAL]` | `grep` 计数为 0；文档漂移表结清 | ⏳ |
 
+> **Wave 2 预启动（2026-11-01）**：X1/X2/X3 的**脚本与数据集已就绪**，见
+> [`runbook-wave2.md`](runbook-wave2.md)：
+> `scripts/datasets/prepare_wave2.py`（XSTest 450 + smoke 20）、
+> `bench/bench_k_entropy.py`、`bench/bench_real_llm_e2e.py`、
+> `bench/bench_privacy_surface.py`、`scripts/ops/check_wave2_env.py`、
+> `scripts/ops/provision_cloud.sh`、`scripts/ops/run_wave2_cloud.sh`。
+> P0-06/07/08/09/10 仍标 ⏳：**脚本能跑，但真实数字需要云机/GPU**；
+> 本机可用 `stub` / `--no-prove` 跑通全链路（冒烟输出在
+> [`../bench/results/wave2_smoke/`](../bench/results/wave2_smoke/README.md)，
+> **不是论文数字**）。
+
 ### 3.2 P1（决定论文上限）
 
 | ID | 任务 | 交付物 | 依赖 | 资源 | 验收 | 状态 |

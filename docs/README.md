@@ -22,7 +22,7 @@
 | **接自己的 agent 框架** | [`modules/06-frameworks.md`](modules/06-frameworks.md) §8 → [`modules/03-certificate.md`](modules/03-certificate.md) |
 | **对上 EU AI Act 的条款** | [`eu-ai-act-mapping.md`](eu-ai-act-mapping.md) |
 | **改语义规则那条线** | [`design-semantic-rules.md`](design-semantic-rules.md) |
-| **看接下来要做什么** | [`plan-bhv.md`](plan-bhv.md)（BHV 改造计划，含云资源标记）→ [`plan-parallel.md`](plan-parallel.md)（哪些能并行、agent 分工）→ [`dev-plan.md`](dev-plan.md)（历史/并行计划） |
+| **看接下来要做什么** | [`plan-bhv.md`](plan-bhv.md)（BHV 改造计划，含云资源标记）→ [`plan-parallel.md`](plan-parallel.md)（哪些能并行、agent 分工）→ [`runbook-wave2.md`](runbook-wave2.md)（Wave 2 脚本/数据/云机/GPU 怎么用）→ [`dev-plan.md`](dev-plan.md)（历史/并行计划） |
 | **想知道“一张证书到底绑住了什么”** | [`certificate-binding-framework.md`](certificate-binding-framework.md)（BHV 框架：响应/请求/策略三个面） |
 
 ---
@@ -48,6 +48,7 @@
 | [`certificate-binding-framework.md`](certificate-binding-framework.md) | **BHV 证书绑定框架**：D1–D8 定义、定理 A–F（三难/泄漏剖面/交付绑定/策略隐私/组合/签发）、实例化表与证明债。把响应、请求、**策略**三个面收进同一组定义 |
 | [`plan-bhv.md`](plan-bhv.md) | **BHV 改造计划**：M0–M5 里程碑、任务总表、`[LOCAL]`/`[CLOUD]`/`[GPU/API]` 标记、验收判据与 16 周排期 |
 | [`plan-parallel.md`](plan-parallel.md) | **并行执行计划**：依赖图、三波并行、文件所有权与合并协议、agent 配置建议与启动 prompt 模板 |
+| [`runbook-wave2.md`](runbook-wave2.md) | **Wave 2 使用手册**：XSTest/τ-bench 数据准备、`bench_k_entropy` / `bench_real_llm_e2e` / `bench_privacy_surface` / 云机编排 / 环境体检的用法与产物 |
 | [`dev-plan.md`](dev-plan.md) | **开发计划**（按代码板块 × 阶段组织，勾选即验收）。与 `plan-bhv.md` 并行：后者是论文改造的外层计划 |
 | [`refactor-proposal.md`](refactor-proposal.md) | **重构与优化建议书 + 执行计划**（2026-09-17 立，**已采纳**）。从技术框架 / 效率 / 内存 / 简洁四个角度普查后给出的 R1–R18 建议与 P0–P3 阶段。执行进度与每阶段的验收记录见 [`dev-plan.md` §5.7](dev-plan.md) |
 
