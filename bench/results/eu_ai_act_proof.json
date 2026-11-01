@@ -1,0 +1,89 @@
+{
+  "provenance": {
+    "task": "X1d",
+    "host": "autodl-container-14574f97ce-6e5bc639",
+    "cpu_count_cgroup": 16,
+    "cpu_count_host": 128,
+    "mem_total_cgroup_mb": 92160,
+    "mem_total_proc_mb": 772649,
+    "binary_sha256": "7f99fdb11a4a859c45598c384db3b98dd50426210adbc14d6b576c4d15dda49f",
+    "policy_vkey": "0x003eb14de80339bddef2b9207ef27469088267888bb9bebb9836b4ee701fd7be",
+    "commit": "cf7bb54e06f2524885de0e335d7ff1a4250ddaeb",
+    "binary_build_commit": "e45178b",
+    "post_nfa_fix": true,
+    "concurrency": "isolated: one proof process at a time under flock /tmp/pop-proof.lock",
+    "env": {
+      "SP1_PROVER": "cpu",
+      "GOMAXPROCS": "16",
+      "SP1_GROTH16_CIRCUIT_PATH": "/root/autodl-tmp/sp1-cache/groth16"
+    },
+    "work_root": "/root/autodl-tmp/zk-policy-x1d (repo copy) + /root/autodl-tmp/x1d-work (proof artefacts)",
+    "groth16_cache": "/root/autodl-tmp/sp1-cache/groth16"
+  },
+  "pack": "policy_packs/eu_ai_act_v1.json",
+  "pack_id": "eu-ai-act-v1",
+  "policy_hash": "5b5fd101580e923320867d2506c1a9222f0d6bfe2d8cb4fa2ab8dcff0f0e9d55",
+  "mode": "public",
+  "response": {
+    "source": "scripts/examples/eu_agent_reply.txt",
+    "chars": 167,
+    "sha256": "3036f3a260cdf564cac7adfb418679bca94b49443f6291fa6548bb42e88a191f"
+  },
+  "generated_at": "2026-11-01T13:01:57Z",
+  "points": [
+    {
+      "tier": "core",
+      "status": "ok",
+      "seconds": 48.82,
+      "peak_rss_mb": 12382.7,
+      "proof_bin_bytes": 2793531,
+      "proof_pv_bytes": 180,
+      "cert_json_bytes": 1846,
+      "payload_json_bytes": 1381,
+      "proof_mode": "core",
+      "proof_hiding": "none",
+      "passed": true,
+      "violations": [],
+      "verified": true,
+      "verify_cert": "PASS",
+      "verify_seconds": 0.140876335,
+      "setup_seconds": 1.485461347,
+      "response_binding": "1654219c45b34733ec62654b16f20eb6bd85079a6caba8bd9bd445a39a16c6c1",
+      "nonce": "14503406f0b732c95ccdbbb010036262bbe0e6cb6329c46bac93a9ac5660accf",
+      "cert_digest": "f9b7fb565c6db4b773bad0d0e7eccb56e745a50b2f45952657698f9e6b3b9132",
+      "cpu_percent": 963,
+      "user_seconds": 452.42,
+      "sys_seconds": 18.03
+    },
+    {
+      "tier": "groth16",
+      "status": "ok",
+      "seconds": 301.19,
+      "peak_rss_mb": 30073.9,
+      "proof_bin_bytes": 1874,
+      "proof_pv_bytes": 180,
+      "cert_json_bytes": 1850,
+      "payload_json_bytes": 1384,
+      "proof_mode": "groth16",
+      "proof_hiding": "wrapper-only",
+      "passed": true,
+      "violations": [],
+      "verified": true,
+      "verify_cert": "PASS",
+      "verify_seconds": 0.299497861,
+      "setup_seconds": 1.490183453,
+      "response_binding": "b3ee6a3ee18f5c7fd09c8bc37cc5b80ddf25fcc27a753f1867ee3c494621fb3f",
+      "nonce": "3dbea34dd792d3ecc6aac7c793c6f626f92d0ab2855e0b07a19c926bd9a52532",
+      "cert_digest": "731c5b53e5abb6b3a865dd00eab3be10fbe4eda9f4a6e850c27750f32682a847",
+      "cpu_percent": 1204,
+      "user_seconds": 3547.89,
+      "sys_seconds": 79.71
+    }
+  ],
+  "notes": [
+    "Both tiers verified independently with scripts/verify/verify_cert.py: RESULT PASS (signature, proof, outcome, vkey, proof_sha256, proof_mode, policy_hash, response_binding recomputed from the delivered T').",
+    "core is not witness-hiding (hiding=none); groth16 is wrapper-only hiding (not post-quantum).",
+    "public mode means the response is a prover input (vectors.json); the delivered certificate contains only commitments, not the plaintext response.",
+    "EU pack has 3 rules including one pattern_block; it is the real pack, not the benchmark's synthetic 1/2/3-rule policies used in scale-extended."
+  ]
+}

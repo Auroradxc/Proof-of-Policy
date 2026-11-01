@@ -1,0 +1,71 @@
+{
+  "host": {
+    "hostname": "autodl-container-14574f97ce-6e5bc639",
+    "cpu_model": "Intel(R) Xeon(R) Gold 6459C",
+    "cpu_count": 16,
+    "cpu_count_host": 128,
+    "mem_total_mb": 92160,
+    "mem_total_proc_mb": 772649,
+    "mem_total_cgroup_mb": 92160,
+    "mem_source": "cgroup",
+    "platform": "x86_64"
+  },
+  "axes": {
+    "lengths": [
+      10000,
+      50000
+    ],
+    "rules": [
+      6
+    ],
+    "proof_modes": [
+      "core"
+    ]
+  },
+  "generated_at": "2026-11-01T20:46:31",
+  "rows": [
+    {
+      "length": 10000,
+      "rules": 6,
+      "proof_mode": "core",
+      "trace_sha256": "be1bf7669cf807a7b9c172a5e64e066cb7815bf1061c1e801cc44e6e0be62f40",
+      "ok": false,
+      "seconds": 101.09,
+      "error": "被 SIGKILL 杀（本机内存不足，OOM）",
+      "elapsed_min": 1.68
+    },
+    {
+      "length": 50000,
+      "rules": 6,
+      "proof_mode": "core",
+      "trace_sha256": "bcac24524dcd16a025e283c5bb705c0e49cf6261797c5d130055724191bc2c60",
+      "ok": false,
+      "seconds": 99.82,
+      "error": "被 SIGKILL 杀（本机内存不足，OOM）",
+      "elapsed_min": 3.35
+    }
+  ],
+  "provenance": {
+    "task": "X1d",
+    "host": "autodl-container-14574f97ce-6e5bc639",
+    "cpu_count_cgroup": 16,
+    "cpu_count_host": 128,
+    "mem_total_cgroup_mb": 92160,
+    "mem_total_proc_mb": 772649,
+    "binary_sha256": "7f99fdb11a4a859c45598c384db3b98dd50426210adbc14d6b576c4d15dda49f",
+    "policy_vkey": "0x003eb14de80339bddef2b9207ef27469088267888bb9bebb9836b4ee701fd7be",
+    "commit": "cf7bb54e06f2524885de0e335d7ff1a4250ddaeb",
+    "binary_build_commit": "e45178b",
+    "post_nfa_fix": true,
+    "concurrency": "isolated: one proof process at a time under flock /tmp/pop-proof.lock",
+    "env": {
+      "SP1_PROVER": "cpu",
+      "GOMAXPROCS": "16",
+      "SP1_GROTH16_CIRCUIT_PATH": "/root/autodl-tmp/sp1-cache/groth16"
+    },
+    "work_root": "/root/autodl-tmp/zk-policy-x1d (repo copy) + /root/autodl-tmp/x1d-work (proof artefacts)",
+    "corpus": "demo (166 chars; demo_e2e artifact absent -> 1 segment excluded; source scripts/examples/eu_agent_reply.txt)",
+    "proof_timeout": "outer timeout 3600 s; both points died by SIGKILL at ~100 s",
+    "groth16_6rules": "skipped: core OOM at both 10000 and 50000; no core success to wrap"
+  }
+}
