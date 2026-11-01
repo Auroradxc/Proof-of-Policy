@@ -179,7 +179,7 @@ scripts/examples/out/artifact/
 
 ---
 
-## 4. 最新结果入口（X1c / X1d / E1 / E2 / E3）
+## 4. 最新结果入口（X1c / X1d / E1 / E2 / E3 / E6 / C2）
 
 > 这些文件在**仓库里**，不在 Docker 镜像里（`bench/results/` 被 `.dockerignore`
 > 排除）。每份结果都带 host / binary / vkey / commit 口径；**不要跨机器或跨
@@ -193,6 +193,8 @@ scripts/examples/out/artifact/
 | **E1** | 真实模型猜测熵 `k`：Qwen N=50、跨模型 N=20；N 截断判读 | [`k_entropy_largeN.md`](../../bench/results/k_entropy_largeN.md)、[`k_entropy_crossmodel.md`](../../bench/results/k_entropy_crossmodel.md)、`k_samples_largeN.jsonl`、`k_samples_crossmodel_{deepseek,mistral}.jsonl` | [`k-largen-crossmodel.md`](../experiments/k-largen-crossmodel.md) |
 | **E2** | 策略语料级推断攻击（300 候选 × 真实响应 × L0/L1/L2）；**L2 证据承诺可链接** | [`policy_corpus_infer.md`](../../bench/results/policy_corpus_infer.md) | [`policy-corpus-inference.md`](../experiments/policy-corpus-inference.md) |
 | **E3** | 真实 DeepSeek agent 端到端会话（19 证书，第三方验证 PASS，无 SP1） | [`agent_e2e_deepseek.md`](../../bench/results/agent_e2e_deepseek.md) | [`agent-e2e-deepseek.md`](../experiments/agent-e2e-deepseek.md) |
+| **E6** | 序列 logprob 估计 `k`（Qwen/Mistral，N=20）：突破 N 截断但只给上界；Qwen 16/50、Mistral 11/50 的 `k_est<40` | [`k_logprobs.md`](../../bench/results/k_logprobs.md)、[`e6_mistral/k_logprobs.md`](../../bench/results/e6_mistral/k_logprobs.md)、`k_logprobs_samples.jsonl` | [`k-logprobs.md`](../experiments/k-logprobs.md) |
+| **C2** | 电路级 L0/L1/L2 披露 coarsening（`pop-pv-v2`）；云机 core L0/L1/L2 均 `verified=true`；delegated 未实现 | [`c2/README.md`](../../bench/results/c2/README.md)、`proof_L{0,1,2}.json`、`verify_L{0,1,2}.json` | [`circuit-disclosure.md`](../experiments/circuit-disclosure.md) |
 | **A11** | 真实语义分类器可行性 → **demote**（AUC 0.583、recall 0.5%、F1 0.010） | [`semantic_feasibility.md`](../../bench/results/semantic_feasibility.md) | 同文件 §8 |
 
 ### 4.1 关键读数（只列能指回文件的事实）

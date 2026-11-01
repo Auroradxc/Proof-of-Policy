@@ -1,0 +1,23 @@
+[
+  {
+    "delegated": [],
+    "delegated_buckets": [],
+    "disclosure_level": "L1",
+    "mode": "public",
+    "name": "L1",
+    "passed": false,
+    "policy_hash": "dca1dbed9c3d8d29415f0dd5532eae8aa171680d3123840ba59076fcc67913b2",
+    "public_value_schema": "pop-pv-v2",
+    "response_binding": "3a0bfbe08e153a185965f8eb17b33f4ef35fe153002887d0dcba34904706d63b",
+    "trace_root": "genesis",
+    "violation_count": 1,
+    "violations": [
+      {
+        "category": "content",
+        "count": 1,
+        "evidence_commitment": "32dc7757930cfc604354fdf015527face897a972c61ecd3b7df9e3d3c77eabb5",
+        "shape": "category"
+      }
+    ]
+  }
+]

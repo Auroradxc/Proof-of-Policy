@@ -155,7 +155,7 @@ cd circuits && cargo test -p pop-types
 |---|---|
 | 构建命令 | `cd circuits && cargo build --release -p pop-script -p pop-verify` |
 | rustc / cargo | `1.98.1` / `1.98.1` |
-| `pop-script` sha256 | `c34572c40a7c543133b731fa6b9e0b308254230fa150ea8580ed8c8a171b0716`（91,153,104 B，2026-11-02 00:15） |
+| `pop-script` sha256 | `acfaff2a405e66a4fde92a59cc49757dc49ab8b381f0beacb3f14207c6c11f9f`（repo 根重建；worktree 构建的 wrapper 哈希可能不同，guest ELF/vkey 相同） |
 | `pop-verify` sha256 | `ec7099e787a37872017114b5004108433fa3fec0cbc20baf430d28f96e7008f1` |
 | `pop-program` ELF sha256 | `e12ba4e6e104b6b5511224cf352ef40d90492810b1dba1fd62058aa3451d1ec5` |
 | `pop-infer` ELF sha256 | `d8e295df2ae6d3c71968d1f8e10623a80ddc8edaef8c24b505a85e8a20ed33ae` |
@@ -257,6 +257,8 @@ vkey 是本地 build 的 `0x00fa5119…`（与云机不同，见 §5.3）。它�
    （类型已变），要继续验证旧证明文件需要归档旧 binary。
 4. **宿主判定镜像**：`policydsl/runtime/service.py::host_outcome` 仍输出 v1 raw
    形状，`verify_session.py` 仍按旧路径投影；未改（超出本轮硬边界）。
+   demo 的私有模式选择性开示已适配 v2：它用 `evidence_bundle_v2` 以
+   `response_binding` 为盐重算承诺，不再拿 v1 无盐 SHA256 比对。
 5. **bench**：`bench/bench_policy_corpus.py` 用
    `cert.build_payload(disclosure_level=...)` + v1 outcome，需改为真实 v2
    公开值后才能重跑推断实验。

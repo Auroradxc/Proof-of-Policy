@@ -125,8 +125,9 @@ explains why a witness-hiding proof closes one channel and not the others
 (Theorem~\ref{thm:dpriv}), a salted-commitment construction, and a measured
 disclosure-level study: on a 20-variant synthetic corpus, policy-inference top-1
 falls from $0.810$ at rule-name disclosure to $0.073$ at count-only; on a
-300-candidate corpus the implemented L2 payload still recovers $0.382$, because
-its unsalted evidence commitments link across samples
+300-candidate corpus the v1 certificate-layer L2 payload still recovers
+$0.382$, because its unsalted evidence commitments link across samples; the
+circuit-level v2 L2 salts them per response but has not been re-measured
 (\S\ref{sec:eval-policy}). PoP is then presented as the instance these bounds
 require---a policy compiler, a circuit whose witness-hiding tier is a wrapper
 property, and a signed certificate layer---measured end to end.
@@ -869,13 +870,13 @@ closes each. ``Closed'' is scoped to the channel named in the row.}
     needs \texttt{groth16}/\texttt{plonk} witness hiding and a measurement
     (\texttt{docs/\allowbreak sp1-zk-audit.md}). \\
 4 & \texttt{PrivateViolation}\allowbreak\{\texttt{rule},\allowbreak\texttt{kind}\}
-    names the rule that fired & \textbf{Open at the circuit public values};
-    certificate-level L0/L1/L2 projections do not change what the circuit
-    outputs. \\
+    names the rule that fired & \textbf{Coarsened at the circuit public values}:
+    L0 emits the name and kind; L1 a category bucket and count; L2 only a
+    per-response salted commitment. Evidence plaintext is absent at all levels. \\
 5 & Evidence opening reveals the rule
     (\texttt{policydsl/\allowbreak privacy/\allowbreak commit.py}:319) &
-    \textbf{Open}; disclose the \emph{existence} of a violation, not its
-    identity. \\
+    \textbf{Closed in the public values} (commitment only); the \texttt{core}
+    artefact still opens the witness. \\
 6 & The \texttt{delegated} flag exposes policy structure & \textbf{Open};
     L1/L2 fail closed on non-empty \texttt{delegated}, and a category-level
     protocol is not yet defined. \\
@@ -894,20 +895,24 @@ of \S\ref{sec:policy-side}.}
 \label{sec:eval-policy}
 
 If the policy cannot be hidden behind a hash alone, the practical question is
-how much of it to disclose. We implemented three certificate-layer projections:
-L0 exposes the rule name and kind per violation; L1 exposes the rule category,
-the per-category count and the total; L2 exposes only the violation count, with
-commitments left opaque. These are certificate-layer projections, not
-circuit-level coarsening: the guest still writes the raw rule and kind into its
-public values, so a party that reads the proof public values directly sees L0
-regardless of the certificate level. A circuit-level coarsening design exists
-(guest commits the level and the level-specific violation shape before
-commitment, including an L2 that keeps only opaque commitments), but it is not
-implemented: it changes the guest and requires a vkey rebuild. That boundary is
-stated again in Sec.~\ref{sec:disc-policy}.
-\need{BLOCKER C2: circuit-level disclosure coarsening is designed, not
-implemented; implementation waits on the vkey rebuild
-(\texttt{docs/design-disclosure-levels.md}).}
+how much of it to disclose. We implement the levels \emph{in the circuit}: the
+level is a private input, the guest coarsens each violation before commitment,
+and the public value carries a \texttt{pop-pv-v2} schema and the committed
+level. L0 emits the raw rule and kind; L1 one bucket per category with its
+count and the total; L2 only one opaque commitment per violation (whose list
+length still leaks the count). Evidence plaintext is absent at every level. On
+the cloud-built circuit (vkey \texttt{0x000cfdfc\ldots}), core proofs for
+L0/L1/L2 all verify; the L1 public value contains only
+\texttt{category="content"}, \texttt{count=1}, the total and a
+commitment---no rule name, kind or evidence. The verifier checks the schema,
+level, shape and equality with the certificate payload; it does not re-project.
+
+This is an MVP, not a closed channel. Delegated category buckets are not
+implemented, so L1/L2 fail closed for policies with \texttt{semantic\_bound};
+the host mirror, session aggregation and policy-corpus benchmark still use v1;
+old v1 proofs are rejected; and all proofs are \texttt{core}, whose artefact
+still exposes the witness, so we do not claim hiding from a party that holds
+the proof. Table~\ref{tab:wp4} records these open channels.
 
 We measured what each level permits with an inference attack over 20 policy
 variants, using 40 training and 15 test responses per variant and a standard
@@ -923,8 +928,8 @@ result.
 \centering
 \caption{Policy-inference attack over the three certificate disclosure levels on
 a 20-variant \emph{synthetic} corpus (11 templates per variant). L2 here is the
-count-only projection; the implemented L2 payload carries evidence commitments
-and is evaluated in the text. Top-1/top-3 recover the generating variant; MI is
+count-only projection; the v1 certificate L2 payload carries evidence
+commitments and is evaluated in the text; v2 circuit values are not re-measured. Top-1/top-3 recover the generating variant; MI is
 mutual information with the variant; utility is the fraction of violations for
 which the level still identifies a repair action. Source:
 \texttt{bench/results/policy\_infer.md}.}
@@ -955,20 +960,23 @@ therefore a point on a trade-off curve, not a monotone improvement.
 \emph{The larger, real-response corpus changes the L2 conclusion.} On 300
 candidate policies (13 templates, 3--8 rules) and 220 real chat responses from
 the X2c run, L0 top-1 is $0.449$ (constructed holdout: $0.500$), L1 is
-$0.076$ ($0.068$), and L2 with the \emph{implemented} payload---evidence
-commitment plus count---is $0.112$ on real responses and $0.382$ on the
+$0.076$ ($0.068$), and L2 with the v1 certificate payload---one evidence
+commitment per violation---is $0.112$ on real responses and $0.382$ on the
 constructed holdout, against $0.017$ and $0.014$ for L2-count-only. The gap is
-the evidence-commitment channel: the commitment is an unsalted
-$\mathsf{SHA256}(\text{evidence})$, so equal evidence values repeat across
-responses and link them. The L1 audit utility on real chat is $0.834$ because
-real violations concentrate in length, format and budget rules; it is $0.453$ on
-the constructed holdout. A fix---salting the commitment per certificate or
-publishing only bucket-level commitments---changes the certificate payload and
-is not implemented here.
+the evidence-commitment channel: in the v1 payload the commitment is an
+unsalted $\mathsf{SHA256}(\text{evidence})$, so equal evidence values repeat
+across responses and link them. The L1 audit utility on real chat is $0.834$
+because real violations concentrate in length, format and budget rules; it is
+$0.453$ on the constructed holdout. The v2 circuit-level L2 salts each item
+commitment with the response binding, and L1 publishes bucket commitments, so
+this particular channel is closed in the new public values; the 300-candidate
+run has not been repeated on v2, so the $0.112$ and $0.382$ numbers remain
+v1-certificate-layer measurements.
 
-The measurement has four boundaries: it covers the certificate public-value
-channel only, not the circuit public values (still raw at L0), the \texttt{core}
-proof artefact, or the re-execution channel; the 20-variant curve uses synthetic
+The measurement has four boundaries: it covers the v1 certificate public-value
+channel, not the v2 circuit public values (L1/L2 coarsened, L0 still raw), the
+\texttt{core} proof artefact, or the re-execution channel; the 20-variant curve
+uses synthetic
 responses, and the 300-candidate corpus reports real and constructed stimuli
 separately; the classifier is a stdlib implementation, not an attack upper
 bound---a stronger classifier can raise L0/L1 but cannot make L2 commitments
@@ -1455,9 +1463,10 @@ system first.
 
 \emph{Policy privacy has the same caliber.} The salted commitment closes the
 public-value channel, but (i) the default \texttt{core} artefact carries
-\texttt{spec\_canonical} and can leak policy and salt together; (ii) L0/L1/L2
-are certificate-layer projections, while the circuit still writes raw rule and
-kind; and (iii) the measured curve shows L1 still leaks rule categories.
+\texttt{spec\_canonical} and can leak policy and salt together; (ii) the circuit
+now coarsens public values (L0 raw, L1 category, L2 opaque), but L0 still names
+the rule and the \texttt{core} artefact carries the witness; and (iii) the
+measured curve shows L1 still leaks rule categories.
 \emph{``Salt added'' is not ``policy privacy solved,''} and ``zero-knowledge''
 in the title names the \texttt{gr\-oth16} artefact, not \texttt{core}.
 
@@ -1634,12 +1643,13 @@ different orders of magnitude.
     results quantify detection only.
   \item \textbf{Policy privacy is conditional on proving tier and disclosure
     level.} The salt closes the public-value channel only; the \texttt{core}
-    artefact and the circuit's raw rule fields remain open, and L1 still leaks
-    rule categories. The implemented L2 payload also carries unsalted
+    artefact remains open, L0 still names the rule, and L1 still leaks rule
+    categories. The v1 certificate L2 carries unsalted
     $\mathsf{SHA256}(\text{evidence})$ commitments, which link equal evidence
     across samples (measured $0.382$ on the constructed holdout versus $0.017$
-    for count-only, \S\ref{sec:eval-policy}); salting per certificate is not
-    implemented.
+    for count-only, \S\ref{sec:eval-policy}); the v2 circuit L2 salts each
+    commitment with the response binding, but the 300-candidate run was not
+    repeated on v2, and list length still leaks the violation count.
   \item \textbf{Three-party collusion is undetectable at the signature layer.}
     If policy author, operator and prover all collude, the certificate is
     indistinguishable from an honest one; the multi-prover construction
