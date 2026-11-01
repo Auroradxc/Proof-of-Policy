@@ -22,12 +22,12 @@ Zenodo DOI 未分配，推荐审稿人未填。**当前不可直接提交。**
 | 主文件 | `[x]` | [`paper/tdsc-paper.tex`](../../paper/tdsc-paper.tex)，IEEEtran `[10pt,journal,compsoc]` |
 | 编译方式 | `[x]` | 两遍 `pdflatex "\def\SKELQUIET{}\input{tdsc-paper.tex}"`（第二遍收交叉引用） |
 | 本机复编 | `[ ]` **OPEN / 环境阻塞** | 本机 TeX Live 2026 缺 `algorithmic.sty`，`pdflatex` 在 `\usepackage{algorithmic}` 处停止；需在 M5 环境补包后复编并记录页数 |
-| 页数 | `[ ]` **OPEN** | 已记录稿 **16 页**（[`docs/paper-inputs/audit.md`](../paper-inputs/audit.md)、[`docs/plan-m2-m6.md`](../plan-m2-m6.md)）；填写最新数字后可能变化，**以最终 PDF 为准** |
+| 页数 | `[ ]` **OPEN** | P 最终修订（`37982c6`）已到 **18 页**（TDSC 上限，**无余量**）；E6/C2 的 delta 必须等量压缩；**以最终 PDF 为准** |
 | 页数上限 | `[x]` 规则已核 | TDSC 常规论文 **12 页双栏**（含参考文献与作者简介），最多 **18 页**；超过 12 页按 MOPC 计费。来源：[IEEE CSDL Author Information](https://www.computer.org/csdl/journals/tq/write-for-us/15068) |
-| 超长费 | `[ ]` **OPEN** | 若 16 页投稿，超出 12 页 4 页；历史文档记 **$200/页**（约 $800），18 页约 $1,200。**2026 年费率必须在 live author guide 复核**，不要直接引用旧 PDF |
+| 超长费 | `[ ]` **OPEN** | 若 18 页投稿，超出 12 页 6 页；历史文档记 **$200/页**（约 $1,200）。**2026 年费率必须在 live author guide 复核**，不要直接引用旧 PDF |
 | 图 | `[x]` | 当前正文无 `\includegraphics`，无可分离图源；若 M5 加图，补 PDF/EPS 源与授权 |
 | 表 | `[x]` | 全部为 LaTeX `tabular`，无外部图源 |
-| 参考文献 | `[x]` 形式 / `[ ]` 内容 | 正文内联 `thebibliography`；当前 **20 个 `\cite{}`**，9 个 `\need{}`、0 个 `\fixme{}`；引文核实在 M5-02 |
+| 参考文献 | `[x]` 形式 / `[ ]` 内容 | 正文内联 `thebibliography`；当前 **20 个 `\cite{}`**，**7 个 `\need{}`**、**0 个 `\fixme{}`**；剩余 need 为作者元数据、Zaguk/Lean-Agent、P-PP、E6、C2、WP4-(2)/WP3、ROM |
 | PDF 元数据 | `[ ]` | 标题/作者/关键词需与最终稿一致；嵌入字体；无红色标记 |
 | 文件命名 | `[ ]` | 建议 `PoP-TDSC-<version>.pdf` + `PoP-TDSC-source.zip`；按投稿系统要求命名 |
 
@@ -85,7 +85,7 @@ grep -c '\\fixme{' paper/tdsc-paper.tex    # 目标 0
 | E2 L2 链接性 | `[ ]` | 若正文报 L2 隐私，必须加入「确定性证据承诺可跨样本链接」与新数字，不能只写 count-only |
 | A11 demote | `[ ]` | 语义模型不得被写成可用 guardrail；准备引用 `semantic_feasibility.md` 的负结果 |
 | E-1 弱形式 | `[ ]` | 组合仍只证 `derive(T_U)`；不得在 rebuttal/摘要升格为 `x_U` 强绑定 |
-| 测试计数 | `[ ]` | 论文/附录与仓库 `reproduce.md` 的 801/783 漂移需结清；artifact 镜像口径是 42，宿主脚本 17 |
+| 测试计数 | `[ ]` | 论文/附录口径 **945 实跑 / 930 通过 / 15 skip**（2026-11-01 合并后实测；801/783 已作为历史快照结清）；artifact 镜像口径 42、宿主脚本 17 |
 | 负对照保留 | `[ ]` | 四格 composition、OOM 行、L2 零效用、issuance 0.0000 不得为页数删除 |
 
 ---
