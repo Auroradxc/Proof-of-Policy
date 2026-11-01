@@ -190,10 +190,10 @@ invites the objection that a signature would do; leading with the analysis is
 what makes the system necessary, and it is the analysis that this paper is
 organised around.
 
-\need{⚠️ 上面点名的 Proof-of-Guardrail / Agentrust,cMCP,cA2A / Lean-Agent /
-zk-regex V2 / ZK Email / WITNESS / \texttt{@brivora/verify} / DeepProve，
-以及 EU AI Act Art.~12/13，\emph{均未给 \cite{}}：条目尚未逐条核实
-（docs/tdsc-fixlist.md \S2、WP8）。核实前不得凭空写 bibitem，故此处只留名。}
+\need{⚠️ Zaguk and Lean-Agent remain unverified/ambiguous (see
+\texttt{docs/citation-audit.md}); all other works named here have verified
+sources but are not yet given \texttt{\textbackslash cite\{\}} entries. Do not
+add unverified entries to the bibliography.}
 
 \smallskip
 \noindent\textbf{What we do \emph{not} claim.} We do not claim that policy proofs
@@ -321,7 +321,7 @@ other and tampering with either is detectable.
 \paragraph{Framework integration.} One gateway serves LangChain callbacks,
 LangGraph (\texttt{guard\_node} plus full event streams), and MCP tool argument
 and response checks, so trace certificates and proofs share a single chain of
-evidence. The implementation passes 801 tests with 15 skipped; the skipped set is
+evidence. The implementation passes 945 tests with 15 skipped; the skipped set is
 enumerated in Appendix~\ref{app:repro}.
 
 \begin{definition}[Policy-proof system]
@@ -1667,15 +1667,6 @@ technique and does not carry the security argument across: VDR assumes a
 original and the redacted version are produced by the operator, so there is no
 trusted original to appeal to. We use the mechanism, not the proof.
 
-\need{BLOCKER WP8 (citations): apart from Hollow-LLM, zkGen, zkAgent and PCO,
-every reference must be opened and verified before it enters the bibliography;
-the per-entry notes at the end of the paper list what is missing. One correction
-is already fixed and must not regress: IACR ePrint 2024/813 is
-Kiraz/Larraia/Vaughan, ``How to Redact the Bitcoin Backbone Protocol,'' and is
-\emph{not} Verifiable Document Redacting; the VDR citation is the Springer
-entry. The WITNESS reference implementation is Apache-2.0, so ``open source'' is
-not a differentiator.}
-
 % =====================================================================
 \section{Discussion and Limitations}
 \label{sec:discussion}
@@ -1698,11 +1689,7 @@ SP1's published security model states explicitly that individual STARK proofs do
 not currently satisfy the zero-knowledge property; the source agrees, with no
 blinding anywhere in the proof stack and the shard proof carrying the trace
 Merkle root and trace openings in the clear.%
-\need{BLOCKER WP8 (citation): ``SP1's published security model states that
-individual STARK proofs do not currently satisfy zero-knowledge'' is an external
-assertion whose primary source has not been pinned to a citable section and URL.
-If it cannot be verified, the sentence must be withdrawn and only our own
-source-level audit retained.}
+\footnote{\url{https://docs.succinct.xyz/docs/sp1/security/security-model\#groth16-plonk-and-the-zero-knowledgeness-of-sp1}, accessed 2026-11-01.}
 Soundness (G1) therefore holds
 while the proof artefact itself does not hide the witness. The
 \texttt{gr\-oth16} and \texttt{plonk} tiers wrap the inner STARK proof as a
@@ -2148,25 +2135,6 @@ is the content of a checked-in result file with a machine-readable companion:
 commit, the hardware, and the prover binary digest for each run, so that a
 reported figure can be traced to one specific execution rather than to a state
 of the tree.
-
-\need{BLOCKER (documentation number drift): the text's ``801 tests / 15 skipped''
-is the measured value and is correct, but \texttt{docs/reproduce.md},
-\texttt{docs/security-model.md}, \texttt{docs/development.md},
-\texttt{docs/modules/08-tests-bench.md} and \texttt{docs/modules/README.md} still
-say 783. Since this appendix points a reproducer at \texttt{reproduce.md}, the
-drift is a real reproduction defect. The author must decide whether to backfill
-the five documents to 801 or to print both figures here; this draft does not
-silently edit those documents.}
-
-% =====================================================================
-\need{BLOCKER WP8 (citation audit): the following entries are placeholders whose
-author lists, venues or page numbers are not yet verified: \texttt{zkattach}
-(arXiv:2608.30083), \texttt{pco} (IACR ePrint 2026/994), \texttt{hiddencred}
-(2002 manuscript versus 2003 proceedings), \texttt{handshake} (pages),
-\texttt{xacmlpriv} (authors and venue), \texttt{sw05} and \texttt{ksw08}
-(pages), and \texttt{vdr} (authors and year, Springer DOI
-10.1007/978-3-319-66402-6\_20). No entry is final until it has been opened and
-checked; the VDR entry must never be replaced by ePrint 2024/813.}
 
 \begin{thebibliography}{99}
 

@@ -1,6 +1,6 @@
 # 08 · 测试与评测
 
-> 覆盖 `tests/`（48 个模块，916 个用例；默认环境 16 个设计内 skip）与 `bench/`（8 个脚本，结果入库在 `bench/results/`）。
+> 覆盖 `tests/`（48 个模块，945 个用例；默认环境 15 个设计内 skip）与 `bench/`（8 个脚本，结果入库在 `bench/results/`）。
 > 这一板块回答：**哪些性质被自动化守住了，论文里的数字是怎么测出来的。**
 
 ---
@@ -8,12 +8,12 @@
 ## 1. 测试套件总览
 
 ```bash
-python3 -m unittest discover -s tests -t . -v   # 期望 Ran 916 tests … OK (skipped=16)
+python3 -m unittest discover -s tests -t . -v   # 期望 Ran 945 tests … OK (skipped=15)
 ```
 
 **计数口径（2026-11-01 实测，基线 `4fe5c41`）**：`grep -rho 'def test_' tests | wc -l`
-= **916**；`unittest` 收集 = **916**；实跑 = **916**，其中 **16 skip**、
-**900 实际通过**、0 failure / 0 error。**`Ran 916` 不等于「916 个通过」** ——
+= **945**；`unittest` 收集 = **945**；实跑 = **945**，其中 **15 skip**、
+**930 实际通过**、0 failure / 0 error。**`Ran 945` 不等于「945 个通过」** ——
 skip 是「没跑」，不能算通过。旧文档写的「783 passed / 15 skip」把 skip 混进了
 passed（那次的正确读法是 783 实跑 / 15 skip / 768 通过），本文件已按新口径改正。
 
@@ -21,7 +21,7 @@ passed（那次的正确读法是 783 实跑 / 15 skip / 768 通过），本文�
 > [`../reproduce.md`](../reproduce.md) §2 构建。缺构建产物时部分用例会额外 skip，
 > 少数未加 `skipUnless` 的接线用例会红（实测：`Ran 911 … FAILED (failures=19,
 > errors=5, skipped=83)`，失败全部指向 `pop-script` 不存在 / anvil / 真模型缺失）。
-> 那是**环境不完整**，不是回归；构建后再跑应回到 916/16。
+> 那是**环境不完整**，不是回归；构建后再跑应回到 945/16。
 
 | 模块 | 用例数 | 守护的性质 |
 |---|---:|---|
@@ -73,9 +73,9 @@ passed（那次的正确读法是 783 实跑 / 15 skip / 768 通过），本文�
 | `test_fuzz_rules` | 16 | **P2-03 差分模糊测试**：Pike VM vs Python `re`，固定模式 + 随机模式 + 长度 ≤3 的穷举文本；G-1（空字符类）与 V1-2（`a{0}`）的回归形状；语义等价是消融对比与周期数字可比的前提 |
 | `test_receiver_nonce` | 15 | **接收方 nonce（P1-07）**：verifier 域旧行为、旧块兼容、未知 issuer fail closed；end-user 域换 `T`/换 nonce/缺字段都拒绝；`f=0` 重放、verifier-only 缺口、end-user 拦截三场景与 demo/bench 同口径；`verify_cert.py` 端到端 |
 | `test_policy_commit` | 13 | **带盐策略承诺（定理 D / E4a）**：无 nonce 的向后兼容；加盐承诺的绑定与开示；nonce 形状校验；小候选空间枚举攻击（E4a 的单测版）；多证明者切片携带 nonce |
-| **合计** | **916** | |
+| **合计** | **945** | |
 
-### 16 个 skip（都是设计内的）
+### 15 个 skip（都是设计内的）
 
 | skip | 原因 | 怎么启用 |
 |---|---|---|
@@ -83,7 +83,7 @@ passed（那次的正确读法是 783 实跑 / 15 skip / 768 通过），本文�
 | `test_frameworks`（或 `test_mcp`）中 1 例 | 依赖已安装而用例本身是「缺依赖时的行为」 | 设计如此，装了框架就会 skip |
 | `test_policy_binding` 中 2 例 | 「证明层」用例默认关闭（要 `scripts/examples/out/cert_public/` 下的工件与当前 guest ELF 匹配；改过 ELF 就得重新出证） | `POP_TEST_PROOF=1 python3 -m unittest tests.test_policy_binding`（**已实测通过**：Ran 22 … OK，67.1 s） |
 | `test_multiparty` 中 1 例 | 「真·端到端」要给**两段**切片各出一份 SP1 证明（每段 ~2 分钟、峰值 ~10 GiB） | `POP_TEST_MULTIPARTY=1 python3 -m unittest tests.test_multiparty.TestMultipartyEndToEnd -v` |
-| `test_semantic` 中 2 例 | ① 「真·端到端」要出一份 ezkl 证明（~61 s、峰值 ~9 GiB）；② `test_replica_matches_recorded_ezkl` 要 `semantic/artifacts/selftest.json`（本机没跑过 `ezkl_prove.py selftest` 就没有） | ① `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic`（已实测通过）；② `python3 scripts/prove/ezkl_prove.py selftest` 生成记录后自动启用 |
+| `test_semantic` 中 1 例（缺 selftest.json 时 +1） | ① 「真·端到端」要出一份 ezkl 证明（~61 s、峰值 ~9 GiB）；② `test_replica_matches_recorded_ezkl` 要 `semantic/artifacts/selftest.json`（本机已有，故当前只 skip ①；缺它时 +1） | ① `POP_TEST_EZKL=1 python3 -m unittest tests.test_semantic`（已实测通过）；② `python3 scripts/prove/ezkl_prove.py selftest` 生成记录后自动启用 |
 | `test_compose` 中 5 例 | 「真·端到端」要出**两份** SP1 证明（各 ~2 分钟、峰值 ~10.5 GiB） | `POP_TEST_COMPOSE=1 python3 -m unittest tests.test_compose`（**已实测通过**：47 例全跑、无一 skip，563.5 s；加四条接线回归后共 48 例） |
 | `test_session` 中 1 例 | 「真·端到端」要出一份 SP1 **会话聚合证明**（3 张证书，~2.5 分钟、峰值 ~10 GiB） | `POP_TEST_SESSION=1 python3 -m unittest tests.test_session.TestSessionEndToEnd -v`（**已实测通过**：Ran 1 … OK，152.5 s —— 含一次出证、一次独立验证与**四条**拒绝路径：换组证书 / 尾截断 / 混入异策略证书 / 错 nonce） |
 | `test_proof_service` 中 1 例 | 「真 vkey 出证」要跑一次 SP1 core 证明（~2.5 分钟、峰值 ~10.2 GiB 的**固定地板**）。本机 11.7 GiB **装得下但没有余量**：2026-09-13 第一次与别的进程并跑时被 OOM killer 杀在 9.7 GiB 常驻（`dmesg` 有记录），**腾空后重跑通过**（171.1 s，`MemAvailable` 一度只剩 0.15 GiB 并靠 swap 撑住）。服务把这种失败翻成一句人话，见下 | `POP_TEST_PROOF=1 python3 -m unittest tests.test_proof_service.TestRealProofAttest -v`。**跑之前先让别的进程腾出内存**（本机实测：腾空即过、并跑即 OOM）；换 ≥16 GB 的机器则不必讲究 |
@@ -102,7 +102,7 @@ passed（那次的正确读法是 783 实跑 / 15 skip / 768 通过），本文�
 
 > 这是当前环境下的计数（`langchain`/`langgraph`/`mcp`、`pop-script`/`pop-verify`、
 > 以及 `ezkl`/`torch` 均已安装，因此真实框架用例、Rust 路径用例与 ezkl 用例**实际执行**了，
-> 而不是跳过；本机合计 skip = **16**）。**CI 上的 skip 数会更多**：CI 不装 `ezkl`/`torch`，
+> 而不是跳过；本机合计 skip = **15**）。**CI 上的 skip 数会更多**：CI 不装 `ezkl`/`torch`，
 > `test_ezkl_evm` 里需要真实 ezkl 的 5 例（`TestEzklEvmVerifier`）整组跳过，只有不依赖 ezkl 的
 > `TestRunHelper` 5 例照跑 —— 这是设计内的，P2-9 的可选依赖不进 CI。
 
@@ -519,7 +519,7 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
   要克制（每点 ~2 分钟 + 10 GB 内存）。
 - **更新论文数字**：跑完 `bench_*.py` 后，`README.md`、`paper/proof-of-policy.md` §7、
   `docs/reproduce.md` 的验收判据里都有硬编码的数字，需要一并核对。
-  当前验收判据是 **916 实跑 / 900 通过 / 16 skip**（2026-11-01 基线 `4fe5c41` 实测；前置构建见 §1）。历史计数 **469 → 783 → 801** 都是旧快照（P2 收尾 / 2026-09-18 两档），口径与来历见 [`../paper-inputs/decisions.md`](../paper-inputs/decisions.md) §1；CI 上更多 skip，见 §1）、
+  当前验收判据是 **945 实跑 / 930 通过 / 15 skip**（2026-11-01 基线 `4fe5c41` 实测；前置构建见 §1）。历史计数 **469 → 783 → 801** 都是旧快照（P2 收尾 / 2026-09-18 两档），口径与来历见 [`../paper-inputs/decisions.md`](../paper-inputs/decisions.md) §1；CI 上更多 skip，见 §1）、
   `cross_validate` **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 整批重跑，见下）。
   这条判据现在**有自动留痕**：`scripts/prove/regression_prove.py` 每次运行把它追加进
   `bench/results/regression-prove.jsonl`（只追加），并附 git sha / 硬件 / 证明器二进制摘要
@@ -541,14 +541,14 @@ python3 scripts/prove/regression_prove.py --print     # 看历史摘要：几次
 ### 1. 跑测试
 
 ```bash
-python3 -m unittest discover tests                # 全量：916 实跑 / 900 通过 / 16 skipped，~45 s
+python3 -m unittest discover tests                # 全量：945 实跑 / 930 通过 / 15 skipped，~45 s
 python3 -m unittest tests.test_dsl -v             # 单个模块（哪一板块 → 见 §1 的表）
 python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 ```
 
 三条纪律：
 
-1. **⚠️ `unittest` 的 skip 是静默的绿。** 末行是 `OK (skipped=16)` —— `OK` 只说
+1. **⚠️ `unittest` 的 skip 是静默的绿。** 末行是 `OK (skipped=15)` —— `OK` 只说
    「没失败」，不说「都跑了」。要判断某个性质**到底被守住了没**，得看那个 skip 数，
    再看 §1.1 那张表里跳过的是不是设计内的。**这一条是本项目付出过代价的**：
    `test_generic_adapter` 的一次变异改动**等价**，其余 17 例全绿，直到补了断言才杀掉。
@@ -580,7 +580,7 @@ python3 -m unittest tests.test_session.TestSessionEndToEnd -v    # 单个类
 
 **唯一有留痕的是 `cross_validate` 的判据**：`scripts/prove/regression_prove.py`
 每次运行把它追加进 `bench/results/regression-prove.jsonl`（**只追加**），并附
-git sha / 硬件 / 证明器二进制摘要，所以「916 实跑 / 900 通过」这类数字指得回具体的某一次运行（T3）。
+git sha / 硬件 / 证明器二进制摘要，所以「945 实跑 / 930 通过」这类数字指得回具体的某一次运行（T3）。
 
 ## 怎么改它
 
@@ -595,8 +595,8 @@ git sha / 硬件 / 证明器二进制摘要，所以「916 实跑 / 900 通过�
 **「四处同步」清单**（改测试计数时，这四处都写着同一批数字）：
 
 1. 本文件 §1 表的**那一行**与**合计行**；
-2. 本文件**顶部**那句「48 个模块，916 个用例」；
-3. 本文件 §5 扩展指引里的**验收判据**（`916 实跑 / 900 通过 / 16 skip`）；
+2. 本文件**顶部**那句「48 个模块，945 个用例」；
+3. 本文件 §5 扩展指引里的**验收判据**（`945 实跑 / 930 通过 / 15 skip`）；
 4. `docs/README.md` 的计数口径 + `README.md` / `docs/reproduce.md` 的验收判据。
 
 （`docs/README.md` §3 已把「测试计数 → 08」写成约定：**本文件是唯一权威源**，
@@ -620,7 +620,7 @@ git sha / 硬件 / 证明器二进制摘要，所以「916 实跑 / 900 通过�
 
 ```bash
 # 改完测试层的两条验证
-python3 -m unittest discover tests                # 916 实跑 / 900 通过 / 16 skipped（数对不上先查 §1 表）
+python3 -m unittest discover tests                # 945 实跑 / 930 通过 / 15 skipped（数对不上先查 §1 表）
 python3 -m unittest tests.test_scripts_layout     # 若动过 scripts/ 分组
 ```
 

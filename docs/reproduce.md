@@ -28,7 +28,7 @@
 
 ```bash
 cd Proof-of-Policy/03_代码仓库/zk-policy     # 仓库根（目录曾名为“方向二”，已重命名）
-python3 -m unittest discover tests -v          # 期望 Ran 916 tests … OK (skipped=16)：916 实跑 / 900 通过 / 16 skip
+python3 -m unittest discover tests -v          # 期望 Ran 945 tests … OK (skipped=15)：945 实跑 / 930 通过 / 15 skip
                                                # 前置：先按 §2 构建 circuits；skip 明细见 docs/modules/08-tests-bench.md §1
 python3 -m policydsl compile policy_packs/eu_ai_act_v1.json | head    # 编译出 ConstraintSpec
 ```
@@ -429,7 +429,7 @@ python3 scripts/verify/verify_session.py --session .../session.json \
 
 ## 验收判据（复现成功）
 
-- `python3 -m unittest discover tests` → **Ran 916 tests, OK (skipped=16)**（2026-11-01 基线 `4fe5c41` 实测：**916 实跑 / 900 通过 / 16 skip / 0 failure**。skip 明细：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，3 = `POP_TEST_PROOF` 门控（证明层 2 例 + 证明服务真 vkey 1 例），1 = `POP_TEST_EZKL` 门控的真 ezkl 出证，1 = `semantic/artifacts/selftest.json` 缺失（先跑 `ezkl_prove.py selftest`），5 = `POP_TEST_COMPOSE`，1 = `POP_TEST_SESSION`，1 = `POP_TEST_MULTIPARTY`，1 = `POP_TEST_LLM`，1 = 设计内「依赖已装」用例。**前置**：`circuits/target/release/{pop-script,pop-verify}` 已按 §2 构建；缺构建产物时实测 `Ran 911 … FAILED (failures=19, errors=5, skipped=83)`，是环境不完整而非回归。历史计数 469/783/801 均为旧快照，口径与来历见 [`paper-inputs/decisions.md`](paper-inputs/decisions.md) §1）；
+- `python3 -m unittest discover tests` → **Ran 945 tests, OK (skipped=15)**（2026-11-01 基线 `4fe5c41` 实测：**945 实跑 / 930 通过 / 15 skip / 0 failure**。skip 明细：2 = compressed 审计 fixture 待 ≥16 GB 机器生成，3 = `POP_TEST_PROOF` 门控（证明层 2 例 + 证明服务真 vkey 1 例），1 = `POP_TEST_EZKL` 门控的真 ezkl 出证，0 = `semantic/artifacts/selftest.json` 缺失（本机已存在；缺它时 +1），5 = `POP_TEST_COMPOSE`，1 = `POP_TEST_SESSION`，1 = `POP_TEST_MULTIPARTY`，1 = `POP_TEST_LLM`，1 = 设计内「依赖已装」用例。**前置**：`circuits/target/release/{pop-script,pop-verify}` 已按 §2 构建；缺构建产物时实测 `Ran 911 … FAILED (failures=19, errors=5, skipped=83)`，是环境不完整而非回归。历史计数 469/783/801 均为旧快照，口径与来历见 [`paper-inputs/decisions.md`](paper-inputs/decisions.md) §1）；
 - `scripts/prove/prove_policy.py` → **RESULT: PASS**；
 - `SP1_PROVER=cpu python3 scripts/prove/cross_validate.py` → **`RESULT: host 19/19  prove 19/19  PASS`**（2026-09-12 **整批重跑**：19 条向量各出一份真 core 证明，`--chunk 2` 切到 10 个独立子进程，约 45 min，见 `modules/08-tests-bench.md` §5）
   （真实证明分块跑：默认 `--chunk 4`，那次重跑用 `--chunk 2` = 10 块，见 §4 的说明；`--no-prove` 时跳过真实证明）；

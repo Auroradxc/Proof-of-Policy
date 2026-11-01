@@ -90,7 +90,7 @@ pip install Pillow                                    # ⚠️ 它不在任何 r
 
 | # | 命令 | 实测耗时 | 看到什么算对 |
 |---|---|---:|---|
-| 3.1 | `python3 -m unittest discover tests` | **44.6 s** | `Ran 916 tests … OK (skipped=16)`（900 实际通过） |
+| 3.1 | `python3 -m unittest discover tests` | **44.6 s** | `Ran 945 tests … OK (skipped=15)`（930 实际通过） |
 | 3.2 | `bash scripts/demo/demo_all.sh --list` | 秒 | 8 条支路的 key / 中文名 / 驱动脚本 |
 | 3.3 | `bash scripts/demo/demo_all.sh` | **13.5 s** | 末尾 `汇总：没有 FAIL`；报告在 `scripts/examples/out/all/REPORT.md` |
 | 3.4 | `python3 scripts/demo/demo_e2e.py --no-prove` | **1.5 s** | 会话摘要 + `llm model : fake (offline)` |
@@ -105,10 +105,10 @@ python3 -m unittest discover tests                # 44.6 s（前置：已构建 
 python3 -m unittest tests.test_dsl -v             # 单个模块
 ```
 
-末行是 `OK (skipped=16)` —— **`OK` 只说「没失败」，不说「都跑了」**。那 16 个 skip
+末行是 `OK (skipped=15)` —— **`OK` 只说「没失败」，不说「都跑了」**。那 15 个 skip
 逐条列在 [`modules/08` §1.1](modules/08-tests-bench.md)，都是设计内的（真证明 / 真 ezkl /
 真 provider 等等）。判断「某个性质到底被守住了没」时，那 16 条要单独看。
-**`Ran 916` 里 16 个是 skip，实际通过 900 —— skip 不算通过。** 若没构建
+**`Ran 945` 里 15 个是 skip，实际通过 930 —— skip 不算通过。** 若没构建
 `circuits/target/release/{pop-script,pop-verify}`，会额外 skip 甚至变红，见 [`modules/08` §1](modules/08-tests-bench.md)。
 
 ### 3.2 看全貌
@@ -289,7 +289,7 @@ python3 scripts/verify/verify_cert.py \
 
 ### 4.2 提交前清单
 
-1. `python3 -m unittest discover tests` → **916 实跑 / 900 通过 / 16 skip**，工作树里没有计划外的文件。
+1. `python3 -m unittest discover tests` → **945 实跑 / 930 通过 / 15 skip**，工作树里没有计划外的文件。
 2. 改了 `scripts/` 结构 → `tests.test_scripts_layout` 过。
 3. 改了会产生数字的东西 → 数字**四处同步**（见 [`modules/08`](modules/08-tests-bench.md)）。
 4. 改了文档 → 相对链接不悬空。
