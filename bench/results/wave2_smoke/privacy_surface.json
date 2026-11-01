@@ -1,0 +1,113 @@
+{
+  "generated_at": "2026-11-01T07:13:54Z",
+  "pack": "/home/dong/Proof-of-Policy/03_代码仓库/zk-policy/policy_packs/agent_content_v1.json",
+  "response_sha256": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+  "response_chars": 195,
+  "canary": "POP_PRIVACY_CANARY_7f3a9c",
+  "tiers": [
+    {
+      "tier": "unproven",
+      "status": "ok",
+      "elapsed_s": 0.05,
+      "stdout_tail": "done\npolicy_hash : ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708\nvkey_hash   : unproven\nproof_mode  : unproven (hiding: n/a)\npassed      : False\nnonce       : ffdfcd87288f3605aec11a3ca1485184a750e9ea806b5991d1984dce565d6a78\nresp_binding: 3495cc49a36fa5cf68e4c5ddb93de1be568c9f51756f0ed70b2d56968f23fd59\ncert_digest : b424a45c8e083374e3e1e1d6892d6f1867b2231088ac2e4b5adf9f6a922538e6\nsigner      : ed25519:ddfece5c55734a46a9cee884bb5b0bef0f859233b4b23c46c28e165975a4eb59\nanchor      : seq=10 hash=7e09f5059505131c… ledger=/home/dong/Proof-of-Policy/03_代码仓库/zk-policy/scripts/examples/out/ledger.jsonl\nwrote       : /tmp/pop_privacy_smoke/unproven/cert.json, payload.json, key.json, results.json\nverify with : python3 scripts/verify/verify_cert.py --cert /tmp/pop_privacy_smoke/unproven/cert.json \\\n                  --pack /home/dong/Proof-of-Policy/03_代码仓库/zk-policy/policy_packs/agent_content_v1.json --ledger /home/dong/Proof-of-Policy/03_代码仓库/zk-policy/scripts/examples/out/ledger.jsonl \\\n                  --keyring /tmp/pop_privacy_smoke/unproven/key.json\n",
+      "stderr_tail": "loaded 1 vector(s) (job=policy, mode=check)\n[agent-content-v1] done\nwrote results to /tmp/pop_privacy_smoke/unproven/results.json\n",
+      "out_dir": "/tmp/pop_privacy_smoke/unproven",
+      "proof_mode": "unproven",
+      "proof_hiding": "n/a",
+      "files": [
+        "anchor.json",
+        "cert.json",
+        "key.json",
+        "payload.json",
+        "results.json",
+        "vectors.json"
+      ],
+      "proof_files": [],
+      "canary_in_text": [],
+      "canary_in_proof": [],
+      "response_in_delivered": [],
+      "response_in_prover_inputs": [
+        {
+          "file": "vectors.json",
+          "size": 3555
+        }
+      ],
+      "public_values": {
+        "results": [
+          {
+            "delegated": [],
+            "mode": "private",
+            "name": "agent-content-v1",
+            "passed": false,
+            "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708",
+            "redaction": {
+              "mask_count": 0,
+              "mask_covered": true,
+              "redacted_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+              "redaction_ok": true
+            },
+            "response_binding": "3495cc49a36fa5cf68e4c5ddb93de1be568c9f51756f0ed70b2d56968f23fd59",
+            "response_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+            "trace_root": "genesis",
+            "violations": [
+              {
+                "evidence_commitment": "04da09655d48e4920ce526c4776b120936b2a674fac7d4a74dbf815969f729bd",
+                "kind": "keyword_block",
+                "rule": "no_bad_topics"
+              }
+            ]
+          }
+        ],
+        "payload_outcome": {
+          "delegated": [],
+          "passed": false,
+          "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708",
+          "redaction": {
+            "mask_count": 0,
+            "mask_covered": true,
+            "redacted_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+            "redaction_ok": true
+          },
+          "response_binding": "3495cc49a36fa5cf68e4c5ddb93de1be568c9f51756f0ed70b2d56968f23fd59",
+          "response_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+          "trace_root": "genesis",
+          "violations": [
+            {
+              "evidence_commitment": "04da09655d48e4920ce526c4776b120936b2a674fac7d4a74dbf815969f729bd",
+              "kind": "keyword_block",
+              "rule": "no_bad_topics"
+            }
+          ]
+        },
+        "payload_binding": {
+          "vkey_hash": "unproven",
+          "proof_sha256": null,
+          "public_values_sha256": null,
+          "proof_mode": "unproven"
+        },
+        "payload_challenge": {
+          "scheme": "pop-bind-v1",
+          "nonce": "ffdfcd87288f3605aec11a3ca1485184a750e9ea806b5991d1984dce565d6a78",
+          "response_binding": "3495cc49a36fa5cf68e4c5ddb93de1be568c9f51756f0ed70b2d56968f23fd59"
+        }
+      },
+      "commitment_oracle": {
+        "response_sha256": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+        "published_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+        "matches_sha256_T": true,
+        "note": "public, offline-recomputable function of T — guess-and-verify oracle by design (see Theorem A/B)"
+      },
+      "re_execution": {
+        "status": "skipped",
+        "reason": "needs a real model + prompt; measured by bench_k_entropy / E2"
+      }
+    }
+  ],
+  "notes": [
+    "A negative plaintext search is a probe, not a proof of zero-knowledge.",
+    "A positive hit is a definite leak in that artefact.",
+    "core/compressed STARK proofs are not witness-hiding; groth16/plonk are the only wrapper-level hiding tier (not post-quantum).",
+    "response_commitment is a public guess-and-verify oracle by design.",
+    "Re-execution is independent of the proving tier; measure it in E2."
+  ]
+}
