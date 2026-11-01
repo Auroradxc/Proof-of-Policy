@@ -8,6 +8,8 @@
 > [`tdsc-writing-plan.md`](tdsc-writing-plan.md)（论文写作规格）、
 > [`../paper/tdsc-paper.tex`](../paper/tdsc-paper.tex)（论文正文）。
 >
+> **M2–M6 展开清单**（含 M6 投稿/rebuttal）见 [`plan-m2-m6.md`](plan-m2-m6.md)。
+>
 > **资源标记**：
 > - `[LOCAL]` 本机可做（纯 Python / 现有 SP1 `core` 档）。
 > - `[CLOUD]` 需要 **64–128 GB 内存、32+ vCPU** 的云机（groth16/plonk、大规模证明矩阵）。
