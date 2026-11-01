@@ -17,6 +17,7 @@
 | **看懂代码怎么落地** | [`modules/README.md`](modules/README.md)（总览 + 01–08 板块索引） |
 | **亲手跑一遍完整链路** | [`reproduce.md`](reproduce.md) → [`demo/README.md`](demo/README.md) |
 | **把出证做成常驻服务** | [`runbook-proof-service.md`](runbook-proof-service.md) |
+| **租一台云机把 X1 出证跑完** | [`ops-autodl.md`](ops-autodl.md)（AutoDL：买哪档、开几次机、云机上怎么操作） |
 | **评估它到底安全不安全** | [`security-model.md`](security-model.md) → [`sp1-zk-audit.md`](sp1-zk-audit.md) |
 | **知道它跟 TEE / 形式验证差在哪** | [`quadrant.md`](quadrant.md) |
 | **接自己的 agent 框架** | [`modules/06-frameworks.md`](modules/06-frameworks.md) §8 → [`modules/03-certificate.md`](modules/03-certificate.md) |
@@ -49,6 +50,7 @@
 | [`plan-bhv.md`](plan-bhv.md) | **BHV 改造计划**：M0–M5 里程碑、任务总表、`[LOCAL]`/`[CLOUD]`/`[GPU/API]` 标记、验收判据与 16 周排期 |
 | [`plan-parallel.md`](plan-parallel.md) | **并行执行计划**：依赖图、三波并行、文件所有权与合并协议、agent 配置建议与启动 prompt 模板 |
 | [`runbook-wave2.md`](runbook-wave2.md) | **Wave 2 使用手册**：XSTest/τ-bench 数据准备、`bench_k_entropy` / `bench_real_llm_e2e` / `bench_privacy_surface` / 云机编排 / 环境体检的用法与产物 |
+| [`ops-autodl.md`](ops-autodl.md) | **AutoDL 云机 runbook**：X1 出证窗口怎么租（无卡模式为何不可用、2×4090D 的选型依据）、两次开机（探测 → 全量）、云机上的连接/传文件/tmux/计费习惯 |
 | [`dev-plan.md`](dev-plan.md) | **开发计划**（按代码板块 × 阶段组织，勾选即验收）。与 `plan-bhv.md` 并行：后者是论文改造的外层计划 |
 | [`refactor-proposal.md`](refactor-proposal.md) | **重构与优化建议书 + 执行计划**（2026-09-17 立，**已采纳**）。从技术框架 / 效率 / 内存 / 简洁四个角度普查后给出的 R1–R18 建议与 P0–P3 阶段。执行进度与每阶段的验收记录见 [`dev-plan.md` §5.7](dev-plan.md) |
 

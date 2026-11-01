@@ -119,6 +119,9 @@ python3 scripts/prove/regression_prove.py --print                         # 历�
 本机够不着的两件事共用**同一次租机窗口**（登记见 [`plan-p0p1p2.md`](plan-p0p1p2.md) §9 待办 **T1**）。
 一台机器、两个用途，但**内存需求差一个量级**：
 
+> 租机平台选 **AutoDL** 时，具体买哪档、开几次机、云机上怎么操作，见
+> [`ops-autodl.md`](ops-autodl.md)。本节只讲「到机之后做什么」。
+
 | 用途 | 内存 | 性质 |
 |---|---|---|
 | **P1-7** groth16 出证 + 验证合约测通 | **≥64 GB** | **硬需求、实测**（groth16 真需求 ≥32–64 GB，本机 16 GB 物理装不下；本机 12 GB 上 groth16 峰值 11.07 GB 被 OOM 杀。⚠️ compressed 已本机 14 GiB 交付，见 [`bench/results/compressed.md`](../bench/results/compressed.md)，不再是本项的一部分） |

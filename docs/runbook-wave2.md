@@ -58,6 +58,10 @@
 
 ### 2.2 安装（逐条复制到你的终端）
 
+> **在 AutoDL 上租机**（无卡模式为什么不可用、买几张卡、云机上怎么连/传文件/挂 tmux）
+> 见 [`ops-autodl.md`](ops-autodl.md)。那一篇只管「租哪台、怎么操作」，
+> 通用安装清单仍是下面这两条。
+
 ```bash
 bash scripts/ops/provision_cloud.sh          # 打印清单
 # 按清单执行；sudo 行请在你自己的终端跑
