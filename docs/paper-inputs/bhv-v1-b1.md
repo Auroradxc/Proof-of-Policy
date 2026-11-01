@@ -3,6 +3,13 @@
 > 用途：把 `paper/tdsc-paper.tex` §3–§7 里每一个新数字/每张新表指回结果文件或证明底稿。
 > 全部路径均在提交 `c78ca67` 上存在；标 **pending** 的项没有结果文件，正文已留
 > `\need{BLOCKER ...}`，不得补数。
+>
+> **2026-11-01 P 最终修订（`bhv/p-final`，基线 `1c1fc60`）更正**：§3/§5 的
+> 「X1 云机仍用 pre-NFA-fix binary」已过时。X1c/X1d 云机实测
+> binary `7f99fdb1…`、policy vkey `0x003eb14d…`，即 **post-NFA-fix**；
+> groth16 已交付并验证（EU AI Act 301.19 s / 30.07 GB / 1,874 B，verify PASS）。
+> 论文 §V-C 已改为 90 GiB cgroup 的 16/18 点矩阵；X2/E1/E2/E3 的数字也已落入
+> §4–§7。E6（logprobs）与 C2（电路级 coarsening）仍 pending。
 
 ## 1. 定理与定义
 
