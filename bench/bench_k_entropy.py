@@ -150,7 +150,7 @@ class LocalBackend:
     """transformers 本地模型；缺失依赖时给得出下一步。"""
 
     def __init__(self, model_id: str, device: str = "auto",
-                 load_in_4bit: bool = False):
+                 load_in_4bit: bool = False, chat_template: bool = False):
         try:
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -165,7 +165,9 @@ class LocalBackend:
         if device == "auto":
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = device
-        self.name = f"local:{model_id}@{device}" + ("+4bit" if load_in_4bit else "")
+        self.chat_template = chat_template
+        self.name = f"local:{model_id}@{device}" + ("+4bit" if load_in_4bit else "") \
+            + ("+chat_template" if chat_template else "")
         kwargs: Dict[str, Any] = {"device_map": "auto" if device == "cuda" else None}
         if load_in_4bit:
             try:
@@ -189,7 +191,15 @@ class LocalBackend:
     def generate(self, prompt: str, temperature: float, sample_index: int,
                  max_tokens: int) -> str:
         torch = self.torch
-        inputs = self.tok(prompt, return_tensors="pt")
+        text = prompt
+        if self.chat_template:
+            # Instruct 模型的训练/部署口径：把 prompt 包成单轮 user 消息，
+            # 让模型在 assistant 轮上续写；否则裸续写会让 instruct 模型
+            # 复读/补全 prompt，k 与端到端指标都不可比。
+            messages = [{"role": "user", "content": prompt}]
+            text = self.tok.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True)
+        inputs = self.tok(text, return_tensors="pt")
         if self.device == "cuda":
             inputs = {k: v.to("cuda") for k, v in inputs.items()}
         gen_kwargs: Dict[str, Any] = {
@@ -213,7 +223,8 @@ def build_backend(spec: str, args: argparse.Namespace):
         return ChatBackend(spec)
     if spec.startswith("local:"):
         return LocalBackend(spec.split(":", 1)[1], device=args.device,
-                            load_in_4bit=args.load_in_4bit)
+                            load_in_4bit=args.load_in_4bit,
+                            chat_template=getattr(args, "chat_template", False))
     raise SystemExit(
         f"不认识的 backend '{spec}'；可用 stub / openai:<model> / "
         f"anthropic:<model> / local:<model-or-path>")
@@ -364,6 +375,7 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
         "prompts_file": str(args.prompts),
         "n_prompts": len(prompts),
         "n_samples_per_prompt": args.n_samples,
+        "chat_template": bool(getattr(args, "chat_template", False)),
         "temperatures": temps,
         "q": args.q,
         "eps": args.eps,
@@ -397,6 +409,7 @@ def render_md(r: Dict[str, Any]) -> str:
         f"**prompts**：`{r['prompts_file']}`（{r['n_prompts']} 条）  ",
         f"**每 prompt 采样**：{r['n_samples_per_prompt']}  "
         f"**温度**：{r['temperatures']}  ",
+        f"**chat template**：{'开启（单轮 user）' if r.get('chat_template') else '关闭（裸续写）'}  ",
         f"**阈值**：`k ≥ log2(q)+log2(1/eps)` = **{r['threshold_bits']:.1f} bit** "
         f"(q={r['q']}, eps={r['eps']})",
         "",
@@ -434,6 +447,12 @@ def render_md(r: Dict[str, Any]) -> str:
         "要判断证书是否真的隐藏 `T`，看 `k < 阈值` 的比例，而不是看平均值。",
         "- 精确字符串计数会低估长响应的多样性；`N` 只有 20–50。本表是**采样分布的"
         "估计**，不是信息论上界。",
+        f"- `N={r['n_samples_per_prompt']}` 的截断：`p_max` 最小只能分辨 "
+        f"`1/{r['n_samples_per_prompt']}`，故 `k` 的**最大可观测值**约为 "
+        f"`{math.log2(r['n_samples_per_prompt']):.2f} bit`；所有样本互不相同时只会"
+        "得到这个上界，而不是真实熵。`k=0` 也可能只是 `N` 太小没采到变体。",
+        "- chat template 开启时，prompt 被包成单轮 user 消息，解码只取新 token；"
+        "关闭时是裸续写（X2 口径）。两种口径的 `k` 与端到端指标不可直接混用。",
         "- 真正的攻击是**重执行**（`Corollary reexec`），不是枚举字符串空间。",
         "",
         "## 复现",
@@ -442,7 +461,8 @@ def render_md(r: Dict[str, Any]) -> str:
         f"python3 bench/bench_k_entropy.py --backend {r['backend']} "
         f"--prompts {r['prompts_file']} --max-prompts {r['n_prompts']} "
         f"--n-samples {r['n_samples_per_prompt']} "
-        f"--temperatures {','.join(str(t) for t in r['temperatures'])}",
+        f"--temperatures {','.join(str(t) for t in r['temperatures'])}"
+        + (" --chat-template" if r.get("chat_template") else ""),
         "```",
     ]
     return "\n".join(lines) + "\n"
@@ -465,6 +485,9 @@ def main() -> int:
     ap.add_argument("--eps", type=float, default=2.0 ** -20)
     ap.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
     ap.add_argument("--load-in-4bit", action="store_true")
+    ap.add_argument("--chat-template", action="store_true",
+                    help="local backend 把 prompt 包成单轮 user 消息并 apply_chat_template"
+                         "（缺省关闭，保持旧续写口径）")
     ap.add_argument("--no-stratify", action="store_true",
                     help="默认按 safe/unsafe 分层取前 max-prompts 条")
     ap.add_argument("--resume", action="store_true",
