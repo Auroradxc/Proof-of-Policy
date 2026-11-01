@@ -174,6 +174,10 @@ class LocalBackend:
                     load_in_4bit=True, bnb_4bit_compute_dtype=torch.float16)
             except Exception as exc:  # noqa: BLE001
                 print(f"[warn] 4bit 不可用，回退 fp16/CPU：{exc}", file=sys.stderr)
+        else:
+            # 不指定 dtype 时 from_pretrained 默认 fp32：7B ≈ 28 GB、8B ≈ 32 GB，
+            # 32 GB 卡上会把 KV cache 挤爆。GPU 用 fp16，CPU 保持 fp32。
+            kwargs["torch_dtype"] = torch.float16 if device == "cuda" else torch.float32
         self.tok = AutoTokenizer.from_pretrained(model_id)
         if self.tok.pad_token is None:
             self.tok.pad_token = self.tok.eos_token
