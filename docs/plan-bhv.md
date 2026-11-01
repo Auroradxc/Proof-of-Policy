@@ -142,11 +142,76 @@ python3 bench/bench_policy_leak.py --out-dir bench/results
 | P1-06 | 策略推断攻击 | `bench/results/policy_leak.md` 扩展 | P1-05 | `[LOCAL]` | 每层 top-1/top-3 准确率 + 审计效用曲线 | ⏳ |
 | P1-07 | 接收方 nonce 协议 | 证书 `challenge` 扩展 + 用户验签路径 | P0-01 | `[LOCAL]` | `f=0` / verifier-only / end-user 三场景 | ⏳ |
 | P1-08 | 交付绑定实验 | `bench/results/delivery_binding.md/.json` | P1-07 | `[LOCAL]` | `f=0` 重放成功；end-user `f>0` 失败 | ⏳ |
-| P1-09 | 组合负对照 | `bench/results/composition_controls.md/.json` | 现有 compose | `[LOCAL]` | 同 nonce/不同 nonce/绑 x 与否四格 | ⏳ |
-| P1-10 | 电路内验签 / 阈值网关 | `bench/results/gateway_sig.md` | — | `[LOCAL]`+`[CLOUD-OPT]` | 1/10/100 回执的成本表；或 2-of-3 阈值 | ⏳ |
-| P1-11 | 证明路径 DoS | `bench/results/dos_proof.md` | — | `[LOCAL]`+`[CLOUD-OPT]` | `a^n` vs `a+b` 的 prove 时间/内存 | ⏳ |
-| P1-12 | 跨系统 / TEE 基线 | `bench/results/baselines.md` | — | `[CLOUD-OPT]` | 信任×延迟×大小×隐私表（measured/cited 分栏） | ⏳ |
-| P1-13 | 签发 / 透明日志 | `bench/results/issuance.md` + 原型 | — | `[LOCAL]` | 不可能性 + `1-(1-p)^m` 检出曲线 | ⏳ |
+| P1-09 | 组合负对照 | `bench/results/composition_controls.md/.json` | 现有 compose | `[LOCAL]` | 同 nonce/不同 nonce/绑 x 与否四格 | ✅ |
+| P1-10 | 电路内验签 / 阈值网关 | `bench/results/gateway_sig.md` | — | `[LOCAL]`+`[CLOUD-OPT]` | 1/10/100 回执的成本表；或 2-of-3 阈值 | ✅（电路内 blocked，见 B1） |
+| P1-11 | 证明路径 DoS | `bench/results/dos_proof.md` | — | `[LOCAL]`+`[CLOUD-OPT]` | `a^n` vs `a+b` 的 prove 时间/内存 | ✅（大 n 留云机） |
+| P1-12 | 跨系统 / TEE 基线 | `bench/results/baselines.md` | — | `[CLOUD-OPT]` | 信任×延迟×大小×隐私表（measured/cited 分栏） | ✅ |
+| P1-13 | 签发 / 透明日志 | `bench/results/issuance.md` + 原型 | — | `[LOCAL]` | 不可能性 + `1-(1-p)^m` 检出曲线 | ✅ |
+
+### 3.2.1 V1/B1 交付记录（2026-11-01）
+
+> **已合并**：`bhv/v1-bench` → `15ad64a`；`bhv/b1-trust` → `14ed953`。
+> 全量回归 **877 tests OK（15 skipped，1 expected failure = G-1）**；
+> 修复提交 `6809d7d`（`bench_dos.py` 复用唯一 `sha256_file`）。
+> V1 的 NFA bug 记录在 [`blockers/V1.md`](blockers/V1.md)，B1 的边界在
+> [`blockers/B1.md`](blockers/B1.md)。
+
+**P1-09 组合四格**（`bench/results/composition_controls.{json,md}`）：
+
+| 格 | 条件 | 结果 |
+|---|---|---|
+| (a) | 同 nonce + `x=x_U=derive(T_U)` + delegated 空 | **唯一真组合**：`ok=True, satisfied=True` |
+| (b) | 两半不同 nonce | `ok=False`，`response_binding` 四方比对拒绝 |
+| (c) | 用户 `x_U=HARMFUL`、送达 BENIGN；推理半只绑 `derive(T_U)` | `ok=True, satisfied=True`，但只是**弱形式** `∃x: x=derive(T_U) ∧ T_U=M(x)`；强形式 `x=x_U` 未落地（E-1） |
+| (d) | 策略半 `delegated` 非空 | `ok=True, satisfied=False`（fail closed） |
+
+**P1-10 网关验签**（`bench/results/gateway_sig.{json,md}`）：
+
+- 链下 Ed25519，1/10/100 条回执：验签 **0.094 / 0.844 / 10.165 ms**；单条 237–295 B；
+- `ToolSeal`：签发 0.074 ms、验签 0.184 ms、345 B；
+- 2-of-3 多签：签名 0.173 ms、合并 0.001 ms、验签 0.508 ms、证书 981 B；
+  任意 2 个互异签名通过、单签名拒绝、同 keyid 重复不算数；
+- **电路内验签 blocked**：`circuits/` 按设计不含 Ed25519 验签，未新增 guest；
+  `cycles/prove_time/peak_mem` 全是 `null`，**没有编数字**。→ 网关仍是 residual trust。
+
+**P1-11 证明路径 DoS**（`bench/results/dos_proof.{json,md}`）：
+
+| 路径 | 结果 |
+|---|---|
+| 执行 pike | n=100/200/400：643,906 / 1,145,221 / 2,143,629 cycles；每字符线性 |
+| 执行 naive | 12,382,732 / 48,638,958 / 193,207,142 cycles；比值 **19.2× → 42.5× → 90.1×** |
+| 证明 pike n=100 | 成功，122.2 s，峰值 11.7 GiB |
+| 证明 naive n=25 | 成功，153.2 s，峰值 12.1 GiB |
+| 证明 naive n=50 | **OOM/SIGKILL**，226.5 s，峰值 13.77 GiB |
+
+> naive 的大 n（≥100）与所有 n=400 的证明点留云机；本机只报执行路径与可完成的小 n。
+
+**P1-12 跨系统 / TEE 基线**（`bench/results/baselines.{json,md}`）：
+
+- 49 格全部标 `measured` / `cited` 与来源；
+- PoP / signed-Merkle / trusted-server(TEE sim) 为实测；zkAgent、NiyamAI 引用；
+- Zaguk / PCO 只给定性，性能格 `—`（原文未取到可比数字，不猜）；
+- 明确“PoP 列数字来自已入库 `proofs.json`/`verify.json`，量测机与本次脚本机可能不同”。
+
+**P1-13 签发 / 透明日志**（`bench/results/issuance.{json,md}`）：
+
+- 透明日志：追加、根、包含证明、树头签名；`tests/test_transparency.py` 21 例；
+- `N=2000, m=100, p=0.05`：**交付框检出 0.9948，日志框 0.0000**；
+- 25 格精确式 / 独立近似 / Monte Carlo 对照；F-1…F-6 前提写清；
+- 边界：split-view 未实现（只有 checkpoint），作为外部假设；只量化“检出”，不量化“阻止”。
+
+**V1/B1 新发现的 bug / 证明债**（不进论文结论，必须处理）：
+
+| ID | 内容 | 影响 | 偿还方 |
+|---|---|---|---|
+| **G-1** | `[^\d\D]` 编译成 `Lit([])` → ε 边，匹配空串；Python/Rust 共有 | 定理 G 在空字符类上不成立；T3 已用 A-G0 限定 | core owner：区分 `Empty`/`Eps` 或拒绝空类；同步 Rust + 重建 vkey |
+| **V1-2** | `a{0}` 抛 `AttributeError: '_Builder' object has no attribute '_build'` | 编译期崩溃（不是 `PolicyError`），可用性缺陷；不涉健全性 | core owner：`_chain([])` 返回显式 ε 或拒绝零次重复；同步 Rust |
+| **E-1** | `verify_composite` 绑 `derive(T_U)` 而非用户 `x_U` | 组合只证弱形式；论文 §7.5 的强形式未落地 | 证书公开值加入 `x_U`/承诺，验证方重算 `IB(n,x_U)` |
+| **B1-circuit-ed25519** | 电路内验签未做 | “网关信任”仍 residual | 电路 owner 提供 guest；B1 量测 |
+| **B1-split-view** | 透明日志无一致性证明/gossip | 签发完整性依赖外部假设 | 接 RFC 6962 风格日志 |
+
+**下一步**：core owner 修 G-1/V1-2；X1 云机跑 P0-06/07/08；X2 真模型跑 P0-09/10；
+P 把 T1/T2/T3 证明与 V1/B1 结果回写论文 §3–§7。
 
 ### 3.3 P2（工程与叙事）
 
