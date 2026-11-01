@@ -22,7 +22,8 @@
 | **接自己的 agent 框架** | [`modules/06-frameworks.md`](modules/06-frameworks.md) §8 → [`modules/03-certificate.md`](modules/03-certificate.md) |
 | **对上 EU AI Act 的条款** | [`eu-ai-act-mapping.md`](eu-ai-act-mapping.md) |
 | **改语义规则那条线** | [`design-semantic-rules.md`](design-semantic-rules.md) |
-| **看接下来要做什么** | [`dev-plan.md`](dev-plan.md)（唯一维护中的计划） |
+| **看接下来要做什么** | [`plan-bhv.md`](plan-bhv.md)（BHV 改造计划，含云资源标记）→ [`dev-plan.md`](dev-plan.md)（历史/并行计划） |
+| **想知道“一张证书到底绑住了什么”** | [`certificate-binding-framework.md`](certificate-binding-framework.md)（BHV 框架：响应/请求/策略三个面） |
 
 ---
 
@@ -44,7 +45,9 @@
 | [`development.md`](development.md) | **开发与使用手册**（按循环与角色）：环境分层 / 15 分钟跑通 / 改一处代码跑哪几条验证 / 常见任务配方 / 环境变量 / 产物地图 / 故障排查。与 `reproduce.md` 的分工：那篇回答「每个特性怎么复现出来」，这篇回答「我平时怎么在这个仓库里干活」 |
 | [`runbook-proof-service.md`](runbook-proof-service.md) | 证明服务的**运维手册**：跑起来要什么 / 怎么确认它是好的 / 满载时怎么表现 / 出事怎么办 |
 | [`demo/README.md`](demo/README.md) | **全链路 demo**：`demo_all.sh` 的 8 条支路各跑什么、看到什么算对、哪条为什么没跑，以及 fast 模式下 `PASS` 的**确切含义** |
-| [`dev-plan.md`](dev-plan.md) | **当前开发计划**（唯一维护中的计划）。按代码板块 × 阶段组织，勾选即验收 |
+| [`certificate-binding-framework.md`](certificate-binding-framework.md) | **BHV 证书绑定框架**：D1–D8 定义、定理 A–F（三难/泄漏剖面/交付绑定/策略隐私/组合/签发）、实例化表与证明债。把响应、请求、**策略**三个面收进同一组定义 |
+| [`plan-bhv.md`](plan-bhv.md) | **BHV 改造计划**：M0–M5 里程碑、任务总表、`[LOCAL]`/`[CLOUD]`/`[GPU/API]` 标记、验收判据与 16 周排期 |
+| [`dev-plan.md`](dev-plan.md) | **开发计划**（按代码板块 × 阶段组织，勾选即验收）。与 `plan-bhv.md` 并行：后者是论文改造的外层计划 |
 | [`refactor-proposal.md`](refactor-proposal.md) | **重构与优化建议书 + 执行计划**（2026-09-17 立，**已采纳**）。从技术框架 / 效率 / 内存 / 简洁四个角度普查后给出的 R1–R18 建议与 P0–P3 阶段。执行进度与每阶段的验收记录见 [`dev-plan.md` §5.7](dev-plan.md) |
 
 ### 2.2 历史记录（**已冻结，刻意保留原样**）
