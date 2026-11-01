@@ -161,14 +161,66 @@ def host_info() -> dict:
             pass
         return None
 
+    # 容器里 /proc/meminfo 常常报**宿主机**的值（AutoDL 上实测 754 GiB，而
+    # cgroup 只给 90 GiB）。如果只信 /proc，内存闸门会假 PASS，结果文件的
+    # 「这台机器有多少内存」也会是假的 —— 而那张表的自变量正是内存。
+    # 以 cgroup 为准；读不到才回落到 /proc。两者都记，便于审计。
     mem_kb = _first("/proc/meminfo", "memtotal")
+    mem_proc_mb = round(int(mem_kb.split()[0]) / 1024) if mem_kb else None
+    mem_cg_mb = _cgroup_mem_mb()
+    mem_mb = (min([m for m in (mem_proc_mb, mem_cg_mb) if m is not None])
+              if (mem_proc_mb or mem_cg_mb) else None)
+    cpu_cg = _cgroup_cpu_count()
     return {
         "hostname": os.uname().nodename,
         "cpu_model": _first("/proc/cpuinfo", "model name"),
-        "cpu_count": os.cpu_count(),
-        "mem_total_mb": round(int(mem_kb.split()[0]) / 1024) if mem_kb else None,
+        # 容器的 os.cpu_count() 也是宿主机值；cgroup cpu.max 才是配额。
+        "cpu_count": cpu_cg or os.cpu_count(),
+        "cpu_count_host": os.cpu_count(),
+        "mem_total_mb": mem_mb,
+        "mem_total_proc_mb": mem_proc_mb,
+        "mem_total_cgroup_mb": mem_cg_mb,
+        "mem_source": "cgroup" if (mem_cg_mb is not None and
+                                   (mem_proc_mb is None or mem_cg_mb < mem_proc_mb))
+                      else "proc",
         "platform": os.uname().machine,
     }
+
+
+def _cgroup_mem_mb() -> int | None:
+    """容器内存配额（MiB）；读不到返回 ``None``。
+
+    v2: ``/sys/fs/cgroup/memory.max``；v1: ``.../memory/memory.limit_in_bytes``。
+    ``max`` / 超大哨兵值（v1 的 ~2^63）视为「无限制」。
+    """
+    for path in ("/sys/fs/cgroup/memory.max",
+                 "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            text = Path(path).read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if not text or text == "max":
+            continue
+        try:
+            value = int(text)
+        except ValueError:
+            continue
+        if 0 < value < (1 << 60):
+            return round(value / (1024 * 1024))
+    return None
+
+
+def _cgroup_cpu_count() -> int | None:
+    """容器 CPU 配额（核）；``cpu.max`` 形如 ``1600000 100000`` ⇒ 16。"""
+    try:
+        parts = Path("/sys/fs/cgroup/cpu.max").read_text(encoding="utf-8").split()
+        if len(parts) == 2 and parts[0] != "max":
+            quota, period = int(parts[0]), int(parts[1])
+            if quota > 0 and period > 0:
+                return max(1, quota // period)
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 def run_point(length: int, rc: int, corpus_text: str, proof_mode: str = "core",
