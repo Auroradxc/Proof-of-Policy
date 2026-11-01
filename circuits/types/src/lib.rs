@@ -527,11 +527,16 @@ fn reached_accept(spec: &NfaSpec, cur: &[bool]) -> bool {
 /// 语义与 `nfa_match`（匹配存在性）一致，但 O(n^2) —— 用于量化 Pike VM 的优势。
 pub fn nfa_match_naive(spec: &NfaSpec, text: &str) -> bool {
     let chars: Vec<char> = text.chars().collect();
+    // 先判「空匹配」：模式本身的 ε-闭包若含接受状态（如修复后的 `a{0}`，
+    // 其 spec 就是 start --ε--> accept），那么**空文本**也必须返回真。
+    // 否则下面的循环 `0..chars.len()` 一次都不跑，会把 ε 误判成不匹配 ——
+    // 这正是 Python 参考实现 `match_search_naive` 在循环前做的那一步。
+    let start_closure = eps_closure(spec, core::slice::from_ref(&spec.start));
+    if reached_accept(spec, &start_closure) {
+        return true;
+    }
     for start in 0..chars.len() {
-        let mut cur = eps_closure(spec, core::slice::from_ref(&spec.start));
-        if reached_accept(spec, &cur) {
-            return true;
-        }
+        let mut cur = start_closure.clone();
         for i in start..chars.len() {
             let cp = chars[i] as u32;
             let mut nxt = vec![false; spec.states.len()];
@@ -1794,5 +1799,78 @@ pub fn run_job(job: &Job) -> Outcome {
         }
         Job::Infer(r) => Outcome::Infer(run_infer(r)),
         Job::Session(r) => Outcome::Session(run_session(r)),
+    }
+}
+
+// --------------------------------------------------------------------------- //
+// NFA 语义回归测试（G-1 / V1-2 的 Rust 侧契约）
+//
+// 放在文件末尾、且只在 `cfg(test)` 下编译：**不进入 guest ELF**，因此不改变
+// 电路行为与 vkey。Rust 侧没有正则解析器/构造器 —— 解析与 Thompson 构造都在
+// `policydsl/core/nfa.py`，Rust 只解释编译后的 `NfaSpec`。所以两处修复的
+// 「Rust 同步」表现为固定解释器语义：
+//
+// * 空语言 ∅ 由「空区间边」表示（`ranges: []`），它不匹配任何字符；
+// * 空串 ε 由 ε 边表示。零次重复 `a{0}` 的 spec 就是 `start --ε--> accept`。
+//
+// 空字符类（G-1）在 Python 解析期即被拒绝，不可能生成 spec 送到这里；
+// `tests/test_fuzz_rules.py::TestRustParity` 另有跨层对拍。
+// --------------------------------------------------------------------------- //
+
+#[cfg(test)]
+mod nfa_contract_tests {
+    use super::*;
+    use alloc::vec;
+
+    /// `start --ε--> accept` —— 对应修复后的 `a{0}` 编译结果。
+    fn epsilon_spec() -> NfaSpec {
+        NfaSpec {
+            start: 0,
+            accept: vec![1],
+            states: vec![
+                NfaState { eps: vec![1], edges: vec![] },
+                NfaState { eps: vec![], edges: vec![] },
+            ],
+        }
+    }
+
+    /// `start --edge(ranges=[])--> accept` —— 空字符类若以「空区间边」编码，
+    /// 其语言必须是 ∅（不匹配任何输入，包括空串）。
+    fn empty_language_spec() -> NfaSpec {
+        NfaSpec {
+            start: 0,
+            accept: vec![1],
+            states: vec![
+                NfaState { eps: vec![], edges: vec![NfaEdge { to: 1, ranges: vec![] }] },
+                NfaState { eps: vec![], edges: vec![] },
+            ],
+        }
+    }
+
+    #[test]
+    fn zero_repeat_spec_matches_epsilon() {
+        let spec = epsilon_spec();
+        assert!(nfa_match(&spec, ""));
+        // search 语义：零宽匹配对任意文本都为真，但不消耗字符。
+        assert!(nfa_match(&spec, "a"));
+        assert!(nfa_match_naive(&spec, ""));
+    }
+
+    #[test]
+    fn empty_ranges_edge_is_empty_language() {
+        let spec = empty_language_spec();
+        assert!(!nfa_match(&spec, ""));
+        assert!(!nfa_match(&spec, "abc"));
+        assert!(!nfa_match_naive(&spec, "abc"));
+    }
+
+    #[test]
+    fn pike_and_naive_agree_on_epsilon_and_empty_language() {
+        for spec in [epsilon_spec(), empty_language_spec()] {
+            for text in ["", "a", "abc", "0"] {
+                assert_eq!(nfa_match(&spec, text), nfa_match_naive(&spec, text),
+                           "pike/naive disagree on {:?}", text);
+            }
+        }
     }
 }
