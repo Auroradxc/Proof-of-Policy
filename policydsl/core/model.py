@@ -303,6 +303,17 @@ class Policy:
     description: str = ""
     rules: List[Rule] = field(default_factory=list)
     semantic: str = "and"  # "and"：每一条规则都必须通过
+    #: 策略承诺的秘密盐（BHV 框架定理 D）。**空串 = 无盐（旧行为）**。
+    #:
+    #: 非空时它进入 ``ConstraintSpec`` 的规范字节，因而进入电路公开的
+    #: ``policy_hash``，但**不进**证书载荷的 ``policy.id/version`` ——
+    #: 验证者看到 ``policy_hash`` 却枚举不出 ``π``（除非猜中这 128 bit）。
+    #: 由签发权威生成/持有（P-PP）；运营方拿到盐才能出证；审计时权威开示。
+    #:
+    #: 它只关闭**公开值**通道：SP1 ``core`` 的证明工件仍可能泄露见证，
+    #: 那需要 ``groth16/plonk`` 的 witness-hiding（见
+    #: ``docs/certificate-binding-framework.md`` §7.3）。
+    policy_nonce: str = ""
 
     def validate(self) -> None:
         """校验策略包本身及其全部规则。"""
@@ -310,6 +321,16 @@ class Policy:
             raise PolicyError("policy needs 'id' and 'version'")
         if self.semantic != "and":
             raise PolicyError(f"unsupported semantic '{self.semantic}' (only 'and' for now)")
+        if self.policy_nonce:
+            if not isinstance(self.policy_nonce, str):
+                raise PolicyError("policy_nonce must be a hex string")
+            if len(self.policy_nonce) < 32:
+                raise PolicyError(
+                    "policy_nonce must be at least 32 hex chars (128 bits)")
+            if len(self.policy_nonce) % 2 or any(
+                    c not in "0123456789abcdefABCDEF" for c in self.policy_nonce):
+                raise PolicyError(
+                    "policy_nonce must be an even-length hex string")
         for r in self.rules:
             r.validate()
 
@@ -364,7 +385,10 @@ class Policy:
         ]
         return cls(id=data["id"], version=data.get("version", "0.1.0"),
                    description=data.get("description", ""), rules=rules,
-                   semantic=data.get("semantic", "and"))
+                   semantic=data.get("semantic", "and"),
+                   # 小写化是规范字节稳定性的一部分：两个只差大小写的包必须得到
+                   # 同一个 policy_hash，否则「同一策略」会被判成两份。
+                   policy_nonce=str(data.get("policy_nonce", "") or "").lower())
 
 
 @dataclass

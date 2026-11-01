@@ -202,7 +202,10 @@ def shard(policy: Policy) -> Dict[str, Policy]:
         buckets[role_of_kind(rule.kind)].append(rule)
     return {
         role: Policy(policy.id, policy.version, policy.description,
-                     list(buckets[role]), policy.semantic)
+                     list(buckets[role]), policy.semantic,
+                     # BHV 定理 D：切片必须携带父策略的盐，否则切片的规范字节
+                     # 丢掉盐、哈希与父策略对不上（而 plan 里绑的是父哈希）。
+                     policy_nonce=policy.policy_nonce)
         for role in ROLES
     }
 

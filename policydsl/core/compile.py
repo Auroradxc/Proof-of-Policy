@@ -47,10 +47,18 @@ def canonical_spec_bytes(spec: Dict[str, Any]) -> bytes:
     **同时**用它派生 ``policy_hash`` 与解析要判定的约束，二者因此不可分离：
     证明者无法一边用空策略（恒通过）判定、一边声称哈希对应真实策略。
 
+    ``policy_nonce``（BHV 定理 D）是**可选**字段：非空时它进入规范字节，
+    因而进入 ``policy_hash``；空/缺失时完全不出现在字节里 —— 现有 7 个策略包
+    的哈希因此逐字节不变（``tests/test_acceptance_baseline.py`` 钉着）。
+    Rust 侧的 ``ConstraintSpec`` 没有标 ``deny_unknown_fields``，会忽略这个字段；
+    但 ``policy_hash`` 是对**整段规范文本**求的哈希，盐仍然被承诺。
+
     ``ensure_ascii`` 保持默认 True（与 :func:`_canonical_hash` 一致），
     产出纯 ASCII，可安全地作为 UTF-8 文本跨进程/跨语言传递。
     """
     stable = {k: spec[k] for k in STABLE_KEYS}
+    if spec.get("policy_nonce"):
+        stable["policy_nonce"] = spec["policy_nonce"]
     return json.dumps(stable, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
@@ -283,6 +291,11 @@ def _assemble(policy: Policy, constraints: list) -> Dict[str, Any]:
         "semantic": policy.semantic,
         "constraints": constraints,
     }
+    # 带盐策略承诺（BHV 定理 D）：盐进规范字节 ⇒ 进 policy_hash；空则完全不出现，
+    # 现有策略包的哈希逐字节不变。盐本身不进证书载荷（见 evidence/cert.py 的
+    # policy 块只写 id/version），所以验证者看不到它。
+    if policy.policy_nonce:
+        stable["policy_nonce"] = policy.policy_nonce.lower()
     spec = dict(stable)
     spec["sha256"] = _canonical_hash(stable)  # 绑定哈希：证书据此校验策略一致性
     return spec

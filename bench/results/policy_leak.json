@@ -1,0 +1,30 @@
+{
+  "generated_at": "2026-11-01T06:51:48Z",
+  "base_pack": "policy_packs/agent_content_v1.json",
+  "seed": 20261101,
+  "variants": 2000,
+  "target_index": 1000,
+  "target_hash": "f74b6a02e96bace1cdb7bd83b917c3a7aaeb757ddc6df42e60fa61cadb610a38",
+  "unsalted": {
+    "recovered": true,
+    "matched_index": 1000,
+    "elapsed_ms": 56.845
+  },
+  "salted": {
+    "nonce_bits": 128,
+    "recovered": false,
+    "matched_index": -1,
+    "elapsed_ms": 116.763,
+    "guess_probability_upper_bound": 5.8774717541114375e-36
+  },
+  "salt_leaked": {
+    "recovered": true,
+    "matched_index": 1000,
+    "elapsed_ms": 58.195
+  },
+  "notes": [
+    "Salted arm enumerates the same policy space with a wrong nonce; it models an attacker who does not know the authority-held salt.",
+    "salt_leaked models voluntary disclosure / salt compromise, not a cryptographic break.",
+    "This measures the public-value channel only. SP1 core proof artifacts may still leak the witness; that needs groth16/plonk."
+  ]
+}
