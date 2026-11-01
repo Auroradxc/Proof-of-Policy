@@ -1,0 +1,297 @@
+{
+  "generated_at": "2026-11-01T12:29:31Z",
+  "pack": "/root/autodl-tmp/zk-policy/policy_packs/agent_content_v1.json",
+  "out_dir": "bench/results",
+  "response_sha256": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+  "response_chars": 195,
+  "canary": "POP_PRIVACY_CANARY_7f3a9c",
+  "tiers": [
+    {
+      "tier": "core",
+      "status": "ok",
+      "elapsed_s": 49.35,
+      "stdout_tail": "done\npolicy_hash : ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708\nvkey_hash   : 0x003eb14de80339bddef2b9207ef27469088267888bb9bebb9836b4ee701fd7be\nproof_mode  : core (hiding: none)\npassed      : False\nnonce       : 083fbb83f90c995c4a8ac317ebdc6c6e2318db9565d4ab59c426c13d1da580fe\nresp_binding: f59b115e7178e7fb351f67e7d770f15665711c778e73b120ac4d0dd836f69790\ncert_digest : 34281a35423f76101d9b50e948a314430096e4e2daddcef31d2b6054611148c2\nsigner      : ed25519:ddfece5c55734a46a9cee884bb5b0bef0f859233b4b23c46c28e165975a4eb59\nanchor      : seq=11 hash=aa4d2e19149f5a11… ledger=/root/autodl-tmp/zk-policy/scripts/examples/out/ledger.jsonl\nwrote       : /root/autodl-tmp/privacy-work/core/cert.json, payload.json, key.json, results.json, proof.bin\nverify with : python3 scripts/verify/verify_cert.py --cert /root/autodl-tmp/privacy-work/core/cert.json \\\n                  --pack /root/autodl-tmp/zk-policy/policy_packs/agent_content_v1.json --ledger /root/autodl-tmp/zk-policy/scripts/examples/out/ledger.jsonl \\\n                  --keyring /root/autodl-tmp/privacy-work/core/key.json\n",
+      "stderr_tail": "loaded 1 vector(s) (job=policy, mode=prove)\n[agent-content-v1] generating proof (mode=core) ...\nsaved proof to /root/autodl-tmp/privacy-work/core/proof.bin (+ /root/autodl-tmp/privacy-work/core/proof.bin.meta.json, verifier sidecar)\n[agent-content-v1] proved\nwrote 1 result(s) to /root/autodl-tmp/privacy-work/core/results.json\n",
+      "out_dir": "/root/autodl-tmp/privacy-work/core",
+      "proof_mode": "core",
+      "proof_hiding": "none",
+      "files": [
+        "anchor.json",
+        "cert.json",
+        "key.json",
+        "payload.json",
+        "proof.bin",
+        "proof.bin.bytes",
+        "proof.bin.meta.json",
+        "proof.bin.pv",
+        "proof.bin.verify.json",
+        "proof.bin.vkh",
+        "results.json",
+        "vectors.json"
+      ],
+      "proof_files": [
+        {
+          "name": "proof.bin",
+          "size": 2793788
+        },
+        {
+          "name": "proof.bin.bytes",
+          "size": 2793328
+        },
+        {
+          "name": "proof.bin.meta.json",
+          "size": 194
+        },
+        {
+          "name": "proof.bin.pv",
+          "size": 437
+        },
+        {
+          "name": "proof.bin.verify.json",
+          "size": 338
+        },
+        {
+          "name": "proof.bin.vkh",
+          "size": 32
+        }
+      ],
+      "canary_in_text": [],
+      "canary_in_proof": [],
+      "response_in_delivered": [],
+      "response_in_prover_inputs": [
+        {
+          "file": "vectors.json",
+          "size": 3555
+        }
+      ],
+      "public_values": {
+        "proof_bin_pv_raw_sha256": "c4d6db9c288b491096437eb23970b153132d14f194bd47c05e27f7d4cae34fa2",
+        "results": [
+          {
+            "delegated": [],
+            "mode": "private",
+            "name": "agent-content-v1",
+            "passed": false,
+            "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708",
+            "redaction": {
+              "mask_count": 0,
+              "mask_covered": true,
+              "redacted_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+              "redaction_ok": true
+            },
+            "response_binding": "f59b115e7178e7fb351f67e7d770f15665711c778e73b120ac4d0dd836f69790",
+            "response_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+            "trace_root": "genesis",
+            "violations": [
+              {
+                "evidence_commitment": "04da09655d48e4920ce526c4776b120936b2a674fac7d4a74dbf815969f729bd",
+                "kind": "keyword_block",
+                "rule": "no_bad_topics"
+              }
+            ]
+          }
+        ],
+        "payload_outcome": {
+          "delegated": [],
+          "passed": false,
+          "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708",
+          "redaction": {
+            "mask_count": 0,
+            "mask_covered": true,
+            "redacted_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+            "redaction_ok": true
+          },
+          "response_binding": "f59b115e7178e7fb351f67e7d770f15665711c778e73b120ac4d0dd836f69790",
+          "response_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+          "trace_root": "genesis",
+          "violations": [
+            {
+              "evidence_commitment": "04da09655d48e4920ce526c4776b120936b2a674fac7d4a74dbf815969f729bd",
+              "kind": "keyword_block",
+              "rule": "no_bad_topics"
+            }
+          ]
+        },
+        "payload_binding": {
+          "vkey_hash": "0x003eb14de80339bddef2b9207ef27469088267888bb9bebb9836b4ee701fd7be",
+          "proof_sha256": "e9e027a572d247694f854da9a2dfe222cd227db21bd98e9fb24847dfe31e9464",
+          "public_values_sha256": "c4d6db9c288b491096437eb23970b153132d14f194bd47c05e27f7d4cae34fa2",
+          "proof_mode": "core"
+        },
+        "payload_challenge": {
+          "scheme": "pop-bind-v1",
+          "issuer": "verifier",
+          "nonce": "083fbb83f90c995c4a8ac317ebdc6c6e2318db9565d4ab59c426c13d1da580fe",
+          "response_binding": "f59b115e7178e7fb351f67e7d770f15665711c778e73b120ac4d0dd836f69790"
+        }
+      },
+      "commitment_oracle": {
+        "response_sha256": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+        "published_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+        "matches_sha256_T": true,
+        "note": "public, offline-recomputable function of T — guess-and-verify oracle by design (see Theorem A/B)"
+      },
+      "re_execution": {
+        "status": "skipped",
+        "reason": "needs a real model + prompt; measured by bench_k_entropy / E2"
+      }
+    },
+    {
+      "tier": "groth16",
+      "status": "ok",
+      "elapsed_s": 286.13,
+      "stdout_tail": "ifier done \u001b[36mbackend=\u001b[0mgroth16 \u001b[36mcurve=\u001b[0mbn254 \u001b[36mtook=\u001b[0m2.372078\ndone\npolicy_hash : ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708\nvkey_hash   : 0x003eb14de80339bddef2b9207ef27469088267888bb9bebb9836b4ee701fd7be\nproof_mode  : groth16 (hiding: wrapper-only)\npassed      : False\nnonce       : d1ab9af8ef6f945fd1af47b046c7bec48f158c041c946030013e16ac7dd16a7e\nresp_binding: 7e6dba5de5a50cefe8a6de2ceaa8ba57aa1c8f84261c6f63a767f1e7aba616e1\ncert_digest : 2c7f9d8ce8376d32cb9b957019b9c7546d4305f9a1484f82b5f5d41b2b5f2168\nsigner      : ed25519:ddfece5c55734a46a9cee884bb5b0bef0f859233b4b23c46c28e165975a4eb59\nanchor      : seq=12 hash=b9a7a60a67fd7a59… ledger=/root/autodl-tmp/zk-policy/scripts/examples/out/ledger.jsonl\nwrote       : /root/autodl-tmp/privacy-work/groth16/cert.json, payload.json, key.json, results.json, proof.bin\nverify with : python3 scripts/verify/verify_cert.py --cert /root/autodl-tmp/privacy-work/groth16/cert.json \\\n                  --pack /root/autodl-tmp/zk-policy/policy_packs/agent_content_v1.json --ledger /root/autodl-tmp/zk-policy/scripts/examples/out/ledger.jsonl \\\n                  --keyring /root/autodl-tmp/privacy-work/groth16/key.json\n",
+      "stderr_tail": "loaded 1 vector(s) (job=policy, mode=prove)\n[agent-content-v1] generating proof (mode=groth16) ...\nsaved proof to /root/autodl-tmp/privacy-work/groth16/proof.bin (+ /root/autodl-tmp/privacy-work/groth16/proof.bin.meta.json, verifier sidecar)\n[agent-content-v1] proved\nwrote 1 result(s) to /root/autodl-tmp/privacy-work/groth16/results.json\n",
+      "out_dir": "/root/autodl-tmp/privacy-work/groth16",
+      "proof_mode": "groth16",
+      "proof_hiding": "wrapper-only",
+      "files": [
+        "anchor.json",
+        "cert.json",
+        "key.json",
+        "payload.json",
+        "proof.bin",
+        "proof.bin.bytes",
+        "proof.bin.meta.json",
+        "proof.bin.pv",
+        "proof.bin.verify.json",
+        "proof.bin.vkh",
+        "results.json",
+        "vectors.json"
+      ],
+      "proof_files": [
+        {
+          "name": "proof.bin",
+          "size": 2132
+        },
+        {
+          "name": "proof.bin.bytes",
+          "size": 356
+        },
+        {
+          "name": "proof.bin.meta.json",
+          "size": 200
+        },
+        {
+          "name": "proof.bin.pv",
+          "size": 437
+        },
+        {
+          "name": "proof.bin.verify.json",
+          "size": 350
+        },
+        {
+          "name": "proof.bin.vkh",
+          "size": 32
+        }
+      ],
+      "canary_in_text": [],
+      "canary_in_proof": [],
+      "response_in_delivered": [],
+      "response_in_prover_inputs": [
+        {
+          "file": "vectors.json",
+          "size": 3555
+        }
+      ],
+      "public_values": {
+        "proof_bin_pv_raw_sha256": "7ec64287d6c15d04cedc7ddb49296405f54ee8f091a15630287998608bce2caa",
+        "results": [
+          {
+            "delegated": [],
+            "mode": "private",
+            "name": "agent-content-v1",
+            "passed": false,
+            "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708",
+            "redaction": {
+              "mask_count": 0,
+              "mask_covered": true,
+              "redacted_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+              "redaction_ok": true
+            },
+            "response_binding": "7e6dba5de5a50cefe8a6de2ceaa8ba57aa1c8f84261c6f63a767f1e7aba616e1",
+            "response_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+            "trace_root": "genesis",
+            "violations": [
+              {
+                "evidence_commitment": "04da09655d48e4920ce526c4776b120936b2a674fac7d4a74dbf815969f729bd",
+                "kind": "keyword_block",
+                "rule": "no_bad_topics"
+              }
+            ]
+          }
+        ],
+        "payload_outcome": {
+          "delegated": [],
+          "passed": false,
+          "policy_hash": "ffb2722e19d886c6f4f8d40c32bc076df3b517d2b2082d94728f7253d68d6708",
+          "redaction": {
+            "mask_count": 0,
+            "mask_covered": true,
+            "redacted_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+            "redaction_ok": true
+          },
+          "response_binding": "7e6dba5de5a50cefe8a6de2ceaa8ba57aa1c8f84261c6f63a767f1e7aba616e1",
+          "response_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+          "trace_root": "genesis",
+          "violations": [
+            {
+              "evidence_commitment": "04da09655d48e4920ce526c4776b120936b2a674fac7d4a74dbf815969f729bd",
+              "kind": "keyword_block",
+              "rule": "no_bad_topics"
+            }
+          ]
+        },
+        "payload_binding": {
+          "vkey_hash": "0x003eb14de80339bddef2b9207ef27469088267888bb9bebb9836b4ee701fd7be",
+          "proof_sha256": "914a62e7192b84da09e556453e68a1cdf29b302d80e39f7cdb5b25bd082fae37",
+          "public_values_sha256": "7ec64287d6c15d04cedc7ddb49296405f54ee8f091a15630287998608bce2caa",
+          "proof_mode": "groth16"
+        },
+        "payload_challenge": {
+          "scheme": "pop-bind-v1",
+          "issuer": "verifier",
+          "nonce": "d1ab9af8ef6f945fd1af47b046c7bec48f158c041c946030013e16ac7dd16a7e",
+          "response_binding": "7e6dba5de5a50cefe8a6de2ceaa8ba57aa1c8f84261c6f63a767f1e7aba616e1"
+        }
+      },
+      "commitment_oracle": {
+        "response_sha256": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+        "published_commitment": "ca2b53418cfc6e76afc8f44edad6f40f994366b0571845aef6c90cc25f0d1ef7",
+        "matches_sha256_T": true,
+        "note": "public, offline-recomputable function of T — guess-and-verify oracle by design (see Theorem A/B)"
+      },
+      "re_execution": {
+        "status": "skipped",
+        "reason": "needs a real model + prompt; measured by bench_k_entropy / E2"
+      }
+    }
+  ],
+  "notes": [
+    "A negative plaintext search is a probe, not a proof of zero-knowledge.",
+    "A positive hit is a definite leak in that artefact.",
+    "core/compressed STARK proofs are not witness-hiding; groth16/plonk are the only wrapper-level hiding tier (not post-quantum).",
+    "response_commitment is a public guess-and-verify oracle by design.",
+    "Re-execution is independent of the proving tier; measure it in E2."
+  ],
+  "provenance": {
+    "binary_sha256": "7f99fdb11a4a859c45598c384db3b98dd50426210adbc14d6b576c4d15dda49f",
+    "policy_vkey": "0x003eb14de80339bddef2b9207ef27469088267888bb9bebb9836b4ee701fd7be",
+    "commit": "e45178b",
+    "post_nfa_fix": true,
+    "concurrency": "isolated",
+    "artifact_cache": "/root/autodl-tmp/sp1-cache/groth16/v6.1.0",
+    "artifact_note": "official SP1 v6.1.0-groth16.tar.gz; size 6211807514 verified; gzip -t ok",
+    "host_note": "cgroup 16 CPU / 92160 MB; /proc/meminfo reports 772649 MB (host)",
+    "knobs": {
+      "GOMAXPROCS": 16,
+      "RAYON_NUM_THREADS": 16,
+      "SP1_WORKER_NUM_CORE_WORKERS": 8,
+      "SP1_WORKER_NUM_SETUP_WORKERS": 8,
+      "SP1_WORKER_NUM_RECURSION_EXECUTOR_WORKERS": 16,
+      "SP1_WORKER_NUM_RECURSION_PROVER_WORKERS": 16,
+      "SP1_WORKER_NUM_PREPARE_REDUCE_WORKERS": 16
+    },
+    "tiers": "core,groth16"
+  }
+}
