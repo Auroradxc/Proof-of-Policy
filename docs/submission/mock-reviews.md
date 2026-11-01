@@ -1,28 +1,54 @@
-# TDSC 模拟审稿意见（A8）
+# TDSC 模拟审稿意见（A8 + M6 更新）
 
-> **日期**：2026-11-01　**基线**：`4fe5c41`（分支 `bhv/a8-review`）
+> **日期**：2026-11-01　**基线**：`1c1fc60`（M6 更新；首轮基线 `4fe5c41`）
 > **审稿对象**：[`paper/tdsc-paper.tex`](../../paper/tdsc-paper.tex)（16 页稿）+ 仓库内证据文件
+> **M6 更新（重要）**：首轮评审时 X1b/X2 尚未落地；现在 X1c/X1d/E1/E2/E3/A11 已有结果。
+> 本文件保留首轮意见作为“审稿人看到的原稿问题”，并在 §0.1 与各条 `UPDATE` 中给出
+> **新证据如何改变结论**。**论文正文未修改**；若修订稿未把新证据写进正文，审稿人仍会
+> 按原稿给分。不要用“仓库里有结果”替代“论文里已报告”。
 > **口径**：三名审稿人按 IEEE TDSC 常规论文标准独立评审。分数 1–10
 > （1 = reject；4 = borderline reject；5 = major revision；7 = minor revision；
 > 8–10 = accept）。本文件不是真实审稿意见，也不修改论文、代码、证明或结果。
-> 未完成项一律标 `pending X1b/X2`、`blocker` 或 `open`，不编造数字。
-> 其中 **X1b** 指 X1 在 post-NFA-fix 新 vkey 上的云机重跑（团队若已有编号，以团队为准）；
-> **X2** 指真实 LLM 采样与 `k` 测量。
+> 未完成项在首轮标 `pending X1b/X2`、`blocker` 或 `open`，不编造数字；M6 后已落地的
+> 项目用 `UPDATE` 覆盖，**不再**当作 pending。
+> 首轮时的 **X1b** 指 X1 在 post-NFA-fix 新 vkey 上的云机重跑（现已由 X1c 完成）；
+> **X2** 指真实 LLM 采样与 `k` 测量（现已由 E1/E3 部分完成）。
 
 ## 0. 汇总
 
-| 审稿人 | 视角 | 分数 | 倾向 | 一句话 |
-|---|---|---:|---|---|
-| R1 | 系统 / 安全 | **5/10** | **Major Revision**（X1 不交付则 borderline reject） | 诚实、可复现，但 ZK 标题、规模、网关信任和策略隐私都还没到 TDSC 的“已交付”线 |
-| R2 | 理论 | **4/10** | **Major Revision**（理论新颖性接近 borderline reject） | 定理大多标准；三难是分类；D-privacy 条件未落地；E-1 只证弱形式；G 不在正文 |
-| R3 | 隐私 / 实践 | **5/10** | **Major Revision** | 隐私主张写得克制，但 `core` 非 ZK、重执行、策略泄露和 XSTest 质量使“合规”仍未闭环 |
+| 审稿人 | 视角 | 首轮分数 | M6 更新后（前提：修订稿纳入新证据） | 一句话 |
+|---|---|---:|---:|---|
+| R1 | 系统 / 安全 | 5/10 | **6/10（Major Revision）** | groth16 与 EU AI Act 已交付、规模边界已量；网关信任、L2 链接性与页数使其仍非 minor |
+| R2 | 理论 | 4/10 | **4/10（Major Revision）** | 新测量不改变“定理多为标准界、三难是分类”的判断；仍需定位为 framework + measurement |
+| R3 | 隐私 / 实践 | 5/10 | **6/10（Major Revision）** | 真实模型/端到端已有，但 L2 承诺可链接、`core` 非 ZK、语义模型 demote 使“隐私闭环”仍不成立 |
 
-**Meta-review（模拟）**：三份意见的共同硬点是 **(i) 标题/摘要的 zero-knowledge 尚无交付档**、
-**(ii) 证明规模与旗舰策略包不可证**、**(iii) 策略隐私只关闭公开值通道**、
-**(iv) 没有真实 LLM 与实测 `k`**。如果 rebuttal 期 X1b/X2 仍无结果，R1/R3 会转向
-Reject 或建议改投 “Succinct / verifiable-audit” 方向的系统论文；如果 X1b/X2 落地，
-三份都可以收到 Major Revision 以内。当前稿最可能的程序委员会结果是
-**Major Revision**，而不是直接 Accept。
+**Meta-review（模拟，M6 更新）**：首轮的四条硬点里，**(i) ZK 交付档**与
+**(ii) 规模/旗舰策略**已被 X1c/X1d 实质解决——`groth16` 18 点中 16 点 `verified=True`，
+真实 `eu_ai_act_v1` 两档都过；**(iv) 真实 LLM 与 `k`** 已有 E1/E3，但受 N 截断且
+不是策略质量评估。**仍未解决的是**：`core` 非 ZK、`groth16` 仅 wrapper-level、
+网关仍是信任根、组合只证弱形式、策略隐私只关证书层且 **E2 暴露出 L2 承诺可链接**、
+6 规则边界止于 4500 字符、语义分类器 A11 明确 demote。若修订稿把这些写入正文，
+R1 可从 borderline reject 收到 Major Revision；R2 仍是 Major；R3 需要补 L2 修复与
+XSTest 策略质量。当前稿（未改正文）最可能仍是 **Major Revision**。
+
+---
+
+## 0.1 M6 更新：最新证据与首轮问题的映射
+
+| 新证据 | 关键数字 | 首轮哪条被改变 | 仍需保留的边界 |
+|---|---|---|---|
+| **X1c groth16** | 18 点 **16 ✓ / 2 OOM**；成功点 **279–344 s / 29.7–35.1 GB / verified**；`core` 地板 ~10.5 GB | R1 W1/W2、R2 Q1、R3 W1 | `groth16` 是 **wrapper-only、非后量子**；`10000×3` 两档仍 OOM |
+| **X1c/X1d EU AI Act** | 真实 3 规则 `eu_ai_act_v1`：core **48.82 s / 12.38 GB / 2.79 MB**；groth16 **301.19 s / 30.07 GB / 1,874 B**；两档 `verify_cert` PASS | R1 W2、R3 W4/Q5 | 示例响应 167 字符；不是 10k 字符的旗舰点；`passed=True` 只说明该响应满足该包 |
+| **X1d/X1e/X1f 6 规则边界** | 2000/3000/4000/4500 字符可行（**181.66 s / 64.2 GB** @4500）；**5000 OOM**；6 规则 groth16 未跑 | R1 W2、R3 W4 | 边界是 90 GiB cgroup 的实测，不是“6 规则不可能”；不要把 4500 写成 10000 |
+| **X1d 真实响应隐私面** | core/groth16 交付物：响应整条/逐行 **0 命中**；私有输入逐行 **7/7**；策略名 1 处（公开输入） | R1 W5、R3 W1/Q2 | `canary=0` 不是 ZK 证明；`response_commitment=sha256(T)` 仍是公开 oracle |
+| **E1 `k` 的 N 截断** | Qwen N=50 全 unique → **k=5.644 bit（=log2 50）**；N=20 Qwen/Mistral **4.322**；DeepSeek mean **4.242**（4 组重复）；均远低于 40 bit | R3 W1/Q3、R2 W6 | **N 截断**：全 unique 只说明未观测到重复，不能证明真实熵；不能把 5.644 当上界或下界 |
+| **E2 L2 链接性** | 300 候选：L0/L1/L2 top-1 **0.500 / 0.068 / 0.382**；**L2-count-only 0.014**；承诺字典攻击 **0.207**；真实响应 L2 **0.112** | R1 W5、R3 W2/Q4 | 证书层，不是电路层；确定性 `SHA256(evidence)` 可跨样本链接，需加盐/桶级承诺 |
+| **E3 DeepSeek e2e** | 6 轮、**19 证书**、第三方 11 项 PASS；回调 **10.8 ms/轮**；**无 SP1**（`unproven`） | R3 W3/W6、R1 W6 | 机制演示，不是模型合规真值；流式早停受规则粒度限制 |
+| **A11 demote** | toxic 分类器：recall **0.50%**、F1 **0.010**、ROC-AUC **0.583**；ONNX 255.5 MiB | R3 W3、R2/R3 的语义主张 | 任务错配（toxic ≠ harmful request）；不能当可用 guardrail |
+
+**一句话**：X1c/X1d 把“没有 ZK 数字、旗舰包不可证”从 decision-critical 降为
+“已交付但有 wrapper/规模边界”；E1/E3 把“没有真实模型”降为“有测量但受 N 与任务限制”；
+E2 反而**新增**一条隐私反对点（L2 可链接），不能只报好消息。
 
 ---
 
@@ -42,6 +68,10 @@ But TDSC asks for a dependable and secure *system* contribution, and the current
 delivers a well-scoped analysis plus a prototype whose security-critical tier is not
 the one measured. The gap between the title and the delivered artefact is the main
 reason for the score.
+
+> **UPDATE（M6）**：`groth16` 档已测量（16/18 点；EU AI Act 301.19 s / 30.07 GB /
+> 1,874 B），所以“security-critical tier 未测”已过时；但 `core` 仍非 ZK、
+> `groth16` 仍 wrapper-only。W1/W2 的分数前提改变，W3–W5 不变。见 §0.1。
 
 ### Strengths
 
@@ -67,6 +97,14 @@ a delivery tier (§7.2). A TDSC reader will treat this as a title-level overclai
 though the text is honest. Either deliver and measure the witness-hiding tier, or
 retitle to “Succinct” and remove the ZK wording from the abstract/keywords.
 
+> **UPDATE（M6）**：witness-hiding 档已交付并有测量：
+> [`scale-cloud.md`](../../bench/results/scale-cloud.md) 的 `groth16` 18 点中 16 点
+> `verified=True`（279–344 s / 29.7–35.1 GB）；真实 `eu_ai_act_v1` 的 `groth16`
+> 为 **301.19 s / 30.07 GB / 1,874 B**（[`eu_ai_act_proof.md`](../../bench/results/eu_ai_act_proof.md)）。
+> 但这是 **wrapper-level、非后量子** 的隐藏，且 `10000×3` 仍 OOM。若修订稿保留
+> “Zero-Knowledge”标题，必须在摘要/§5 写清这三个限定；否则仍应改 “Succinct”。
+> 本审稿人不再把 W1 当作 title-level overclaim，前提是限定进入正文。
+
 **W2 (Major) — Evaluation scale is too small for the claims.** On a 24-core / 12 GB
 machine the default matrix proves 1 rule up to 10k characters, 2 rules at ~200
 characters, and OOMs at 3 rules or 20k characters (Table 6). The flagship
@@ -77,6 +115,20 @@ cliff. The repo’s own knob experiment shows `(200, 3)` can succeed with
 “three or more do not come out at all” is a default-knob/12 GB statement, not a
 machine-independent boundary. The paper should either prove the flagship packs with
 tuned knobs or move the scale matrix to a 64–128 GB cloud machine and report it.
+
+> **UPDATE（M6）**：规模与旗舰包问题已实质缓解，但没有消失：
+> - 云机 16 核 / 90 GiB 上 `core` 与 `groth16` 矩阵 **16/18 verified**；成功点
+>   `groth16` **279–344 s / 29.7–35.1 GB**（[`scale-cloud.md`](../../bench/results/scale-cloud.md)）；
+> - 真实 `eu_ai_act_v1`（3 规则含 `pattern_block`）`core` **48.82 s / 12.38 GB**、
+>   `groth16` **301.19 s / 30.07 GB**，两档 `verify_cert --proof --response` PASS
+>   （[`eu_ai_act_proof.md`](../../bench/results/eu_ai_act_proof.md)）；
+> - 6 规则 `core` 到 **4500 字符 / 181.66 s / 64.2 GB** 可行，**5000 OOM**；
+>   6 规则 `groth16` 未跑（[`scale-6x4500.md`](../../bench/results/scale-6x4500.md)、
+>   [`scale-6x5000.md`](../../bench/results/scale-6x5000.md)）。
+>
+> 因此“3+ 规则不可能”应改为“默认旋钮/90 GiB 下，3×10k 与 6×5k 不可行”；旗舰包
+> 现在可证，但仍是 167 字符示例，不是 10k 字符压力点。修订稿必须把这条口径写进
+> 表 caption，不能只报成功点。
 
 **W3 (Major) — TEE comparison is not apples-to-apples.** The “TEE (sim)” column is a
 trusted-server signature simulation; no hardware attestation was measured
@@ -101,6 +153,17 @@ opening reveals the rule, L1 still has top-3 = 0.313, and L2 has zero audit util
 (§3.4, §4.1 Table 2, §4.2 Table 3). The inference study is 20 variants with a stdlib
 naive Bayes classifier; it is a good shape result, not a deployment risk estimate.
 
+> **UPDATE（M6）**：隐私面有正面证据，也有**更坏的负结果**：
+> - 真实 chat 响应的交付物探针在 `core`/`groth16` 两档均为 **0 命中**
+>   （响应整条与逐行），私有输入逐行 7/7（[`privacy_surface_real.md`](../../bench/results/privacy_surface_real.md)）；
+> - 但 E2 用 300 候选、220 条真实响应发现 **L2 的确定性 `evidence_commitment`
+>   可跨样本链接**：构造性 holdout top-1 **0.382**、真实响应 **0.112**、承诺字典
+>   攻击 **0.207**；而 `L2-count-only` 只有 **0.014**
+>   （[`policy_corpus_infer.md`](../../bench/results/policy_corpus_infer.md)）。
+>
+> 这意味着“L2 只给承诺所以不泄露”不成立；修订稿必须把 L2 的可链接性写成限制，
+> 并给出加盐/桶级承诺的修复方向，不能只报 count-only 的旧数字。
+
 **W6 (Moderate) — System novelty is thin relative to the title.** In the transparent
 corner the paper concedes a signed log is enough at three to four orders of magnitude
 less cost (§7.2). In the private corner the policy-private mode depends on an issuing
@@ -113,9 +176,12 @@ such rather than as a new proof system.
 
 - Q1. Can the authors provide any `groth16`/`plonk` number, even one point (1 rule ×
   200 chars), or retitle the paper? Without either, the title is not defensible.
+  **（M6 后已可回答：16/18 点，EU AI Act 两档 PASS；见 §0.1。）**
 - Q2. Why not prove `eu_ai_act_v1` under tuned knobs? If it still OOMs, what is the
   minimum machine that proves the flagship policy, and what does that imply for
   deployment?
+  **（M6 后已可回答：`eu_ai_act_v1` 在 16 核/90 GiB 上 core 12.38 GB、
+  groth16 30.07 GB；3×10k 仍 OOM，6 规则止于 4500 字符。）**
 - Q3. What exactly does the TEE baseline attest, and on what hardware? If only a
   trusted-server signature was measured, please label it as such in the table caption.
 - Q4. Has the `core` trace leakage been measured, even at source level (e.g. can a
@@ -137,6 +203,12 @@ delivered in the rebuttal period, this reviewer would move to **Reject / resubmi
 to keep the paper alive, but the title-level ZK claim and the scale ceiling are
 decision-critical.
 
+> **UPDATE（M6）**：X1 已交付（16/18 点；EU AI Act 两档 PASS），规模边界已量。
+> 若修订稿把这些数字写进 §5、保留 wrapper-only/非后量子限定，并把“3+ 规则不可能”
+> 改为机器/旋钮口径，本审稿人从 5 分升到 **6/10、Major Revision**。剩余必须修的是：
+> 网关信任（W4）、E2 的 L2 链接性（W5 更新）、页数与引文债；这些修完才到 Minor。
+> 若正文仍只报 `core` 且不改标题，分数不升。
+
 ---
 
 ## Reviewer 2 — Theory
@@ -152,6 +224,14 @@ an issuance impossibility/sufficiency pair (F); a compiler-correctness theorem (
 exists in the repository proofs but is not in the paper. The writing is careful, the
 hypotheses are explicit, and the paper repeatedly demotes claims that would be false
 (e.g. the designated-verifier “separation” is withdrawn).
+
+> **UPDATE（M6）**：新实验（groth16、6 规则边界、真实 `k`、E2/E3）增强了“framework +
+> measurement”的定位，但**没有**产生新的定理或 tightness 结果；因此 W1（标准界）、
+> W2（三难是分类）、W4（E-1 弱形式）和 W5（G 不在正文）的评分理由不变。新增的
+> `k` 测量还带来一个理论口径问题：N 截断下 `k=log2(N)` 只是可观测上限，不能当信息论
+> 界；修订稿若引用 `k`，必须在定理旁写明估计口径。本审稿人维持 **4/10**，除非作者
+> 明确把论文定位从“新定理”改为“统一框架 + 策略侧实例 + 测量”，并加一张
+>“standard vs new”表。
 
 ### Strengths
 
@@ -215,6 +295,10 @@ different statements. Either implement the `x_U` commitment and verifier recompu
 or separate the theorem (ideal) from the implementation (weak form) explicitly in the
 statement, not only in the discussion.
 
+> **UPDATE（M6）**：E-1 **仍未闭合**；本轮没有实现 `x_U` 承诺或验证方重算，也没有
+> 改电路/vkey。修订稿继续只能写弱形式，并把“strong form = open”放在定理陈述层，
+> 不能只放在 §7.5。
+
 **W5 (Moderate) — Theorem G is absent from the paper.** The repository proofs contain a
 three-part compiler-correctness theorem (language preservation, Pike search semantics,
 Python/Rust bisimulation), but the paper only mentions the NFA contract in §2 and the
@@ -259,6 +343,11 @@ cite the standard bounds it uses, and add one tightness/necessity result or a co
 counterexample outside the trilemma class. It should not claim a new impossibility
 theorem.
 
+> **UPDATE（M6）**：分数维持 **4/10（Major Revision）**。系统与测量部分的进步由
+> R1/R3 反映；理论部分的新证据不足以改变“单条定理标准、三难是分类”的判断。
+> 若作者加 “standard vs new” 表、tightness 例，并把 `k`/D-privacy 的估计口径写清，
+> 可到 5/10；但没有新定理就不应期待更高。
+
 ---
 
 ## Reviewer 3 — Privacy and Practice
@@ -273,6 +362,10 @@ measured disclosure curve and the delivery-binding experiment are useful. But th
 practical privacy claim is still far from what a deployment would need, and the paper
 does not report policy quality on a real benchmark (XSTest) or a real LLM end-to-end
 run.
+
+> **UPDATE（M6）**：真实 LLM 端到端（E3）与 `k`（E1）已有结果；但 E3 是机制演示，
+> E1 受 N 截断，策略质量（XSTest P/R/F1）仍缺；A11 的语义分类器明确 demote。
+> E2 还新增了 L2 承诺可链接的负结果。见 §0.1。
 
 ### Strengths
 
@@ -304,6 +397,12 @@ read “private mode” as “the content is protected”, which the paper expli
 Retitle to “Succinct” unless the witness-hiding tier is delivered, and consider renaming
 “private mode” to “committed mode” to avoid the same misreading.
 
+> **UPDATE（M6）**：`groth16` 档现在有测量（EU AI Act **301.19 s / 30.07 GB /
+> 1,874 B**；矩阵 16/18 verified），因此“没有 witness-hiding 数字”不再成立。
+> 但 `groth16` 仍是 **wrapper-only、非后量子**，且 `core` 仍不隐藏 witness。
+> 建议：标题可保留 “Zero-Knowledge” 只在摘要明确写“wrapper-level, non-PQ,
+> `core` not ZK”；否则改 “Succinct”。把 “private mode” 改名仍值得做。
+
 **W2 (Major) — Policy-private leakage is only partially closed.** The salt closes the
 `policy_hash` channel, but the `core` trace carries `spec_canonical` (policy and salt),
 the circuit writes raw `rule`/`kind`, `delegated` exposes structure, and evidence
@@ -313,14 +412,32 @@ stdlib naive Bayes classifier are a shape result, not a deployment estimate. The
 needs a larger policy corpus (the repo has 13 packs), a stronger classifier, and a
 circuit-level coarsening experiment before “policy-private mode” is a usable claim.
 
+> **UPDATE（M6）**：E2 已把语料扩到 **300 候选 / 13 模板 / 220 条真实响应**，并给出
+> 一个比原稿更不利的结果：**L2 的确定性 `evidence_commitment` 可跨样本链接**
+> （构造性 top-1 **0.382**、真实 **0.112**、字典攻击 **0.207**；count-only 仅
+> **0.014**）。因此“L2 只给承诺”不足以保护策略隐私；修订稿必须报告该通道，
+> 并给出按证书加盐或桶级承诺的修复。L1 的审计效用、L2 的零效用、`delegated`
+> 暴露结构仍成立。语料仍不是生产分布，不能外推部署风险。
+
 **W3 (Major) — XSTest policy quality is not reported.** The paper evaluates the
 *mechanism* but not whether the bundled policies are any good on a standard safety
 benchmark. `safety_xstest_v1` is described in the repository as a naive keyword
-blocklist designed to expose false positives; the real-LLM end-to-end script is ready
-but its results are `pending X2` ([`plan-bhv.md`](../plan-bhv.md) P0-09/P0-10;
+blocklist designed to expose false positives; at the time of this review the real-LLM
+end-to-end script was ready but its results were `pending X2` ([`plan-bhv.md`](../plan-bhv.md) P0-09/P0-10;
 [`plan-m2-m6.md`](../plan-m2-m6.md) M2-03). Without P/R/F1 on XSTest (and ideally
 τ-bench), a reader cannot tell whether “compliance” means anything. The demo semantic
 model is a proxy, not a usable guardrail (§7.7).
+
+> **UPDATE（M6）**：真实模型结果已落地，但没有解决“策略质量”问题：
+> - E1 在 XSTest 50 条上测了 `k`（Qwen/Mistral/DeepSeek），**不是**策略 P/R/F1；
+> - E3 跑通了真实 DeepSeek 6 轮、19 证书、第三方验证 PASS，但这是**机制**演示，
+>   不是“模型合规”样本；
+> - A11 用真实 toxic 分类器在 XSTest 上得到 recall **0.50%**、F1 **0.010**、
+>   ROC-AUC **0.583**，判定 **demote**——这是任务错配（toxic ≠ harmful request），
+>   也说明不能把 XSTest accuracy 当作 guardrail 质量。
+>
+> 因此“没有真实 LLM”已不成立，“没有策略质量评估”仍成立；修订稿必须保留
+> A11 的负结果，不能把它写成可用语义模型。
 
 **W4 (Major) — Usability is not deployment-grade.** Proving takes 118–172 s and
 ~2.7 MiB per certificate with a ~10.15 GiB fixed floor; 3 rules OOM at default knobs;
@@ -329,6 +446,12 @@ because each proof adds ~10 GiB. Signing and key custody are not production-grad
 (plaintext private-key parameters, public Anvil test key, local Anvil deployment). The
 paper acknowledges these, but a TDSC practitioner will ask for a deployment cost model,
 not only a list of limitations.
+
+> **UPDATE（M6）**：成本模型更完整了，但仍不是部署级：
+> `groth16` **279–344 s / 29.7–35.1 GB** 每点；`eu_ai_act_v1` **301.19 s / 30.07 GB**；
+> 6 规则 `core` 到 **4500 字符 / 64.2 GB**，**5000 OOM**；E3 的宿主回调只有
+> **10.8 ms/轮**，但 zk 证明不在请求链路里（`unproven`）。结论应是“异步出证 +
+> 第三方验证”，不是“在线低延迟合规”。
 
 **W5 (Major) — Accountability depends on a trusted authority and voluntary disclosure.**
 P-PP requires an issuing authority that signs `π`, registers `h_π`, and holds the salt.
@@ -345,6 +468,12 @@ There is no real agent trace, no τ-bench, no user study. The paper’s claims a
 mechanism, which is fine, but the title and abstract should not imply deployment
 readiness.
 
+> **UPDATE（M6）**：E3 提供了一条真实 DeepSeek + 真实 MCP stdio 工具 + LangChain
+> 流式回调的会话（6 轮、19 证书、11 项第三方验证 PASS），部分缓解了“没有真实 agent
+> workload”。但仍没有 τ-bench、没有用户研究、没有真实工具轨迹的统计分布；
+> 早停受规则粒度限制（`sk-…{16,}` 会先送达匹配前缀，证书标 `scope=partial-prefix`）。
+> 因此“机制可行”有证据，“部署就绪”仍不成立。
+
 ### Questions
 
 - Q1. Can the authors measure the `core` trace leakage directly (e.g. recover `T` from
@@ -352,10 +481,15 @@ readiness.
   the “structural” claim.
 - Q2. What does the `groth16` privacy-surface probe show about `spec_canonical`? Is the
   salt actually hidden, or only the public hash? (`pending X1b`)
+  **（M6 后已可回答：真实响应探针在交付物中响应整条/逐行 0 命中；但策略名 1 处
+  命中是公开输入；`response_commitment=sha256(T)` 仍是公开 oracle。）**
 - Q3. What are the P/R/F1 numbers of `safety_xstest_v1` on XSTest? If the pack is a
   keyword blocklist, what is the false-positive rate on safe prompts? (`pending X2`)
+  **（M6 后仍未回答：E1 只测 `k`，E3 不是策略质量，A11 是 demote 的 toxic 分类器。）**
 - Q4. Is the L2 “zero audit utility” a property of the proxy or of the level? Please
   define the utility metric and validate it with a human or LLM auditor.
+  **（M6 后部分回答：E2 显示 L2 在构造性/真实响应的 top-1 为 0.382/0.112，
+  且承诺可链接；utility 仍不是人工/LLM 审计验证。）**
 - Q5. What is the minimum viable deployment (machine size, HSM, log)? If a 3-rule
   policy cannot be proved on 12 GB, what does the operator need?
 - Q6. What happens if the P-PP authority is compromised or colludes with the operator?
@@ -373,3 +507,9 @@ If the paper is retitled “Succinct”, the privacy claims are narrowed to “c
 public values”, and X2 lands, this reviewer could support acceptance after revision.
 Without X1b/X2, the practical contribution is a well-documented prototype, not a
 deployable privacy system.
+
+> **UPDATE（M6）**：分数 **5/10 → 6/10（Major Revision）**。`groth16`、EU AI Act
+> 两档、真实响应隐私面与 DeepSeek e2e 把“没有隐私交付档/没有真实模型”部分消解；
+> 但 E2 暴露的 **L2 承诺可链接**是新的隐私反对点，A11 又证明真实语义模型不可用，
+> 策略质量（XSTest P/R/F1）仍缺。若修订稿加入 L2 加盐/桶级承诺、保留 A11 负结果、
+> 并把 `core` 非 ZK 与 wrapper-only 写在摘要，可到 7/10。
