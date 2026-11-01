@@ -208,7 +208,7 @@ python3 bench/bench_policy_leak.py --out-dir bench/results
 |---|---|---|---|
 | **G-1** | `[^\d\D]` 编译成 `Lit([])` → ε 边，匹配空串；Python/Rust 共有 | **已修复**（Core `45d7f61` / 合并 `9ac2d59`）：解析器 fail-closed 拒绝空类，A-G0 成为解析器契约 | — |
 | **V1-2** | `a{0}` 抛 `AttributeError: '_Builder' object has no attribute '_build'` | **已修复**：`a{0}`/`a{0,0}` 等价 ε；Rust `nfa_match_naive` 空文本 ε 缺口同步修复 | — |
-| **E-1** | `verify_composite` 绑 `derive(T_U)` 而非用户 `x_U` | 组合只证弱形式；论文 §7.5 的强形式未落地 | 证书公开值加入 `x_U`/承诺，验证方重算 `IB(n,x_U)` |
+| **E-1** | `verify_composite` 绑 `derive(T_U)` 而非用户 `x_U` | 组合只证弱形式；论文 §7.5 的强形式未落地 | **已定 (b)**：本稿只证弱形式，论文 §7.5 已明确 C4 未放电；强形式列入未来工作（需 `x_U`/承诺 + `IB(n,x_U)`） |
 | **B1-circuit-ed25519** | 电路内验签未做 | “网关信任”仍 residual | 电路 owner 提供 guest；B1 量测 |
 | **B1-split-view** | 透明日志无一致性证明/gossip | 签发完整性依赖外部假设 | 接 RFC 6962 风格日志 |
 

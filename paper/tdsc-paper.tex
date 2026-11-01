@@ -220,8 +220,9 @@ and Corollary~\ref{cor:reexec} is the short version of it.
   $q\cdot\mathsf{Guess}(X\mid Z)$ is standard; what is new is the framework, the
   conditional trilemma with its public-recomputation leg
   (Proposition~\ref{thm:trilemma}), the policy-side instance
-  (Theorem~\ref{thm:dpriv}), the necessary conditions for composition
-  (\S\ref{sec:disc-composition}), and the measurements.
+  (Theorem~\ref{thm:dpriv}), the necessary conditions for composition, and the
+  weak form actually implemented (\S\ref{sec:disc-composition}), and the
+  measurements.
   \item We price the fix. A certificate is replayable without limit unless the
   receiver contributes fresh randomness, and with an empty nonce the adversary's
   advantage is $1$ regardless of every other parameter of the system
@@ -1353,7 +1354,9 @@ Theorem~\ref{thm:leak} prices each half; it does not say that conjoining two
 valid halves yields a valid composite. We built the four cells of
 Table~\ref{tab:compose} against the composite verifier's binding layer, with the
 cryptographic validity of the two sub-proofs covered separately by the
-end-to-end tests. Only cell (a) is a genuinely strong composition. Cell (c) is
+end-to-end tests. Only cell~(a) satisfies the strong form, and only because
+$x_U=\mathsf{derive}(T_U)$; the implementation claims only the weak form of
+Proposition~\ref{thm:composition} and Remark~\ref{rem:e1}. Cell~(c) is
 the one that matters: the current verifier binds the inference half to
 $\mathsf{derive}(T_U)$, not to the input $x_U$ the user submitted, so it accepts
 a certificate that proves the weak form
@@ -1857,35 +1860,39 @@ theorem is what makes that condition non-vacuous. The resulting contract is
 short: the inference proof must expose $T$ in its public values and must be bound
 to $x$.
 
-\begin{proposition}[Composition: five necessary conditions]
+\begin{proposition}[Composition, weak form as implemented]
 \label{thm:composition}
 An accepted composite certificate implies
-$\exists T: R(\pi,T)\wedge T=M(x_U)\wedge b=B(n,T)$ provided that
-(C1) both halves are sound, with each delegated rule carrying a verified
-companion proof; (C2) both halves are bound to the same fresh $n$;
+\[
+\exists x:\; x=\mathsf{derive}(T_U)\;\wedge\; T_U=M(x)\;\wedge\;
+R(\pi,T_U)\;\wedge\; b=B(n,T_U),
+\]
+provided that (C1) both halves are sound, with each delegated rule carrying a
+verified companion proof; (C2) both halves are bound to the same fresh $n$;
 (C3) the verifier recomputes $B(n,T_U)$ from the delivered $T_U$ and both halves
-equal it; (C4) the inference half is bound to the submitted $x_U$;
-and (C5) \texttt{delegated} is empty, or every delegated rule has a verified
-companion proof whose public instance contains $\mathsf{encode}(T_U)$. Each
-condition is necessary: dropping C2 admits two nonces, dropping C4 admits a
-derived input, and dropping C5 admits an undecided delegated rule.
+equal it; and (C5) \texttt{delegated} is empty, or every delegated rule has a
+verified companion proof whose public instance contains
+$\mathsf{encode}(T_U)$.
 \end{proposition}
 
+\begin{remark}[The strong form is not claimed (E-1)]
+\label{rem:e1}
+The strong form would replace $x=\mathsf{derive}(T_U)$ by $x=x_U$, the input the
+user submitted; that is condition (C4). The current verifier does not receive
+$x_U$: it binds the inference half to $\mathsf{derive}(T_U)$. Cell~(c) of
+Table~\ref{tab:compose} is accepted with \texttt{ok} and \texttt{satisfied} both
+true while $x_U\neq\mathsf{derive}(T_U)$. Closing the gap requires putting $x_U$
+or a commitment to it into the public values and recomputing
+$\mathsf{IB}(n,x_U)$ during verification. Until then we claim only the weak form
+above and mark C4 as undischarged; composition therefore does not close the
+divergent-delivery gap by itself.
+\end{remark}
+
 The four-cell experiment confirms necessity cell by cell
-(Table~\ref{tab:compose}). Two obligations are \emph{not} discharged by
-conjoining two valid proofs. First, the inference half must be bound to the
-\emph{submitted} input. The current verifier binds it to
-$\mathsf{derive}(T_U)$ instead, so it certifies only the weak form
-$\exists x: x=\mathsf{derive}(T_U)\wedge T_U=M(x)$. Cell (c) is accepted with
-\texttt{ok} and \texttt{satisfied} both true while the user submitted an input
-different from $\mathsf{derive}(T_U)$. Closing it requires putting $x_U$ or a
-commitment to it into the public values and recomputing $\mathsf{IB}(n,x_U)$
-during verification; until then the strong form is not claimed. Second,
-\texttt{delegated} must be empty or covered by a companion proof whose public
-instance contains $\mathsf{encode}(T_U)$; cell (d) is accepted as a certificate
-but fails the policy outcome, which is the intended fail-closed behaviour.
-Composition therefore does not close the divergent-delivery gap by itself: it
-closes it only when all five conditions hold simultaneously.
+(Table~\ref{tab:compose}). The second obligation, \texttt{delegated}, must be
+empty or covered by a companion proof whose public instance contains
+$\mathsf{encode}(T_U)$; cell~(d) is accepted as a certificate but fails the
+policy outcome, which is the intended fail-closed behaviour.
 
 \need{BLOCKER WP4-(2)/WP3 (external resources): real-model scale
 ($\ge10^6$ parameters) and composition cost data are not measured. The claim
