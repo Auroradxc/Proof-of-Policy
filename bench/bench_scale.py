@@ -342,13 +342,22 @@ def render_conclusion(rows: list[dict], rules: list[int], modes: list[str]) -> s
     return " ".join(parts)
 
 
-def dump(out: Path, rows: list[dict], host: dict, axes: dict) -> None:
+def dump(out: Path, rows: list[dict], host: dict, axes: dict,
+         extra: dict | None = None) -> None:
     doc = {
         "host": host,
         "axes": axes,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "rows": rows,
     }
+    # render-only 必须保留 JSON 里的旁证字段（provenance：binary sha / vkey /
+    # commit / 旋钮 / 缓存路径）。旧版 dump 只写四个字段，重渲染会把这些
+    # 证据静默删掉——这比 MD 过期更糟，因为它是“这张表是哪台机器、哪个二进制
+    # 量的”唯一记录。
+    if extra:
+        for k, v in extra.items():
+            if k not in doc:
+                doc[k] = v
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -402,9 +411,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.render_only:
         doc = json.loads(args.out.read_text(encoding="utf-8"))
+        known = {"host", "axes", "generated_at", "rows"}
+        extra = {k: v for k, v in doc.items() if k not in known}
         dump(args.out, doc.get("rows", []), doc.get("host") or bp.host_info(),
              doc.get("axes") or {"lengths": args.lengths, "rules": args.rules,
-                                 "proof_modes": args.proof_modes})
+                                 "proof_modes": args.proof_modes},
+             extra=extra)
         print(f"re-rendered {args.out.with_suffix('.md')}")
         return 0
 
