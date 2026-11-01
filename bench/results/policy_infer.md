@@ -1,6 +1,6 @@
 # 策略推断攻击基准（披露层级 L0/L1/L2，E4b）
 
-**生成时间**：2026-11-01T07:06:34Z
+**生成时间**：2026-11-01T07:09:18Z
 **模板**：`policy_packs/agent_content_v1.json` ｜ **种子**：20261101 ｜ **变体数**：20
 **训练/测试**：每变体 40 / 15 条
 **分类器**：`stdlib multinomial naive Bayes (alpha=1)`（sklearn 可用=False，未使用、未安装）

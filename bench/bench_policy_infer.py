@@ -80,24 +80,32 @@ ACTION_L2 = "manual_review"
 # 策略变体与响应
 # ---------------------------------------------------------------------------
 
-def make_variant(i: int) -> Dict[str, Any]:
-    """第 ``i`` 个策略变体：3–5 条规则，名称/参数都带变体编号。
+def make_variant(i: int, base: Dict[str, Any]) -> Dict[str, Any]:
+    """从 ``agent_content_v1.json`` 派生第 ``i`` 个变体。
 
-    变体之间的差异刻意覆盖三个层次：
+    每个变体都保留模板的三条规则（关键词 / 长度 / 正则），只改变它们
+    **名称与参数**，并按编号追加可选规则。变体之间的差异刻意覆盖三个层次：
 
     * **规则名**（L0 直接泄露）—— 每个变体都不同；
     * **规则类别组合**（L1 泄露）—— 偶数变体多一条 normalized 规则，
       3 的倍数多一条 format 规则，5 的倍数多一条第二关键词规则；
     * **证据/承诺**（L2 只剩不透明哈希）—— 三者都无法从承诺恢复语义。
     """
-    rules: List[Dict[str, Any]] = [
-        {"kind": "keyword_block", "name": f"kw_{i:02d}",
-         "params": {"keywords": [f"secret_{i:02d}", f"token{i:02d}"]}},
-        {"kind": "length_bound", "name": f"len_{i:02d}",
-         "params": {"min": 1, "max": 120 + i * 7}},
-        {"kind": "pattern_block", "name": f"pat_{i:02d}",
-         "params": {"patterns": [f"sk-{i:02d}-[A-Za-z0-9]{{16,}}"]}},
-    ]
+    pack = copy.deepcopy(base)
+    pack["id"] = f"{base.get('id', 'policy')}-infer-{i:02d}"
+    pack["description"] = f"policy inference variant {i}"
+    rules: List[Dict[str, Any]] = pack.setdefault("rules", [])
+    for rule in rules:
+        kind = rule.get("kind")
+        if kind == "keyword_block":
+            rule["name"] = f"kw_{i:02d}"
+            rule["params"] = {"keywords": [f"secret_{i:02d}", f"token{i:02d}"]}
+        elif kind == "length_bound":
+            rule["name"] = f"len_{i:02d}"
+            rule["params"] = {"min": 1, "max": 120 + i * 7}
+        elif kind == "pattern_block":
+            rule["name"] = f"pat_{i:02d}"
+            rule["params"] = {"patterns": [f"sk-{i:02d}-[A-Za-z0-9]{{16,}}"]}
     if i % 2 == 0:
         rules.append({"kind": "normalized_keyword_block", "name": f"nkw_{i:02d}",
                       "params": {"keywords": [f"banned{i:02d}"]}})
@@ -107,9 +115,7 @@ def make_variant(i: int) -> Dict[str, Any]:
     if i % 5 == 0:
         rules.append({"kind": "keyword_block", "name": f"kwb_{i:02d}",
                       "params": {"keywords": [f"extra_{i:02d}"]}})
-    return {"id": f"infer-{i:02d}", "version": "0.1.0",
-            "description": f"policy inference variant {i}",
-            "semantic": "and", "rules": rules}
+    return pack
 
 
 def _responses(i: int, n: int) -> List[str]:
@@ -316,10 +322,11 @@ def _sklearn_available() -> bool:
 def run(out_dir: Path, n_variants: int, seed: int, base_path: Path,
         train_per: int, test_per: int) -> Dict[str, Any]:
     rng = random.Random(seed)
+    base = json.loads(base_path.read_text(encoding="utf-8"))
     # 模板固定，但随机化变体顺序，避免类别编号与规则组合产生偶然相关。
     order = list(range(n_variants))
     rng.shuffle(order)
-    variants = {i: make_variant(i) for i in range(n_variants)}
+    variants = {i: make_variant(i, base) for i in range(n_variants)}
 
     train_rows: Dict[str, List[Tuple[Tuple[str, ...], int]]] = {
         level: [] for level in disclosure.LEVELS
