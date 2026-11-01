@@ -677,6 +677,16 @@ $H(\mathrm{cert})$; and (F-4) the audit sample frame is delivered artifacts, not
 log entries. The $1-(1-p)^m$ form assumes independent sampling and
 detection-on-hit.
 
+\subsection{Chat-template rerun and refusal proxy}
+\label{sec:eval-k-chat}
+
+A chat-template rerun of 20 prompts at $N=10$ returned $k=3.32=\log_2 10$ at
+temperature $0.7$ and $k=0$ at temperature $0$; its refusal proxy rose from
+$15\%$ to $35\%$ ($7/10$ unsafe prompts) while the response-violation rate fell
+from $100\%$ to $90\%$. The $90\%$ is dominated by keyword-policy false
+positives---$9/10$ safe responses were flagged---and is not a model harm rate;
+XSTest labels are prompt-level and the refusal proxy is a prefix heuristic.
+
 % =====================================================================
 \section{Policy-Private Mode Details}
 \label{app:private-policy}

@@ -1324,32 +1324,35 @@ were bound and re-evaluable, not that compliance was cryptographically proved.
 \label{sec:eval-k}
 
 We measured $\mathsf{Guess}(T\mid Z)$ on the 50 XSTest prompts used by the
-end-to-end runs, sampling each prompt multiple times and estimating
-$k=-\log_2 p_{\max}$ by exact-string mode counting (Wilson intervals in the
-result files). The temperature-$0$ runs are deterministic: Qwen returned
-$k=0$ in all 50 groups, so one re-execution of the model recovers $T$
-(Corollary \ref{cor:reexec}). At temperature $0.7$ the measurements are truncated by the
-sample count $N$: $p_{\max}\ge1/N$, hence $k\le\log_2 N$. Qwen2.5-7B-Instruct
-with $N=50$ produced 50 distinct responses in all 50 groups,
-$p_{\max}=1/50$, $k=5.644=\log_2 50$; Mistral-7B and Qwen at $N=20$ likewise
-hit $\log_2 20=4.322$. These are \emph{lower bounds on the resolution of the
-estimator}, not estimates of the true entropy. The one observation below the
-$N$-bound is DeepSeek-chat: 4 of 50 groups repeated a short refusal template
-verbatim, giving $p_{\max}=0.10$ and $k=3.32$; the other 46 groups hit the
-bound. Larger $N$ did not resolve Qwen's entropy.
+end-to-end runs. Exact-string mode counting cannot resolve entropy above the
+sample count: $p_{\max}\ge1/N$, hence $k\le\log_2 N$. Qwen2.5-7B-Instruct with
+$N=50$ produced 50 distinct responses in all 50 groups, so $k=5.644=\log_2 50$
+is the \emph{estimator's resolution cap}, not a lower bound on $k$; Mistral-7B
+and Qwen at $N=20$ likewise hit $\log_2 20=4.322$. The one informative
+count-based point is DeepSeek-chat: 4 of 50 groups repeated a short refusal
+template verbatim ($p_{\max}=0.10$, $k=3.32$). Larger $N$ did not resolve
+Qwen's entropy.
 
-A chat-template rerun of 20 prompts at $N=10$ returned $k=3.32=\log_2 10$ at
-temperature $0.7$ and $k=0$ at temperature $0$; the refusal proxy rose from
-$15\%$ to $35\%$ ($7/10$ unsafe prompts) while the response-violation rate fell
-from $100\%$ to $90\%$. The $90\%$ is dominated by keyword-policy false
-positives---$9/10$ safe responses were flagged---and is not a model harm rate;
-XSTest labels are prompt-level and the refusal proxy is a prefix heuristic.
+A teacher-forced log-probability estimator removes the $N$ cap. It scores the
+20 sampled responses per prompt under the sampling distribution at temperature
+$0.7$ and sets $p_{\max}^{\rm est}=\max_i\Pr(T_i\mid Z)$. Because a maximum
+over sampled sequences cannot exceed the true maximum,
+$p_{\max}^{\rm est}\le p_{\max}$ and $k^{\rm est}\ge k$: this is an
+\emph{upper bound}, so it can refute but never certify $k\ge40$. Qwen's median
+$k^{\rm est}$ is $79.7$\,bit (range $12.1$--$210.8$) and Mistral's is
+$63.2$\,bit ($12.6$--$111.6$); all 50 groups per model have
+$p_{\max}^{\rm est}<1/N$ (Qwen's median is $22.7$ orders of magnitude below).
+Yet $16/50$ Qwen and $11/50$ Mistral groups have $k^{\rm est}<40$, so their
+true $k$ is provably below the threshold; for the remaining groups $k$ stays
+unknown. At temperature $0$, all 50 groups have $k=0$, and one re-execution
+recovers $T$ (Corollary~\ref{cor:reexec}). The 40-bit condition is therefore
+not a universal property of these models: it fails on a measurable subset at
+temperature $0.7$ and fails entirely under greedy decoding. Deployment must
+constrain decoding and the query budget (duplicate/replay rejection), not
+assume entropy.
 
-All measured $k$ values are far below the illustrative 40-bit threshold, and
-none is a true entropy estimate. A log-probability estimator that does not
-depend on $N$ is the missing piece.
-\need{BLOCKER E6: logprobs estimator in flight; no true $k$ is claimed until it
-returns.}
+Chat-template, refusal-proxy and keyword-false-positive details are in the
+supplementary material.
 
 % =====================================================================
 \section{Related Work}
