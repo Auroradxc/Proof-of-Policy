@@ -1,0 +1,12 @@
+*.aux
+*.log
+*.out
+src/*.aux
+src/*.log
+integration-test/figures/
+integration-test/*.aux
+integration-test/*.log
+integration-test/*.out
+integration-test/*.pdf
+integration-test/*.tex
+!integration-test/page-budget-va1.txt

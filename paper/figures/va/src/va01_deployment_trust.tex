@@ -1,0 +1,166 @@
+% VA1 -- Three-party deployment and trust-boundary architecture.
+% Design diagram, not a measured trace. Compile with xelatex.
+% No math mode: every glyph is DejaVu Sans (TrueType), so the PDF stays Type 42.
+\documentclass{article}
+\usepackage[paperwidth=18.2cm,paperheight=9.0cm,margin=0pt]{geometry}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\usepackage{fontspec}
+\setsansfont{DejaVuSans}[Path=../../fonts/,Extension=.ttf,UprightFont=*,BoldFont=*-Bold,ItalicFont=*-Oblique,BoldItalicFont=*-BoldOblique]
+\setmonofont{DejaVu Sans Mono}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+\definecolor{popblue}{HTML}{0072B2}
+\definecolor{popsorange}{HTML}{E69F00}
+\definecolor{popgreen}{HTML}{009E73}
+\definecolor{popverm}{HTML}{D55E00}
+\definecolor{poppurple}{HTML}{CC79A7}
+\definecolor{pomsky}{HTML}{56B4E9}
+\definecolor{popgrey}{HTML}{666666}
+\begin{document}
+\begin{tikzpicture}[
+  x=1cm,y=1cm,
+  party/.style={draw=black!55, rounded corners=1.2pt, line width=0.55pt,
+    inner sep=0pt},
+  asset/.style={draw=black!55, rounded corners=1pt, line width=0.4pt,
+    inner sep=2.0pt, align=center, font=\fontsize{5.75}{6.8}\selectfont},
+  pub/.style={asset, fill=popblue!10, draw=popblue!65!black},
+  wit/.style={asset, fill=popsorange!16, draw=popsorange!75!black},
+  sgn/.style={asset, fill=popgreen!11, draw=popgreen!55!black},
+  ext/.style={asset, fill=popverm!10, draw=popverm!70!black, dashed},
+  root/.style={asset, fill=popgrey!8, draw=popgrey!70},
+  title/.style={font=\fontsize{6.8}{7.9}\selectfont\bfseries, align=center},
+  note/.style={font=\fontsize{5.2}{6.2}\selectfont, align=left, text=popgrey},
+  arr/.style={-{Latex[length=1.35mm,width=0.9mm]}, line width=0.6pt, draw=black!70},
+  carr/.style={arr, draw=popblue!80!black},
+  warr/.style={arr, draw=popsorange!85!black},
+  garr/.style={arr, draw=popgreen!60!black},
+  earr/.style={arr, dashed, draw=popverm!85!black},
+  oarr/.style={arr, dotted, draw=popgrey}
+]
+\useasboundingbox (0,0) rectangle (18.2,9.0);
+
+% ======================= party headers ================================
+\node[title, text=poppurple!70!black] at (2.25,8.80) {Policy authority};
+\node[title, text=popverm!80!black] at (8.80,8.80) {Operator --- untrusted, no TEE};
+\node[title, text=popblue!80!black] at (15.65,8.80) {Verifier / auditor};
+
+% ======================= authority panel ==============================
+\draw[party, fill=poppurple!4] (0.15,4.45) rectangle (4.35,8.55);
+\node[anchor=north west, font=\fontsize{5.6}{6.6}\selectfont, text=poppurple!70!black]
+  at (0.27,8.47) {\textbf{holds} π, salt s, issuing record};
+\node[wit, text width=3.80cm, minimum height=1.10cm] (A1) at (2.25,7.35)
+  {\textbf{Policy package}\\π in the policy DSL; salt s (withheld)\\package id, version, rule set};
+\node[pub, text width=3.80cm, minimum height=1.05cm] (A2) at (2.25,5.75)
+  {\textbf{Public entry (root: registry)}\\hπ = H(s‖π); issuer signature\\P-PP registry or signed manifest};
+\node[ext, text width=3.80cm, minimum height=0.85cm] (A3) at (2.25,4.65)
+  {\textbf{Not held}\\T, witness trace, ledger entry};
+\node[anchor=north, note, text width=3.95cm, text=popverm!85!black]
+  at (2.25,4.18) {Authority honesty and salt custody are\\external assumptions, not cryptographic.};
+
+% ======================= operator panel ===============================
+\draw[party, dashed, draw=popverm!85!black, line width=0.8pt,
+      fill=popverm!3, rounded corners=3pt] (4.55,2.10) rectangle (13.05,8.55);
+\node[anchor=south west, font=\fontsize{5.0}{5.9}\selectfont, text width=8.15cm, align=left, text=popverm!85!black]
+  at (4.68,2.15) {All components inside this dashed boundary are untrusted; the proof, not the machine, carries correctness.};
+
+% compiler strip across the top of the operator lane
+\node[wit, text width=7.95cm, minimum height=0.48cm] (cmp) at (8.80,8.18)
+  {\textbf{Compiler} \ π → ConstraintSpec \ \textbar\ \ same bytes in both layers; the spec is a witness, not published};
+
+% top row: agent -> guest -> prover
+\node[wit, text width=2.10cm, minimum height=1.32cm] (agt) at (5.80,6.80)
+  {\textbf{LLM agent}\\response \textit{T} (witness)\\streaming + early stop};
+\node[pub, text width=2.40cm, minimum height=1.32cm] (gst) at (8.55,6.80)
+  {\textbf{zkVM guest (SP1)}\\evaluates J(π,\textit{T})\\public values: verdict,\\violations, L0/L1/L2,\\\texttt{delegated}\\\textbf{core is not ZK}};
+\node[sgn, text width=2.60cm, minimum height=1.32cm] (prf) at (11.45,6.80)
+  {\textbf{Proof tier}\\\texttt{core}: hiding = none\\\texttt{groth16}: wrapper-only\\(not post-quantum)\\\texttt{unproven}: host-check};
+
+% bottom row: gateway (middle) and signer (right); left is the T' route
+\node[ext, text width=2.40cm, minimum height=1.05cm] (gwy) at (8.55,4.85)
+  {\textbf{Tool gateway (optional)}\\root: gateway key\\receipts (seq, prev, sig)\\ToolSeal; Ed25519 off circuit};
+\node[sgn, text width=2.60cm, minimum height=1.05cm] (sig) at (11.45,4.85)
+  {\textbf{Certificate signer}\\root: signing key\\DSSE/Ed25519; binds\\\textit{n}, \textit{b}, hπ, verdict, tier,\\\texttt{delegated}, disclosure};
+\node[anchor=north, note, text width=2.0cm, text=popverm!80!black]
+  at (5.80,4.95) {\textit{T} (witness)\\\textit{never published}};
+
+% operator internal arrows
+\draw[carr] (cmp.south) -- (gst.north);
+\draw[warr] (agt.east) -- node[above, font=\fontsize{5.1}{6.0}\selectfont]{\textit{T}} (gst.west);
+\draw[warr] (gwy.north) -- node[right, font=\fontsize{5.1}{6.0}\selectfont]{receipts} (gst.south);
+\draw[garr] (gst.east) -- (prf.west);
+\draw[garr] (prf.south) -- node[right, font=\fontsize{5.1}{6.0}\selectfont]{proof} (sig.north);
+% delivered copy T' enters the signer from the left, below the gateway
+\draw[carr] (agt.south) -- (5.80,3.30) -- (10.05,3.30) -- (sig.west)
+  node[pos=0.55, below, font=\fontsize{5.1}{6.0}\selectfont]{delivered \textit{T}′ (bound by \textit{b})};
+
+% ======================= authority -> operator ========================
+\draw[warr] (A1.east) -- (4.55,7.95) -- (cmp.west);
+\node[fill=white, inner sep=0.6pt, font=\fontsize{4.85}{5.8}\selectfont, text=popsorange!85!black]
+  at (4.44,8.07) {π (priv.)};
+
+% ======================= verifier panel ===============================
+\draw[party, fill=popblue!3] (13.25,4.45) rectangle (18.05,8.55);
+\node[pub, text width=4.30cm, minimum height=0.78cm] (V1) at (15.65,7.95)
+  {\textbf{Challenge}\\fresh 256-bit \textit{n}; replay closed only when \textit{n} is bound};
+\node[pub, text width=4.30cm, minimum height=1.15cm] (V2) at (15.65,6.65)
+  {\textbf{Inputs}\\delivered \textit{T}′, certificate, public values,\\hπ from P-PP, ledger inclusion,\\optional delegated companion};
+\node[asset, text width=4.30cm, minimum height=1.20cm, fill=popgreen!7, draw=popgreen!55!black] (V3) at (15.65,5.15)
+  {\textbf{Checks (all conjunctive)}\\signature · nonce · proof · \textit{b} = H(dom‖\textit{n}‖\textit{T}′)\\hπ ∈ P-PP · \texttt{delegated} companion · inclusion\\\textbf{accept} only if all pass; \textit{T}″ ≠ \textit{T}′ is not checked};
+
+% ======================= operator <-> verifier ========================
+\draw[carr] (V1.west) -- (13.10,7.75) -- (9.45,7.75) -- node[pos=0.25, above, font=\fontsize{5.1}{6.0}\selectfont]{\textit{n}} (9.45,7.46);
+\draw[garr] (sig.east) -- (13.12,4.85) -- (13.12,6.65) -- (V2.west);
+\node[rotate=90, anchor=south, font=\fontsize{4.85}{5.8}\selectfont]
+  at (13.08,5.72) {certificate};
+
+% ======================= ledger ======================================
+\draw[party, fill=pomsky!10, draw=pomsky!70!black] (13.25,2.10) rectangle (18.05,3.95);
+\node[sgn, text width=4.30cm, minimum height=1.30cm, fill=pomsky!16, draw=pomsky!70!black] (led) at (15.65,3.02)
+  {\textbf{Append-only ledger}\\\textbf{entry}: H(cert) or H(\textit{T}′) + inclusion proof\\checkpoints; optional tree-head signature\\\textbf{not implemented}: consistency proofs, gossip};
+\draw[garr] (sig.south) -- (11.45,2.85) -- node[above, font=\fontsize{4.85}{5.8}\selectfont]{append (\textit{external})} (led.west);
+\draw[garr] (led.north) -- node[right, font=\fontsize{4.85}{5.8}\selectfont]{incl.} (V3.south);
+
+% ======================= end-user gap ================================
+\node[ext, text width=3.85cm, minimum height=0.95cm] (USR) at (2.25,3.10)
+  {\textbf{End user (not a party here)}\\receives \textit{T}″; certificate binds \textit{T}′\\\textit{T}″ ≠ \textit{T}′ is \textbf{open} (Prop.~1)};
+\draw[earr] (4.55,3.10) -- node[above, font=\fontsize{5.1}{6.0}\selectfont]{\textit{T}″} (USR.east);
+
+% ======================= trust anchors ===============================
+\draw[party, fill=popgrey!5] (0.15,1.12) rectangle (18.05,2.02);
+\node[anchor=west, font=\fontsize{5.6}{6.6}\selectfont\bfseries, text=popgrey]
+  at (0.27,1.85) {Trust anchors (pin these, not the machine):};
+\node[root, text width=5.35cm, minimum height=0.62cm] (R1) at (3.05,1.43)
+  {\textbf{signing key} (Ed25519): verifier pins the public key; custody external};
+\node[root, text width=5.25cm, minimum height=0.62cm] (R2) at (8.60,1.43)
+  {\textbf{gateway key}: receipt/Seal signatures; roster, HSM, trusted time open};
+\node[root, text width=5.75cm, minimum height=0.62cm] (R3) at (14.85,1.43)
+  {\textbf{policy registry / P-PP}: issuer signature binds hπ; authority honesty external};
+
+% ======================= legend / boundary strip =====================
+\draw[black!20, line width=0.35pt] (0.15,0.98) -- (18.05,0.98);
+\begin{scope}[shift={(0.22,0.76)}]
+  \fill[popblue!18, draw=popblue!65!black] (0,0) rectangle (0.26,0.15);
+  \node[anchor=west, font=\fontsize{5.0}{5.9}\selectfont] at (0.31,0.075) {public};
+  \fill[popsorange!25, draw=popsorange!75!black] (1.85,0) rectangle (2.11,0.15);
+  \node[anchor=west, font=\fontsize{5.0}{5.9}\selectfont] at (2.16,0.075) {witness};
+  \fill[popgreen!18, draw=popgreen!55!black] (3.55,0) rectangle (3.81,0.15);
+  \node[anchor=west, font=\fontsize{5.0}{5.9}\selectfont] at (3.86,0.075) {signed / anchored};
+  \fill[popverm!18, draw=popverm!70!black, dashed] (5.85,0) rectangle (6.11,0.15);
+  \node[anchor=west, font=\fontsize{5.0}{5.9}\selectfont] at (6.16,0.075) {external / open};
+  \draw[carr] (7.95,0.075) -- (8.35,0.075);
+  \node[anchor=west, font=\fontsize{5.0}{5.9}\selectfont] at (8.40,0.075) {crypto binding};
+  \draw[earr] (10.25,0.075) -- (10.65,0.075);
+  \node[anchor=west, font=\fontsize{5.0}{5.9}\selectfont] at (10.70,0.075) {external assumption};
+  \draw[oarr] (12.85,0.075) -- (13.25,0.075);
+  \node[anchor=west, font=\fontsize{5.0}{5.9}\selectfont] at (13.30,0.075) {open gap};
+\end{scope}
+\node[anchor=north west, font=\fontsize{5.0}{6.0}\selectfont, text=popverm!85!black, text width=8.55cm]
+  at (0.22,0.70) {\textbf{Design, not measured.} No TEE. \texttt{core} leaves the witness open; \texttt{groth16} hiding is wrapper-only and not post-quantum; L-side (re-execution) is open at every tier.};
+\node[anchor=north west, font=\fontsize{5.0}{6.0}\selectfont, text=popgrey, text width=8.55cm]
+  at (9.25,0.70) {External: authority holds s; operator does not leak π/\textit{T}; gateway key custody; append-before-delivery and no split view; \textit{T}″ binding to the end user.};
+\end{tikzpicture}
+\end{document}
