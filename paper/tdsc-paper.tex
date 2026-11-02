@@ -1089,41 +1089,24 @@ post-fix data.
 
 All cloud points use the post-NFA-fix binary
 \texttt{sha256 7f99fdb1\ldots} and policy vkey \texttt{0x003eb14d\ldots}, one
-proof per process on a 16-core / 90\,GiB cgroup. Table~\ref{tab:proofs} reports
+proof per process on a 16-core / 90\,GiB cgroup. Fig.~\ref{fig:proofs} reports
 the EU AI Act pack and representative matrix points; the full 18-point matrix is
 in \texttt{bench/results/scale-cloud.md}. Failures are reported rather than
 omitted: an OOM row is a \emph{result}, not a malfunction. The earlier 12\,GiB
 local runs used a pre-fix binary and the old vkey; they are not pooled with these
 figures, and they reported the same fixed floor and a $2\to3$-rule cliff.
 
-\begin{table}[t]
+\begin{figure}[t]
 \centering
-\caption{Real proofs on the 16-core / 90\,GiB cloud cgroup, post-NFA-fix.
-``Config'' is characters $\times$ rules; the EU AI Act rows use the real
-\texttt{eu\_ai\_act\_v1} pack. All successful rows verify (\texttt{PASS},
-including a recomputed response binding). Sources:
-\texttt{bench/results/scale-cloud.md},
-\texttt{scale-6x2000}--\texttt{scale-6x5000},
-\texttt{eu\_ai\_act\_proof.md}.}
-\label{tab:proofs}
-\tabfont
-\begin{tabular}{@{}lrrrl@{}}
-\toprule
-Config & Tier & Time & Peak RSS & Proof / result \\
-\midrule
-EU AI Act & \texttt{core} & 48.82\,s & 12.38\,GB & 2.79\,MB, PASS \\
-EU AI Act & \texttt{gr\-oth16} & 301.19\,s & 30.07\,GB & 1{,}874\,B, PASS \\
-$200 \times 1$ & \texttt{core} & 40.46\,s & 10.47\,GB & \checkmark \\
-$200 \times 1$ & \texttt{gr\-oth16} & 288.28\,s & 30.13\,GB & \checkmark \\
-$2000 \times 3$ & \texttt{core} & 100.30\,s & 34.72\,GB & \checkmark \\
-$2000 \times 3$ & \texttt{gr\-oth16} & 343.75\,s & 35.12\,GB & \checkmark \\
-$10000 \times 3$ & \texttt{core} & 92.87\,s & OOM & SIGKILL \\
-$10000 \times 3$ & \texttt{gr\-oth16} & 90.33\,s & OOM & SIGKILL \\
-$6 \times 4500$ & \texttt{core} & 181.66\,s & 64.22\,GB & \checkmark \\
-$6 \times 5000$ & \texttt{core} & 157.74\,s & OOM & SIGKILL \\
-\bottomrule
-\end{tabular}
-\end{table}
+\includegraphics[width=\columnwidth]{figures/fig06b_proof_main.pdf}
+\caption{Real SP1 proofs on the 16-core / 92{,}160\,MiB cgroup (post-NFA-fix,
+policy vkey \texttt{0x003eb14d\ldots}); blue: \texttt{core}, orange:
+\texttt{gr\-oth16}, green: six-rule \texttt{core}, stars: EU AI Act. Crosses
+mark observed SIGKILL/OOM events at the cgroup limit, not measured peaks;
+values are single runs with $\pm10\%$ time and $\pm1\%$ memory jitter. The
+numeric per-point table is in the supplement.}
+\label{fig:proofs}
+\end{figure}
 
 \begin{itemize}
   \item \textbf{The feasible region is not a rectangle.} The 18-point matrix

@@ -1,0 +1,115 @@
+% Fig. 1 -- Proof-of-Policy system architecture.
+% Compile with xelatex (TrueType DejaVu Sans embedded; no Type 1 math fonts).
+\documentclass{article}
+\usepackage[paperwidth=18.2cm,paperheight=8.35cm,margin=0pt]{geometry}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\usepackage{fontspec}
+\setsansfont{DejaVuSans}[Path=../fonts/,Extension=.ttf,UprightFont=*,BoldFont=*-Bold,ItalicFont=*-Oblique,BoldItalicFont=*-BoldOblique]
+\setmonofont{DejaVu Sans Mono}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+\definecolor{popblue}{HTML}{0072B2}
+\definecolor{poporange}{HTML}{D55E00}
+\definecolor{popgreen}{HTML}{009E73}
+\definecolor{popgrey}{HTML}{666666}
+\begin{document}
+\begin{tikzpicture}[
+  x=1cm,y=1cm,
+  box/.style={draw=black!65, rounded corners=1pt, line width=0.4pt,
+    inner sep=2.2pt, align=center, font=\fontsize{6.2}{7.3}\selectfont},
+  ext/.style={box, fill=black!4},
+  public/.style={box, fill=popblue!9, draw=popblue!70!black},
+  secret/.style={box, fill=poporange!13, draw=poporange!80!black},
+  verified/.style={box, fill=popgreen!9, draw=popgreen!50!black},
+  arr/.style={-{Latex[length=1.35mm,width=0.9mm]}, line width=0.5pt, draw=black!70},
+  parr/.style={arr, draw=popblue!75!black},
+  sarr/.style={arr, draw=poporange!85!black},
+  garr/.style={arr, draw=popgreen!55!black},
+  darr/.style={arr, dashed},
+  trust/.style={draw=poporange!85!black, dashed, line width=0.75pt, rounded corners=3pt}
+]
+\useasboundingbox (0,0) rectangle (18.2,8.35);
+
+% ---------------- untrusted operator boundary --------------------------
+\draw[trust] (3.18,5.42) rectangle (18.02,7.92);
+\node[anchor=west, font=\fontsize{6.3}{7.3}\selectfont, text=poporange!85!black]
+  at (3.30,8.04) {untrusted operator boundary --- no TEE. The signing key and the tool-gateway key remain the trust root.};
+
+% ---------------- top pipeline ----------------------------------------
+\node[ext, text width=2.55cm] (author) at (1.55,6.65)
+  {\textbf{Policy author}\\π in the policy DSL\\salt \textit{s} (held back)};
+\node[public, text width=2.35cm] (compiler) at (4.80,6.65)
+  {\textbf{Compiler}\\π → ConstraintSpec\\compiled NFA (JSON)};
+\node[public, text width=3.15cm, minimum height=1.55cm] (guest) at (8.75,6.65)
+  {\textbf{zkVM guest (SP1)}\\%
+   \textcolor{poporange!85!black}{witness: π, \textit{T}, trace}\\%
+   public: verdict, violations\\L0/L1/L2, \texttt{delegated}};
+\node[verified, text width=2.55cm, minimum height=1.55cm] (prover) at (12.90,6.65)
+  {\textbf{Proof tier}\\core: no hiding\\groth16:\\wrapper hiding\\(not post-quantum)};
+\node[public, text width=3.05cm, minimum height=1.72cm] (cert) at (16.38,6.65)
+  {\textbf{Certificate}\\DSSE/Ed25519 signed\\%
+   \textit{b} = H(dom‖\textit{n}‖\textit{T})\\%
+   \textit{C} = H(\textit{T}); \texttt{policy\_commit} = H(\textit{s}‖π)\\%
+   violations; \texttt{proof\_mode}};
+
+\draw[arr] (author.east) -- (compiler.west)
+  node[midway, above, font=\fontsize{5.6}{6.4}\selectfont] {π};
+\draw[arr] (compiler.east) -- (guest.west)
+  node[midway, above, font=\fontsize{5.4}{6.2}\selectfont] {spec};
+\draw[arr] (guest.east) -- (prover.west)
+  node[midway, above, font=\fontsize{5.4}{6.2}\selectfont] {trace};
+\draw[arr] (prover.east) -- (cert.west)
+  node[midway, above, font=\fontsize{5.4}{6.2}\selectfont] {proof};
+
+% ---------------- witness and challenge inputs ------------------------
+\node[secret, text width=2.75cm] (agent) at (4.75,4.25)
+  {\textbf{LLM agent}\\response \textit{T} (witness)\\prompt, decoding parameters};
+\draw[sarr] (agent.north east) to[out=62,in=205] (guest.south west)
+  node[pos=0.48, above left, font=\fontsize{5.7}{6.5}\selectfont] {\textit{T} (witness)};
+
+\node[ext, text width=2.85cm] (chal) at (12.85,4.25)
+  {\textbf{Verifier challenge}\\nonce \textit{n} ← {0,1}\textsuperscript{256}\\freshness \textit{f} = |\textit{n}|};
+\draw[parr] (chal.north) to[out=118,in=305] (guest.south east);
+\node[font=\fontsize{5.7}{6.5}\selectfont, text=popblue!75!black, fill=white, inner sep=0.8pt]
+  at (10.30,5.62) {\textit{n} (public input)};
+
+\node[ext, text width=3.05cm] (verifier) at (16.38,4.20)
+  {\textbf{Verifier / auditor}\\checks proof; recomputes \textit{b}\\from delivered \textit{T}′; checks\\ledger inclusion; no secret state};
+\draw[parr] (cert.south) -- (verifier.north)
+  node[midway, right, font=\fontsize{5.7}{6.5}\selectfont] {certificate};
+\draw[darr] (verifier.west) -- (chal.east)
+  node[midway, above, font=\fontsize{5.6}{6.4}\selectfont] {\textit{n}};
+
+% ---------------- ledger and delivery ---------------------------------
+\node[verified, text width=3.05cm] (ledger) at (16.38,2.05)
+  {\textbf{Anchor ledger}\\append-only; file or on-chain\\32-byte digest + timestamp};
+\draw[garr] (verifier.south) -- (ledger.north)
+  node[midway, right, font=\fontsize{5.7}{6.5}\selectfont] {inclusion};
+
+\node[ext, text width=3.05cm] (user) at (8.95,2.05)
+  {\textbf{End user}\\receives \textit{T}″; knows \textit{n}\\can recompute \textit{b} locally};
+\draw[darr, draw=poporange!90!black] (agent.south) to[out=-70,in=155] (user.north west);
+\node[font=\fontsize{5.6}{6.4}\selectfont, text=poporange!90!black, fill=white, inner sep=0.8pt]
+  at (5.85,2.85) {delivery: \textit{T}″};
+\node[anchor=west, align=left, text width=4.9cm,
+      font=\fontsize{5.5}{6.4}\selectfont, text=poporange!85!black]
+  at (0.40,1.30)
+  {Divergent delivery (Prop.~1): the certificate\\
+   binds the verifier's copy \textit{T}′, not \textit{T}″.};
+
+% ---------------- legend ----------------------------------------------
+\begin{scope}[shift={(5.4,0.55)}]
+  \fill[popblue!18, draw=popblue!70!black, rounded corners=0.6pt] (0,0) rectangle (0.30,0.22);
+  \node[anchor=west, font=\fontsize{5.7}{6.4}\selectfont] at (0.38,0.11) {public values};
+  \fill[poporange!25, draw=poporange!80!black, rounded corners=0.6pt] (2.55,0) rectangle (2.85,0.22);
+  \node[anchor=west, font=\fontsize{5.7}{6.4}\selectfont] at (2.93,0.11) {witness / secret};
+  \fill[popgreen!18, draw=popgreen!50!black, rounded corners=0.6pt] (5.25,0) rectangle (5.55,0.22);
+  \node[anchor=west, font=\fontsize{5.7}{6.4}\selectfont] at (5.63,0.11) {verified / anchored};
+  \draw[trust] (8.05,0.11) -- (8.65,0.11);
+  \node[anchor=west, font=\fontsize{5.7}{6.4}\selectfont] at (8.73,0.11) {trust boundary};
+\end{scope}
+
+\end{tikzpicture}
+\end{document}

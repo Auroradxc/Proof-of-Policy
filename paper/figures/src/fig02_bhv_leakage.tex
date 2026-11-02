@@ -1,0 +1,145 @@
+% Fig. 2 -- BHV triangle and the three-channel leakage profile.
+% Compile with xelatex (TrueType DejaVu Sans embedded).
+\documentclass{article}
+\usepackage[paperwidth=18.2cm,paperheight=8.2cm,margin=0pt]{geometry}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\usepackage{fontspec}
+\setsansfont{DejaVuSans}[Path=../fonts/,Extension=.ttf,UprightFont=*,BoldFont=*-Bold,ItalicFont=*-Oblique,BoldItalicFont=*-BoldOblique]
+\setmonofont{DejaVu Sans Mono}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+\definecolor{popblue}{HTML}{0072B2}
+\definecolor{poporange}{HTML}{D55E00}
+\definecolor{popgreen}{HTML}{009E73}
+\definecolor{popyellow}{HTML}{F0E442}
+\definecolor{popgrey}{HTML}{666666}
+
+\newcommand{\sub}[1]{\raisebox{-0.30ex}{\fontsize{4.6}{5.4}\selectfont #1}}
+\newcommand{\lcell}[5]{%
+  \coordinate (C) at #1;
+  \fill[#2] ($(C)+(-1.35,0)$) rectangle ($(C)+(1.35,0.775)$);
+  \fill[#3] ($(C)+(-1.35,-0.775)$) rectangle ($(C)+(1.35,0)$);
+  \draw[draw=black!45, line width=0.35pt] ($(C)+(-1.35,-0.775)$) rectangle ($(C)+(1.35,0.775)$);
+  \draw[draw=black!30, line width=0.3pt] ($(C)+(-1.35,0)$) -- ($(C)+(1.35,0)$);
+  \node[anchor=west, font=\fontsize{4.6}{5.3}\selectfont, text=black!65] at ($(C)+(-1.28,0.67)$) {core};
+  \node[anchor=north west, text width=2.56cm, inner sep=0pt, align=left,
+        font=\fontsize{5.15}{6.1}\selectfont] at ($(C)+(-1.28,0.55)$) {#4};
+  \node[anchor=west, font=\fontsize{4.6}{5.3}\selectfont, text=black!65] at ($(C)+(-1.28,-0.08)$) {g16};
+  \node[anchor=north west, text width=2.56cm, inner sep=0pt, align=left,
+        font=\fontsize{5.15}{6.1}\selectfont] at ($(C)+(-1.28,-0.20)$) {#5};
+}
+\begin{document}
+\begin{tikzpicture}[x=1cm,y=1cm]
+\useasboundingbox (0,0) rectangle (18.2,8.2);
+
+% ======================= panel (a): BHV triangle =======================
+\node[font=\fontsize{7.2}{8.4}\selectfont\bfseries] at (3.8,7.95)
+  {(a) BHV: at most two legs};
+
+\coordinate (B) at (3.8,6.55);
+\coordinate (H) at (1.65,1.75);
+\coordinate (V) at (5.95,1.75);
+\draw[line width=1.15pt, draw=black!55] (B) -- (H) -- (V) -- cycle;
+\fill (B) circle (2.4pt);
+\fill (H) circle (2.4pt);
+\fill (V) circle (2.4pt);
+
+\node[font=\fontsize{6.0}{7.0}\selectfont\bfseries] at (3.8,6.88) {B --- binding};
+\node[anchor=east, font=\fontsize{6.0}{7.0}\selectfont\bfseries, align=right] at (1.40,1.28) {H --- hiding};
+\node[anchor=west, font=\fontsize{6.0}{7.0}\selectfont\bfseries, align=left] at (6.20,1.28) {V --- public\\verification (PV-2)};
+
+\node[rotate=67, font=\fontsize{5.5}{6.4}\selectfont, text=black!70] at (1.40,4.35) {guess-tight binding};
+\node[rotate=-67, font=\fontsize{5.5}{6.4}\selectfont, text=black!70] at (6.05,4.45) {PV-2};
+\node[font=\fontsize{5.5}{6.4}\selectfont, text=black!70] at (3.80,1.86) {witness hiding};
+
+\node[draw=black!35, rounded corners=1pt, fill=black!3, text width=2.55cm, align=center,
+      inner sep=2pt, font=\fontsize{5.5}{6.4}\selectfont] at (3.80,2.95)
+  {at most two legs when\\k\sub{X} < log q\\+ log(1/ε)};
+
+\node[anchor=west, align=left, text width=1.85cm, font=\fontsize{5.5}{6.4}\selectfont,
+      text=popblue!80!black] at (5.65,6.45)
+  {\textbf{core}: B + PV-2;\\no hiding};
+\draw[-{Latex[length=1.1mm,width=0.8mm]}, draw=popblue!75!black, line width=0.45pt]
+  (5.65,6.55) -- (4.15,6.55);
+
+\node[anchor=north west, align=left, text width=2.0cm, font=\fontsize{5.5}{6.4}\selectfont,
+      text=popgreen!65!black] at (0.15,0.78)
+  {\textbf{salted policy}:\\B + H; loses PV-2};
+\draw[-{Latex[length=1.1mm,width=0.8mm]}, draw=popgreen!55!black, line width=0.45pt]
+  (1.55,0.78) -- (1.65,1.68);
+
+\node[anchor=north west, align=left, text width=4.0cm, font=\fontsize{5.5}{6.4}\selectfont,
+      text=poporange!85!black] at (3.65,0.78)
+  {\textbf{groth16}: H + PV-2;\\the wrapper closes \textit{L}\sub{proof},\\but \textit{L}\sub{side} stays open};
+\draw[-{Latex[length=1.1mm,width=0.8mm]}, draw=poporange!85!black, line width=0.45pt]
+  (5.35,0.78) -- (5.90,1.68);
+
+% ======================= panel (b): leakage matrix =====================
+\node[font=\fontsize{7.2}{8.4}\selectfont\bfseries] at (13.55,7.95)
+  {(b) Leakage profile: three inputs, three channels};
+
+\node[anchor=south, align=center, font=\fontsize{6.0}{7.2}\selectfont\bfseries] at (10.8,7.00)
+  {\textit{L}\sub{pub}\\public values};
+\node[anchor=south, align=center, font=\fontsize{6.0}{7.2}\selectfont\bfseries] at (13.7,7.00)
+  {\textit{L}\sub{proof}\\proof artefact};
+\node[anchor=south, align=center, font=\fontsize{6.0}{7.2}\selectfont\bfseries] at (16.6,7.00)
+  {\textit{L}\sub{side}\\side information};
+
+\node[anchor=east, align=right, font=\fontsize{6.0}{7.0}\selectfont\bfseries] at (9.30,6.15)
+  {response\\\textit{T}};
+\node[anchor=east, align=right, font=\fontsize{6.0}{7.0}\selectfont\bfseries] at (9.30,4.35)
+  {request\\\textit{n}};
+\node[anchor=east, align=right, font=\fontsize{6.0}{7.0}\selectfont\bfseries] at (9.30,2.55)
+  {policy\\π};
+
+% --- response row ---
+\lcell{(10.8,6.15)}{popyellow!38}{popyellow!38}
+  {\textbf{bounded} \textit{b}, \textit{C} public}
+  {\textbf{bounded} same; q·2\textsuperscript{−k}}
+\lcell{(13.7,6.15)}{poporange!20}{popgreen!16}
+  {\textbf{open} trace, opened values}
+  {\textbf{closed} ⊥ (wrapper)}
+\lcell{(16.6,6.15)}{poporange!20}{poporange!20}
+  {\textbf{open} prompt, model}
+  {\textbf{open} re-execution}
+
+% --- request row ---
+\lcell{(10.8,4.35)}{popyellow!38}{popyellow!38}
+  {\textbf{bounded} \textit{n} public; \textit{f} = 0}
+  {\textbf{bounded} \textit{f} > 0 closes replay}
+\lcell{(13.7,4.35)}{popgreen!16}{popgreen!16}
+  {\textbf{closed} \textit{n} bound in \textit{b}}
+  {\textbf{closed} same}
+\lcell{(16.6,4.35)}{poporange!20}{poporange!20}
+  {\textbf{open} no freshness}
+  {\textbf{open} replay without \textit{n}}
+
+% --- policy row ---
+\lcell{(10.8,2.55)}{popyellow!38}{popyellow!38}
+  {\textbf{bounded} policy\_hash public}
+  {\textbf{bounded} salted commit; PV-2 lost}
+\lcell{(13.7,2.55)}{poporange!20}{popgreen!16}
+  {\textbf{open} spec\_canonical, witness}
+  {\textbf{closed} ⊥ (wrapper)}
+\lcell{(16.6,2.55)}{poporange!20}{poporange!20}
+  {\textbf{open} candidate corpus}
+  {\textbf{open} dictionary}
+
+% --- legend and scope note ---
+\node[anchor=west, align=left, text width=8.3cm, font=\fontsize{5.35}{6.4}\selectfont] at (9.30,1.45)
+  {\textbf{core} = STARK, hiding none; \textbf{g16} = wrapper-level hiding, not post-quantum.\\
+   No proof tier closes \textit{L}\sub{side}; a zero probe is not a zero-knowledge proof.};
+
+\fill[popgreen!16, draw=black!35, line width=0.3pt] (9.30,0.62) rectangle (9.62,0.84);
+\node[anchor=west, font=\fontsize{5.4}{6.3}\selectfont] at (9.70,0.73) {closed in this channel};
+\fill[popyellow!38, draw=black!35, line width=0.3pt] (11.95,0.62) rectangle (12.27,0.84);
+\node[anchor=west, font=\fontsize{5.4}{6.3}\selectfont] at (12.35,0.73) {bounded / conditional};
+\fill[poporange!20, draw=black!35, line width=0.3pt] (14.95,0.62) rectangle (15.27,0.84);
+\node[anchor=west, font=\fontsize{5.4}{6.3}\selectfont] at (15.35,0.73) {open};
+
+\end{tikzpicture}
+\end{document}
