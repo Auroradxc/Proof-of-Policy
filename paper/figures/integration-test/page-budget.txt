@@ -1,0 +1,8 @@
+generated_at: 2026-11-02T04:29:49+00:00
+baseline: 12 pages, 0 errors
+table->figure: 12 pages, 0 errors
+page-neutral: YES
+verdict: PASS
+
+Replacement: Table tab:proofs -> Fig. fig:proofs (fig06b_proof_main.pdf, single column).
+Both builds use \def\SKELQUIET{}; paper/ is not modified.

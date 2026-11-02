@@ -1,0 +1,10 @@
+*.aux
+*.log
+*.out
+__pycache__/
+integration-test/*.aux
+integration-test/*.log
+integration-test/*.out
+integration-test/*.pdf
+integration-test/tdsc-paper-baseline.tex
+integration-test/tdsc-paper-fig-test.tex
