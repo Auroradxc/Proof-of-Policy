@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Page/compile check for the integrated main paper.
+"""Page/compile guard for the integrated main paper.
 
-The main paper now contains ``figures/fig06b_proof_main.pdf`` (Fig. 1) in place
-of the old Table I.  This script compiles a copy of the current main paper and
-asserts the hard constraint: 12 pages, zero errors, zero undefined references.
-Table I itself now lives in the supplementary material.
+The main paper now contains six figures: architecture, BHV/leakage, policy
+disclosure, proof feasibility, issuance, and ``k_est``.  This script compiles a
+copy of the current main paper in the same figure environment and asserts the
+hard constraint: 12 pages, zero errors, zero undefined references.
 
-Nothing in ``paper/`` is modified; the build lives under
-``paper/figures/integration-test/`` and the result is written to
-``page-budget.txt``.
+The build lives under ``paper/figures/integration-test/`` and the result is
+written to ``page-budget.txt``; ``paper/`` itself is not modified.
 """
 
 from __future__ import annotations
@@ -55,9 +54,11 @@ def compile_tex(tex: Path) -> tuple[int, int, int, int]:
 
 def main() -> int:
     OUT.mkdir(exist_ok=True)
-    (OUT / "figures").mkdir(exist_ok=True)
+    figs = OUT / "figures"
+    figs.mkdir(exist_ok=True)
     shutil.copy2(PAPER, OUT / "tdsc-paper-integrated.tex")
-    shutil.copy2(FIG / "fig06b_proof_main.pdf", OUT / "figures" / "fig06b_proof_main.pdf")
+    for pdf in FIG.glob("*.pdf"):
+        shutil.copy2(pdf, figs / pdf.name)
 
     pages, errors, undefined, overfull = compile_tex(OUT / "tdsc-paper-integrated.tex")
     ok = pages == TARGET_PAGES and errors == 0 and undefined == 0
@@ -68,9 +69,9 @@ def main() -> int:
         f"target: {TARGET_PAGES} pages, 0 errors, 0 undefined refs",
         f"verdict: {'PASS' if ok else 'FAIL'}",
         "",
-        "Integration: Fig. fig:proofs (fig06b_proof_main.pdf, single column) replaces the old Table I.",
-        "Table I moved to the supplementary material as Table S12 with a GB-vs-GiB unit note.",
-        "The actual paper now uses this integration; this test copy is retained as evidence.",
+        "Integrated figures: architecture, BHV/leakage, policy inference, proof feasibility,",
+        "issuance, and k_est. Table I is in the supplement as Table S12; the regime and",
+        "channel tables moved to the supplement as Tables S13-S14.",
     ]
     (OUT / "page-budget.txt").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))

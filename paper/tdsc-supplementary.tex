@@ -851,60 +851,12 @@ itself warns against reading the rows as ``PoP is faster.''
 \section{Supplementary Figures}
 \label{app:figures}
 
-This section collects the figures that support the main paper's evaluation and
-design, together with the numeric per-point table for the proof-feasibility
-figure. Figure numbers are prefixed with ``S''; the main paper's compact
-proof-feasibility figure is Fig.~1 of the main text.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/fig01_architecture.pdf}
-\caption{Proof-of-Policy architecture. A policy package is compiled to a
-\texttt{ConstraintSpec} (the compiled NFA, the only object crossing the layer
-boundary), evaluated by the zkVM guest on the response $T$, and turned into a
-DSSE/Ed25519-signed certificate. Public values bind the response
-($b=H(\mathrm{dom}\Vert n\Vert T)$), commit to the policy
-(\texttt{policy\_commit}$=H(s\Vert\pi)$), and carry the verdict and the
-disclosure level. Blue: public values; orange: witness or secret; green:
-verified or anchored. The dashed boundary is the untrusted operator; no TEE is
-assumed, and the signing and tool-gateway keys remain trust roots. The verifier
-supplies the challenge nonce $n$. The end-user delivery path $T''$ is not
-covered by the certificate's binding to the verifier's copy $T'$
-(Proposition~1 of the main paper). This is a design diagram, not a measured
-hiding claim: \texttt{core} reports \texttt{hiding=none}, and
-\texttt{gr\-oth16} hiding is wrapper-level and not post-quantum.}
-\label{figS:architecture}
-\end{figure}
-
-Fig.~\ref{figS:architecture} is a design diagram, not a trace of a measured
-execution: it fixes where the witness, the public values, the challenge nonce,
-and the trust boundary sit, and it shows the delivery path that the certificate
-does not bind.
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=\textwidth]{figures/fig02_bhv_leakage.pdf}
-\caption{(a) The binding--hiding--verifiability (BHV) classification. Below the
-entropy threshold $k_X<\log q+\log(1/\varepsilon)$, at most two of guess-tight
-binding, exact-recovery hiding, and publicly recomputable verification (PV-2)
-coexist. (b) Leakage profile of Theorem~1 of the main paper for the response
-$T$, the request nonce $n$, and the policy $\pi$, across public values
-($L_{\mathrm{pub}}$), proof artefact ($L_{\mathrm{proof}}$), and side
-information ($L_{\mathrm{side}}$). Each cell is split into \texttt{core} and
-\texttt{gr\-oth16} (g16); \emph{closed}, \emph{bounded}, and \emph{open} describe
-only the named channel. \texttt{core} leaves the trace and opened values in
-$L_{\mathrm{proof}}$; \texttt{gr\-oth16} closes that channel at wrapper level
-but is not post-quantum. The salted policy commitment closes the hash channel
-and loses PV-2. No proof tier closes $L_{\mathrm{side}}$: re-execution and
-dictionary attacks remain, and a zero canary probe is not a zero-knowledge
-proof. The matrix is conceptual, not a measured recovery rate.}
-\label{figS:bhv}
-\end{figure}
-
-Fig.~\ref{figS:bhv} makes the channel separation explicit. The public-value row
-is the only row measured end to end in the main paper; the proof-artefact and
-side-information rows are structural and are not assigned a measured recovery
-rate.
+This section keeps the three evaluation figures whose full versions are not in
+the main text: the cycle sweep, the matcher ablation, and the complete
+proof-feasibility view, together with the numeric per-point table. Figure
+numbers are prefixed with ``S''. The architecture, BHV/leakage, policy-inference,
+issuance and $k^{\mathrm{est}}$ figures are Figs.~1--3 and 5--6 of the main
+paper and are not duplicated here.
 
 \begin{figure}[H]
 \centering
@@ -1011,65 +963,92 @@ The table keeps the main paper's printed convention
 $GiB=peak\_rss\_mb/1024$. The two differ by about 2.4\%, and neither column is
 silently converted.
 
-\begin{figure}[H]
+\begin{table}[H]
 \centering
-\includegraphics[width=0.55\textwidth]{figures/fig07_k_est.pdf}
-\caption{(a) Teacher-forced estimate $k^{\mathrm{est}}$ of the guessing entropy
-of the response for Qwen2.5-7B-Instruct and Mistral-7B-Instruct-v0.3, on 50
-XSTest prompts with 20 samples per prompt at temperature 0.7 (chat template).
-The dashed line is the 40-bit threshold $\log_2 q+\log_2(1/\varepsilon)$ with
-$q=2^{20}$ and $\varepsilon=2^{-20}$. Because $k^{\mathrm{est}}$ is an
-\emph{upper} bound on the true $k$ (the estimator maximizes over sampled
-sequences), points to the left of 40 bit refute the 40-bit condition---16/50
-Qwen and 11/50 Mistral groups do so---while points to the right do not certify
-it. (b) Greedy decoding at temperature 0: $k=0$ in all 50/50 groups for both
-models, so one re-execution recovers $T$. The two temperatures are shown
-separately because $k=0$ cannot share a log axis with positive estimates.
-Source: \texttt{k\_logprobs.json} and
-\texttt{e6\_mistral/k\_logprobs.json}.}
-\label{figS:kest}
-\end{figure}
+\caption{Leakage regimes of Theorem~\ref{thm:leak}. The last column records what
+kind of evidence supports the row; only the public-value row is measured
+end to end, and the \texttt{core} row is a source-level structural claim rather
+than a measured recovery rate.}
+\label{tab:regimes}
+\tabfont
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{@{}L{0.16\columnwidth}L{0.22\columnwidth}L{0.12\columnwidth}L{0.17\columnwidth}L{0.19\columnwidth}@{}}
+\toprule
+Regime & $L_{\mathrm{proof}}$ & Guess & Bound & Evidence \\
+\midrule
+\texttt{gr\-oth16}/\allowbreak\texttt{plonk} & $\bot$ &
+$\approx 2^{-k_X}$ & $q\cdot 2^{-k_X}$ &
+wrapper-level; measured at 1{,}874\,B (main paper, proof evaluation) \\
+\texttt{core}/\allowbreak\texttt{com\-pressed} & trace, \texttt{main\_\allowbreak commitment},
+\texttt{opened\_\allowbreak values} & $\approx 1$ & $1$ &
+source audit; worst case, not a measured recovery rate \\
+Re-execution (any tier) & any &
+$\approx 1$ & $1$ &
+$L_{\mathrm{side}}$; independent of the proof system \\
+Public $\beta$: $\mathrm{id}$ or $\mathsf{encode}$ & any &
+$1$ or $1/K$ & $1$ or $1/K$ &
+hand-checked counterexample; $K$ = preimage-class size \\
+Salted policy (keyed) & $\bot$ (needs ZK) &
+$\mathsf{Guess}(\pi\mid Z)+2^{-128}$ & same &
+prototype; PV-2 lost, authority-mediated \\
+$n$ public & any & $\approx 2^{-k_T}$ & $q\cdot2^{-k_T}$ &
+PV-2 holds \\
+$n$ secret & any & $\approx 2^{-k_T}$ &
+$(1+q\cdot2^{-f})\cdot2^{-k_T}$ & PV-2 fails (designated verifier) \\
+\bottomrule
+\end{tabular}
+\par\smallskip
+\noindent\emph{The $n$ rows are request-side visibility, not proof tiers.}
+\end{table}
 
-\begin{figure}[H]
+\begin{table}[H]
 \centering
-\includegraphics[width=\textwidth]{figures/fig08_policy_disclosure.pdf}
-\caption{Policy-inference attack over three disclosure levels. (a,b) A1:
-20 synthetic policy variants, 11 templates per variant, 40 training and 15
-test responses per variant, multinomial naive Bayes
-(\texttt{policy\_infer.json}). L2 here is the count-only projection. (c,d) E2:
-300 candidate policies, 220 real chat responses, 19{,}800 test pairs, v1
-certificate payload (\texttt{policy\_corpus\_infer.json}); L2 carries
-deterministic evidence commitments and L2* is the count-only projection used in
-A1. Top-1/top-3 recover the generating variant; normalized MI and audit
-utility are on a 0--1 scale. Chance top-1 is 0.050 (A1) and 0.0033 (E2). The
-two corpora are never averaged: the synthetic curve estimates leakage from the
-projection, while the real-response panel shows that coarse
-format/length/budget rules dominate the 0.677 evidence coverage.
-\texttt{policy\_hash} is excluded from the features (a candidate-corpus lookup
-would give top-1 $=1.0$). The v2 circuit-level L2 has not been re-measured.}
-\label{figS:policy}
-\end{figure}
+\caption{Channels through which a policy-private certificate leaks, and what
+closes each. ``Closed'' is scoped to the channel named in the row.}
+\label{tab:wp4}
+\tabfont
+\begin{tabular}{@{}L{0.04\linewidth}L{0.46\linewidth}L{0.36\linewidth}@{}}
+\toprule
+\# & Channel & Status / dependency \\
+\midrule
+1 & The policy text itself & \textbf{Closed} (it is a witness). \\
+2 & $\mathsf{policy\_hash}$ as a publicly recomputable binding & \textbf{Closed
+    by the salted commitment} (public-value channel; PV-2 lost, authority
+    mediates). \\
+3 & The proof artefact (\texttt{core} trace, opened values) & \textbf{Open};
+    needs \texttt{groth16}/\texttt{plonk} witness hiding and a measurement
+    (\texttt{docs/\allowbreak sp1-zk-audit.md}). \\
+4 & \texttt{PrivateViolation}\allowbreak\{\texttt{rule},\allowbreak\texttt{kind}\}
+    names the rule that fired & \textbf{Coarsened at the circuit public values}:
+    L0 emits the name and kind; L1 a category bucket and count; L2 only a
+    per-response salted commitment. Evidence plaintext is absent at all levels. \\
+5 & Evidence opening reveals the rule
+    (\texttt{policydsl/\allowbreak privacy/\allowbreak commit.py}:319) &
+    \textbf{Closed in the public values} (commitment only); the \texttt{core}
+    artefact still opens the witness. \\
+6 & The \texttt{delegated} flag exposes policy structure & \textbf{Open};
+    L1/L2 fail closed on non-empty \texttt{delegated}, and a category-level
+    protocol is not yet defined. \\
+7 & Semantic rules publish $\beta(T)=\mathsf{encode}(T)$
+    (main paper, lossy instance) & \textbf{Open}; public-mode only, or
+    bound the preimage. \\
+\bottomrule
+\end{tabular}
+\par\smallskip
+\noindent\emph{Row 1 is the text channel only; row 2 closes the hash channel and
+row 3 is the separate proof-artefact channel. Rows 4 and 6 are the C1 failures
+of the main paper\'s policy side.}
+\end{table}
 
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.55\textwidth]{figures/fig09_issuance_detection.pdf}
-\caption{(a) Exact probability of detecting at least one withheld violation
-when auditing delivered artifacts, $1-\binom{N-m}{s}/\binom{N}{s}$, for
-$N=2000$ deliveries, $s=\mathrm{round}(pN)$, $m$ withheld violations, and
-$p\in\{0.01,\ldots,0.20\}$. Markers are exact values; 500 Monte Carlo trials
-per cell (seed 20261101) agree within sampling noise. (b) At $p=0.05$,
-$s=100$, $m=100$, the delivered-artifact frame detects 0.9948, while the
-log-entry frame detects 0.0000 because withheld deliveries have no log entry:
-the sample frame, not luck, is the issue. This quantifies detection under
-independent violations, not prevention; append-before-delivery is an external
-premise, and a common root cause makes $m$ not an independent event count.}
-\label{figS:issuance}
-\end{figure}
 
-Figs.~\ref{figS:kest}--\ref{figS:issuance} report the entropy estimate, the
-policy-inference study, and the issuance audit. Each caption states the
-one-sided reading (upper bound, synthetic-vs-real corpus,
-detection-not-prevention) that the figure supports.
+
+
+
+
+
+Figs.~\ref{figS:cycles}--\ref{figS:proofs} report the execution-cost sweep,
+the matcher ablation, and the complete proof envelope; the policy-inference,
+issuance, and $k^{\mathrm{est}}$ figures are main-text Figs.~3, 5 and 6.
 
 \twocolumn
 % =====================================================================
