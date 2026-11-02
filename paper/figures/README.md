@@ -10,9 +10,10 @@ the design as written in the paper, not a measured claim.
 BHV/leakage (Fig. 2), policy inference (Fig. 3), proof feasibility (Fig. 4),
 issuance (Fig. 5), and `k_est` (Fig. 6). The main paper compiles to **12 pages /
 0 errors / 0 undefined references**; the old Table I is **Table S12** in the
-supplement. The supplement keeps the three figures not in the main text
-(F4 cycles, F5 matcher ablation, F6 full proof feasibility) and Tables S12–S14;
-it compiles to **10 pages / 0 errors / 0 undefined references**. No duplicate
+supplement. The supplement keeps the three evaluation figures not in the main text
+(F4 cycles, F5 matcher ablation, F6 full proof feasibility), the four VA
+figures (deployment/trust, lifecycle, comparison, claim–evidence), and
+Tables S12–S14; it compiles to **14 pages / 0 errors / 0 undefined references**. No duplicate
 figure is carried in both documents.
 
 ---
@@ -33,7 +34,7 @@ figure is carried in both documents.
 
 All PDFs embed only TrueType fonts (Type 42); all PNGs are 300 dpi. See
 `scripts/check_fonts.py`. Main text: F1, F2, F6b, F7, F8, F9. Supplement:
-F4, F5, F6 (Figs. S1–S3) plus Tables S12–S14.
+F4, F5, F6 (Figs. S1–S3), VA1–VA4 (Figs. S4–S7), plus Tables S12–S14.
 
 ---
 
@@ -70,12 +71,12 @@ Table I is no longer in the main text. Two `pdflatex` passes give **12 pages,
 0 errors, 0 undefined references**; the only overfull box is the pre-existing
 abstract line.
 
-**Supplement (10 pages).** §S5 keeps F4 cycles (S1), F5 matcher ablation (S2),
-F6 full proof feasibility (S3), and the numeric tables: Table S12 (proof
+**Supplement (14 pages).** §S5 keeps F4 cycles (S1), F5 matcher ablation (S2),
+F6 full proof feasibility (S3), the four VA figures (S4–S7), and the numeric tables: Table S12 (proof
 per-point values; `GB = peak_rss_mb/1000` while the figure uses
 `GiB = peak_rss_mb/1024`), Table S13 (leakage regimes), Table S14 (channel
 status). No figure is duplicated between the two documents. The supplement
-compiles to **10 pages, 0 errors, 0 undefined references**.
+compiles to **14 pages, 0 errors, 0 undefined references**.
 
 Evidence: `integration-test/page-budget.txt`.
 

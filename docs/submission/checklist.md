@@ -9,7 +9,7 @@
 
 ## 0. 一句话状态
 
-论文正文与 artifact 文档已更新到最新结果口径：主稿 **12 页**、supplementary **10 页**，
+论文正文与 artifact 文档已更新到最新结果口径：主稿 **12 页**、supplementary **14 页**，
 本机已用 TeX Live 2026 以 `\SKELQUIET` 复编通过，全量回归 **962/947/15**。但
 **投稿包本身尚未定稿**：作者/资助/ COI 仍是占位，Docker 镜像未构建，Zenodo DOI
 未分配，推荐审稿人未填。**当前不可直接提交。**
@@ -22,11 +22,11 @@
 |---|---|---|
 | 主文件 | `[x]` | [`paper/tdsc-paper.tex`](../../paper/tdsc-paper.tex)，IEEEtran `[10pt,journal,compsoc]` |
 | 编译方式 | `[x]` | 两遍 `pdflatex "\def\SKELQUIET{}\input{tdsc-paper.tex}"`（第二遍收交叉引用） |
-| 本机复编 | `[x]` | 2026-11-02 用 TeX Live 2026 两遍 `pdflatex "\def\SKELQUIET{}\input{tdsc-paper.tex}"` 复编：主稿 0 error / 12 页、supplementary 0 error / 10 页；PDF 已生成 |
-| 页数 | `[x]` | 主稿 **12 页**（含参考文献）、supplementary **10 页**（不计入主稿，含 8 张图与 Table S12）；`\SKELQUIET` 编译，PDF 无 `NEED/FIX` 标记 |
+| 本机复编 | `[x]` | 2026-11-02 用 TeX Live 2026 两遍 `pdflatex "\def\SKELQUIET{}\input{tdsc-paper.tex}"` 复编：主稿 0 error / 12 页、supplementary 0 error / 14 页；PDF 已生成 |
+| 页数 | `[x]` | 主稿 **12 页**（含参考文献）、supplementary **14 页**（不计入主稿，含 8 张图与 Table S12）；`\SKELQUIET` 编译，PDF 无 `NEED/FIX` 标记 |
 | 页数上限 | `[x]` 规则已核 | TDSC 常规论文 **12 页双栏**（含参考文献与作者简介），最多 **18 页**；超过 12 页按 MOPC 计费。来源：[IEEE CSDL Author Information](https://www.computer.org/csdl/journals/tq/write-for-us/15068) |
 | 超长费 | `[x]` | 主稿正好 **12 页**，不触发超页费；若投稿系统按最终排版多出 1 页，再按 live author guide 复核 |
-| 图 | `[x]` | 主稿 Figs. 1--6：架构、BHV/leakage、policy inference、proof feasibility、issuance、`k_est`；supplementary Figs. S1--S3：cycles、matcher ablation、完整 proof feasibility。全部矢量 PDF + 300 dpi PNG + TikZ/Python 源，见 `paper/figures/` 与 `docs/figures/style-guide.md` |
+| 图 | `[x]` | 主稿 Figs. 1--6：架构、BHV/leakage、policy inference、proof feasibility、issuance、`k_est`；supplementary Figs. S1--S7：cycles、matcher ablation、完整 proof feasibility、three-party deployment、certificate lifecycle、cross-system matrix、claim–evidence matrix。全部矢量 PDF + 300 dpi PNG + TikZ/Python 源，见 `paper/figures/` 与 `docs/figures/style-guide.md` |
 | 表 | `[x]` | 主稿无数值表（由 6 张图承载）；supplementary Table S12 为 proof 逐点数值，S13/S14 为 regime/channel 表，并注明 GB/GiB 单位差 |
 | 参考文献 | `[x]` 形式 / `[ ]` 内容 | 正文内联 `thebibliography`；当前 **5 个 `\need{}`**、**0 个 `\fixme{}`**；剩余 need 为作者元数据、Zaguk/Lean-Agent 引用、P-PP、WP4-(2)/WP3、ROM 限制（E6/C2 已结清） |
 | PDF 元数据 | `[ ]` | 标题/作者/关键词需与最终稿一致；嵌入字体；无红色标记 |

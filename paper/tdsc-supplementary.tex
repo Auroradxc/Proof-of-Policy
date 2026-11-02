@@ -852,8 +852,10 @@ itself warns against reading the rows as ``PoP is faster.''
 \label{app:figures}
 
 This section keeps the three evaluation figures whose full versions are not in
-the main text: the cycle sweep, the matcher ablation, and the complete
-proof-feasibility view, together with the numeric per-point table. Figure
+the main text---the cycle sweep, the matcher ablation, and the complete
+proof-feasibility view---plus four design/comparison figures (three-party
+deployment, certificate lifecycle, cross-system matrix, claim--evidence
+synthesis) and the numeric tables. Figure
 numbers are prefixed with ``S''. The architecture, BHV/leakage, policy-inference,
 issuance and $k^{\mathrm{est}}$ figures are Figs.~1--3 and 5--6 of the main
 paper and are not duplicated here.
@@ -1046,9 +1048,85 @@ of the main paper\'s policy side.}
 
 
 
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/va/va01_deployment_trust.pdf}
+\caption{Three-party deployment and trust boundaries (design, not measured).
+The authority holds $\pi$ and salt $s$ and publishes $h_\pi=H(s\Vert\pi)$; the
+operator is untrusted and runs the agent, compiler, zkVM guest, optional tool
+gateway and signer without a TEE; the verifier supplies a fresh $n$, receives
+$T'$ and the certificate, recomputes $b=H(\mathrm{dom}\Vert n\Vert T')$, and
+checks the delegated companion and ledger inclusion. Blue: public/verifier
+visible; orange: witness/secret; green: signed/anchored; dashed: external
+assumption or open gap. Trust anchors are the signing key, gateway key and
+policy registry/P-PP, not the operator machine. The certificate binds the
+verifier's copy $T'$, not the end-user delivery $T''$ (Proposition~1);
+\texttt{core} leaves the witness open, \texttt{gr\-oth16} hiding is
+wrapper-only and not post-quantum, and $L_{\mathrm{side}}$ remains open.}
+\label{figS:va-deployment}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/va/va02_certificate_lifecycle.pdf}
+\caption{Certificate issuance and verification as a design contract (not a
+measured latency trace). Steps 1--10 order the obligations: policy issuance;
+\texttt{ConstraintSpec} compilation; fresh 256-bit challenge $n$; streamed
+generation with early stop; policy check $J(\pi,T)$; proof tier
+(\texttt{core}/\texttt{gr\-oth16}/\texttt{unproven}); DSSE/Ed25519 signing and
+append-before-delivery; delivery of $T'$ and certificate; conjunctive
+verification (signature, nonce freshness, proof tier, recomputed
+$b=H(\mathrm{dom}\Vert n\Vert T')$, $h_\pi$ in P-PP, delegated companion,
+ledger inclusion); accept/reject. Dashed exits F1--F8 are fail-closed: any one
+rejects, and no proof tier is silently downgraded. \texttt{unproven} is
+host-check only; append-before-delivery is external; $T''$ binding remains
+open. Step numbers are obligations, not timestamps.}
+\label{figS:va-lifecycle}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/va/va03_comparison_matrix.pdf}
+\caption{Categorical cross-system comparison. (a) Seven dimensions of
+Table~S6: 49 cells, 46 populated and 3 unavailable (Zaguk size, PCO latency,
+PCO size). Cell tint encodes evidence status---$[m]$ measured here, $[c]$ cited
+and not reproduced, em dash unavailable and not estimated---not quality or
+rank; the thin bar encodes only the named privacy category. (b) Three
+requested dimensions not in Table~S6: proof obligation, issuance/audit,
+implementation status; only explicitly documented cells are filled, and em dash
+means not reported. PoP latency is cloud \texttt{core} 39.8--100.3\,s and
+\texttt{gr\-oth16} 279.3--343.8\,s (16-core/92{,}160\,MiB cgroup, post-NFA-fix)
+with local verification 89.84\,ms; the lower core bound is 39.83\,s in
+\texttt{scale-cloud.json}, while Table~S6 rounds it to 40.5\,s.
+\texttt{gr\-oth16} proof size is 1{,}874--1{,}875\,B across nine successful
+points. Merkle timing medians use $n=500$, TEE simulation $n=300$, PoP single
+runs with $\pm10\%$ wall-clock and $\pm1\%$ peak-RSS jitter. No continuous
+score, ranking or interpolation is implied.}
+\label{figS:va-comparison}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/va/va04_claim_evidence.pdf}
+\caption{Claim--evidence matrix. Rows are seven claims; columns are E1, E6, E2,
+E3, X1, C2 and CC. Each cell is \emph{supports}, \emph{refutes} or
+\emph{unknown}, with numeric evidence read from the named JSON and asserted at
+build time; the source file is printed in the cell. \emph{unknown} means the
+experiment does not address the claim, not a negative result. E1 is N-capped
+and cannot certify $k\ge40$; E6 is an upper bound (16/50 Qwen and 11/50 Mistral
+below 40 bit refute the threshold); E3 is host-check only
+(\texttt{proof\_mode=unproven}); X1 OOM points are observed kills; C2 did not
+implement \texttt{delegated}; CC cell~c is the weak form only (E-1). Verdicts
+are an author mapping, not a statistical test.}
+\label{figS:va-claims}
+\end{figure}
+
 Figs.~\ref{figS:cycles}--\ref{figS:proofs} report the execution-cost sweep,
-the matcher ablation, and the complete proof envelope; the policy-inference,
-issuance, and $k^{\mathrm{est}}$ figures are main-text Figs.~3, 5 and 6.
+the matcher ablation, and the complete proof envelope;
+Figs.~\ref{figS:va-deployment}--\ref{figS:va-claims} give the deployment/trust
+view, lifecycle, cross-system matrix and claim--evidence synthesis. The
+policy-inference, issuance and $k^{\mathrm{est}}$ figures are main-text
+Figs.~3, 5 and 6.
 
 \twocolumn
 % =====================================================================

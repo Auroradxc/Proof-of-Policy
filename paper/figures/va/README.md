@@ -116,8 +116,9 @@ all VA figures: TrueType-only fonts, within column width, PNG preview present
 ## 5. Placement (summary; details in `PLACEMENT.md`)
 
 The main paper is exactly 12 pages, 0 errors, 0 undefined references, and has
-no unallocated slot. All four VA figures are therefore **supplement only** as
-drawn. The only page-neutral candidate was VA1 replacing Fig. 1:
+no unallocated slot. All four VA figures are integrated in the supplement as
+Figs. S4–S7; the page-neutral main-text test below is retained as evidence that
+they do not fit the main paper without cutting text. The only page-neutral candidate was VA1 replacing Fig. 1:
 
 - VA1 at `0.86\textwidth`: **13 pages** (fails the hard 12-page constraint).
 - VA1 at `0.82\textwidth`: **12 pages**, 0 errors, 0 undefined, but the
