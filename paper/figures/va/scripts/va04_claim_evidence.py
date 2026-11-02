@@ -55,13 +55,13 @@ EXPS = [
 ]
 
 SOURCE = {
-    "E1": "k_entropy_largeN.json",
-    "E6": "k_logprobs.json",
-    "E2": "policy_corpus_infer.json",
-    "E3": "agent_e2e_deepseek.json",
-    "X1": "scale-cloud.json",
-    "C2": "c2/verify_L*.json",
-    "CC": "composition_controls.json",
+    "E1": "k_entropy_largeN",
+    "E6": "k_logprobs",
+    "E2": "policy_corpus_infer",
+    "E3": "agent_e2e_deepseek",
+    "X1": "scale-cloud",
+    "C2": "c2/verify_L*",
+    "CC": "composition_controls",
 }
 
 
@@ -238,9 +238,9 @@ def draw() -> None:
                     va="top", fontsize=5.2, fontweight="bold", color=edge)
             ax.text(x + 0.035, ry + row_h - 0.20,
                     textwrap.fill(ev, 23), ha="left", va="top",
-                    fontsize=4.15, linespacing=0.98)
+                    fontsize=4.35, linespacing=0.98)
             ax.text(x + 0.035, ry + 0.035, SOURCE[exp], ha="left", va="bottom",
-                    fontsize=3.9, color="#777777")
+                    fontsize=4.3, color="#777777")
 
     # provenance / reading rules
     footer = (
