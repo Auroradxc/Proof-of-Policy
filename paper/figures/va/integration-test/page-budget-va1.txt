@@ -1,0 +1,14 @@
+generated_at: 2026-11-02T12:44:32+00:00
+control (unmodified 91ca397): 12 pages, 0 errors, 0 undefined refs, 1 overfull
+VA1 at 0.86 textwidth: 13 pages, 0 errors, 0 undefined refs, 1 overfull
+VA1 at 0.82 textwidth: 12 pages, 0 errors, 0 undefined refs, 1 overfull
+VA1 at 0.80 textwidth: 12 pages, 0 errors, 0 undefined refs, 1 overfull
+target: 12 pages, 0 errors, 0 undefined refs
+page-neutral at some width: YES
+recommended width 0.86 page-neutral: NO
+
+Read the width table with the scale factor: at 0.80 textwidth the
+7.16-inch design is reduced to 5.73 inches, so 5.75 pt body text prints
+at about 4.6 pt. The 0.86 swap is the only readable candidate; if it is
+13 pages, VA1 is supplement-only. A page-neutral 0.80 swap would not
+meet the 6 pt minimum and is not recommended.

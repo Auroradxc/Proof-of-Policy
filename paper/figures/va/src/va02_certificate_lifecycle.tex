@@ -1,0 +1,173 @@
+% VA2 -- Certificate issuance and verification: swimlane flow with fail-closed exits.
+% Design contract, not a measured latency trace. Compile with xelatex.
+% No math mode: every glyph is DejaVu Sans (TrueType), so the PDF stays Type 42.
+\documentclass{article}
+\usepackage[paperwidth=18.2cm,paperheight=11.8cm,margin=0pt]{geometry}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}
+\hyphenpenalty=10000
+\exhyphenpenalty=10000
+\usepackage{fontspec}
+\setsansfont{DejaVuSans}[Path=../../fonts/,Extension=.ttf,UprightFont=*,BoldFont=*-Bold,ItalicFont=*-Oblique,BoldItalicFont=*-BoldOblique]
+\setmonofont{DejaVu Sans Mono}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta,calc}
+\definecolor{popblue}{HTML}{0072B2}
+\definecolor{popsorange}{HTML}{E69F00}
+\definecolor{popgreen}{HTML}{009E73}
+\definecolor{popverm}{HTML}{D55E00}
+\definecolor{poppurple}{HTML}{CC79A7}
+\definecolor{pomsky}{HTML}{56B4E9}
+\definecolor{popgrey}{HTML}{666666}
+\begin{document}
+\begin{tikzpicture}[
+  x=1cm,y=1cm,
+  lane/.style={draw=black!22, dashed, line width=0.4pt},
+  head/.style={draw=black!55, rounded corners=1.5pt, line width=0.6pt,
+    fill=black!5, inner sep=2pt, align=center,
+    font=\fontsize{6.3}{7.3}\selectfont\bfseries},
+  msg/.style={draw=black!60, rounded corners=1.2pt, line width=0.45pt,
+    inner sep=2.0pt, align=center, font=\fontsize{5.45}{6.5}\selectfont},
+  act/.style={msg, fill=popblue!9, draw=popblue!65!black},
+  wit/.style={msg, fill=popsorange!14, draw=popsorange!75!black},
+  led/.style={msg, fill=pomsky!16, draw=pomsky!70!black},
+  ok/.style={msg, fill=popgreen!13, draw=popgreen!60!black},
+  fail/.style={msg, fill=popverm!9, draw=popverm!75!black, dashed},
+  tag/.style={circle, draw=black!55, fill=white, inner sep=0.6pt,
+    font=\fontsize{5.0}{5.8}\selectfont},
+  arr/.style={-{Latex[length=1.25mm,width=0.85mm]}, line width=0.55pt, draw=black!70},
+  carr/.style={arr, draw=popblue!80!black},
+  warr/.style={arr, draw=popsorange!85!black},
+  garr/.style={arr, draw=popgreen!60!black},
+  earr/.style={arr, dashed, draw=popverm!85!black},
+  larr/.style={arr, draw=pomsky!75!black},
+  lab/.style={font=\fontsize{5.0}{5.9}\selectfont, inner sep=0.5pt, fill=white}
+]
+\useasboundingbox (0,0) rectangle (18.2,11.8);
+
+% ======================= lane headers ================================
+\node[head, text width=3.0cm] at (1.90,11.05) {Policy authority};
+\node[head, text width=5.2cm, text=popverm!80!black] at (6.55,11.05) {Operator --- untrusted, no TEE};
+\node[head, text width=2.0cm, fill=pomsky!18, draw=pomsky!70!black] at (10.75,11.05) {Ledger (optional)};
+\node[head, text width=5.2cm, text=popblue!80!black] at (15.20,11.05) {Verifier / auditor};
+
+% lane guides
+\foreach \x in {3.55,9.45,12.05} {
+  \draw[lane] (\x,10.55) -- (\x,2.95);
+}
+\node[anchor=west, font=\fontsize{9.0}{10.5}\selectfont\bfseries, text=black!75] at (0.22,11.55)
+  {Certificate issuance and verification: normal path (solid) and fail-closed exits (dashed)};
+
+% ======================= step 1: policy issuance =====================
+\node[tag] at (0.38,9.85) {1};
+\node[wit, text width=2.85cm, minimum height=0.52cm] at (1.95,9.85)
+  {\textbf{Policy package}\\π, version, rule set; salt s stays here};
+\draw[warr] (3.40,9.85) -- (3.80,9.85);
+\node[lab, above] at (3.60,9.98) {π (private)};
+
+% ======================= step 2: compile =============================
+\node[tag] at (0.38,9.15) {2};
+\node[wit, text width=5.15cm, minimum height=0.52cm] at (6.65,9.15)
+  {\textbf{Compile ConstraintSpec} \ \textbar\ \ same bytes in both layers; the spec is a witness};
+
+% ======================= step 3: challenge ===========================
+\node[tag] at (0.38,8.45) {3};
+\node[act, text width=4.85cm, minimum height=0.52cm] at (15.20,8.45)
+  {\textbf{Challenge} \ fresh 256-bit \textit{n}; freshness \textit{f} > 0};
+\draw[carr] (12.55,8.45) -- (9.70,8.45);
+\node[lab, above] at (11.10,8.58) {\textit{n} (public input)};
+
+% ======================= step 4: generation / early stop =============
+\node[tag] at (0.38,7.75) {4};
+\node[wit, text width=5.15cm, minimum height=0.52cm] at (6.65,7.75)
+  {\textbf{Generate \textit{T} (stream)} \ \textbar\ \ early-stop check on each chunk};
+
+% ======================= step 5: policy check ========================
+\node[tag] at (0.38,7.05) {5};
+\node[act, text width=5.15cm, minimum height=0.52cm] at (6.65,7.05)
+  {\textbf{Policy check J(π,\textit{T})} \ \textbar\ \ verdict, violations, \texttt{delegated}};
+
+% ======================= step 6: proof tier ==========================
+\node[tag] at (0.38,6.35) {6};
+\node[act, text width=5.15cm, minimum height=0.52cm] at (6.65,6.35)
+  {\textbf{Proof tier} \ \texttt{core} / \texttt{groth16} / \texttt{unproven} (host-check only)};
+
+% ======================= step 7: sign + append =======================
+\node[tag] at (0.38,5.65) {7};
+\node[act, text width=5.15cm, minimum height=0.52cm] at (6.65,5.65)
+  {\textbf{Sign certificate} (DSSE/Ed25519) \ \textbar\ \ append H(cert) before delivery};
+\draw[larr] (9.25,5.65) -- (9.60,5.65);
+\node[led, text width=2.10cm, minimum height=0.52cm] at (10.75,5.65)
+  {\textbf{entry} + inclusion proof};
+
+% ======================= step 8: delivery ============================
+\node[tag] at (0.38,4.95) {8};
+\node[act, text width=4.85cm, minimum height=0.52cm] at (15.20,5.05)
+  {\textbf{Receive \textit{T}′ + certificate}};
+\draw[garr] (9.25,5.05) -- (12.55,5.05);
+\node[lab, above] at (10.90,5.18) {\textit{T}′ + cert};
+
+% ======================= step 9: verifier checks =====================
+\node[tag] at (0.38,4.25) {9};
+\node[ok, text width=5.20cm, minimum height=0.90cm] at (15.20,4.15)
+  {\textbf{All conjunctive checks}\\sig · \textit{n} freshness · proof tier\\recompute \textit{b} = H(dom‖\textit{n}‖\textit{T}′)\\hπ ∈ P-PP · \texttt{delegated} companion · inclusion};
+
+% ======================= step 10: decision ===========================
+\node[tag] at (0.38,3.30) {10};
+\node[ok, text width=2.25cm, minimum height=0.45cm, fill=popgreen!20] at (13.85,3.30)
+  {\textbf{ACCEPT} (all pass)};
+\node[fail, text width=2.45cm, minimum height=0.45cm, fill=popverm!16] at (16.55,3.30)
+  {\textbf{REJECT} (any fail)};
+\draw[carr] (15.20,4.78) -- (15.20,4.62);
+\draw[garr] (13.85,3.68) -- (13.85,3.54);
+\draw[earr] (16.55,3.68) -- (16.55,3.54);
+
+% ledger inclusion to verifier checks (dotted, routed below the delivery arrow)
+\draw[larr, dotted] (10.75,5.39) -- (10.75,3.95) -- (12.55,3.95);
+\node[lab, above, text=popgrey] at (11.65,4.03) {inclusion};
+
+% ======================= fail-closed band ============================
+\node[anchor=west, font=\fontsize{6.2}{7.2}\selectfont\bfseries, text=popverm!85!black]
+  at (0.22,2.78) {Fail-closed exits: any one rejects; the certificate is never silently downgraded};
+\foreach \x/\y in {2.35/2.18,6.60/2.18,10.85/2.18,15.10/2.18,2.35/1.28,6.60/1.28,10.85/1.28,15.10/1.28} {
+  \node[draw=popverm!70!black, dashed, rounded corners=1pt, line width=0.45pt,
+        fill=popverm!5, text width=3.95cm, minimum height=0.72cm,
+        inner sep=1.6pt, align=center, font=\fontsize{5.15}{6.2}\selectfont] at (\x,\y) {};
+}
+\node[align=center, font=\fontsize{5.15}{6.2}\selectfont, text width=3.95cm] at (2.35,2.18)
+  {\textbf{F1 \ policy violation (at 4/5)}\\passed = false → no compliance claim};
+\node[align=center, font=\fontsize{5.15}{6.2}\selectfont, text width=3.95cm] at (6.60,2.18)
+  {\textbf{F2 \ early stop (at 4)}\\truncated \textit{T} → no complete certificate};
+\node[align=center, font=\fontsize{5.15}{6.2}\selectfont, text width=3.95cm] at (10.85,2.18)
+  {\textbf{F3 \ proof OOM / unproven (at 6)}\\if a proof is required → reject};
+\node[align=center, font=\fontsize{5.15}{6.2}\selectfont, text width=3.95cm] at (15.10,2.18)
+  {\textbf{F4 \ delegated companion missing (at 9)}\\conjunctive check fails → reject};
+\node[align=center, font=\fontsize{5.15}{6.2}\selectfont, text width=3.95cm] at (2.35,1.28)
+  {\textbf{F5 \ nonce stale / replay (at 3/9)}\\reused \textit{n} or \textit{f} = 0 → reject};
+\node[align=center, font=\fontsize{5.15}{6.2}\selectfont, text width=3.95cm] at (6.60,1.28)
+  {\textbf{F6 \ delivery \textit{T}″ ≠ \textit{T}′ (at 9)}\\recomputed \textit{b} mismatch → reject};
+\node[align=center, font=\fontsize{5.15}{6.2}\selectfont, text width=3.95cm] at (10.85,1.28)
+  {\textbf{F7 \ ledger entry missing (at 9)}\\inclusion fails → audit reject};
+\node[align=center, font=\fontsize{5.15}{6.2}\selectfont, text width=3.95cm] at (15.10,1.28)
+  {\textbf{F8 \ signature invalid (at 9)}\\reject before any other check};
+
+% ======================= legend =====================================
+\begin{scope}[shift={(0.22,0.55)}]
+  \draw[carr] (0,0.16) -- (0.45,0.16);
+  \node[anchor=west, font=\fontsize{4.9}{5.8}\selectfont] at (0.50,0.16) {normal flow};
+  \draw[earr] (2.40,0.16) -- (2.85,0.16);
+  \node[anchor=west, font=\fontsize{4.9}{5.8}\selectfont] at (2.90,0.16) {fail-closed / external};
+  \fill[popgreen!20, draw=popgreen!60!black] (4.95,0.05) rectangle (5.20,0.27);
+  \node[anchor=west, font=\fontsize{4.9}{5.8}\selectfont] at (5.25,0.16) {accept};
+  \fill[popverm!16, draw=popverm!75!black, dashed] (6.55,0.05) rectangle (6.80,0.27);
+  \node[anchor=west, font=\fontsize{4.9}{5.8}\selectfont] at (6.85,0.16) {reject};
+  \fill[pomsky!20, draw=pomsky!70!black] (8.15,0.05) rectangle (8.40,0.27);
+  \node[anchor=west, font=\fontsize{4.9}{5.8}\selectfont] at (8.45,0.16) {ledger};
+  \node[anchor=west, font=\fontsize{4.9}{5.8}\selectfont, text=popgrey] at (10.10,0.16)
+    {Design contract, not a latency trace; step numbers are obligations, not timestamps.};
+\end{scope}
+\node[anchor=west, font=\fontsize{4.9}{5.8}\selectfont, text=popverm!85!black] at (0.22,0.16)
+  {Boundaries: \texttt{core} is not ZK; \texttt{groth16} hiding is wrapper-only, not post-quantum; \texttt{unproven} is host-check only; append-before-delivery is external; \textit{T}″ binding remains open.};
+\end{tikzpicture}
+\end{document}
