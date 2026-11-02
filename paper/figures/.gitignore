@@ -8,3 +8,6 @@ integration-test/*.out
 integration-test/*.pdf
 integration-test/tdsc-paper-baseline.tex
 integration-test/tdsc-paper-fig-test.tex
+
+integration-test/figures/
+integration-test/tdsc-paper-integrated.tex

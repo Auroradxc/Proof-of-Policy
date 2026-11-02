@@ -22,6 +22,7 @@
 \usepackage{url}
 \usepackage{verbatim}
 \usepackage{graphicx}
+\usepackage{float}
 \usepackage{cite}
 \usepackage{booktabs}
 \usepackage{xcolor}
@@ -52,6 +53,7 @@ com-pli-ance bind-ing veri-fi-a-bil-ity cer-ti-fi-cate non-zero-knowl-edge}
 % Supplementary numbering: S1, S2, ... and Table S1, S2, ...
 \renewcommand{\thesection}{S\arabic{section}}
 \renewcommand{\thetable}{S\arabic{table}}
+\renewcommand{\thefigure}{S\arabic{figure}}
 
 \begin{document}
 
@@ -843,6 +845,233 @@ rather than a curve. The comparison is of orders of magnitude under unmatched
 hardware, not a race. Source: \texttt{bench/comparison\_zkagent.md}, which
 itself warns against reading the rows as ``PoP is faster.''
 
+% =====================================================================
+\clearpage
+\onecolumn
+\section{Supplementary Figures}
+\label{app:figures}
+
+This section collects the figures that support the main paper's evaluation and
+design, together with the numeric per-point table for the proof-feasibility
+figure. Figure numbers are prefixed with ``S''; the main paper's compact
+proof-feasibility figure is Fig.~1 of the main text.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/fig01_architecture.pdf}
+\caption{Proof-of-Policy architecture. A policy package is compiled to a
+\texttt{ConstraintSpec} (the compiled NFA, the only object crossing the layer
+boundary), evaluated by the zkVM guest on the response $T$, and turned into a
+DSSE/Ed25519-signed certificate. Public values bind the response
+($b=H(\mathrm{dom}\Vert n\Vert T)$), commit to the policy
+(\texttt{policy\_commit}$=H(s\Vert\pi)$), and carry the verdict and the
+disclosure level. Blue: public values; orange: witness or secret; green:
+verified or anchored. The dashed boundary is the untrusted operator; no TEE is
+assumed, and the signing and tool-gateway keys remain trust roots. The verifier
+supplies the challenge nonce $n$. The end-user delivery path $T''$ is not
+covered by the certificate's binding to the verifier's copy $T'$
+(Proposition~1 of the main paper). This is a design diagram, not a measured
+hiding claim: \texttt{core} reports \texttt{hiding=none}, and
+\texttt{gr\-oth16} hiding is wrapper-level and not post-quantum.}
+\label{figS:architecture}
+\end{figure}
+
+Fig.~\ref{figS:architecture} is a design diagram, not a trace of a measured
+execution: it fixes where the witness, the public values, the challenge nonce,
+and the trust boundary sit, and it shows the delivery path that the certificate
+does not bind.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/fig02_bhv_leakage.pdf}
+\caption{(a) The binding--hiding--verifiability (BHV) classification. Below the
+entropy threshold $k_X<\log q+\log(1/\varepsilon)$, at most two of guess-tight
+binding, exact-recovery hiding, and publicly recomputable verification (PV-2)
+coexist. (b) Leakage profile of Theorem~1 of the main paper for the response
+$T$, the request nonce $n$, and the policy $\pi$, across public values
+($L_{\mathrm{pub}}$), proof artefact ($L_{\mathrm{proof}}$), and side
+information ($L_{\mathrm{side}}$). Each cell is split into \texttt{core} and
+\texttt{gr\-oth16} (g16); \emph{closed}, \emph{bounded}, and \emph{open} describe
+only the named channel. \texttt{core} leaves the trace and opened values in
+$L_{\mathrm{proof}}$; \texttt{gr\-oth16} closes that channel at wrapper level
+but is not post-quantum. The salted policy commitment closes the hash channel
+and loses PV-2. No proof tier closes $L_{\mathrm{side}}$: re-execution and
+dictionary attacks remain, and a zero canary probe is not a zero-knowledge
+proof. The matrix is conceptual, not a measured recovery rate.}
+\label{figS:bhv}
+\end{figure}
+
+Fig.~\ref{figS:bhv} makes the channel separation explicit. The public-value row
+is the only row measured end to end in the main paper; the proof-artefact and
+side-information rows are structural and are not assigned a measured recovery
+rate.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/fig04_cycles_vs_length.pdf}
+\caption{(a) zkVM execution cycles versus response length for five fixed rule
+sets (1, 2, 3, 4, and 6 rules; 0--3 keyword and 0--2 regular-expression rules).
+Points are the 30 Pike-mode measurements of the 40-point matrix
+(\texttt{bench/results/cycles.json}); lines are per-rule-set ordinary least
+squares, with $R^2=1.0000$ throughout. (b) Fitted per-character slope. One NFA
+regular expression raises the slope from 73.9--105.3 to 4{,}049--5{,}404
+cycles/character, a factor of 58 between the endpoint rule sets. The corpus is
+a 372-character demo artefact tiled to longer lengths, so this is the curve of
+scanning cost, not a real 100{,}000-character document; every point was
+confirmed to match no rule. Execution only, no proof. The unit-price model
+$cycles\approx a|T|\cdot rules+b$ is refuted ($R^2=0.917$, negative keyword
+price) and is not plotted; per-rule-set slopes are the citable quantities.}
+\label{figS:cycles}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/fig05_matcher_ablation.pdf}
+\caption{(a) zkVM execution cycles for pattern \texttt{a+b} on input
+\texttt{a}$^n$ with no match, comparing naive re-anchoring with the Pike VM
+(\texttt{bench/results/ablation.json}; $n=100,200,400$). Dotted grey lines are
+$\Theta(n^2)$ and $\Theta(n)$ references anchored at $n=100$; the naive/Pike
+ratios are $19.2\times$, $42.5\times$, and $90.1\times$. (b) Proving path on a
+24-core / 14.6\,GiB host (\texttt{dos\_proof.json}; \texttt{core},
+pre-NFA-fix binary \texttt{b81e6d07\ldots}). Pike at $n=100$ proved in 122.2\,s
+at 11.70\,GiB; naive at $n=25$ proved in 153.2\,s at 12.14\,GiB; naive at
+$n=50$ was OOM/SIGKILLed after 226.5\,s at 13.77\,GiB measured peak. The cross
+is an observed kill, not a smoothed point. No $n\ge100$ naive or $n=400$
+proving point was measured, so no proving curve is drawn. Execution and
+proving counts come from separate driver builds and differ by about one part
+in $10^5$.}
+\label{figS:ablation}
+\end{figure}
+
+Figs.~\ref{figS:cycles}--\ref{figS:ablation} report execution cost;
+Fig.~\ref{figS:proofs} reports the proving envelope. The execution and proving
+points come from separate runs, and the OOM crosses in Fig.~\ref{figS:proofs}
+are observed kills at the cgroup limit, not interpolated costs.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/fig06_proof_feasibility.pdf}
+\caption{Real SP1 proofs on the 16-core / 92{,}160\,MiB cloud cgroup
+(post-NFA-fix binary \texttt{7f99fdb1\ldots}, policy vkey
+\texttt{0x003eb14d\ldots}; one proof per process, serially).
+(a) Proving wall time versus peak RSS for the 18-point $3\times3\times2$ matrix,
+the six-rule length sweep, and the EU AI Act pack. Blue: \texttt{core};
+orange: \texttt{gr\-oth16}; green: \texttt{core} with six rules; stars: EU AI
+Act. Crosses mark observed SIGKILL/OOM events, placed at the cgroup limit
+because their peak RSS was not measured; they are not connected.
+(b) \texttt{core} feasibility grid over length and rule count: the set is not a
+rectangle ($2000\times3$ succeeds at 33.9\,GiB while $10000\times3$ is killed).
+(c) Six-rule peak RSS versus length: 4500 passed at 62.7\,GiB with 20{,}480\,B
+of cgroup headroom after reclaiming 5.27\,GB of page cache; 5000 was killed
+after 157.7\,s. $GiB=peak\_rss\_mb/1024$; the source counter is MiB. The
+numeric table (Table~\ref{tab:proofs}) retains the main paper's convention
+($GB=peak\_rss\_mb/1000$), so its printed GB values are 2.4\% larger than the
+GiB values here. Re-runs show $\pm10\%$ wall-clock and $\pm1\%$ memory jitter;
+these are single measurements, so no error bars are drawn. The boundary is a
+function of this host, the default prover options, and the rule \emph{kind},
+not of the proof system alone; 4750 was not measured and six-rule
+\texttt{gr\-oth16} was not attempted.}
+\label{figS:proofs}
+\end{figure}
+
+\begin{table}[t]
+\centering
+\caption{Numeric table for Fig.~\ref{figS:proofs}. Real proofs on the 16-core /
+90\,GiB cloud cgroup, post-NFA-fix. ``Config'' is characters $\times$ rules;
+the EU AI Act rows use the real \texttt{eu\_ai\_act\_v1} pack. All successful
+rows verify (\texttt{PASS}, including a recomputed response binding). Unit
+note: \texttt{GB} here is the harness counter \texttt{peak\_rss\_mb} =
+\texttt{maxrss\_kb}/1024 divided by 1000; the figure uses
+\texttt{GiB} = \texttt{peak\_rss\_mb}/1024, so the two differ by about 2.4\%.
+Sources: \texttt{bench/results/scale-cloud.md},
+\texttt{scale-6x2000}--\texttt{scale-6x5000},
+\texttt{eu\_ai\_act\_proof.md}.}
+\label{tab:proofs}
+\tabfont
+\begin{tabular}{@{}lrrrl@{}}
+\toprule
+Config & Tier & Time & Peak RSS & Proof / result \\
+\midrule
+EU AI Act & \texttt{core} & 48.82\,s & 12.38\,GB & 2.79\,MB, PASS \\
+EU AI Act & \texttt{gr\-oth16} & 301.19\,s & 30.07\,GB & 1{,}874\,B, PASS \\
+$200 \times 1$ & \texttt{core} & 40.46\,s & 10.47\,GB & \checkmark \\
+$200 \times 1$ & \texttt{gr\-oth16} & 288.28\,s & 30.13\,GB & \checkmark \\
+$2000 \times 3$ & \texttt{core} & 100.30\,s & 34.72\,GB & \checkmark \\
+$2000 \times 3$ & \texttt{gr\-oth16} & 343.75\,s & 35.12\,GB & \checkmark \\
+$10000 \times 3$ & \texttt{core} & 92.87\,s & OOM & SIGKILL \\
+$10000 \times 3$ & \texttt{gr\-oth16} & 90.33\,s & OOM & SIGKILL \\
+$6 \times 4500$ & \texttt{core} & 181.66\,s & 64.22\,GB & \checkmark \\
+$6 \times 5000$ & \texttt{core} & 157.74\,s & OOM & SIGKILL \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The table keeps the main paper's printed convention
+($GB=peak\_rss\_mb/1000$); Fig.~\ref{figS:proofs} uses
+$GiB=peak\_rss\_mb/1024$. The two differ by about 2.4\%, and neither column is
+silently converted.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.55\textwidth]{figures/fig07_k_est.pdf}
+\caption{(a) Teacher-forced estimate $k^{\mathrm{est}}$ of the guessing entropy
+of the response for Qwen2.5-7B-Instruct and Mistral-7B-Instruct-v0.3, on 50
+XSTest prompts with 20 samples per prompt at temperature 0.7 (chat template).
+The dashed line is the 40-bit threshold $\log_2 q+\log_2(1/\varepsilon)$ with
+$q=2^{20}$ and $\varepsilon=2^{-20}$. Because $k^{\mathrm{est}}$ is an
+\emph{upper} bound on the true $k$ (the estimator maximizes over sampled
+sequences), points to the left of 40 bit refute the 40-bit condition---16/50
+Qwen and 11/50 Mistral groups do so---while points to the right do not certify
+it. (b) Greedy decoding at temperature 0: $k=0$ in all 50/50 groups for both
+models, so one re-execution recovers $T$. The two temperatures are shown
+separately because $k=0$ cannot share a log axis with positive estimates.
+Source: \texttt{k\_logprobs.json} and
+\texttt{e6\_mistral/k\_logprobs.json}.}
+\label{figS:kest}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\textwidth]{figures/fig08_policy_disclosure.pdf}
+\caption{Policy-inference attack over three disclosure levels. (a,b) A1:
+20 synthetic policy variants, 11 templates per variant, 40 training and 15
+test responses per variant, multinomial naive Bayes
+(\texttt{policy\_infer.json}). L2 here is the count-only projection. (c,d) E2:
+300 candidate policies, 220 real chat responses, 19{,}800 test pairs, v1
+certificate payload (\texttt{policy\_corpus\_infer.json}); L2 carries
+deterministic evidence commitments and L2* is the count-only projection used in
+A1. Top-1/top-3 recover the generating variant; normalized MI and audit
+utility are on a 0--1 scale. Chance top-1 is 0.050 (A1) and 0.0033 (E2). The
+two corpora are never averaged: the synthetic curve estimates leakage from the
+projection, while the real-response panel shows that coarse
+format/length/budget rules dominate the 0.677 evidence coverage.
+\texttt{policy\_hash} is excluded from the features (a candidate-corpus lookup
+would give top-1 $=1.0$). The v2 circuit-level L2 has not been re-measured.}
+\label{figS:policy}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.55\textwidth]{figures/fig09_issuance_detection.pdf}
+\caption{(a) Exact probability of detecting at least one withheld violation
+when auditing delivered artifacts, $1-\binom{N-m}{s}/\binom{N}{s}$, for
+$N=2000$ deliveries, $s=\mathrm{round}(pN)$, $m$ withheld violations, and
+$p\in\{0.01,\ldots,0.20\}$. Markers are exact values; 500 Monte Carlo trials
+per cell (seed 20261101) agree within sampling noise. (b) At $p=0.05$,
+$s=100$, $m=100$, the delivered-artifact frame detects 0.9948, while the
+log-entry frame detects 0.0000 because withheld deliveries have no log entry:
+the sample frame, not luck, is the issue. This quantifies detection under
+independent violations, not prevention; append-before-delivery is an external
+premise, and a common root cause makes $m$ not an independent event count.}
+\label{figS:issuance}
+\end{figure}
+
+Figs.~\ref{figS:kest}--\ref{figS:issuance} report the entropy estimate, the
+policy-inference study, and the issuance audit. Each caption states the
+one-sided reading (upper bound, synthetic-vs-real corpus,
+detection-not-prevention) that the figure supports.
+
+\twocolumn
 % =====================================================================
 \section{Reproduction}
 \label{app:repro}

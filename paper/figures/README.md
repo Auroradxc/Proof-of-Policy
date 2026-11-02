@@ -6,11 +6,13 @@ candidate. All numbers in the data figures are read from `bench/results/*.json`;
 no value is hand-entered. The two concept figures are hand-drawn TikZ and show
 the design as written in the paper, not a measured claim.
 
-**Headline result.** The main paper is still 12 pages and unchanged. One
-page-neutral integration was tested and passes: replacing Table I
-(`tab:proofs`) with the compact single-column proof-feasibility figure
-`fig06b_proof_main.pdf` yields **12 pages / 0 errors** (baseline **12 / 0**).
-Everything else is proposed for the supplementary material.
+**Headline result.** The integration is complete. Fig. 6b replaced Table I in
+the main paper as **Fig. 1** (`fig:proofs`); the old Table I moved to the
+supplement as **Table S12**. The main paper still compiles to **12 pages /
+0 errors / 0 undefined references**. Eight figures (F1, F2, F4, F5, F6, F7, F8,
+F9) are integrated as supplementary §S5, which compiles to **13 pages /
+0 errors / 0 undefined references**. No figure was pushed to 13 pages in the
+main text.
 
 ---
 
@@ -29,7 +31,8 @@ Everything else is proposed for the supplementary material.
 | F9 | `fig09_issuance_detection` | data, single | 3.44 in | Auditing delivered artifacts detects 0.9948 of 100 withheld violations at p=0.05, while auditing the log detects 0.0000 because the frame is wrong. | `issuance.json` |
 
 All PDFs embed only TrueType fonts (Type 42); all PNGs are 300 dpi. See
-`scripts/check_fonts.py`.
+`scripts/check_fonts.py`. F6b is the integrated main-text figure (**Fig. 1**);
+F1, F2, F4, F5, F6, F7, F8 and F9 are in supplementary §S5 (Figs. S1–S8).
 
 ---
 
@@ -57,37 +60,32 @@ hard 12-page constraint.
 
 ---
 
-## 3. Main-text integration proposal (tested)
+## 3. Integration status (completed)
 
-**Recommendation: one figure, F6b.**
+**Main paper.** Fig. 6b replaced the old Table I as Fig. 1 (label
+`fig:proofs`); the text now cites Fig. 1. Two `pdflatex` passes give
+**12 pages, 0 errors, 0 undefined references**. The three overfull hboxes in
+the build are pre-existing (abstract, line 531, line 629), not from the figure.
+No further figure can be added to the main text without cutting text.
 
-1. Replace the `table` environment labelled `tab:proofs` in
-   `paper/tdsc-paper.tex` (the 10-row real-proof table) with a single-column
-   `figure` using `fig06b_proof_main.pdf`.
-2. Move the old Table I verbatim to the supplementary material as the numeric
-   per-point table; the figure caption points there.
-3. Update the one textual reference from `Table~\ref{tab:proofs}` to
-   `Fig.~\ref{fig:proofs}`.
+**Supplementary material.** A new §S5, "Supplementary Figures", sits before
+§S6 "Reproduction". It contains F1, F2, F4, F5, F6, F7, F8 and F9, with
+F1/F2/F4/F5/F6/F8 as `figure*` and F7/F9 as single-column `figure`; figures are
+numbered **S1–S8**. The original Table I is **Table S12**, captioned
+"Numeric table for Fig. S5" and carrying the explicit unit note
+(`GB = peak_rss_mb/1000`, while the figure uses `GiB = peak_rss_mb/1024`; the
+two differ by about 2.4%). The supplement compiles to **13 pages, 0 errors,
+0 undefined references**; its three overfull hboxes are pre-existing.
+The labels are `figS:*` in the supplement and `fig:proofs` in the main paper,
+so the two Figure 1/S1 identities cannot be confused.
 
-`scripts/page_budget_test.py` performs exactly this replacement on copies under
-`integration-test/` and compiles both versions with `\def\SKELQUIET{}`:
+Evidence: `integration-test/page-budget.txt`.
 
-```
-baseline: 12 pages, 0 errors
-table->figure: 12 pages, 0 errors
-page-neutral: YES
+```text
+main (integrated): 12 pages, 0 errors, 0 undefined refs, 3 overfull
+target: 12 pages, 0 errors, 0 undefined refs
 verdict: PASS
 ```
-
-Evidence: `integration-test/page-budget.txt`. The main paper itself was **not
-modified**.
-
-**Do not** add F1, F2, F7 or F8 to the main text without cutting text. Their
-estimated areas are 0.17–0.40 page each; the paper is exactly 12 pages, so any
-addition would push it to 13. If the venue requires Table I to stay in the main
-text, the correct decision is **supplementary only** for every figure. F8 could
-in principle replace Table `tab:policy-infer` (a 3-row table) plus a sentence,
-but that replacement was not tested and is not recommended for this submission.
 
 ---
 
