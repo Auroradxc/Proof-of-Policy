@@ -6,14 +6,13 @@ candidate. All numbers in the data figures are read from `bench/results/*.json`;
 no value is hand-entered. The two concept figures are hand-drawn TikZ and show
 the design as written in the paper, not a measured claim.
 
-**Headline result.** Six figures are in the main paper: architecture (Fig. 1),
-BHV/leakage (Fig. 2), policy inference (Fig. 3), proof feasibility (Fig. 4),
-issuance (Fig. 5), and `k_est` (Fig. 6). The main paper compiles to **12 pages /
+**Headline result.** Five figures are in the main paper: certificate lifecycle (Fig. 1),
+BHV/leakage (Fig. 2), proof feasibility (Fig. 3), `k_est` (Fig. 4), and
+cross-system comparison (Fig. 5). The main paper compiles to **12 pages /
 0 errors / 0 undefined references**; the old Table I is **Table S12** in the
 supplement. The supplement keeps the three evaluation figures not in the main text
-(F4 cycles, F5 matcher ablation, F6 full proof feasibility), the four VA
-figures (deployment/trust, lifecycle, comparison, claim–evidence), and
-Tables S12–S14; it compiles to **14 pages / 0 errors / 0 undefined references**. No duplicate
+(F4 cycles, F5 matcher ablation, F6 full proof feasibility), VA1 deployment/trust and VA4 claim–evidence, plus the
+architecture/issuance/policy figures, and Tables S12–S14; it compiles to **15 pages / 0 errors / 0 undefined references**. No duplicate
 figure is carried in both documents.
 
 ---
@@ -34,7 +33,7 @@ figure is carried in both documents.
 
 All PDFs embed only TrueType fonts (Type 42); all PNGs are 300 dpi. See
 `scripts/check_fonts.py`. Main text: F1, F2, F6b, F7, F8, F9. Supplement:
-F4, F5, F6 (Figs. S1–S3), VA1–VA4 (Figs. S4–S7), plus Tables S12–S14.
+F4, F5, F6 (Figs. S1–S3), VA1 and VA4 (Figs. S4–S5), architecture/issuance/policy (S6–S8), plus Tables S12–S14.
 
 ---
 
@@ -64,19 +63,20 @@ the brief, including those deliberately **not** drawn. Final placements are in
 
 ## 3. Final integration status
 
-**Main paper (12 pages).** F1 architecture, F2 BHV/leakage, F8 policy inference,
-F6b proof feasibility, F9 issuance, and F7 `k_est` are placed as Figs. 1–6; every
-figure is cited in the text. F8 replaces the old policy-inference table, and
-Table I is no longer in the main text. Two `pdflatex` passes give **12 pages,
+**Main paper (12 pages).** VA2 lifecycle, F2 BHV/leakage, F6b proof feasibility, F7 `k_est`, and VA3
+cross-system comparison are placed as Figs. 1–5; every figure is cited in the
+text. The architecture, policy-inference and issuance figures are in the
+supplement, and Table I is no longer in the main text. Two `pdflatex` passes give **12 pages,
 0 errors, 0 undefined references**; the only overfull box is the pre-existing
 abstract line.
 
-**Supplement (14 pages).** §S5 keeps F4 cycles (S1), F5 matcher ablation (S2),
-F6 full proof feasibility (S3), the four VA figures (S4–S7), and the numeric tables: Table S12 (proof
+**Supplement (15 pages).** §S5 keeps F4 cycles (S1), F5 matcher ablation (S2),
+F6 full proof feasibility (S3), VA1 deployment (S4), VA4 claim–evidence (S5),
+architecture/issuance/policy (S6–S8), and the numeric tables: Table S12 (proof
 per-point values; `GB = peak_rss_mb/1000` while the figure uses
 `GiB = peak_rss_mb/1024`), Table S13 (leakage regimes), Table S14 (channel
 status). No figure is duplicated between the two documents. The supplement
-compiles to **14 pages, 0 errors, 0 undefined references**.
+compiles to **15 pages, 0 errors, 0 undefined references**.
 
 Evidence: `integration-test/page-budget.txt`.
 

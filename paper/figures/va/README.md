@@ -115,10 +115,11 @@ all VA figures: TrueType-only fonts, within column width, PNG preview present
 
 ## 5. Placement (summary; details in `PLACEMENT.md`)
 
-The main paper is exactly 12 pages, 0 errors, 0 undefined references, and has
-no unallocated slot. All four VA figures are integrated in the supplement as
-Figs. S4–S7; the page-neutral main-text test below is retained as evidence that
-they do not fit the main paper without cutting text. The only page-neutral candidate was VA1 replacing Fig. 1:
+The main paper is exactly 12 pages, 0 errors, 0 undefined references. Final
+placement: VA2 lifecycle is **main Fig. 1**, VA3 comparison is **main Fig. 5**;
+VA1 deployment and VA4 claim–evidence are **supplement Figs. S4–S5**. The
+page-neutral VA1 test below is retained as evidence for the earlier layout
+decision; the main paper was subsequently shortened to make room for VA2/VA3.
 
 - VA1 at `0.86\textwidth`: **13 pages** (fails the hard 12-page constraint).
 - VA1 at `0.82\textwidth`: **12 pages**, 0 errors, 0 undefined, but the
@@ -127,9 +128,10 @@ they do not fit the main paper without cutting text. The only page-neutral candi
 - VA1 at `0.80\textwidth`: **12 pages**, same readability problem (4.6 pt).
 - Control (unmodified main paper): 12 pages, 0 errors, 0 undefined.
 
-Recommended supplement order: VA1 (three-party design), VA2 (lifecycle), VA3
-(next to Table S6), VA4 (evaluation synthesis). Approximate page cost at 1:1:
-VA1 0.38, VA2 0.50, VA3 0.69, VA4 0.58 of a text page, plus captions.
+Final placement: VA2 lifecycle is main-text Fig. 1, VA3 comparison is main-text
+Fig. 5; VA1 deployment is supplement Fig. S4, VA4 claim–evidence is supplement
+Fig. S5. Approximate page cost at 1:1: VA1 0.38, VA2 0.50, VA3 0.69, VA4 0.58
+of a text page, plus captions.
 
 ---
 
