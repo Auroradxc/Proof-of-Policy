@@ -70,7 +70,7 @@ def main() -> int:
         "",
         "Integration: Fig. fig:proofs (fig06b_proof_main.pdf, single column) replaces the old Table I.",
         "Table I moved to the supplementary material as Table S12 with a GB-vs-GiB unit note.",
-        "paper/ is not modified by this test; only the copy under integration-test/ is built.",
+        "The actual paper now uses this integration; this test copy is retained as evidence.",
     ]
     (OUT / "page-budget.txt").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))
