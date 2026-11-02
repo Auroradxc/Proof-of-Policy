@@ -1,8 +1,8 @@
-generated_at: 2026-11-02T04:40:32+00:00
-main (integrated): 12 pages, 0 errors, 0 undefined refs, 3 overfull
+generated_at: 2026-11-02T09:30:12+00:00
+main (integrated): 12 pages, 0 errors, 0 undefined refs, 1 overfull
 target: 12 pages, 0 errors, 0 undefined refs
 verdict: PASS
 
-Integration: Fig. fig:proofs (fig06b_proof_main.pdf, single column) replaces the old Table I.
-Table I moved to the supplementary material as Table S12 with a GB-vs-GiB unit note.
-The actual paper now uses this integration; this test copy is retained as evidence.
+Integrated figures: architecture, BHV/leakage, policy inference, proof feasibility,
+issuance, and k_est. Table I is in the supplement as Table S12; the regime and
+channel tables moved to the supplement as Tables S13-S14.

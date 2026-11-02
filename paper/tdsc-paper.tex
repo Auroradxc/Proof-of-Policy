@@ -258,7 +258,7 @@ theorem is stated.
 to a \texttt{ConstraintSpec}---a JSON artefact carrying the compiled NFA---which
 is the \emph{only} object crossing the layer boundary: the Python reference
 implementation and the Rust/zkVM guest consume the same bytes, so \emph{spec}
-drift is structurally impossible. Evaluator-semantics drift is not: the two
+drift is structurally impossible. Fig.~\ref{fig:architecture} shows the pipeline. Evaluator-semantics drift is not: the two
 layers implement the decision separately, guarded by 19-vector cross-validation
 plus differential fuzzing. The guest runs a deterministic evaluator and commits
 its outcome. Seven of eight rule classes are decided \emph{inside} the circuit
@@ -273,6 +273,19 @@ decide it: it registers only \emph{that the rule was delegated}, in the public
 value \texttt{delegated}, and a verifier must \emph{conjunctively} check a
 companion \texttt{ezkl}/halo2 proof. Verifying the zkVM side alone does not
 establish compliance.
+
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=0.86\textwidth]{figures/fig01_architecture.pdf}
+\caption{PoP architecture. A policy $\pi$ is compiled to a
+\texttt{ConstraintSpec}; the zkVM guest evaluates $T$ and commits public
+values; the certificate is DSSE/Ed25519-signed and anchored. Orange:
+witness/secret; blue: public values; green: verified/anchored; dashed:
+untrusted operator. The certificate binds the verifier's copy $T'$, not the
+end-user delivery $T''$ (Proposition~\ref{thm:gap}); \texttt{core} does not
+hide the witness, and \texttt{gr\-oth16} hiding is wrapper-level.}
+\label{fig:architecture}
+\end{figure*}
 
 \paragraph{What the verdict is bound to.} Rules about the agent's \emph{tool
 calls} cannot be judged against a list the prover fills in itself. Receipts are
@@ -305,11 +318,9 @@ local entry, so the offline chain and the public timestamp cross-check each
 other and tampering with either is detectable.
 
 \paragraph{Framework integration.} One gateway serves LangChain callbacks,
-LangGraph (\texttt{guard\_node} plus full event streams), and MCP tool argument
-and response checks, so trace certificates and proofs share a single chain of
-evidence. The implementation runs 945 tests; 930 pass and 15 are skipped by
-design, with no failures. The skipped set is enumerated in the repository's test
-documentation (\texttt{docs/modules/08-tests-bench.md}).
+LangGraph and MCP tool checks, so trace certificates and proofs share one chain
+of evidence. The implementation runs 962 tests: 947 pass and 15 skip by design,
+with no failures.
 
 \begin{definition}[Policy-proof system]
 \label{def:system}
@@ -420,7 +431,7 @@ our own system.
 \label{sec:tradeoff}
 
 A certificate must publish \emph{something} tying it to the secret it certifies;
-otherwise it binds nothing at all. We ask what that public value leaks, and we
+otherwise it binds nothing at all. We ask what that public value leaks (Fig.~\ref{fig:bhv}), and we
 ask the question uniformly for the response $T$, the policy $\pi$, and the
 challenge on the request side. The answer depends on one measurable quantity,
 the guessing entropy, and on one structural property: whether the binding can be
@@ -448,16 +459,13 @@ $k_z = -\log \max_t \Pr[T = t \mid Z = z]$: the proof takes an expectation over
 $z$, and $\mathbb{E}_z[2^{-k_z}] = 2^{-k_X}$ holds only for the average form.
 \end{remark}
 
-\paragraph{Two strengths of public verifiability.} \emph{(PV-1)} asks that some
-PPT verifier, holding public values and no secret state, check the proof.
-\emph{(PV-2)} asks that there be a PPT algorithm $E$ with no secret input such
-that $E(X)=\beta(X)$ for every $X$: anyone can recompute the binding offline and
-compare it with the delivered artifact. The distinction is not pedantic. A keyed
-binding $\beta_s(X)=H(s,X)$ can retain PV-1---a zero-knowledge proof still
-verifies---while losing PV-2, because a verifier without $s$ cannot recompute
-$\beta_s$. The trilemma below is a statement about PV-2. Our response binding
-$b=H(\texttt{pop-bind-v1}\|n\|T)$ satisfies PV-2; a salted policy commitment
-does not.
+\paragraph{Two strengths of public verifiability.} \emph{(PV-1)} asks that a
+verifier with public values and no secret state check the proof; \emph{(PV-2)}
+additionally asks for a public algorithm $E$ with $E(X)=\beta(X)$ for every
+$X$. The distinction matters: a keyed binding $\beta_s(X)=H(s,X)$ retains PV-1
+but loses PV-2 because a verifier without $s$ cannot recompute it. The trilemma
+is about PV-2: $b=H(\texttt{pop-bind-v1}\|n\|T)$ satisfies it; a salted policy
+commitment does not.
 
 \begin{proposition}[Conditional trilemma]
 \label{thm:t1}
@@ -495,43 +503,32 @@ requires a keyed binding, which forfeits PV-2.
 \end{proposition}
 
 \begin{proof}[Proof sketch]
-(1) Fix $z$ and decompose by the first query that hits $X$; conditioned on no
-earlier hit, every answer already seen is uniform and independent of $X$, so
-each query succeeds with probability at most $2^{-k_z}$; taking the expectation
-over $z$ gives $q\cdot 2^{-k_X}$. The random-oracle idealisation and the SHA-256
-instantiation are collected in $\mathrm{negl}(\lambda)$. (2) Without an oracle
-for $\beta_s$, the value $b$ is uniform and independent of $X$, so the best
-strategy is the prior mode. (3) The three legs are excluded in turn as stated.
-Section~S1 of the supplementary material gives the full argument.
+(1) Fix $z$; by a first-hit decomposition each query succeeds with probability
+at most $2^{-k_z}$, and the expectation over $z$ gives $q\cdot2^{-k_X}$. (2)
+Without $s$, $b$ is uniform, so the prior mode is optimal. (3) The three legs
+are excluded in turn. The full argument and the SHA-256 instantiation loss are
+in supplement S1.
 \end{proof}
 
 \begin{remark}[A classification, not an impossibility theorem]
 \label{rem:trilemma-scope}
 Proposition~\ref{thm:t1}(3) is a \emph{conditional classification}, not an
-impossibility theorem: its hypotheses are PV-2, exact-recovery hiding, a
-guess-tight binding, and a near-uniform candidate set. The escapes are real:
-PV-1 with a keyed binding plus a zero-knowledge proof; trusted hardware; an
-interactive or designated verifier; a high-entropy secret, where the condition
-does not trigger; a relaxed, indistinguishability-based hiding goal; and
-$k_X=0$, where hiding has already failed. For a skewed distribution the bound
-certifies only that \emph{this upper bound cannot certify} $\varepsilon$-hiding;
-it does not exhibit a matching attack.
+impossibility theorem: escapes include PV-1 with a keyed binding plus a
+zero-knowledge proof, trusted hardware, a designated verifier, a high-entropy
+secret, a relaxed indistinguishability goal, and $k_X=0$. For a skewed
+distribution the bound certifies only that this upper bound cannot certify
+$\varepsilon$-hiding; it does not exhibit a matching attack.
 \end{remark}
 
 \begin{remark}[The guess-tight hypothesis is necessary]
 \label{rem:betanecessary}
-Without it, part (1) is false rather than merely unproven: for
+Without it, part (1) is false, not merely unproven: for
 $\beta=\mathrm{id}$ or $\beta=\mathsf{encode}(T)$ the adversary outputs
-$\beta(T)$ and wins with probability $1$, independently of $q$ and $k_X$. For
-an arbitrary deterministic public $\beta$ the correct bound is over the
-preimage class,
-\[
-\Pr\!\left[\mathcal{A}^\beta(Z,\beta(T))=T\right]\;\le\;
-\mathbb{E}_y\!\left[\max_t \Pr[T=t \mid Z,\beta(T)=y]\right],
-\]
-which may equal $1$. Our two public values straddle the hypothesis---$b$ is
-guess-tight, $\mathsf{encode}(T)$ is not---which makes the pair a statement
-about \emph{our design} rather than a citation of a standard bound.
+$\beta(T)$ and wins with probability $1$, independently of $q$ and $k_X$. The
+correct bound is over the preimage class,
+$\mathbb{E}_y[\max_t\Pr[T=t\mid Z,\beta(T)=y]]$, which may equal $1$. Our public
+values straddle the hypothesis---$b$ is guess-tight, $\mathsf{encode}(T)$ is
+not---making this a statement about \emph{our design}.
 \end{remark}
 
 \need{BLOCKER (theorem-level, no external resource): the bounds are random-oracle
@@ -554,7 +551,7 @@ is \emph{not} the relevant attack: $2^{100}$ is as unenumerable as $2^{256}$.
 $n$ is secret---a designated verifier supplies it out of band---an evaluation
 must guess both $n$ and $T$, giving $(1+q\cdot2^{-f})\cdot2^{-k_T}$ with
 $f=|n|$. The price of the secret form is PV-2: a third party cannot recompute
-$b$ offline. Table~\ref{tab:regimes} separates the two rows.
+$b$ offline. the supplementary regime table separates the two rows.
 
 \begin{remark}[A design observation, not a separation]
 \label{rem:designated}
@@ -595,48 +592,24 @@ with the final output charged as one evaluation.
 Again, $q$ counts evaluations of $\beta$, not time. The inequality itself is
 close to the definition of guessing entropy when $q\ge1$: an adversary without
 a $\beta$ oracle has $\Pr[\mathcal{A}(V)=X]\le\mathsf{Guess}(X\mid V)$. The content of Theorem~\ref{thm:leak} is the
-\emph{decomposition} in Table~\ref{tab:regimes}, which turns one bound into
+\emph{decomposition} in the supplementary regime table, which turns one bound into
 three claims about three proving regimes. In particular, a witness-hiding proof
 sets $L_{\mathrm{proof}}=\bot$ and reduces the theorem to the public-value bound;
 it does not touch $L_{\mathrm{side}}$.
 
-\begin{table}[t]
+\begin{figure*}[!t]
 \centering
-\caption{Leakage regimes of Theorem~\ref{thm:leak}. The last column records what
-kind of evidence supports the row; only the public-value row is measured
-end to end, and the \texttt{core} row is a source-level structural claim rather
-than a measured recovery rate.}
-\label{tab:regimes}
-\tabfont
-\setlength{\tabcolsep}{2pt}
-\begin{tabular}{@{}L{0.16\columnwidth}L{0.22\columnwidth}L{0.12\columnwidth}L{0.17\columnwidth}L{0.19\columnwidth}@{}}
-\toprule
-Regime & $L_{\mathrm{proof}}$ & Guess & Bound & Evidence \\
-\midrule
-\texttt{gr\-oth16}/\allowbreak\texttt{plonk} & $\bot$ &
-$\approx 2^{-k_X}$ & $q\cdot 2^{-k_X}$ &
-wrapper-level; measured at 1{,}874\,B (\S\ref{sec:eval-proofs}) \\
-\texttt{core}/\allowbreak\texttt{com\-pressed} & trace, \texttt{main\_\allowbreak commitment},
-\texttt{opened\_\allowbreak values} & $\approx 1$ & $1$ &
-source audit; worst case, not a measured recovery rate \\
-Re-execution (any tier) & any &
-$\approx 1$ & $1$ &
-$L_{\mathrm{side}}$; independent of the proof system \\
-Public $\beta$: $\mathrm{id}$ or $\mathsf{encode}$ & any &
-$1$ or $1/K$ & $1$ or $1/K$ &
-hand-checked counterexample; $K$ = preimage-class size \\
-Salted policy (keyed) & $\bot$ (needs ZK) &
-$\mathsf{Guess}(\pi\mid Z)+2^{-128}$ & same &
-prototype; PV-2 lost, authority-mediated \\
-$n$ public & any & $\approx 2^{-k_T}$ & $q\cdot2^{-k_T}$ &
-PV-2 holds \\
-$n$ secret & any & $\approx 2^{-k_T}$ &
-$(1+q\cdot2^{-f})\cdot2^{-k_T}$ & PV-2 fails (designated verifier) \\
-\bottomrule
-\end{tabular}
-\par\smallskip
-\noindent\emph{The $n$ rows are request-side visibility, not proof tiers.}
-\end{table}
+\includegraphics[width=0.86\textwidth]{figures/fig02_bhv_leakage.pdf}
+\caption{(a) BHV trilemma below the entropy threshold. (b) Leakage profile of
+Theorem~\ref{thm:leak} for response, request and policy across public values
+($L_{\mathrm{pub}}$), proof artefact ($L_{\mathrm{proof}}$) and side
+information ($L_{\mathrm{side}}$); each cell is split into \texttt{core}/g16.
+Only the named channel is closed: no tier closes $L_{\mathrm{side}}$, and a
+zero canary probe is not a zero-knowledge proof.}
+\label{fig:bhv}
+\end{figure*}
+
+
 
 Two readings matter. First, the \texttt{core} row is structural:
 \texttt{main\_commitment} is a Merkle root of the guest's deterministic
@@ -705,9 +678,8 @@ by a five-hybrid argument.
 \begin{proof}[Proof sketch]
 Hybrids replace the proof artefact by its witness-hiding simulator (C2), the
 remaining public values by $S_{\mathrm{rest}}$ (C1), and the commitment by one
-for a $D$-equal policy (C3); the triangle inequality over six hybrids gives the
-stated advantage. Section~S1 of the supplementary material gives the full
-argument.
+for a $D$-equal policy (C3); the triangle inequality gives the stated
+advantage. The full argument is in supplement S1.
 \end{proof}
 
 \paragraph{The salted construction.} To satisfy (C3), the authority samples a
@@ -717,32 +689,26 @@ $s$ as an explicit field,
 h_\pi=\mathsf{SHA256}\bigl(\mathsf{canonical}(\pi,s)\bigr),\qquad
 s\leftarrow\{0,1\}^{128},
 \]
-where $\mathsf{canonical}$ is the sorted, compact JSON encoding of the compiled
-constraints with \texttt{policy\_nonce} set to $s$. The nonce enters the
-\texttt{ConstraintSpec} bytes and therefore the public \texttt{policy\_hash}; it
-does \emph{not} enter the certificate's \texttt{policy.id}/\texttt{version}
-fields, so the verifier does not see it. The authority registers $h_\pi$ in the
-issuing record and opens $(\pi,s)$ during an audit, where the verifier recomputes
-$h_\pi$. Without $s$, an enumeration over candidate policies must also guess the
-salt: the work is multiplied by $2^{128}$, and the qualitative statement is all
-we claim---we do not assert an exact exponent of the form $2^{-(\lambda+128)}$.%
+where $\mathsf{canonical}$ is the sorted JSON encoding of the compiled
+constraints with \texttt{policy\_nonce} set to $s$. The nonce enters
+\texttt{policy\_hash} but not the certificate's \texttt{policy.id}/\texttt{version},
+so the verifier does not see it; the authority registers $h_\pi$ and opens
+$(\pi,s)$ during an audit. Without $s$, enumeration must also guess the salt, so
+the work is multiplied by $2^{128}$; we claim this qualitative statement, not an
+exact exponent.%
 \footnote{With $q_s$ salt guesses per candidate, recovery is at most
-$q_s/2^{128}+|\Pi_c|q_s/2^{\lambda}$; exhausting the salt space gives an
-aggregate false-positive term $|\Pi_c|/2^{\lambda-128}$. The salt does not
-lengthen the $\lambda$-bit hash output, so $|\Pi_c|/2^{\lambda+128}$ is not the
-right exponent.}
+$q_s/2^{128}+|\Pi_c|q_s/2^{\lambda}$; exhausting the salt gives an aggregate
+false-positive term $|\Pi_c|/2^{\lambda-128}$, not $|\Pi_c|/2^{\lambda+128}$.}
 
 \paragraph{What the salt does not close.} Theorem~\ref{thm:dpriv} is
-conditional, and two conditions fail in the current system. (C1) fails when the
-public values contain \texttt{PrivateViolation\{rule,kind\}} or a non-empty
-\texttt{delegated} (Table~\ref{tab:wp4}, rows 4 and 6): both depend on the
-undisclosed structure of $\pi$, so a disclosure level $D$ that does not cover
-them is not a $D$-privacy level at all.
-(C2) fails at the default \texttt{core} tier: the trace carries
-\texttt{spec\_canonical}, which contains both $\pi$ and the salt, so a
-witness-bearing artifact recovers $s$ and then $\pi$ by enumeration. The salt
-closes the public-value channel only; it is not ``policy privacy solved,'' and
-\S\ref{sec:eval} measures the disclosure-level channel that remains open.
+conditional, and two conditions fail. (C1) fails when public values contain
+\texttt{PrivateViolation\{rule,kind\}} or a non-empty \texttt{delegated}
+(supplementary channel table, rows 4 and 6): both depend on $\pi$'s undisclosed
+structure, so a level $D$ that does not cover them is not a $D$-privacy level.
+(C2) fails at \texttt{core}: the trace carries \texttt{spec\_canonical}, which
+contains $\pi$ and the salt, so a witness-bearing artifact recovers $s$ and then
+$\pi$. The salt closes the public-value channel only; \S\ref{sec:eval} measures
+the disclosure channel that remains.
 
 \subsection{Quantitative request binding}
 \label{sec:t3}
@@ -767,20 +733,18 @@ divergence in that case is bounded only by the binding failure
 $\mathrm{negl}(\lambda)$.
 \end{theorem}
 \begin{proof}[Proof sketch]
-For a certificate in $S$ to be accepted on $r$, $r$ must fall in that
-certificate's challenge set of size at most $c$; a union bound over $S$ gives
-$|S|\cdot c\cdot 2^{-f}$. A certificate minted after $r$ is seen can diverge
-only by exhibiting two preimages of $b$ under $B(r,\cdot)$, a challenge-binding
-failure costing $\mathrm{negl}(\lambda)$; with $f=0$ every element of $S$ is a
-permanent replay, so the probability is $1$. Section~S1 gives the full proof.
+For a certificate in $S$ to be accepted on $r$, $r$ must fall in its challenge
+set of size at most $c$; a union bound gives $|S|\cdot c\cdot2^{-f}$. A
+certificate minted after $r$ can diverge only by exhibiting two preimages of $b$
+under $B(r,\cdot)$, costing $\mathrm{negl}(\lambda)$; with $f=0$ every element of
+$S$ is a permanent replay. The full proof is in supplement S1.
 \end{proof}
 
-Call the acceptance-only game $G_{\mathrm{rep}}$ and the divergent-delivery
-game $G_{\mathrm{del}}$. The bound $|S|\cdot c\cdot2^{-f}$ is the
-$G_{\mathrm{rep}}$ acceptance bound; under D2, divergence in $G_{\mathrm{del}}$
-is only $\mathrm{negl}(\lambda)$. The $f=0$ probability $1$ is therefore a
-statement about $G_{\mathrm{rep}}$ (or about a non-binding $B$), not about
-$G_{\mathrm{del}}$ under D2.
+For the acceptance-only game $G_{\mathrm{rep}}$, the bound is
+$|S|\cdot c\cdot2^{-f}$; under D2, divergence in $G_{\mathrm{del}}$ is only
+$\mathrm{negl}(\lambda)$. The $f=0$ probability $1$ is a statement about
+$G_{\mathrm{rep}}$ (or a non-binding $B$), not about $G_{\mathrm{del}}$ under
+D2.
 
 Theorem~\ref{thm:t3} completes the spine. It is the request-side instance of the
 same accounting that Proposition~\ref{thm:t1} and Theorem~\ref{thm:dpriv} apply
@@ -846,47 +810,10 @@ a candidate policy can be compiled and matched against the published hash.
 
 Two further channels survive: the proof artefact at the default \texttt{core}
 tier, and public-value fields derived from the undisclosed structure of $\pi$.
-Table~\ref{tab:wp4} states the channels and what closes each; the salted
+the supplementary channel table states the channels and what closes each; the salted
 commitment of \S\ref{sec:policy-side} closes only the first.
 
-\begin{table}[t]
-\centering
-\caption{Channels through which a policy-private certificate leaks, and what
-closes each. ``Closed'' is scoped to the channel named in the row.}
-\label{tab:wp4}
-\tabfont
-\begin{tabular}{@{}L{0.04\linewidth}L{0.46\linewidth}L{0.36\linewidth}@{}}
-\toprule
-\# & Channel & Status / dependency \\
-\midrule
-1 & The policy text itself & \textbf{Closed} (it is a witness). \\
-2 & $\mathsf{policy\_hash}$ as a publicly recomputable binding & \textbf{Closed
-    by the salted commitment} (public-value channel; PV-2 lost, authority
-    mediates). \\
-3 & The proof artefact (\texttt{core} trace, opened values) & \textbf{Open};
-    needs \texttt{groth16}/\texttt{plonk} witness hiding and a measurement
-    (\texttt{docs/\allowbreak sp1-zk-audit.md}). \\
-4 & \texttt{PrivateViolation}\allowbreak\{\texttt{rule},\allowbreak\texttt{kind}\}
-    names the rule that fired & \textbf{Coarsened at the circuit public values}:
-    L0 emits the name and kind; L1 a category bucket and count; L2 only a
-    per-response salted commitment. Evidence plaintext is absent at all levels. \\
-5 & Evidence opening reveals the rule
-    (\texttt{policydsl/\allowbreak privacy/\allowbreak commit.py}:319) &
-    \textbf{Closed in the public values} (commitment only); the \texttt{core}
-    artefact still opens the witness. \\
-6 & The \texttt{delegated} flag exposes policy structure & \textbf{Open};
-    L1/L2 fail closed on non-empty \texttt{delegated}, and a category-level
-    protocol is not yet defined. \\
-7 & Semantic rules publish $\beta(T)=\mathsf{encode}(T)$
-    (Proposition~\ref{prop:semantic}) & \textbf{Open}; public-mode only, or
-    bound the preimage. \\
-\bottomrule
-\end{tabular}
-\par\smallskip
-\noindent\emph{Row 1 is the text channel only; row 2 closes the hash channel and
-row 3 is the separate proof-artefact channel. Rows 4 and 6 are the C1 failures
-of \S\ref{sec:policy-side}.}
-\end{table}
+
 
 \subsection{Disclosure levels and the inference they permit}
 \label{sec:eval-policy}
@@ -909,7 +836,7 @@ implemented, so L1/L2 fail closed for policies with \texttt{semantic\_bound};
 the host mirror, session aggregation and policy-corpus benchmark still use v1;
 old v1 proofs are rejected; and all proofs are \texttt{core}, whose artefact
 still exposes the witness, so we do not claim hiding from a party that holds
-the proof. Table~\ref{tab:wp4} records these open channels.
+the proof. the supplementary channel table records these open channels.
 
 We measured what each level permits with an inference attack over 20 policy
 variants, using 40 training and 15 test responses per variant and a standard
@@ -918,31 +845,18 @@ multinomial naive Bayes classifier (seed 20261101). The responses are
 (\texttt{bench\_policy\_infer.py::\_responses})---not real LLM outputs, so the
 curve estimates leakage from the projection, not deployment risk. Features are
 drawn only from the certificate public values of each level; the random-guess
-baseline over 20 classes is $0.050$. Table~\ref{tab:policy-infer} reports the
+baseline over 20 classes is $0.050$. Fig.~\ref{fig:policy-infer} reports the
 result.
 
-\begin{table}[t]
+\begin{figure*}[!t]
 \centering
-\caption{Policy-inference attack over the three certificate disclosure levels on
-a 20-variant \emph{synthetic} corpus (11 templates per variant). L2 here is the
-count-only projection; the v1 certificate L2 payload carries evidence
-commitments and is evaluated in the text; v2 circuit values are not re-measured. Top-1/top-3 recover the generating variant; MI is
-mutual information with the variant; utility is the fraction of violations for
-which the level still identifies a repair action. Source:
-\texttt{bench/results/policy\_infer.md}.}
-\label{tab:policy-infer}
-\tabfont
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}L{0.26\columnwidth}rrrrr@{}}
-\toprule
-Level & Top-1 & Top-3 & MI (bit) & Norm.\ MI & Utility \\
-\midrule
-L0 (rule name + kind) & 0.810 & 0.840 & 3.445 & 0.797 & 1.000 \\
-L1 (category + counts) & 0.113 & 0.313 & 0.940 & 0.217 & 0.405 \\
-L2 (count only) & 0.073 & 0.220 & 0.216 & 0.050 & 0.000 \\
-\bottomrule
-\end{tabular}
-\end{table}
+\includegraphics[width=0.82\textwidth]{figures/fig08_policy_disclosure.pdf}
+\caption{Policy inference over L0/L1/L2. (a,b) 20 synthetic variants;
+(c,d) 300 candidates with 220 real responses (v1 certificate payload; L2*
+count-only). Corpora are not averaged. v1 L2 evidence commitments link across
+samples; v2 circuit values are not re-measured.}
+\label{fig:policy-infer}
+\end{figure*}
 
 Three readings follow. First, the monotone decline is the evidence that the
 projection does something: top-1 falls from $0.810$ to $0.113$ to $0.073$, and
@@ -980,7 +894,7 @@ bound---a stronger classifier can raise L0/L1 but cannot make L2 commitments
 interpretable, which is a property of the payload; and the numbers estimate
 curve shape on fixed corpora, not deployment-specific risk.
 
-The structural lesson is the one Table~\ref{tab:wp4} states: the salt closes the
+The structural lesson is the one the supplementary channel table states: the salt closes the
 hash channel, the disclosure level governs the certificate channel, and neither
 closes the proof-artefact channel. ``Policy privacy solved'' would require all
 three, and the third is still blocked on a witness-hiding tier
@@ -1050,39 +964,13 @@ both are compatible with the text. The five prior-art citations are verified in
 \section{Evaluation}
 \label{sec:eval}
 
-\subsection{Cycle count: length versus rule count}
+\subsection{Cycle and matcher controls}
 \label{sec:eval-cycles}
-
-Response length was pushed from 200 to 100{,}000 characters and the rule count
-from 1 to 6, giving 40 points (\texttt{bench/bench\_cycles.py}; Table~S1). Text
-is tiled from a 372-character demo artefact, so this measures the \emph{curve}
-of scanning cost, not a real 100k document; every point was confirmed to match
-no rule, because a short-circuit says nothing about scan cost.
-
-Three findings. (1) With the rule set fixed, cycles are exactly linear in length
-($R^2\approx1.0000$). (2) The NFA dominates: one keyword adds $\approx31.6$
-cycles/char, one regex $\approx3{,}634$ ($115\times$); a regex-bearing set's
-slope is $58\times$ a string-only set. (3) Unit prices are not additive: a
-fitted unit-price model gives $R^2=0.9169$ and a \emph{negative} keyword price
-($-477.2$), and ordering alone changes cost by $5.43\%$ at $L=10^5$ with
-identical verdicts, because of zkVM allocator state. The model
-$\text{cycles}\approx a|T|\cdot\text{rules}+b$ is refuted ($R^2=0.872$); we
-report per-rule-set slopes, not a unit-price$\times$count expression, and treat
-the refuted model as an evaluation result.
-
-\subsection{Matcher ablation: quadratic degradation on a pathological input}
 \label{sec:eval-ablation}
-
-Pattern \texttt{a+b} against \texttt{a}$^{\times n}$ with no \texttt{b} is
-absent, and both matchers scan to the end. The naive path is $\Theta(n^2)$: at
-$n=100,200,400$ it costs $12.38$M/$48.64$M/$193.21$M cycles against Pike's
-$0.64$M/$1.15$M/$2.14$M, ratios $19.2\times/42.5\times/90.1\times$
-(\texttt{bench/bench\_ablation.py}, Tables~S2--S3). This is an attack surface
-because response length is external; the proof path reproduces the ratios and
-the naive path OOMs at $n=50$ on a 14.6\,GiB host, while Pike still proves at
-$n=100$. Both paths decide identically (\texttt{tests/test\_ablation.py}); the
-runs predate the NFA fix of \S\ref{sec:disc-dos} and are not mixed with
-post-fix data.
+Execution cycles are exactly linear in response length for a fixed rule set, and
+one NFA regex costs $58\times$ a string-only set. Naive re-anchoring is
+$\Theta(n^2)$ and OOMs at $n=50$ on a 14.6\,GiB host, while the Pike VM remains
+linear. The 40-point sweep, slopes, and OOM points are in supplement S2.1--S2.2.
 
 \subsection{Real proofs: time, size, memory---and the ceiling}
 \label{sec:eval-proofs}
@@ -1163,18 +1051,13 @@ $J(\pi,T)$ recovers the truth. One honest row: on \emph{unforgeability} the
 baseline is \emph{not weaker} than the proof path, both being Ed25519 and vkey
 binding, and we do not score a point for ZK there.
 
-\subsection{Composition: four negative controls}
+\subsection{Composition controls}
 \label{sec:eval-compose}
 
-Four cells test whether conjoining valid halves yields a valid composite
-(Table~S4). Only (a) satisfies the strong form, and only because
-$x_U=\mathsf{derive}(T_U)$; (b) with different nonces is rejected by the
-four-way binding check; (c) binds the inference half to
-$\mathsf{derive}(T_U)$, not $x_U$, so it accepts a certificate proving
-$\exists x:x=\mathsf{derive}(T_U)\wedge T_U=M(x)$ while the strong form
-$x=x_U$ remains unproved---proof debt E-1, and why composition alone does not
-close the gap; (d) with non-empty \texttt{delegated} is accepted as a
-certificate but fails the policy outcome, the intended fail-closed behaviour.
+Four negative controls (Table~S4) confirm the weak composition theorem: only
+(a) satisfies the strong form, (b) with different nonces is rejected, (c) binds
+$\mathsf{derive}(T_U)$ rather than $x_U$ (proof debt E-1), and (d) with
+\texttt{delegated} fails closed on the policy outcome.
 
 \subsection{Gateway signing: measured cost, blocked circuit}
 \label{sec:eval-gateway}
@@ -1214,8 +1097,18 @@ arm and with no hardware in the trust root.
 Cryptography cannot force a provider to issue. In a simulation, auditing
 delivered artifacts detects $0.9948$ of withheld violations, while auditing the
 log detects $0.0000$: withheld deliveries have no entry, so the frame is wrong
-(Table~S7). This quantifies detection, not prevention; details and premises are
-in the supplement.
+(Table~S7). This quantifies detection, not prevention (Fig.~\ref{fig:issuance}); details
+and premises are in the supplement.
+
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.92\columnwidth]{figures/fig09_issuance_detection.pdf}
+\caption{Issuance audit. Delivered-artifact sampling detects $0.9948$ of 100
+withheld violations at $p=0.05$; log sampling detects $0.0000$ because withheld
+deliveries have no entry. Detection, not prevention; append-before-delivery is
+external.}
+\label{fig:issuance}
+\end{figure}
 \subsection{End-to-end and auditing}
 \label{sec:eval-e2e}
 
@@ -1253,7 +1146,18 @@ count-based point is DeepSeek-chat: 4 of 50 groups repeated a short refusal
 template verbatim ($p_{\max}=0.10$, $k=3.32$). Larger $N$ did not resolve
 Qwen's entropy.
 
-A teacher-forced log-probability estimator removes the $N$ cap. It scores the
+\begin{figure}[!t]
+\centering
+\includegraphics[width=0.92\columnwidth]{figures/fig07_k_est.pdf}
+\caption{Teacher-forced $k^{\mathrm{est}}$ at $T{=}0.7$, $N{=}20$ (50 XSTest
+prompts). $k^{\mathrm{est}}$ is an upper bound: points left of 40 bit refute
+the threshold (Qwen 16/50, Mistral 11/50); points right do not certify it. At
+$T{=}0$, $k=0$ in 50/50 groups.}
+\label{fig:kest}
+\end{figure}
+
+A teacher-forced log-probability estimator removes the $N$ cap
+(Fig.~\ref{fig:kest}). It scores the
 20 sampled responses per prompt under the sampling distribution at temperature
 $0.7$ and sets $p_{\max}^{\rm est}=\max_i\Pr(T_i\mid Z)$. Because a maximum
 over sampled sequences cannot exceed the true maximum,
@@ -1278,42 +1182,18 @@ supplementary material.
 \section{Related Work}
 \label{sec:related}
 
-Table~S10 positions PoP against five lineages and records what we need not
-claim. \emph{Policy-to-circuit}: zkGen \cite{zkgen}, Circuitree,
-Prezta. \emph{Agent/LLM compliance}: NiyamAI, Zaguk, PCO \cite{pco}, WITNESS.
-\emph{Model computation}: DeepProve, zkGPT, zkAgent \cite{zkagent}.
-\emph{Attacks and negative results}: Hollow-LLM \cite{hollowllm}, zk-attach
-\cite{zkattach}. \emph{Non-ZK baselines}: \texttt{@brivora/verify}, VAOL.
+Table~S10 positions PoP against five lineages: policy-to-circuit (zkGen,
+Circuitree, Prezta); agent/LLM compliance (NiyamAI, Zaguk, PCO \cite{pco},
+WITNESS); model computation (DeepProve, zkGPT, zkAgent \cite{zkagent}); attacks
+and negative results (Hollow-LLM \cite{hollowllm}, zk-attach \cite{zkattach});
+and non-ZK baselines. zkAgent proves model/tool execution, whereas PoP proves
+response-policy compliance; neither implies the other, and Table~S11 compares
+them as orthogonal systems. Hollow-LLM and zk-attach name \emph{what} was
+proved; Proposition~\ref{thm:gap} concerns \emph{where} the string is delivered.
+zk-regex inspired our NFA contract and verifiable redaction \cite{vdr} inspired
+\texttt{mask\_covered}; VDR assumes a signed original that PoP's private mode
+does not have.
 
-The lineage this paper is in dialogue with is the fourth. Hollow-LLM's
-\emph{effort gap} and zk-attach's \emph{source-integrity gap} concern
-\emph{what} the proof system was asked to prove;
-Proposition~\ref{thm:gap} concerns \emph{where} the proved string is delivered.
-We are not aware of prior work that quantifies the binding/hiding tradeoff in
-the terms of \S\ref{sec:binding}, so we state it as a bound with a stated
-hypothesis rather than cite it.
-
-\paragraph{zkAgent: orthogonal, not competing.} zkAgent \cite{zkagent} proves
-that a provider executed the declared model and tools; PoP proves that a
-response satisfies a public policy. Neither implies the other; their
-conjunction covers execution \emph{and} compliance. Table~S11 compares the
-reported figures: zkAgent reports $194.4$\,s proving (Shout, $T{=}512$),
-$96$\,MiB/$3.1$\,MiB proofs and $0.42$\,s verification on 32 cores/512\,GB; PoP
-measures 40.5--100.3\,s (\texttt{core}) and 279--344\,s (\texttt{gr\-oth16}),
-2.79\,MB/1{,}874\,B and $\approx$0.090\,s on 16 cores/90\,GiB. We do not claim
-to be faster: for the compliance obligation, PoP is same-order in proving time,
-smaller in memory, comparable in proof size, and adds committed content privacy.
-Hardware is unmatched and PoP is memory-bound, so its feasible region is a
-non-rectangular set of measured points, not a curve.
-
-zk-regex's ``match offline, verify the path in circuit'' pattern is the shape of
-our NFA contract, and verifiable document redaction \cite{vdr} inspired the bit
-selector behind \texttt{mask\_covered}. The borrowing stops at the circuit
-technique: VDR assumes a \emph{signed original document}, whereas in PoP's
-private mode the operator produces both original and redacted text, so there is
-no trusted original. We use the mechanism, not the proof.
-
-% =====================================================================
 \section{Discussion and Limitations}
 \label{sec:discussion}
 
@@ -1345,7 +1225,7 @@ but the same property is a guess-and-verify oracle for $T$. On a
 1{,}451-character chat response, neither the response nor any line appeared in
 delivered artefacts at either tier, while the public values contained the rule
 name \texttt{no\_bad\_topics}. That is a policy-field leak
-(Table~\ref{tab:wp4} row~4), not a response leak; \texttt{core} reports
+(the supplementary channel table row~4), not a response leak; \texttt{core} reports
 \texttt{hiding=none}, \texttt{gr\-oth16} \texttt{wrapper-only}; a zero canary
 count is a probe negative, not a zero-knowledge proof.
 
@@ -1372,67 +1252,49 @@ categories. ``Salt added'' is not ``policy privacy solved,'' and
 \subsection{Where zero-knowledge pays, and where it does not}
 \label{sec:disc-zkmap}
 
-Zero-knowledge pays only when the response or the policy is unknown to the
-verifier. In the transparent corner---public response, public policy---a signed
-log certifies the same thing three to four orders of magnitude cheaper, and a
-proof is redundancy rather than rigour. The property is also a property of the
-\emph{wrapper}, not the system: the default \texttt{core} tier lacks it
+Zero-knowledge pays only when the response or policy is unknown to the verifier;
+in the transparent corner a signed log is three to four orders cheaper. The
+property is of the \emph{wrapper}, not the system: \texttt{core} lacks it
 (\S\ref{sec:disc-privacy}), while \texttt{gr\-oth16} is a measured delivery tier
 (1{,}874\,B, verified, \S\ref{sec:eval-proofs}). The title keeps the word on
 that wrapper-level, non-post-quantum claim; removing the tier removes the word.
-The full argument and cost map are in the supplement.
+The cost map is in the supplement.
 
 \subsection{Availability: the unanchored-pattern cost attack}
 \label{sec:disc-dos}
 
 A regex with no left anchor (\texttt{.*foo}) leaves every position a live
-start, so prover work scales with the response; whoever \emph{chooses} the
-response can drive it quadratically---often the agent. This is denial of service
-against the \emph{prover}, not a soundness break: no false certificate is
-produced, and the cost falls on the honest side. It is specific to proving
-because the trace, not merely the verdict, is proved. Mitigations are partly in
-place: Pike VM linear simulation, committing response length up front, and
-chunked matching.
+start, so whoever chooses the response can drive prover work quadratically.
+This is denial of service against the \emph{prover}, not a soundness break: no
+false certificate is produced. It is specific to proving because the trace, not
+merely the verdict, is proved; Pike VM simulation, committed response length and
+chunked matching are partial mitigations.
 
 On the proving path, naive matching moves from a successful proof at $n=25$
 (153.2\,s, 12{,}137\,MiB) to OOM/SIGKILL at $n=50$ (226.5\,s, 13{,}772\,MiB)
-on 14.6\,GiB, while Pike proves at $n=100$ (122.2\,s, 11{,}695\,MiB). The
-$\approx$10\,GiB floor makes this amplification and a resource boundary, not an
-asymptotic lower bound; the formal statement (Section~S1) bounds the naive
-matcher, not the compliance problem.
-
+on 14.6\,GiB, while Pike proves at $n=100$ (122.2\,s, 11{,}695\,MiB); the
+$\approx$10\,GiB floor makes this amplification, not an asymptotic lower bound.
 Differential fuzzing against Python's \texttt{re} found two defects, both fixed:
-\textbf{G-1}, empty character classes compiled to $\varepsilon$ and matched the
-empty string, now rejected with \texttt{RegexSyntaxError}; \textbf{V1-2},
-\texttt{a\{0\}} raised \texttt{AttributeError}, now compiles to
-$\varepsilon$. V1-2 touched guest code, so the policy vkey moved to
-\texttt{0x003eb14d\ldots} and \texttt{pop-script} to
-\texttt{sha256 7f99fdb1\ldots}; pre-fix results are not mixed. Neither broke
-soundness, and fuzzing reported zero mismatches on the supported subset.
+empty character classes now raise \texttt{RegexSyntaxError}, and
+\texttt{a\{0\}} now compiles to $\varepsilon$. The latter moved the policy vkey
+to \texttt{0x003eb14d\ldots}; pre-fix results are not mixed, and neither defect
+broke soundness.
 
 \subsection{Coverage: a provider can simply withhold certificates}
 \label{sec:disc-coverage}
 
-Nothing in the cryptographic layer compels a provider to issue: a provider that
-never produces a certificate is indistinguishable, from the verifier's side,
-from one with nothing to certify. Without trusted hardware the mechanisms that
-could---sampling audits, penalties, disclosure obligations---live above
-cryptography. \emph{Impossibility}: optional issuance makes withholding
-undetectable from the certificate alone. \emph{Conditional sufficiency}: if a
-digest binding the \emph{delivered} artifact must be appended before delivery,
-and the log is append-only, public and has inclusion proofs, issuance
-completeness holds for delivered-and-accepted artifacts. \emph{Detection}: an
+Cryptography cannot compel issuance: a provider that never produces a
+certificate is indistinguishable, from the verifier's side, from one with
+nothing to certify. Sampling audits, penalties and disclosure obligations live
+above cryptography. Optional issuance makes withholding undetectable from the
+certificate alone; if a digest binding the \emph{delivered} artifact must be
+appended before delivery, and the log is append-only, public and has inclusion
+proofs, issuance completeness holds for delivered-and-accepted artifacts. An
 audit over delivered artifacts finds $0.9948$ of $100$ withheld violations at a
-$5\%$ sampling rate; an audit over log entries finds $0.0000$---the sample
-frame, not luck, is the issue. Three premises travel: (F-1) append-before-delivery
-is external; (F-3) the entry binds $T$ (or a receipt), not only
-$H(\mathrm{cert})$; (F-4) the frame is delivered artifacts. The result
-quantifies detection, never prevention.
-
-The log prototype implements RFC~6962 consistency proofs and a minimal gossip
-message, but lacks a gossip \emph{channel} and an authenticated roster, so
-split-view resistance is external: one message detects rollback and rewriting,
-but not a same-prefix fork, which requires comparing two heads.
+$5\%$ sampling rate; an audit over log entries finds $0.0000$---the frame, not
+luck, is the issue. The prototype lacks a gossip channel and an authenticated
+roster, so split-view resistance is external; one message detects rollback and
+rewriting, but not a same-prefix fork.
 
 \subsection{Why composition alone does not close the gap}
 \label{sec:disc-composition}
@@ -1511,38 +1373,30 @@ meanings and orders of magnitude differ.
     authenticated roster, so split-view resistance is external
     (\S\ref{sec:disc-coverage}); issuance quantifies detection only.
   \item \textbf{Policy privacy is conditional on proving tier and disclosure
-    level.} The salt closes the public-value channel only; the \texttt{core}
-    artefact remains open, L0 still names the rule, and L1 still leaks rule
-    categories. The v1 certificate L2 carries unsalted
-    $\mathsf{SHA256}(\text{evidence})$ commitments, which link equal evidence
-    across samples (measured $0.382$ on the constructed holdout versus $0.017$
-    for count-only, \S\ref{sec:eval-policy}); the v2 circuit L2 salts each
-    commitment with the response binding, but the 300-candidate run was not
-    repeated on v2, and list length still leaks the violation count.
+    level.} The salt closes the public-value channel only; \texttt{core} remains
+    open, L0 names the rule, and L1 leaks categories. The v1 L2 carries
+    unsalted evidence commitments that link equal evidence (measured $0.382$ vs
+    $0.017$ count-only); v2 salts them per response but was not re-measured, and
+    list length leaks the count.
   \item \textbf{Three-party collusion is undetectable at the signature layer.}
-    If policy author, operator and prover all collude, the certificate is
-    indistinguishable from an honest one; the multi-prover construction
-    partitions responsibility but does not prevent agreement.
-  \item \textbf{Signing, key custody and slicing are not production-grade.} The
-    on-chain path takes plaintext keys, the demo uses a public Anvil key, and
-    deployment is local; HSM custody remains future work. Multiple provers hold
-    distinct keys---a division of responsibility, not a per-role circuit.
-  \item \textbf{Semantic-rule model quality.} The bundled model is a
-    demonstration proxy, not a usable guardrail. A 67M-parameter DistilBERT
-    toxic-comment classifier on XSTest (450 prompts) is not a substitute:
-    recall $0.50\%$, F1 $0.010$, ROC-AUC $0.583$, while an all-safe baseline
-    already scores $55.56\%$ accuracy against its $54.89\%$. The mismatch is
-    task-level (toxic text versus harmful request), so we demote the learned
-    rule and do not cite XSTest accuracy as support; its public instance also
-    contains $\mathsf{encode}(T)$, making semantic rules public-mode only.
+    If author, operator and prover collude, the certificate is
+    indistinguishable from an honest one; slicing partitions responsibility but
+    does not prevent agreement.
+  \item \textbf{Signing and key custody are not production-grade.} The on-chain
+    path takes plaintext keys and the demo uses a public Anvil key; HSM custody
+    remains future work.
+  \item \textbf{Semantic-rule model quality.} The bundled model is a proxy,
+    not a usable guardrail. A 67M-parameter DistilBERT classifier on XSTest
+    (450 prompts) reaches recall $0.50\%$, F1 $0.010$, ROC-AUC $0.583$; an
+    all-safe baseline scores $55.56\%$ against its $54.89\%$. The mismatch is
+    task-level, so we demote the learned rule; its public instance also contains
+    $\mathsf{encode}(T)$, making semantic rules public-mode only.
   \item \textbf{The inference proof is faithful, not good.} The inference half
     is a deterministic fixed-point MLP proxy with compile-time-seeded weights,
-    committed by the verification key. It proves that \emph{this} graph computed
-    \emph{this} output on \emph{this} response, not that the graph is any good;
-    swapping in a real prover touches only the prover.
-  \item \textbf{Verification remains $O(N)$.} No recursive aggregation, so a
-    verifier pays per certificate; the regex subset and ASCII semantics are
-    similarly bounded, and proof-cost optimisation is unexplored.
+    committed by the verification key: it proves \emph{this} graph computed
+    \emph{this} output, not that the graph is good.
+  \item \textbf{Verification remains $O(N)$:} no recursive aggregation, so a
+    verifier pays per certificate.
 \end{itemize}
 
 % =====================================================================
@@ -1553,20 +1407,17 @@ This paper began from a small question---what does a compliance certificate
 actually bind?---and the answer was the same on all three sides. A proof binds
 only the bits submitted into it \emph{and} not selectable by the adversary in
 advance: the entropy $k_T$ of $T$, the policy entropy $k_\pi$ or its salt, and
-the $f$ bits of receiver freshness without which a certificate is replayable.
-Proposition~\ref{thm:t1}, Theorem~\ref{thm:dpriv} and Theorem~\ref{thm:t3} are
-three faces of that statement; Proposition~\ref{thm:gap}, stated against our own
-design, is what makes it bite.
+the $f$ bits of receiver freshness. Proposition~\ref{thm:t1},
+Theorem~\ref{thm:dpriv} and Theorem~\ref{thm:t3} are three faces of that
+statement; Proposition~\ref{thm:gap}, stated against our own design, is what
+makes it bite.
 
-PoP is the constructive instance, not a new proof system. It composes an
-existing zkVM, policy compiler and signature layer into a certificate checked
-from public values without trusted hardware---and is explicit about the limits
-(\S\ref{sec:discussion}): response content is not unrecoverable, the default
-artefact is not hidden, and issuance is not forced. The reusable conclusions
-are modest: publish a certificate's leak profile and audit it like a disclosure
-policy; let a privacy claim be only as strong as its arithmetic; put the
-freshness where the binding is. A certificate is worth exactly as much as the
-bits that went into it.
+PoP composes a zkVM, a policy compiler and a signature layer into a certificate
+checked from public values without trusted hardware---and is explicit about the
+limits (\S\ref{sec:discussion}): response content is not unrecoverable,
+\texttt{core} is not hidden, and issuance is not forced. Publish a certificate's leak profile and audit it like a disclosure policy;
+let a privacy claim be only as strong as its arithmetic. A
+certificate is worth exactly as much as the bits that went into it.
 
 \begin{thebibliography}{99}
 

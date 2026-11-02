@@ -227,10 +227,10 @@ E3 是机制演示，不是「模型合规」；A11 是失败可行性评估，�
 
 ### 4.2 图表
 
-- 主稿 **Fig. 1**：`paper/figures/fig06b_proof_main.pdf`，替换原 proof 数值表；
-  逐点数值表在 supplementary **Table S12**。
-- supplementary **Figs. S1–S8**：架构、BHV/leakage、cycles、matcher ablation、
-  proof feasibility、`k_est`、policy disclosure、issuance detection。
+- 主稿 **Figs. 1–6**：architecture、BHV/leakage、policy inference、proof
+  feasibility、issuance、`k_est`；原 proof 逐点数值表在 supplementary **Table S12**。
+- supplementary **Figs. S1–S3**：cycles、matcher ablation、完整 proof feasibility；
+  另含 Tables S12–S14（proof 数值、regime、channel），不在主稿重复。
 - 所有图带矢量 PDF、300 dpi PNG、TikZ/Python 源与数据 SHA-256；
   规范见 [`docs/figures/style-guide.md`](../figures/style-guide.md)，
   审计与复现见 [`paper/figures/README.md`](../../paper/figures/README.md)。

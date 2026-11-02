@@ -6,13 +6,14 @@ candidate. All numbers in the data figures are read from `bench/results/*.json`;
 no value is hand-entered. The two concept figures are hand-drawn TikZ and show
 the design as written in the paper, not a measured claim.
 
-**Headline result.** The integration is complete. Fig. 6b replaced Table I in
-the main paper as **Fig. 1** (`fig:proofs`); the old Table I moved to the
-supplement as **Table S12**. The main paper still compiles to **12 pages /
-0 errors / 0 undefined references**. Eight figures (F1, F2, F4, F5, F6, F7, F8,
-F9) are integrated as supplementary §S5, which compiles to **13 pages /
-0 errors / 0 undefined references**. No figure was pushed to 13 pages in the
-main text.
+**Headline result.** Six figures are in the main paper: architecture (Fig. 1),
+BHV/leakage (Fig. 2), policy inference (Fig. 3), proof feasibility (Fig. 4),
+issuance (Fig. 5), and `k_est` (Fig. 6). The main paper compiles to **12 pages /
+0 errors / 0 undefined references**; the old Table I is **Table S12** in the
+supplement. The supplement keeps the three figures not in the main text
+(F4 cycles, F5 matcher ablation, F6 full proof feasibility) and Tables S12–S14;
+it compiles to **10 pages / 0 errors / 0 undefined references**. No duplicate
+figure is carried in both documents.
 
 ---
 
@@ -31,16 +32,16 @@ main text.
 | F9 | `fig09_issuance_detection` | data, single | 3.44 in | Auditing delivered artifacts detects 0.9948 of 100 withheld violations at p=0.05, while auditing the log detects 0.0000 because the frame is wrong. | `issuance.json` |
 
 All PDFs embed only TrueType fonts (Type 42); all PNGs are 300 dpi. See
-`scripts/check_fonts.py`. F6b is the integrated main-text figure (**Fig. 1**);
-F1, F2, F4, F5, F6, F7, F8 and F9 are in supplementary §S5 (Figs. S1–S8).
+`scripts/check_fonts.py`. Main text: F1, F2, F6b, F7, F8, F9. Supplement:
+F4, F5, F6 (Figs. S1–S3) plus Tables S12–S14.
 
 ---
 
 ## 2. Candidate audit
 
-The table records every candidate requested by the brief, including those that
-were deliberately **not** drawn. “Placement” is the recommendation given the
-hard 12-page constraint.
+The table records the pre-integration audit of every candidate requested by
+the brief, including those deliberately **not** drawn. Final placements are in
+§3; the “Placement” column preserved the 12-page reasoning at audit time.
 
 | Candidate | Scientific information | Source | Placement / page cost | Decision and risk |
 |---|---|---|---|---|
@@ -60,29 +61,26 @@ hard 12-page constraint.
 
 ---
 
-## 3. Integration status (completed)
+## 3. Final integration status
 
-**Main paper.** Fig. 6b replaced the old Table I as Fig. 1 (label
-`fig:proofs`); the text now cites Fig. 1. Two `pdflatex` passes give
-**12 pages, 0 errors, 0 undefined references**. The three overfull hboxes in
-the build are pre-existing (abstract, line 531, line 629), not from the figure.
-No further figure can be added to the main text without cutting text.
+**Main paper (12 pages).** F1 architecture, F2 BHV/leakage, F8 policy inference,
+F6b proof feasibility, F9 issuance, and F7 `k_est` are placed as Figs. 1–6; every
+figure is cited in the text. F8 replaces the old policy-inference table, and
+Table I is no longer in the main text. Two `pdflatex` passes give **12 pages,
+0 errors, 0 undefined references**; the only overfull box is the pre-existing
+abstract line.
 
-**Supplementary material.** A new §S5, "Supplementary Figures", sits before
-§S6 "Reproduction". It contains F1, F2, F4, F5, F6, F7, F8 and F9, with
-F1/F2/F4/F5/F6/F8 as `figure*` and F7/F9 as single-column `figure`; figures are
-numbered **S1–S8**. The original Table I is **Table S12**, captioned
-"Numeric table for Fig. S5" and carrying the explicit unit note
-(`GB = peak_rss_mb/1000`, while the figure uses `GiB = peak_rss_mb/1024`; the
-two differ by about 2.4%). The supplement compiles to **13 pages, 0 errors,
-0 undefined references**; its three overfull hboxes are pre-existing.
-The labels are `figS:*` in the supplement and `fig:proofs` in the main paper,
-so the two Figure 1/S1 identities cannot be confused.
+**Supplement (10 pages).** §S5 keeps F4 cycles (S1), F5 matcher ablation (S2),
+F6 full proof feasibility (S3), and the numeric tables: Table S12 (proof
+per-point values; `GB = peak_rss_mb/1000` while the figure uses
+`GiB = peak_rss_mb/1024`), Table S13 (leakage regimes), Table S14 (channel
+status). No figure is duplicated between the two documents. The supplement
+compiles to **10 pages, 0 errors, 0 undefined references**.
 
 Evidence: `integration-test/page-budget.txt`.
 
 ```text
-main (integrated): 12 pages, 0 errors, 0 undefined refs, 3 overfull
+main (integrated): 12 pages, 0 errors, 0 undefined refs, 1 overfull
 target: 12 pages, 0 errors, 0 undefined refs
 verdict: PASS
 ```
