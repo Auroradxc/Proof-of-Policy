@@ -9,7 +9,7 @@
 
 ## 0. 一句话状态
 
-论文正文与 artifact 文档已更新到最新结果口径：主稿 **12 页**、supplementary 7 页，
+论文正文与 artifact 文档已更新到最新结果口径：主稿 **12 页**、supplementary **13 页**，
 本机已用 TeX Live 2026 以 `\SKELQUIET` 复编通过，全量回归 **962/947/15**。但
 **投稿包本身尚未定稿**：作者/资助/ COI 仍是占位，Docker 镜像未构建，Zenodo DOI
 未分配，推荐审稿人未填。**当前不可直接提交。**
@@ -22,12 +22,12 @@
 |---|---|---|
 | 主文件 | `[x]` | [`paper/tdsc-paper.tex`](../../paper/tdsc-paper.tex)，IEEEtran `[10pt,journal,compsoc]` |
 | 编译方式 | `[x]` | 两遍 `pdflatex "\def\SKELQUIET{}\input{tdsc-paper.tex}"`（第二遍收交叉引用） |
-| 本机复编 | `[x]` | 2026-11-02 用 TeX Live 2026 两遍 `pdflatex "\def\SKELQUIET{}\input{tdsc-paper.tex}"` 复编：主稿 0 error / 12 页、supplementary 0 error / 7 页；PDF 已生成 |
-| 页数 | `[x]` | 主稿 **12 页**（含参考文献）、supplementary **7 页**（不计入主稿）；`\SKELQUIET` 编译，PDF 无 `NEED/FIX` 标记 |
+| 本机复编 | `[x]` | 2026-11-02 用 TeX Live 2026 两遍 `pdflatex "\def\SKELQUIET{}\input{tdsc-paper.tex}"` 复编：主稿 0 error / 12 页、supplementary 0 error / 13 页；PDF 已生成 |
+| 页数 | `[x]` | 主稿 **12 页**（含参考文献）、supplementary **13 页**（不计入主稿，含 8 张图与 Table S12）；`\SKELQUIET` 编译，PDF 无 `NEED/FIX` 标记 |
 | 页数上限 | `[x]` 规则已核 | TDSC 常规论文 **12 页双栏**（含参考文献与作者简介），最多 **18 页**；超过 12 页按 MOPC 计费。来源：[IEEE CSDL Author Information](https://www.computer.org/csdl/journals/tq/write-for-us/15068) |
 | 超长费 | `[x]` | 主稿正好 **12 页**，不触发超页费；若投稿系统按最终排版多出 1 页，再按 live author guide 复核 |
-| 图 | `[x]` | 当前正文无 `\includegraphics`，无可分离图源；若 M5 加图，补 PDF/EPS 源与授权 |
-| 表 | `[x]` | 全部为 LaTeX `tabular`，无外部图源 |
+| 图 | `[x]` | 主稿 Fig. 1（`fig06b_proof_main.pdf`，单栏）；supplementary Figs. S1--S8（架构、BHV、cycles、ablation、proof feasibility、k、policy disclosure、issuance）。全部矢量 PDF + 300 dpi PNG + TikZ/Python 源，见 `paper/figures/` 与 `docs/figures/style-guide.md` |
+| 表 | `[x]` | 主稿表为 LaTeX `tabular`；原 proof 数值表已移入 supplementary 为 Table S12，并注明 GB/GiB 单位差 |
 | 参考文献 | `[x]` 形式 / `[ ]` 内容 | 正文内联 `thebibliography`；当前 **5 个 `\need{}`**、**0 个 `\fixme{}`**；剩余 need 为作者元数据、Zaguk/Lean-Agent 引用、P-PP、WP4-(2)/WP3、ROM 限制（E6/C2 已结清） |
 | PDF 元数据 | `[ ]` | 标题/作者/关键词需与最终稿一致；嵌入字体；无红色标记 |
 | 文件命名 | `[ ]` | 建议 `PoP-TDSC-<version>.pdf` + `PoP-TDSC-source.zip`；按投稿系统要求命名 |
@@ -81,13 +81,13 @@ grep -c '\\fixme{' paper/tdsc-paper.tex    # 目标 0
 |---|---|---|
 | 标题与交付档一致 | `[ ]` **OPEN** | 当前标题保留 “Zero-Knowledge”，但正文仍写 X1 blocker；最新证据已有 `groth16`（wrapper-only、非后量子）。M5 必须二选一：保留标题并写清 wrapper-only + 3×10k OOM，或改 “Succinct” |
 | 摘要数字 | `[ ]` | 摘要仍用 A1 的 0.810→0.073；E2 的新数字（L2 0.382 / 真实 0.112 / L2 可链接）需在 M5 决定是否替换/并列 |
-| §5 证明表 | `[ ]` | 当前 Table 6 是 pre-NFA-fix、24 核/12 GB 的旧点；最新 `scale-cloud` / `eu_ai_act_proof` / `scale-6x*` 未进正文 |
+| §5 证明结果 | `[x]` | 主稿 Fig. 1 为 post-NFA-fix 云机 16 核/90 GiB 的 core/groth16/OOM 图；逐点数值表在 supplementary Table S12；pre-fix 数据仅作历史说明 |
 | `k` 的 N 截断 | `[ ]` | 若正文报 `k`，必须同时写 N=50/20 的截断上限与「不能证明高熵」；不能把 5.644 bit 写成上界 |
 | E2 L2 链接性 | `[ ]` | 若正文报 L2 隐私，必须加入「确定性证据承诺可跨样本链接」与新数字，不能只写 count-only |
 | A11 demote | `[ ]` | 语义模型不得被写成可用 guardrail；准备引用 `semantic_feasibility.md` 的负结果 |
 | E-1 弱形式 | `[ ]` | 组合仍只证 `derive(T_U)`；不得在 rebuttal/摘要升格为 `x_U` 强绑定 |
 | 测试计数 | `[x]` | 2026-11-02 C2 合并后全量回归 **962 实跑 / 947 通过 / 15 skip**（`python3 -m unittest discover tests`，0 failure）；C2 定向 76、加 `test_rules_incircuit` 89、Rust `cargo test -p pop-types` 14。artifact 镜像口径 42、宿主脚本 17 |
-| 负对照保留 | `[ ]` | 四格 composition、OOM 行、L2 零效用、issuance 0.0000 不得为页数删除 |
+| 负对照保留 | `[x]` | 四格 composition、OOM 行、L2 零效用、issuance 0.0000 均保留；主稿压缩为摘要，完整表/图在 supplementary |
 
 ---
 

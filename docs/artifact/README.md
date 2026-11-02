@@ -225,6 +225,16 @@ scripts/examples/out/artifact/
 `k` 受 N 截断；E2 是证书层（直接读证明公开值仍看到 raw `rule`/`kind`）；
 E3 是机制演示，不是「模型合规」；A11 是失败可行性评估，不是可用 guardrail。
 
+### 4.2 图表
+
+- 主稿 **Fig. 1**：`paper/figures/fig06b_proof_main.pdf`，替换原 proof 数值表；
+  逐点数值表在 supplementary **Table S12**。
+- supplementary **Figs. S1–S8**：架构、BHV/leakage、cycles、matcher ablation、
+  proof feasibility、`k_est`、policy disclosure、issuance detection。
+- 所有图带矢量 PDF、300 dpi PNG、TikZ/Python 源与数据 SHA-256；
+  规范见 [`docs/figures/style-guide.md`](../figures/style-guide.md)，
+  审计与复现见 [`paper/figures/README.md`](../../paper/figures/README.md)。
+
 ---
 
 ## 5. 不覆盖什么（重要）
