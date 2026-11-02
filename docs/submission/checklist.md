@@ -1,6 +1,6 @@
 # TDSC 投稿清单（M6）
 
-> **基线**：仓库 `5d1d846`；论文文件 [`paper/tdsc-paper.tex`](../../paper/tdsc-paper.tex)。  
+> **基线**：仓库 `27ca144`；论文文件 [`paper/tdsc-paper.tex`](../../paper/tdsc-paper.tex)。  
 > **原则**：每项要么有可核对的产物，要么明确写 `OPEN` / `BLOCKED`；不编作者、不编 DOI、
 > 不编页数、不把「计划」写成「已完成」。  
 > **状态图例**：`[x]` 已就绪 · `[ ]` 待办 · `OPEN` 待确认 · `BLOCKED` 有明确阻塞。
