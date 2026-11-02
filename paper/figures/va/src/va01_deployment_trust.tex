@@ -53,11 +53,11 @@
 \node[anchor=north west, font=\fontsize{5.6}{6.6}\selectfont, text=poppurple!70!black]
   at (0.27,8.47) {\textbf{holds} π, salt s, issuing record};
 \node[wit, text width=3.80cm, minimum height=1.10cm] (A1) at (2.25,7.35)
-  {\textbf{Policy package}\\π in the policy DSL; salt s (withheld)\\package id, version, rule set};
+  {\textbf{Policy package}\\π in the DSL; salt s (withheld)\\id, version, rules};
 \node[pub, text width=3.80cm, minimum height=1.05cm] (A2) at (2.25,5.75)
-  {\textbf{Public entry (root: registry)}\\hπ = H(s‖π); issuer signature\\P-PP registry or signed manifest};
+  {\textbf{Public entry}\\hπ = H(s‖π); issuer signature\\P-PP registry or manifest};
 \node[ext, text width=3.80cm, minimum height=0.85cm] (A3) at (2.25,4.65)
-  {\textbf{Not held}\\T, witness trace, ledger entry};
+  {\textbf{Not held}\\T, trace, ledger entry};
 \node[anchor=north, note, text width=3.95cm, text=popverm!85!black]
   at (2.25,4.18) {Authority honesty and salt custody are\\external assumptions, not cryptographic.};
 
@@ -69,21 +69,21 @@
 
 % compiler strip across the top of the operator lane
 \node[wit, text width=7.95cm, minimum height=0.48cm] (cmp) at (8.80,8.18)
-  {\textbf{Compiler} \ π → ConstraintSpec \ \textbar\ \ same bytes in both layers; the spec is a witness, not published};
+  {\textbf{Compiler} \ π → ConstraintSpec \ \textbar\ same bytes; spec is a witness};
 
 % top row: agent -> guest -> prover
 \node[wit, text width=2.10cm, minimum height=1.32cm] (agt) at (5.80,6.80)
-  {\textbf{LLM agent}\\response \textit{T} (witness)\\streaming + early stop};
+  {\textbf{LLM agent}\\response \textit{T} (witness)\\streaming/early stop};
 \node[pub, text width=2.40cm, minimum height=1.32cm] (gst) at (8.55,6.80)
-  {\textbf{zkVM guest (SP1)}\\evaluates J(π,\textit{T})\\public values: verdict,\\violations, L0/L1/L2,\\\texttt{delegated}\\\textbf{core is not ZK}};
+  {\textbf{zkVM guest (SP1)}\\evaluates J(π,\textit{T})\\public: verdict, violations,\\L0/L1/L2, delegated\\\textbf{core is not ZK}};
 \node[sgn, text width=2.60cm, minimum height=1.32cm] (prf) at (11.45,6.80)
   {\textbf{Proof tier}\\\texttt{core}: hiding = none\\\texttt{groth16}: wrapper-only\\(not post-quantum)\\\texttt{unproven}: host-check};
 
 % bottom row: gateway (middle) and signer (right); left is the T' route
 \node[ext, text width=2.40cm, minimum height=1.05cm] (gwy) at (8.55,4.85)
-  {\textbf{Tool gateway (optional)}\\root: gateway key\\receipts (seq, prev, sig)\\ToolSeal; Ed25519 off circuit};
+  {\textbf{Tool gateway (optional)}\\root: gateway key\\receipts; ToolSeal; Ed25519 off circuit};
 \node[sgn, text width=2.60cm, minimum height=1.05cm] (sig) at (11.45,4.85)
-  {\textbf{Certificate signer}\\root: signing key\\DSSE/Ed25519; binds\\\textit{n}, \textit{b}, hπ, verdict, tier,\\\texttt{delegated}, disclosure};
+  {\textbf{Certificate signer}\\root: signing key\\binds \textit{n}, \textit{b}, hπ,\\verdict, tier, delegated};
 \node[anchor=north, note, text width=2.0cm, text=popverm!80!black]
   at (5.80,4.95) {\textit{T} (witness)\\\textit{never published}};
 
@@ -107,9 +107,9 @@
 \node[pub, text width=4.30cm, minimum height=0.78cm] (V1) at (15.65,7.95)
   {\textbf{Challenge}\\fresh 256-bit \textit{n}; replay closed only when \textit{n} is bound};
 \node[pub, text width=4.30cm, minimum height=1.15cm] (V2) at (15.65,6.65)
-  {\textbf{Inputs}\\delivered \textit{T}′, certificate, public values,\\hπ from P-PP, ledger inclusion,\\optional delegated companion};
+  {\textbf{Inputs}\\\textit{T}′, cert, public values, hπ,\\inclusion, delegated companion};
 \node[asset, text width=4.30cm, minimum height=1.20cm, fill=popgreen!7, draw=popgreen!55!black] (V3) at (15.65,5.15)
-  {\textbf{Checks (all conjunctive)}\\signature · nonce · proof · \textit{b} = H(dom‖\textit{n}‖\textit{T}′)\\hπ ∈ P-PP · \texttt{delegated} companion · inclusion\\\textbf{accept} only if all pass; \textit{T}″ ≠ \textit{T}′ is not checked};
+  {\textbf{Checks (conjunctive)}\\signature · nonce · proof · \textit{b}\\hπ ∈ P-PP · delegated · inclusion\\\textbf{accept} only if all pass};
 
 % ======================= operator <-> verifier ========================
 \draw[carr] (V1.west) -- (13.10,7.75) -- (9.45,7.75) -- node[pos=0.25, above, font=\fontsize{5.1}{6.0}\selectfont]{\textit{n}} (9.45,7.46);
@@ -120,13 +120,13 @@
 % ======================= ledger ======================================
 \draw[party, fill=pomsky!10, draw=pomsky!70!black] (13.25,2.10) rectangle (18.05,3.95);
 \node[sgn, text width=4.30cm, minimum height=1.30cm, fill=pomsky!16, draw=pomsky!70!black] (led) at (15.65,3.02)
-  {\textbf{Append-only ledger}\\\textbf{entry}: H(cert) or H(\textit{T}′) + inclusion proof\\checkpoints; optional tree-head signature\\\textbf{not implemented}: consistency proofs, gossip};
+  {\textbf{Append-only ledger}\\H(cert)/H(\textit{T}′) + inclusion\\checkpoints; optional tree head\\no consistency proofs or gossip};
 \draw[garr] (sig.south) -- (11.45,2.85) -- node[above, font=\fontsize{4.85}{5.8}\selectfont]{append (\textit{external})} (led.west);
 \draw[garr] (led.north) -- node[right, font=\fontsize{4.85}{5.8}\selectfont]{incl.} (V3.south);
 
 % ======================= end-user gap ================================
 \node[ext, text width=3.85cm, minimum height=0.95cm] (USR) at (2.25,3.10)
-  {\textbf{End user (not a party here)}\\receives \textit{T}″; certificate binds \textit{T}′\\\textit{T}″ ≠ \textit{T}′ is \textbf{open} (Prop.~1)};
+  {\textbf{End user (outside)}\\receives \textit{T}″; cert binds \textit{T}′;\\\textit{T}″ ≠ \textit{T}′ \textbf{open} (Prop.~1)};
 \draw[earr] (4.55,3.10) -- node[above, font=\fontsize{5.1}{6.0}\selectfont]{\textit{T}″} (USR.east);
 
 % ======================= trust anchors ===============================
@@ -134,11 +134,11 @@
 \node[anchor=west, font=\fontsize{5.6}{6.6}\selectfont\bfseries, text=popgrey]
   at (0.27,1.85) {Trust anchors (pin these, not the machine):};
 \node[root, text width=5.35cm, minimum height=0.62cm] (R1) at (3.05,1.43)
-  {\textbf{signing key} (Ed25519): verifier pins the public key; custody external};
+  {\textbf{signing key} (Ed25519): pinned; custody external};
 \node[root, text width=5.25cm, minimum height=0.62cm] (R2) at (8.60,1.43)
-  {\textbf{gateway key}: receipt/Seal signatures; roster, HSM, trusted time open};
+  {\textbf{gateway key}: receipt/Seal; roster/HSM/time open};
 \node[root, text width=5.75cm, minimum height=0.62cm] (R3) at (14.85,1.43)
-  {\textbf{policy registry / P-PP}: issuer signature binds hπ; authority honesty external};
+  {\textbf{policy registry/P-PP}: issuer signature binds hπ};
 
 % ======================= legend / boundary strip =====================
 \draw[black!20, line width=0.35pt] (0.15,0.98) -- (18.05,0.98);
@@ -161,6 +161,6 @@
 \node[anchor=north west, font=\fontsize{5.0}{6.0}\selectfont, text=popverm!85!black, text width=8.55cm]
   at (0.22,0.70) {\textbf{Design, not measured.} No TEE. \texttt{core} leaves the witness open; \texttt{groth16} hiding is wrapper-only and not post-quantum; L-side (re-execution) is open at every tier.};
 \node[anchor=north west, font=\fontsize{5.0}{6.0}\selectfont, text=popgrey, text width=8.55cm]
-  at (9.25,0.70) {External: authority holds s; operator does not leak π/\textit{T}; gateway key custody; append-before-delivery and no split view; \textit{T}″ binding to the end user.};
+  at (9.25,0.70) {External: authority salt; gateway key; append-before-delivery; no split view; \textit{T}″ binding.};
 \end{tikzpicture}
 \end{document}

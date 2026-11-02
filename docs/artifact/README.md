@@ -227,10 +227,10 @@ E3 是机制演示，不是「模型合规」；A11 是失败可行性评估，�
 
 ### 4.2 图表
 
-- 主稿 **Figs. 1–6**：architecture、BHV/leakage、policy inference、proof
-  feasibility、issuance、`k_est`；原 proof 逐点数值表在 supplementary **Table S12**。
-- supplementary **Figs. S1–S7**：cycles、matcher ablation、完整 proof feasibility、
-  three-party deployment/trust、certificate lifecycle、cross-system matrix、claim–evidence matrix；
+- 主稿 **Figs. 1–5**：certificate lifecycle、BHV/leakage、proof feasibility、
+  `k_est`、cross-system comparison；原 proof 逐点数值表在 supplementary **Table S12**。
+- supplementary **Figs. S1–S8**：cycles、matcher ablation、完整 proof feasibility、
+  three-party deployment/trust、claim–evidence matrix、architecture、issuance、policy inference；
   另含 Tables S12–S14（proof 数值、regime、channel），不在主稿重复。
 - 所有图带矢量 PDF、300 dpi PNG、TikZ/Python 源与数据 SHA-256；
   规范见 [`docs/figures/style-guide.md`](../figures/style-guide.md)，

@@ -56,9 +56,12 @@ def main() -> int:
     OUT.mkdir(exist_ok=True)
     figs = OUT / "figures"
     figs.mkdir(exist_ok=True)
+    (figs / "va").mkdir(exist_ok=True)
     shutil.copy2(PAPER, OUT / "tdsc-paper-integrated.tex")
     for pdf in FIG.glob("*.pdf"):
         shutil.copy2(pdf, figs / pdf.name)
+    for pdf in (FIG / "va").glob("*.pdf"):
+        shutil.copy2(pdf, figs / "va" / pdf.name)
 
     pages, errors, undefined, overfull = compile_tex(OUT / "tdsc-paper-integrated.tex")
     ok = pages == TARGET_PAGES and errors == 0 and undefined == 0
@@ -69,9 +72,9 @@ def main() -> int:
         f"target: {TARGET_PAGES} pages, 0 errors, 0 undefined refs",
         f"verdict: {'PASS' if ok else 'FAIL'}",
         "",
-        "Integrated figures: architecture, BHV/leakage, policy inference, proof feasibility,",
-        "issuance, and k_est. Table I is in the supplement as Table S12; the regime and",
-        "channel tables moved to the supplement as Tables S13-S14.",
+        "Integrated main figures: certificate lifecycle, BHV/leakage, proof feasibility,",
+        "k_est, and cross-system comparison. Architecture/policy/issuance are supplement",
+        "figures; Table I is Table S12 and the regime/channel tables are S13-S14.",
     ]
     (OUT / "page-budget.txt").write_text("\n".join(lines) + "\n")
     print("\n".join(lines))

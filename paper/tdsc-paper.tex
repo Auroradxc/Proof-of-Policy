@@ -258,7 +258,7 @@ theorem is stated.
 to a \texttt{ConstraintSpec}---a JSON artefact carrying the compiled NFA---which
 is the \emph{only} object crossing the layer boundary: the Python reference
 implementation and the Rust/zkVM guest consume the same bytes, so \emph{spec}
-drift is structurally impossible. Fig.~\ref{fig:architecture} shows the pipeline. Evaluator-semantics drift is not: the two
+drift is structurally impossible. Fig.~\ref{fig:lifecycle} shows the issuance/verification contract. Evaluator-semantics drift is not: the two
 layers implement the decision separately, guarded by 19-vector cross-validation
 plus differential fuzzing. The guest runs a deterministic evaluator and commits
 its outcome. Seven of eight rule classes are decided \emph{inside} the circuit
@@ -274,17 +274,18 @@ value \texttt{delegated}, and a verifier must \emph{conjunctively} check a
 companion \texttt{ezkl}/halo2 proof. Verifying the zkVM side alone does not
 establish compliance.
 
+
+
 \begin{figure*}[!t]
 \centering
-\includegraphics[width=0.86\textwidth]{figures/fig01_architecture.pdf}
-\caption{PoP architecture. A policy $\pi$ is compiled to a
-\texttt{ConstraintSpec}; the zkVM guest evaluates $T$ and commits public
-values; the certificate is DSSE/Ed25519-signed and anchored. Orange:
-witness/secret; blue: public values; green: verified/anchored; dashed:
-untrusted operator. The certificate binds the verifier's copy $T'$, not the
-end-user delivery $T''$ (Proposition~\ref{thm:gap}); \texttt{core} does not
-hide the witness, and \texttt{gr\-oth16} hiding is wrapper-level.}
-\label{fig:architecture}
+\includegraphics[width=\textwidth]{figures/va/va02_certificate_lifecycle.pdf}
+\caption{Certificate issuance and verification as a design contract (not a
+latency trace). Steps 1--10 order issuance, compilation, challenge, streamed
+generation, policy check, proof tier, signing, delivery and conjunctive
+verification; dashed F1--F8 are fail-closed exits. \texttt{unproven} is
+host-check only; append-before-delivery is external; $T''$ binding remains
+open.}
+\label{fig:lifecycle}
 \end{figure*}
 
 \paragraph{What the verdict is bound to.} Rules about the agent's \emph{tool
@@ -316,11 +317,6 @@ ledger, verifiable offline, and an on-chain registration storing only a 32-byte
 digest. The transaction hash and on-chain timestamp are written back into the
 local entry, so the offline chain and the public timestamp cross-check each
 other and tampering with either is detectable.
-
-\paragraph{Framework integration.} One gateway serves LangChain callbacks,
-LangGraph and MCP tool checks, so trace certificates and proofs share one chain
-of evidence. The implementation runs 962 tests: 947 pass and 15 skip by design,
-with no failures.
 
 \begin{definition}[Policy-proof system]
 \label{def:system}
@@ -845,18 +841,9 @@ multinomial naive Bayes classifier (seed 20261101). The responses are
 (\texttt{bench\_policy\_infer.py::\_responses})---not real LLM outputs, so the
 curve estimates leakage from the projection, not deployment risk. Features are
 drawn only from the certificate public values of each level; the random-guess
-baseline over 20 classes is $0.050$. Fig.~\ref{fig:policy-infer} reports the
-result.
+baseline over 20 classes is $0.050$. The supplementary policy-inference figure reports the result.
 
-\begin{figure*}[!t]
-\centering
-\includegraphics[width=0.82\textwidth]{figures/fig08_policy_disclosure.pdf}
-\caption{Policy inference over L0/L1/L2. (a,b) 20 synthetic variants;
-(c,d) 300 candidates with 220 real responses (v1 certificate payload; L2*
-count-only). Corpora are not averaged. v1 L2 evidence commitments link across
-samples; v2 circuit values are not re-measured.}
-\label{fig:policy-infer}
-\end{figure*}
+
 
 Three readings follow. First, the monotone decline is the evidence that the
 projection does something: top-1 falls from $0.810$ to $0.113$ to $0.073$, and
@@ -1026,30 +1013,16 @@ numeric per-point table is in the supplement.}
 
 \subsection{The non-ZK baseline: what a signature cannot do}
 \label{sec:eval-baseline}
-
-A signed Merkle log is the obvious alternative to a proof, and on cost it is not
-close: everything is milliseconds. We measured it so the comparison is not
-rhetorical. Policy package \texttt{eu\_ai\_act\_v1.json}, 103-character response,
-one challenge nonce, a 1024-leaf log; each timing is the median of $n = 500$
-repetitions (\texttt{bench/results/baseline.md}): sign certificate $0.132$\,ms,
-Merkle append $2.131$\,ms, public verification $0.322$\,ms, re-run verification
-$0.772$\,ms; certificate $648$\,B, inclusion proof $761$\,B. Two caveats: the
-append is a \emph{static tree recomputation} in \texttt{proofs/session.py},
-$\Theta(n)$, not the amortised $\Theta(\log n)$ of an RFC-6962 incremental log;
-and the measurements come from a shared machine with $\pm 20\%$ drift. This arm
-is a \emph{feasibility} baseline---the sizes are prototype sizes, not evidence
-that a public transparency log is deployed.
-
-The asymmetry is the point. The verification chain is \emph{verify signature}
-$\to$ \emph{verify log inclusion} $\to$ \emph{re-run $J(\pi,T)$}. The first two
-need only public data; the third needs the plaintext of both $\pi$ and $T$. A
-signature binds \emph{who said it} to the bytes, never \emph{whether it is
-true}. We measured the consequence: \textbf{the same key signs a certificate
-whose declared content is false, and the public path passes green}, because what
-it sees is a valid signature and a valid inclusion proof. Only re-executing
-$J(\pi,T)$ recovers the truth. One honest row: on \emph{unforgeability} the
-baseline is \emph{not weaker} than the proof path, both being Ed25519 and vkey
-binding, and we do not score a point for ZK there.
+A signed Merkle log is the obvious alternative. Measured medians ($n=500$):
+sign certificate $0.132$\,ms, append $2.131$\,ms, verify $0.322$\,ms, re-run
+$0.772$\,ms; certificate $648$\,B, inclusion proof $761$\,B. The append is a
+static $\Theta(n)$ recomputation, not RFC-6962 $\Theta(\log n)$, and the
+timings carry $\pm20\%$ host drift; the sizes are prototype. The verification
+chain is verify signature $\to$ inclusion $\to$ re-run $J(\pi,T)$: the first two
+use public data, the third needs $\pi$ and $T$. We measured the consequence:
+the same key signs a false statement and the public path passes, because it sees
+a valid signature and inclusion proof. On unforgeability the baseline is
+\emph{not weaker} than the proof path, and we do not score a point for ZK there.
 
 \subsection{Composition controls}
 \label{sec:eval-compose}
@@ -1061,31 +1034,16 @@ $\mathsf{derive}(T_U)$ rather than $x_U$ (proof debt E-1), and (d) with
 
 \subsection{Gateway signing: measured cost, blocked circuit}
 \label{sec:eval-gateway}
-
-Off-circuit Ed25519 verification costs $0.094$, $0.844$ and $10.165$\,ms per
-receipt batch at $1$, $10$ and $100$ receipts, with a per-receipt marginal near
-$0.08$--$0.10$\,ms ($n=300$ per row; Table~S5 and
-\texttt{bench/results/gateway\_sig.md}); the session-end \texttt{ToolSeal} is
-$0.074$\,ms to sign, $0.184$\,ms to verify and $345$\,B. A concatenated 2-of-3
-threshold prototype signs in $0.173$\,ms, merges in $0.001$\,ms, verifies in
-$0.508$\,ms and produces a $981$\,B certificate ($759$\,B when only the two
-required signatures are carried). Threshold semantics are machine-checked: any
-two distinct signatures pass, one is rejected, and two signatures under the same
-key id do not count as two.
-
-The in-circuit row is the honest blank. Verifying Ed25519 inside the zkVM is not
-in the circuit---\texttt{circuits/} deliberately keeps the signature field out
-of the circuit view---and building a guest to measure it exceeds this
-experiment's file ownership, so cycles, proving time and peak memory are
-\emph{null}, not zero. We do not infer a circuit cost from the off-circuit cost,
-and the trust root still contains the gateway key. The threshold prototype buys
-a weaker single point of trust, not cheaper verification: one compromised key is
-no longer enough, at roughly three times the signing work and certificate size,
-with a new obligation to argue that the gateways agree on the chain tail.
-Putting Ed25519 inside the guest is a design option, not a measured one; SP1
-6.7.0 has no Ed25519 precompile, and the guest change would rotate the policy
-vkey and add public values, invalidating existing certificates. An authenticated
-gateway roster, HSM key custody and a trusted time source remain open.
+Off-circuit Ed25519 verification costs $0.094/0.844/10.165$\,ms per
+$1/10/100$ receipts ($n=300$; marginal $0.08$--$0.10$\,ms); the session-end
+\texttt{ToolSeal} is $0.074$\,ms to sign, $0.184$\,ms to verify, $345$\,B. A
+2-of-3 threshold prototype signs in $0.173$\,ms, merges in $0.001$\,ms,
+verifies in $0.508$\,ms and produces $981$\,B ($759$\,B with two signatures);
+threshold semantics are machine-checked. The in-circuit row is \emph{null}, not
+zero: Ed25519 is outside the guest, and a guest change would rotate the policy
+vkey. We do not infer circuit cost from off-circuit cost. The trust root still
+contains the gateway key; threshold signing weakens but does not remove it, and
+roster, HSM custody and a trusted time source remain open.
 
 \paragraph{Cross-system baselines.}\label{sec:eval-baselines}
 Table~S6 compares PoP with six alternatives across seven dimensions (49 cells,
@@ -1097,18 +1055,10 @@ arm and with no hardware in the trust root.
 Cryptography cannot force a provider to issue. In a simulation, auditing
 delivered artifacts detects $0.9948$ of withheld violations, while auditing the
 log detects $0.0000$: withheld deliveries have no entry, so the frame is wrong
-(Table~S7). This quantifies detection, not prevention (Fig.~\ref{fig:issuance}); details
-and premises are in the supplement.
+(Table~S7). This quantifies detection, not prevention; the supplementary issuance figure
+and premise table give the full audit curve.
 
-\begin{figure}[!t]
-\centering
-\includegraphics[width=0.92\columnwidth]{figures/fig09_issuance_detection.pdf}
-\caption{Issuance audit. Delivered-artifact sampling detects $0.9948$ of 100
-withheld violations at $p=0.05$; log sampling detects $0.0000$ because withheld
-deliveries have no entry. Detection, not prevention; append-before-delivery is
-external.}
-\label{fig:issuance}
-\end{figure}
+
 \subsection{End-to-end and auditing}
 \label{sec:eval-e2e}
 
@@ -1182,14 +1132,19 @@ supplementary material.
 \section{Related Work}
 \label{sec:related}
 
-Table~S10 positions PoP against five lineages: policy-to-circuit (zkGen,
-Circuitree, Prezta); agent/LLM compliance (NiyamAI, Zaguk, PCO \cite{pco},
-WITNESS); model computation (DeepProve, zkGPT, zkAgent \cite{zkagent}); attacks
-and negative results (Hollow-LLM \cite{hollowllm}, zk-attach \cite{zkattach});
-and non-ZK baselines. zkAgent proves model/tool execution, whereas PoP proves
-response-policy compliance; neither implies the other, and Table~S11 compares
-them as orthogonal systems. Hollow-LLM and zk-attach name \emph{what} was
-proved; Proposition~\ref{thm:gap} concerns \emph{where} the string is delivered.
+\begin{figure*}[!t]
+\centering
+\includegraphics[width=\textwidth]{figures/va/va03_comparison_matrix.pdf}
+\caption{Categorical cross-system comparison. (a) Table~S6 dimensions: 49 cells, 46 populated and 3 unavailable; tint encodes $[m]$/$[c]$/em dash evidence status, not rank. (b) Proof obligation, issuance/audit and implementation status only where explicitly documented. PoP core 39.8--100.3\,s, \texttt{gr\-oth16} 279.3--343.8\,s; single runs, $\pm10\%$ time/$\pm1\%$ memory. No ranking or interpolation.}
+\label{fig:comparison}
+\end{figure*}
+
+Fig.~\ref{fig:comparison} and Table~S10 position PoP against five lineages:
+policy-to-circuit, agent/LLM compliance, model computation, attacks/negative
+results, and non-ZK baselines. The closest is zkAgent, which proves model/tool
+execution while PoP proves response-policy compliance; neither implies the
+other. Hollow-LLM and zk-attach name \emph{what} was proved;
+Proposition~\ref{thm:gap} concerns \emph{where} the string is delivered.
 zk-regex inspired our NFA contract and verifiable redaction \cite{vdr} inspired
 \texttt{mask\_covered}; VDR assumes a signed original that PoP's private mode
 does not have.
@@ -1204,8 +1159,7 @@ Everything above was kept deliberately narrow; this section says how narrow.
 \label{sec:disc-policy}
 
 \textbf{``Content privacy'' means \emph{no plaintext of $T$ in the public
-values}, not \emph{content is unrecoverable}.} Two independent reasons force
-this reading---one at the proof-system level, one at the design level.
+values}, not \emph{content is unrecoverable}.}
 
 \emph{Proof-system level.} The default tier is SP1's \texttt{core}, whose
 published security model states that individual STARK proofs are not
@@ -1214,8 +1168,8 @@ clear.%
 \footnote{\url{https://docs.succinct.xyz/docs/sp1/security/security-model\#groth16-plonk-and-the-zero-knowledgeness-of-sp1}, accessed 2026-11-01.}
 Soundness (G1) holds, but the artefact does not hide the witness.
 \texttt{gr\-oth16}/\texttt{plonk} wrap the STARK as a private witness---the only
-mode where hiding is possible---but that is wrapper-level, not post-quantum,
-needs $\ge16$\,GB, and is measured in \S\ref{sec:eval-proofs}.
+hiding mode---but it is wrapper-level, not post-quantum, needs $\ge16$\,GB, and
+is measured in \S\ref{sec:eval-proofs}.
 
 \emph{Design level, and the more fundamental one.} The public values
 \texttt{response\_binding} and \texttt{response\_commitment} are public,
@@ -1230,15 +1184,13 @@ name \texttt{no\_bad\_topics}. That is a policy-field leak
 count is a probe negative, not a zero-knowledge proof.
 
 The attack is \emph{not} enumeration: $2^{100}$ is as unenumerable as
-$2^{256}$. It is \emph{re-execution} (Corollary~\ref{cor:reexec}): the side
-information (Assumption~\ref{as:Z}) is (prompt, model, decoding parameters), so
-under greedy or low-temperature decoding $k\approx0$ (Definition~\ref{def:k})
-and the attack costs \emph{one inference}, independent of $|T|$. Since a
-verifier must recompute the binding, binding and content hiding are mutually
-exclusive. We therefore restate (G2) as \emph{no plaintext of $T$ in the public
-values}, confirmed by the leak experiment, not as content irrecoverability; the
-``content privacy'' cells must not be read as ``unrecoverable.''
-This is a bound on our own system first.
+$2^{256}$. It is \emph{re-execution} (Corollary~\ref{cor:reexec}): side
+information is (prompt, model, decoding), so under greedy or low-temperature
+decoding $k\approx0$ and the attack costs \emph{one inference}, independent of
+$|T|$. Since a verifier must recompute the binding, binding and content hiding
+are mutually exclusive. We restate (G2) as \emph{no plaintext of $T$ in the
+public values}, confirmed by the leak experiment, not as content
+irrecoverability; this is a bound on our own system first.
 
 \emph{Policy privacy has the same caliber.} The salted commitment closes the
 public-value channel, but (i) the default \texttt{core} artefact carries
@@ -1252,13 +1204,12 @@ categories. ``Salt added'' is not ``policy privacy solved,'' and
 \subsection{Where zero-knowledge pays, and where it does not}
 \label{sec:disc-zkmap}
 
-Zero-knowledge pays only when the response or policy is unknown to the verifier;
-in the transparent corner a signed log is three to four orders cheaper. The
-property is of the \emph{wrapper}, not the system: \texttt{core} lacks it
-(\S\ref{sec:disc-privacy}), while \texttt{gr\-oth16} is a measured delivery tier
-(1{,}874\,B, verified, \S\ref{sec:eval-proofs}). The title keeps the word on
-that wrapper-level, non-post-quantum claim; removing the tier removes the word.
-The cost map is in the supplement.
+Zero-knowledge pays only when the response or policy is unknown to the
+verifier; in the transparent corner a signed log is three to four orders
+cheaper. The property is of the \emph{wrapper}: \texttt{core} lacks it
+(\S\ref{sec:disc-privacy}), while \texttt{gr\-oth16} is a measured delivery
+tier (1{,}874\,B, verified). The title keeps the word on that wrapper-level,
+non-post-quantum claim; removing the tier removes the word.
 
 \subsection{Availability: the unanchored-pattern cost attack}
 \label{sec:disc-dos}
@@ -1268,33 +1219,30 @@ start, so whoever chooses the response can drive prover work quadratically.
 This is denial of service against the \emph{prover}, not a soundness break: no
 false certificate is produced. It is specific to proving because the trace, not
 merely the verdict, is proved; Pike VM simulation, committed response length and
-chunked matching are partial mitigations.
-
-On the proving path, naive matching moves from a successful proof at $n=25$
+chunked matching are partial mitigations. On the proving path, naive matching
+moves from a proof at $n=25$
 (153.2\,s, 12{,}137\,MiB) to OOM/SIGKILL at $n=50$ (226.5\,s, 13{,}772\,MiB)
 on 14.6\,GiB, while Pike proves at $n=100$ (122.2\,s, 11{,}695\,MiB); the
-$\approx$10\,GiB floor makes this amplification, not an asymptotic lower bound.
-Differential fuzzing against Python's \texttt{re} found two defects, both fixed:
-empty character classes now raise \texttt{RegexSyntaxError}, and
-\texttt{a\{0\}} now compiles to $\varepsilon$. The latter moved the policy vkey
-to \texttt{0x003eb14d\ldots}; pre-fix results are not mixed, and neither defect
-broke soundness.
+$\approx$10\,GiB floor makes this amplification, not an asymptotic bound.
+Differential fuzzing against Python's \texttt{re} found two fixed defects:
+empty classes now raise \texttt{RegexSyntaxError}, and \texttt{a\{0\}} compiles
+to $\varepsilon$; the latter moved the policy vkey to
+\texttt{0x003eb14d\ldots}. Neither broke soundness.
 
 \subsection{Coverage: a provider can simply withhold certificates}
 \label{sec:disc-coverage}
 
 Cryptography cannot compel issuance: a provider that never produces a
 certificate is indistinguishable, from the verifier's side, from one with
-nothing to certify. Sampling audits, penalties and disclosure obligations live
-above cryptography. Optional issuance makes withholding undetectable from the
-certificate alone; if a digest binding the \emph{delivered} artifact must be
+nothing to certify; audits, penalties and disclosure obligations live above
+cryptography. Optional issuance makes withholding undetectable from the
+certificate alone. If a digest binding the \emph{delivered} artifact must be
 appended before delivery, and the log is append-only, public and has inclusion
 proofs, issuance completeness holds for delivered-and-accepted artifacts. An
 audit over delivered artifacts finds $0.9948$ of $100$ withheld violations at a
 $5\%$ sampling rate; an audit over log entries finds $0.0000$---the frame, not
-luck, is the issue. The prototype lacks a gossip channel and an authenticated
-roster, so split-view resistance is external; one message detects rollback and
-rewriting, but not a same-prefix fork.
+luck. The prototype lacks gossip and an authenticated roster, so split-view
+resistance is external.
 
 \subsection{Why composition alone does not close the gap}
 \label{sec:disc-composition}
@@ -1383,14 +1331,13 @@ meanings and orders of magnitude differ.
     indistinguishable from an honest one; slicing partitions responsibility but
     does not prevent agreement.
   \item \textbf{Signing and key custody are not production-grade.} The on-chain
-    path takes plaintext keys and the demo uses a public Anvil key; HSM custody
-    remains future work.
+    path takes plaintext keys and the demo uses a public Anvil key.
   \item \textbf{Semantic-rule model quality.} The bundled model is a proxy,
     not a usable guardrail. A 67M-parameter DistilBERT classifier on XSTest
-    (450 prompts) reaches recall $0.50\%$, F1 $0.010$, ROC-AUC $0.583$; an
-    all-safe baseline scores $55.56\%$ against its $54.89\%$. The mismatch is
-    task-level, so we demote the learned rule; its public instance also contains
-    $\mathsf{encode}(T)$, making semantic rules public-mode only.
+    reaches recall $0.50\%$, F1 $0.010$, ROC-AUC $0.583$; an all-safe baseline
+    scores $55.56\%$ against its $54.89\%$. We demote the learned rule; its
+    public instance also contains $\mathsf{encode}(T)$, making semantic rules
+    public-mode only.
   \item \textbf{The inference proof is faithful, not good.} The inference half
     is a deterministic fixed-point MLP proxy with compile-time-seeded weights,
     committed by the verification key: it proves \emph{this} graph computed
